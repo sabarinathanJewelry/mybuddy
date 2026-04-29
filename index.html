@@ -3,8 +3,15 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>JewelERP</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MyBuddy">
+<meta name="application-name" content="MyBuddy">
+<title>MyBuddy</title>
+<link rel="manifest" href="data:application/manifest+json,{%22name%22:%22MyBuddy%22,%22short_name%22:%22MyBuddy%22,%22start_url%22:%22.%22,%22display%22:%22standalone%22,%22background_color%22:%22%231A1410%22,%22theme_color%22:%22%231A1410%22,%22icons%22:[{%22src%22:%22data:image/svg+xml,%253Csvg%2520xmlns%3D%2527http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%2527%2520viewBox%3D%25270%25200%2520100%2520100%2527%253E%253Crect%2520width%3D%2527100%2527%2520height%3D%2527100%2527%2520rx%3D%252722%2527%2520fill%3D%2527%25231A1410%2527%2F%253E%253Ctext%2520y%3D%252778%2527%2520x%3D%252750%2527%2520text-anchor%3D%2527middle%2527%2520font-size%3D%252768%2527%253E%25F0%259F%2592%25B0%253C%2Ftext%253E%253C%2Fsvg%253E%22,%22sizes%22:%22192x192%22,%22type%22:%22image/svg+xml%22}]}">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%231A1410'/><text y='78' x='50' text-anchor='middle' font-size='68'>💰</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
 <style>
@@ -752,6 +759,194 @@ input:checked+.tslider::before { transform:translateX(17px); }
   * { -ms-overflow-style:none; scrollbar-width:none; }
   *::-webkit-scrollbar { display:none; }
 }
+
+/* ═══════════════════════════════════════
+   GUN LOCK SCREEN
+═══════════════════════════════════════ */
+.gun-lock {
+  display: none;
+  position: fixed; inset: 0;
+  background: #0D0B08;
+  z-index: 9999;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: manipulation;
+}
+.gun-lock.show { display: flex; }
+
+.gun-lock-bg {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at center, #1A1410 0%, #0D0B08 70%);
+}
+.gun-stars {
+  position: absolute; inset: 0;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.15) 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.3;
+}
+
+.gun-title {
+  position: relative;
+  font-family: 'DM Serif Display', serif;
+  font-size: 13px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.2);
+  margin-bottom: 48px;
+}
+
+.gun-dots {
+  position: relative;
+  display: flex;
+  gap: 10px;
+  margin-bottom: 52px;
+  min-height: 18px;
+}
+.gun-dot {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  border: 2px solid rgba(255,255,255,0.2);
+  transition: all 0.2s;
+}
+.gun-dot.hit-r {
+  background: #E8B84B;
+  border-color: #C9980A;
+  box-shadow: 0 0 12px #C9980A;
+}
+.gun-dot.hit-l {
+  background: #64B5F6;
+  border-color: #1A5FAB;
+  box-shadow: 0 0 12px #1A5FAB;
+}
+.gun-dot.wrong {
+  background: #C0392B;
+  border-color: #C0392B;
+  animation: shake-dot 0.3s ease;
+}
+@keyframes shake-dot {
+  0%,100%{transform:translateX(0)}
+  25%{transform:translateX(-4px)}
+  75%{transform:translateX(4px)}
+}
+
+.gun-arena {
+  position: relative;
+  display: flex;
+  gap: 80px;
+  align-items: flex-end;
+  margin-bottom: 40px;
+}
+
+.gunman {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.gunman-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.4;
+  color: #fff;
+  transition: opacity 0.2s;
+}
+.gunman:active .gunman-label { opacity: 0.9; }
+
+.gun-wrap {
+  position: relative;
+  width: 90px; height: 90px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.04);
+  border: 2px solid rgba(255,255,255,0.08);
+  transition: all 0.1s;
+}
+.gun-wrap.fire {
+  background: rgba(201,152,10,0.25);
+  border-color: rgba(201,152,10,0.6);
+  transform: scale(0.92);
+}
+.gun-wrap.fire-l {
+  background: rgba(26,95,171,0.25);
+  border-color: rgba(26,95,171,0.6);
+  transform: scale(0.92) scaleX(-1);
+}
+.gun-svg {
+  width: 52px; height: 52px;
+  filter: drop-shadow(0 0 6px rgba(255,255,255,0.1));
+  transition: transform 0.1s;
+}
+.gunman-r .gun-svg { transform: scaleX(-1); }
+
+.gun-flash {
+  position: absolute;
+  top: 6px; right: 4px;
+  font-size: 22px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(0);
+}
+.gun-wrap.fire .gun-flash,
+.gun-wrap.fire-l .gun-flash {
+  opacity: 1;
+  animation: flash-out 0.35s ease forwards;
+}
+@keyframes flash-out {
+  0%{opacity:1;transform:translateY(-4px) scale(1.2);}
+  100%{opacity:0;transform:translateY(-16px) scale(0.8);}
+}
+
+.gun-count-badge {
+  position: absolute;
+  top: -6px; right: -6px;
+  background: #C9980A;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0;
+  transform: scale(0);
+  transition: all 0.2s cubic-bezier(0.34,1.56,0.64,1);
+}
+.gun-count-badge.show {
+  opacity: 1;
+  transform: scale(1);
+}
+.gunman-l .gun-count-badge { background: #1A5FAB; }
+
+.gun-hint {
+  position: relative;
+  font-size: 11px;
+  color: rgba(255,255,255,0.15);
+  text-align: center;
+  max-width: 240px;
+  line-height: 1.8;
+}
+.gun-error {
+  position: relative;
+  font-size: 13px;
+  color: #C0392B;
+  font-weight: 600;
+  margin-top: 16px;
+  min-height: 20px;
+  text-align: center;
+  animation: shake-msg 0.4s ease;
+}
+@keyframes shake-msg {
+  0%,100%{transform:translateX(0)}
+  20%,60%{transform:translateX(-8px)}
+  40%,80%{transform:translateX(8px)}
+}
 </style>
 </head>
 <body>
@@ -777,6 +972,58 @@ input:checked+.tslider::before { transform:translateX(17px); }
 
 <!-- SIDEBAR OVERLAY -->
 <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+<!-- ═══ GUN LOCK SCREEN ═══ -->
+<div class="gun-lock show" id="gun-lock">
+  <div class="gun-lock-bg"></div>
+  <div class="gun-stars"></div>
+
+  <div class="gun-title">🔒 MyBuddy</div>
+
+  <!-- Sequence dots -->
+  <div class="gun-dots" id="gun-dots"></div>
+
+  <!-- Two gunmen -->
+  <div class="gun-arena">
+
+    <!-- Left gun -->
+    <div class="gunman gunman-l" id="gun-l" onclick="gunFire('L')">
+      <div class="gun-wrap" id="gwrap-l">
+        <svg class="gun-svg" viewBox="0 0 64 64" fill="none">
+          <path d="M8 30h28l4-8h10l2 4-2 4h-4v6H16l-2 4H8z" fill="#C9980A" opacity=".9"/>
+          <path d="M36 22h10l2 4-2 4h-10z" fill="#A07A00"/>
+          <rect x="8" y="38" width="10" height="6" rx="2" fill="#888"/>
+          <path d="M14 36v-6h22v6" stroke="#C9980A" stroke-width="1.5"/>
+        </svg>
+        <span class="gun-flash">💥</span>
+        <div class="gun-count-badge" id="gcnt-l">0</div>
+      </div>
+      <div class="gunman-label">Left</div>
+    </div>
+
+    <!-- VS dot -->
+    <div style="position:relative;bottom:36px;color:rgba(255,255,255,0.15);font-size:11px;font-weight:700;letter-spacing:0.1em">VS</div>
+
+    <!-- Right gun -->
+    <div class="gunman gunman-r" id="gun-r" onclick="gunFire('R')">
+      <div class="gun-wrap" id="gwrap-r">
+        <svg class="gun-svg" viewBox="0 0 64 64" fill="none">
+          <path d="M8 30h28l4-8h10l2 4-2 4h-4v6H16l-2 4H8z" fill="#E8B84B" opacity=".9"/>
+          <path d="M36 22h10l2 4-2 4h-10z" fill="#C9980A"/>
+          <rect x="8" y="38" width="10" height="6" rx="2" fill="#888"/>
+          <path d="M14 36v-6h22v6" stroke="#E8B84B" stroke-width="1.5"/>
+        </svg>
+        <span class="gun-flash">💥</span>
+        <div class="gun-count-badge" id="gcnt-r">0</div>
+      </div>
+      <div class="gunman-label">Right</div>
+    </div>
+
+  </div>
+
+  <div class="gun-hint" id="gun-hint">Tap the guns in the right sequence</div>
+  <div class="gun-error" id="gun-error"></div>
+</div>
 
 <div class="app">
 <!-- ── SIDEBAR ── -->
@@ -1885,10 +2132,33 @@ function savePayment(){
   alert('&#10003; Payment recorded!');
 }
 function fltPays(f,btn){payFlt=f;document.querySelectorAll('#pg-payments .tab').forEach(function(t){t.classList.remove('active');});if(btn)btn.classList.add('active');renderPayments();}
+function payTypeLabel(type){
+  var map={'in':'Received','out':'Refund','oldgold':'Old Gold — Cash Out','oldgold-adv':'Old Gold — Advance','advance':'Order Advance','old_gold_advance':'OG Advance'};
+  return map[type]||type.replace(/_/g,' ');
+}
+function payIsIn(type){
+  // GREEN = money received from customer or credit given to customer
+  return type==='in'||type==='oldgold-adv'||type==='advance'||type==='old_gold_advance';
+}
 function renderPayments(){
-  var f=DB.payments.filter(function(p){if(payFlt==='in')return p.type==='in'||p.type==='oldgold-adv';if(payFlt==='out')return p.type==='out'||p.type==='oldgold';return true;});
+  var f=DB.payments.filter(function(p){
+    if(payFlt==='in') return payIsIn(p.type);
+    if(payFlt==='out') return !payIsIn(p.type);
+    return true;
+  });
   var t=G('pay-list');if(!t)return;
-  t.innerHTML=f.length?'<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Customer</th><th>Date</th><th>Mode</th><th>Type</th><th class="num">Amount</th></tr></thead><tbody>'+f.map(function(p){var isIn=p.type==='in'||p.type==='oldgold-adv';return '<tr><td style="font-weight:600">'+p.customer+'</td><td style="font-size:12px;color:var(--tx3)">'+p.date+'</td><td style="font-size:12px">'+p.mode+(p.ogWt?' &middot; '+p.ogWt+'g '+p.ogMetal:'')+'</td><td><span class="badge '+(isIn?'bg':'br')+'">'+p.type.replace(/_/g,' ')+'</span></td><td class="num" style="color:'+(isIn?'var(--grn)':'var(--red)')+'">'+fmt(p.amt)+'</td></tr>';}).join('')+'</tbody></table></div>':'<div class="empty"><div class="etxt">No payments</div></div>';
+  t.innerHTML=f.length?'<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Customer</th><th>Date</th><th>Details</th><th>Type</th><th class="num">Amount</th></tr></thead><tbody>'+
+    f.map(function(p){
+      var isIn=payIsIn(p.type);
+      var detail=p.mode+(p.ogWt?' &middot; '+p.ogWt.toFixed(3)+'g '+p.ogMetal:'');
+      return '<tr>'+
+        '<td style="font-weight:600">'+p.customer+'</td>'+
+        '<td style="font-size:12px;color:var(--tx3)">'+p.date+'</td>'+
+        '<td style="font-size:12px;color:var(--tx2)">'+detail+'</td>'+
+        '<td><span class="badge '+(isIn?'bg':'br')+'">'+payTypeLabel(p.type)+'</span></td>'+
+        '<td class="num" style="color:'+(isIn?'var(--grn)':'var(--red)')+';">'+(isIn?'+':'-')+fmt(p.amt)+'</td>'+
+      '</tr>';
+    }).join('')+'</tbody></table></div>':'<div class="empty"><div class="etxt">No payments yet</div></div>';
   var sp=Object.values(DB.sups).filter(function(s){return (s.txns||[]).some(function(t){return t.type==='settlement';});});var t2=G('suppay-list');if(!t2)return;var spT=[];sp.forEach(function(s){(s.txns||[]).filter(function(t){return t.type==='settlement';}).forEach(function(tx){spT.push({supName:s.name,date:tx.date,desc:tx.desc,credit:tx.credit,note:tx.note});});});t2.innerHTML=spT.length?'<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Supplier</th><th>Date</th><th>Mode</th><th class="num">Amount</th></tr></thead><tbody>'+spT.map(function(t){return '<tr><td style="font-weight:600">'+t.supName+'</td><td style="font-size:12px;color:var(--tx3)">'+t.date+'</td><td style="font-size:12px">'+t.desc+'</td><td class="num" style="color:var(--grn)">'+fmt(t.credit)+'</td></tr>';}).join('')+'</tbody></table></div>':'<div class="empty" style="padding:20px"><div class="etxt">No supplier payments</div></div>';
 }
 function saveSupPay(){var supId=V('spy-sup');if(!supId){alert('Select supplier.');return;}var sup=DB.sups[supId];if(!sup)return;var mode=V('spy-mode'),amt=N('spy-amt'),rate=N('spy-rate'),date=V('spy-date')||td(),ref=V('spy-ref');var credit=amt;if((mode.indexOf('Gold')>=0||mode.indexOf('Silver')>=0)&&rate>0)credit=amt*rate;if(!credit){alert('Enter amount.');return;}if(!sup.txns)sup.txns=[];sup.txns.push({type:'settlement',date:date,desc:mode,debit:0,credit:credit,note:ref||(rate?amt+'g @ \u20B9'+rate:'')});sup.balance=Math.max(0,(sup.balance||0)-credit);if(mode==='Cash')DB.cashLog.push({type:'out',date:date,amount:credit,desc:'Supplier: '+sup.name,src:'supplier'});var lastSTxn=sup.txns[sup.txns.length-1];dbSaveSupTxn(supId,lastSTxn);closeM('m-suppay');renderPayments();renderSups();renderCashFlow();alert('&#10003; Recorded!');}
@@ -1995,7 +2265,7 @@ function renderMFLog(){var t=G('mf-log-tbl');if(!t)return;t.innerHTML=DB.metalLo
 // ── CASH FLOW ──
 function saveCashOB(){var amt=N('cob-val');DB.cashOB=amt;dbSaveCashEntry('opening',V('cob-date')||td(),amt,'Opening Balance','opening');closeM('m-cashob');renderCashFlow();}
 function saveCashEntry(){var type=V('ce-type'),amt=N('ce-amt'),date=V('ce-date')||td(),desc=V('ce-desc');if(!amt){alert('Enter amount.');return;}DB.cashLog.push({type:type,date:date,amount:amt,desc:desc,src:'manual'});dbSaveCashEntry(type,date,amt,desc,'manual');closeM('m-cashentry');renderCashFlow();}
-function renderCashFlow(){var totalIn=DB.cashLog.filter(function(e){return e.type==='in';}).reduce(function(s,e){return s+e.amount;},0);var totalOut=DB.cashLog.filter(function(e){return e.type==='out';}).reduce(function(s,e){return s+e.amount;},0);var net=DB.cashOB+totalIn-totalOut;if(G('cf-ob'))G('cf-ob').innerHTML=fmt(DB.cashOB);if(G('cf-in'))G('cf-in').innerHTML=fmt(totalIn);if(G('cf-out'))G('cf-out').innerHTML=fmt(totalOut);if(G('cf-net'))G('cf-net').innerHTML=fmt(net);if(G('d-cash'))G('d-cash').innerHTML=fmt(net);var all=[{type:'opening',date:'Opening',amount:DB.cashOB,desc:'Opening Balance',src:''}].concat(DB.cashLog.slice().reverse());var t=G('cf-table');if(!t)return;t.innerHTML=all.length?'<table class="data-table"><thead><tr><th>Date</th><th>Description</th><th>Source</th><th class="num">Amount</th></tr></thead><tbody>'+all.map(function(e){return '<tr><td style="font-size:12px;color:var(--tx3)">'+e.date+'</td><td style="font-weight:600">'+e.desc+'</td><td style="font-size:11px;color:var(--tx3)">'+(e.src||'manual')+'</td><td class="num" style="color:'+(e.type==='in'||e.type==='opening'?'var(--grn)':'var(--red)')+'">'+fmt(e.amount)+'</td></tr>';}).join('')+'</tbody></table>':'<div class="empty"><div class="etxt">No entries</div></div>';}
+function renderCashFlow(){var totalIn=DB.cashLog.filter(function(e){return e.type==='in';}).reduce(function(s,e){return s+e.amount;},0);var totalOut=DB.cashLog.filter(function(e){return e.type==='out';}).reduce(function(s,e){return s+e.amount;},0);var net=DB.cashOB+totalIn-totalOut;if(G('cf-ob'))G('cf-ob').innerHTML=fmt(DB.cashOB);if(G('cf-in'))G('cf-in').innerHTML=fmt(totalIn);if(G('cf-out'))G('cf-out').innerHTML=fmt(totalOut);if(G('cf-net'))G('cf-net').innerHTML=fmt(net);if(G('d-cash'))G('d-cash').innerHTML=fmt(net);var all=[{type:'opening',date:'Opening',amount:DB.cashOB,desc:'Opening Balance',src:''}].concat(DB.cashLog.slice().reverse());var t=G('cf-table');if(!t)return;t.innerHTML=all.length?'<table class="data-table"><thead><tr><th>Date</th><th>Description</th><th>Source</th><th class="num">Amount</th></tr></thead><tbody>'+all.map(function(e){var isIn=e.type==='in'||e.type==='opening';return '<tr><td style="font-size:12px;color:var(--tx3)">'+e.date+'</td><td style="font-weight:600">'+e.desc+'</td><td style="font-size:11px;color:var(--tx3)">'+(e.src||'manual')+'</td><td class="num" style="color:'+(isIn?'var(--grn)':'var(--red)')+'">'+( isIn?'+':'-')+fmt(e.amount)+'</td></tr>';}).join('')+'</tbody></table>':'<div class="empty"><div class="etxt">No entries</div></div>';}
 
 // ── DASHBOARD ──
 function renderDash(){
@@ -2396,6 +2666,126 @@ function saveOGPurchase(mode){
 }
 
 
+// ═══════════════════════════════════════════════════════
+// GUN LOCK — Tap sequence password
+// Sequence: R=Right gun, L=Left gun
+// Default: R,R,R,L,L (right 3 times, left 2 times)
+// Change GUN_CODE below to set your own sequence
+// ═══════════════════════════════════════════════════════
+var GUN_CODE = ['R','R','R','L','L']; // ← Change this to your secret sequence
+var gunSeq = [];
+var gunLocked = true;
+var gunRCnt = 0, gunLCnt = 0;
+var gunWrongTimer = null;
+
+function gunInit(){
+  // Build dots
+  var d=G('gun-dots');
+  if(!d)return;
+  d.innerHTML=GUN_CODE.map(function(_,i){return '<div class="gun-dot" id="gdot'+i+'"></div>';}).join('');
+  // Show hint based on code
+  var rCount=GUN_CODE.filter(function(x){return x==='R';}).length;
+  var lCount=GUN_CODE.filter(function(x){return x==='L';}).length;
+  G('gun-hint').textContent='🔫 Shoot me buddy';
+}
+
+function gunFire(side){
+  if(!gunLocked)return;
+  var idx=gunSeq.length;
+  var wrap=G('gwrap-'+side.toLowerCase());
+  if(!wrap)return;
+
+  // Animate gun fire
+  wrap.classList.remove('fire','fire-l');
+  void wrap.offsetWidth; // force reflow
+  wrap.classList.add(side==='R'?'fire':'fire-l');
+  setTimeout(function(){wrap.classList.remove('fire','fire-l');},350);
+
+  // Update counters
+  if(side==='R'){gunRCnt++;var e=G('gcnt-r');if(e){e.textContent=gunRCnt;e.classList.add('show');}}
+  else{gunLCnt++;var e=G('gcnt-l');if(e){e.textContent=gunLCnt;e.classList.add('show');}}
+
+  // Check against code
+  if(GUN_CODE[idx]===side){
+    gunSeq.push(side);
+    // Light up dot
+    var dot=G('gdot'+idx);
+    if(dot){dot.classList.add(side==='R'?'hit-r':'hit-l');}
+
+    if(gunSeq.length===GUN_CODE.length){
+      // ✓ CORRECT — unlock
+      gunUnlock();
+    }
+  } else {
+    // ✗ WRONG — shake and reset
+    gunWrong();
+  }
+}
+
+function gunWrong(){
+  // Shake all dots
+  for(var i=0;i<GUN_CODE.length;i++){
+    var dot=G('gdot'+i);
+    if(dot){dot.classList.add('wrong');dot.classList.remove('hit-r','hit-l');}
+  }
+  // Show error
+  var err=G('gun-error');
+  if(err){err.textContent='Wrong sequence! Try again 🎯';err.style.animation='none';void err.offsetWidth;err.style.animation='';}
+  // Reset after delay
+  if(gunWrongTimer)clearTimeout(gunWrongTimer);
+  gunWrongTimer=setTimeout(function(){
+    gunReset();
+    var err=G('gun-error');if(err)err.textContent='';
+  },900);
+}
+
+function gunReset(){
+  gunSeq=[];gunRCnt=0;gunLCnt=0;
+  for(var i=0;i<GUN_CODE.length;i++){
+    var dot=G('gdot'+i);
+    if(dot){dot.className='gun-dot';}
+  }
+  var r=G('gcnt-r'),l=G('gcnt-l');
+  if(r){r.textContent='0';r.classList.remove('show');}
+  if(l){l.textContent='0';l.classList.remove('show');}
+}
+
+function gunUnlock(){
+  gunLocked=false;
+  // Flash all dots green
+  for(var i=0;i<GUN_CODE.length;i++){
+    var dot=G('gdot'+i);if(dot)dot.style.background='var(--grn)';
+  }
+  var hint=G('gun-hint');
+  if(hint)hint.textContent='🎯 Access Granted!';
+  // Slide out lock screen
+  setTimeout(function(){
+    var lock=G('gun-lock');
+    if(lock){
+      lock.style.transition='opacity 0.4s, transform 0.4s';
+      lock.style.opacity='0';
+      lock.style.transform='scale(1.05)';
+      setTimeout(function(){
+        lock.classList.remove('show');
+        lock.style.display='none';
+        // Init the app after unlock
+        G('r22t').textContent='₹'+R.k22.toLocaleString('en-IN');
+        G('r18t').textContent='₹'+R.k18.toLocaleString('en-IN');
+        G('rsilt').textContent='₹'+R.sil.toLocaleString('en-IN');
+        if(sbHasConfig()){
+          var dbs=G('db-status');if(dbs)dbs.textContent='Supabase';
+          var dot=G('db-dot');if(dot)dot.style.background='var(--grn)';
+          dbLoadAll();
+          loadRatesFromDB();
+        }
+        renderDash();
+        setTimeout(function(){initSaleForm();},100);
+      },400);
+    }
+  },500);
+}
+
+
 // ── INIT ──
 ['ex-date','pu-date','cob-date','ce-date','st-date','or-date','cp-date','spy-date','og-date'].forEach(function(id){var e=G(id);if(e)e.value=td();});
 var sd=G('s-date');if(sd)sd.value=td();
@@ -2404,20 +2794,9 @@ G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');
 G('r18t').textContent='\u20B9'+R.k18.toLocaleString('en-IN');
 G('rsilt').textContent='\u20B9'+R.sil.toLocaleString('en-IN');
 // Load saved Supabase config
-if(sbHasConfig()){
-  var dbs=G('db-status');if(dbs)dbs.textContent='Supabase';
-  var dot=G('db-dot');if(dot)dot.style.background='var(--grn)';
-  // Init SDK client immediately
-  initSB();
-  // Load all data from Supabase
-  dbLoadAll();
-  // Load latest rates from DB
-  loadRatesFromDB();
-}
-renderDash();
-setTimeout(function(){initSaleForm();},100);
-// Check if we should show auth
-// showAuth(); // Uncomment to enable auth screen on load
+// ── App loads AFTER gun sequence unlock (see gunUnlock()) ──
+// Just init the lock screen — nothing else loads until unlocked
+gunInit();
 </script>
 </body>
 </html>
