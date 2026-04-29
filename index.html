@@ -925,7 +925,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
   <div class="g2" style="align-items:start;gap:16px">
     <div>
       <div class="card">
-        <div class="card-header"><div class="card-title">Customer</div></div>
+        <div class="card-header"><div><div class="card-title">Customer</div><div class="card-sub" style="color:var(--amb)">Required only if balance is due</div></div></div>
         <div class="g2" style="margin-bottom:8px">
           <div class="field"><label>Phone Number</label>
             <div style="display:flex;gap:6px"><input type="tel" id="s-phone" maxlength="10" placeholder="10-digit number" inputmode="numeric" oninput="custLookup('s')" style="flex:1"><button class="btn btnsm btnd" style="padding:9px 10px;flex-shrink:0" onclick="clearCust('s')">&#10005;</button></div>
@@ -959,7 +959,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
         <div id="pay-container"></div>
         <div class="totpanel" style="border-color:rgba(29,122,58,0.3);background:var(--gnbg)">
           <div class="trow"><span class="tlbl">Amount Paid</span><span class="tval" id="s-paid">&#8377;0.00</span></div>
-          <div class="trow big" style="border-color:rgba(29,122,58,0.3)"><span class="tlbl">Balance Due</span><span class="tval" id="s-bal" style="color:var(--red)">&#8377;0.00</span></div>
+          <div class="trow big" style="border-color:rgba(29,122,58,0.3)"><span class="tlbl">Balance Due <span id="s-bal-hint" style="display:none;font-size:10px;font-weight:400;color:var(--red)">(customer required)</span></span><span class="tval" id="s-bal" style="color:var(--red)">&#8377;0.00</span></div>
         </div>
       </div>
       <div class="g2">
@@ -1629,7 +1629,7 @@ function onPayMode(rid,cid){var m=V(rid+'-mode');var eb=G(rid+'-exchbox');var ae
 function syncExch(rid,cid){var v=N(rid+'-eval');var ae=G(rid+'-amt');if(ae)ae.value=v.toFixed(2);onPayAmt(cid);}
 function removePay(id,cid){var e=G(id);if(e)e.remove();onPayAmt(cid);}
 function onPayAmt(cid){if(cid==='pay-container')calcBal();else if(cid==='or-pay-container')calcOrdBal();}
-function calcBal(){var paid=0;var c=G('pay-container');if(!c)return;c.querySelectorAll('.payrow').forEach(function(pr){paid+=N(pr.id+'-amt');});var tot=parseFloat((G('s-total')||{}).value)||0;if(G('s-paid'))G('s-paid').innerHTML=fmt(paid);if(G('s-bal'))G('s-bal').innerHTML=fmt(Math.max(0,tot-paid));}
+function calcBal(){var paid=0;var c=G('pay-container');if(!c)return;c.querySelectorAll('.payrow').forEach(function(pr){paid+=N(pr.id+'-amt');});var tot=parseFloat((G('s-total')||{}).value)||0;var bal=Math.max(0,tot-paid);if(G('s-paid'))G('s-paid').innerHTML=fmt(paid);if(G('s-bal'))G('s-bal').innerHTML=fmt(bal);var hint=G('s-bal-hint');if(hint)hint.style.display=bal>0?'inline':'none';}
 function calcOrdBal(){var paid=0;var c=G('or-pay-container');if(!c)return;c.querySelectorAll('.payrow').forEach(function(pr){paid+=N(pr.id+'-amt');});var est=0;getItems('order').forEach(function(li){est+=N(li.id+'-tot');});if(G('or-adv'))G('or-adv').innerHTML=fmt(paid);if(G('or-bal'))G('or-bal').innerHTML=fmt(Math.max(0,est-paid));}
 
 // ── SALE ──
@@ -1642,22 +1642,30 @@ function initSaleForm(){
   recalcAll('sale');
 }
 function saveSale(){
-  var cid=V('s-cid'),cname=V('s-cname').trim();if(!cname){alert('Please look up or register a customer first.');return;}
+  var cid=V('s-cid'),cname=V('s-cname').trim();
   var date=V('s-date'),items=[],suspIds=[],hg=false,hs=false;
   getItems('sale').forEach(function(li){var id=li.id,m=V(id+'-metal'),tot=N(id+'-tot'),sid=V(id+'-susp')||'';if(isGold(m))hg=true;else hs=true;items.push({metal:m,desc:V(id+'-desc'),qty:N(id+'-qty')||1,wt:N(id+'-wt'),rate:N(id+'-rate'),va:N(id+'-va'),gst:N(id+'-gst'),tot:tot,suspId:sid});if(sid)suspIds.push(sid);});
+  if(!items.length){alert('Add at least one item.');return;}
   var bill=nextBill(hg,hs);
   var pays=[],cashR=0,exchItems=[];
   var pc=G('pay-container');if(!pc)return;
   pc.querySelectorAll('.payrow').forEach(function(pr){var id=pr.id,mode=V(id+'-mode'),amt=N(id+'-amt'),ref=V(id+'-ref');if(amt>0){pays.push({mode:mode,amt:amt,ref:ref,ewt:N(id+'-ewt'),eval:N(id+'-eval')});}if(mode==='Cash'&&amt>0)cashR+=amt;if(mode.indexOf('Exchange')>=0&&N(id+'-ewt')>0)exchItems.push({metal:mode.indexOf('Gold')>=0?'Gold':'Silver',wt:N(id+'-ewt'),val:N(id+'-eval'),date:date,src:'Exchange-Sale '+bill});});
   var grand=parseFloat((G('s-total')||{}).value)||0,paid=pays.reduce(function(s,p){return s+p.amt;},0),bal=Math.max(0,grand-paid);
+  // Customer required only if there is a balance due
+  if(bal>0&&!cname){
+    alert('Customer details are required when there is a balance due (\u20B9'+bal.toFixed(2)+')\nPlease look up or register the customer first.');
+    return;
+  }
+  // If fully paid and no customer, use walk-in label
+  if(!cname){cname='Walk-in Customer';}
   DB.sales.unshift({id:uid(),bill:bill,date:date,cid:cid,customer:cname,items:items,pays:pays,grand:grand,paid:paid,balance:bal});
-  if(!DB.custs[cid]){var nid=uid();DB.custs[nid]={id:nid,name:cname,phone:V('s-phone'),city:'',ob:0,txns:[]};cid=nid;}
-  DB.custs[cid].txns.push({type:'sale',date:date,bill:bill,amount:grand,paid:paid,balance:bal});
+  if(cid&&!DB.custs[cid]){var nid=uid();DB.custs[nid]={id:nid,name:cname,phone:V('s-phone'),city:'',ob:0,txns:[]};cid=nid;}
+  if(cid&&DB.custs[cid])DB.custs[cid].txns.push({type:'sale',date:date,bill:bill,amount:grand,paid:paid,balance:bal});
   suspIds.forEach(function(sid){var item=null;DB.suspense.forEach(function(i){if(i.id===sid)item=i;});if(item){item.status='sold';item.soldBill=bill;item.soldDate=date;var sup=DB.sups[item.supplierId];if(sup){if(!sup.txns)sup.txns=[];var cv=item.gross*gR(item.metal)*(1+item.va/100)+item.mc;sup.txns.push({type:'suspense_sold',date:date,bill:bill,desc:item.desc,debit:cv,credit:0,note:'Sold to '+cname});sup.balance=(sup.balance||0)+cv;}}});
   exchItems.forEach(function(ei){DB.oldMetal.push({id:uid(),metal:ei.metal,wt:ei.wt,val:ei.val,date:ei.date,src:ei.src,batched:false});});
   if(cashR>0)DB.cashLog.push({type:'in',date:date,amount:cashR,desc:'Sale '+bill+' Cash',src:'sale'});
   var tEl=G('s-total');if(tEl)tEl._ov=false;
-  clearSale();renderDash();alert('&#10003; Saved! Bill: '+bill);
+  clearSale();renderDash();alert('\u2713 Saved! Bill: '+bill+(bal>0?' | Balance due: \u20B9'+bal.toFixed(2):''));
 }
 function clearSale(){var lic=G('li-container');if(lic)lic.innerHTML='';var pc=G('pay-container');if(pc)pc.innerHTML='';clearCust('s');var tEl=G('s-total');if(tEl){tEl.value='';tEl._ov=false;}var vn=G('va-note');if(vn)vn.style.display='none';liC=0;payC=0;initSaleForm();}
 
