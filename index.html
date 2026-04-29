@@ -979,9 +979,102 @@ input:checked+.tslider::before { transform:translateX(17px); }
 
 <!-- PAYMENTS -->
 <div class="page" id="pg-payments">
-  <div class="page-header"><h1>Payments</h1><p>Advances, old gold, part-payments and refunds</p></div>
-  <div class="tabs"><div class="tab active" onclick="fltPays('all',this)">All</div><div class="tab" onclick="fltPays('in',this)">Received</div><div class="tab" onclick="fltPays('out',this)">Paid Out</div></div>
-  <div id="pay-list"><div class="empty"><div class="eico">&#128179;</div><div class="etxt">No payments</div></div></div>
+  <div class="page-header">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div><h1>Payments</h1><p>Old gold, advances, part-payments and refunds</p></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btnog" onclick="openPayModal('oldgold')">&#129760; Old Gold — Cash Out</button>
+        <button class="btn btnog" onclick="openPayModal('oldgold-adv')">&#129760; Old Gold — Advance</button>
+        <button class="btn btnog" onclick="openPayModal('in')">&#128176; Receive Payment</button>
+        <button class="btn btnd" onclick="openPayModal('out')">&#128260; Refund / Payout</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Customer Old Gold Quick Entry -->
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-header">
+      <div><div class="card-title">&#129760; Old Gold / Silver Purchase from Customer</div><div class="card-sub">Buy old gold from customer — pay cash immediately or credit as advance</div></div>
+    </div>
+    <div class="g2" style="align-items:start;gap:16px">
+      <!-- Customer search -->
+      <div>
+        <div class="field"><label>Customer Phone</label>
+          <div style="display:flex;gap:6px">
+            <input type="tel" id="og-phone" maxlength="10" inputmode="numeric" placeholder="Search by phone" oninput="ogCustLookup()" style="flex:1">
+            <button class="btn btnsm btnog" onclick="openM('m-newcust-og')" style="white-space:nowrap">+ New</button>
+          </div>
+          <div id="og-cust-res" style="margin-top:6px"></div>
+          <input type="hidden" id="og-cid">
+          <input type="hidden" id="og-cname">
+        </div>
+        <div class="g2">
+          <div class="field"><label>Metal</label>
+            <select id="og-metal" onchange="ogCalcVal()">
+              <option value="Gold">Gold</option>
+              <option value="Silver">Silver</option>
+            </select>
+          </div>
+          <div class="field"><label>Purity / Karat</label>
+            <select id="og-purity" onchange="ogCalcVal()">
+              <option value="0.9167">22K (91.67%)</option>
+              <option value="1">Pure / 999</option>
+              <option value="0.75">18K (75%)</option>
+              <option value="0.8">20K (80%)</option>
+              <option value="0.585">14K (58.5%)</option>
+            </select>
+          </div>
+        </div>
+        <div class="g3">
+          <div class="field"><label>Gross Wt (g)</label><input type="number" id="og-gross" step="0.001" inputmode="decimal" placeholder="5.500" oninput="ogCalcVal()"></div>
+          <div class="field"><label>Rate &#8377;/g</label><input type="number" id="og-rate" step="0.01" inputmode="decimal" oninput="ogCalcVal()"></div>
+          <div class="field"><label>Pure Wt (g)</label><input type="number" id="og-pure" step="0.001" readonly class="igold"></div>
+        </div>
+      </div>
+      <div>
+        <!-- Value panel -->
+        <div class="totpanel" style="margin-bottom:12px">
+          <div class="trow"><span class="tlbl">Metal Value</span><span class="tval" id="og-mval">&#8377;0.00</span></div>
+          <div class="trow big"><span class="tlbl">Offer / Pay Value</span>
+            <input type="number" id="og-val" step="0.01" inputmode="decimal" placeholder="0.00"
+              style="width:140px;text-align:right;font-size:20px;font-weight:800;color:var(--gold-dark);background:transparent;border:none;outline:none;font-family:inherit"
+              oninput="this._edited=true">
+          </div>
+        </div>
+        <div class="field"><label>Date</label><input type="date" id="og-date"></div>
+        <div class="field"><label>Note</label><input type="text" id="og-note" placeholder="Stone deducted, condition, etc."></div>
+        <!-- Action buttons -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
+          <button class="btn btng" onclick="saveOGPurchase('cash')" style="flex-direction:column;height:56px;gap:2px">
+            <span style="font-size:15px">&#128176;</span>
+            <span style="font-size:11px">Pay Cash Now</span>
+          </button>
+          <button class="btn btnog" onclick="saveOGPurchase('advance')" style="flex-direction:column;height:56px;gap:2px">
+            <span style="font-size:15px">&#129760;</span>
+            <span style="font-size:11px">Keep as Advance</span>
+          </button>
+        </div>
+        <div class="warnbar" style="margin-top:10px;font-size:11px">
+          &#9432; Either way, the gold weight is added to the <strong>Unbatched Pool</strong> &rarr; Metal Flow &rarr; Batch &rarr; Refinery
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Payment history -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Payment History</div>
+      <div class="tabs" style="margin-bottom:0">
+        <div class="tab active" onclick="fltPays('all',this)">All</div>
+        <div class="tab" onclick="fltPays('in',this)">Received</div>
+        <div class="tab" onclick="fltPays('out',this)">Paid Out</div>
+      </div>
+    </div>
+    <div id="pay-list"><div class="empty"><div class="etxt">No payments yet</div></div></div>
+  </div>
+
+  <!-- Supplier Payments -->
   <div class="card" style="margin-top:8px">
     <div class="card-header"><div class="card-title">Supplier Payments</div><button class="btn btnsm btnog" onclick="openM('m-suppay')">+ Pay Supplier</button></div>
     <div id="suppay-list"><div class="empty" style="padding:20px"><div class="etxt">No supplier payments</div></div></div>
@@ -1062,8 +1155,12 @@ input:checked+.tslider::before { transform:translateX(17px); }
   </div>
 
   <div id="mf-batch" style="display:none" class="card">
-    <div class="card-header"><div class="card-title">Create Refinery Batch</div></div>
-    <div class="infobar">Select unbatched old/exchange items below. Once batched, they move to the Refinery tab and are removed from this list.</div>
+    <div class="card-header"><div class="card-title">Create Refinery Batch</div><div style="display:flex;gap:6px"><button class="btn btnsm btnog" onclick="selectAllBatItems(true)">All</button><button class="btn btnsm" onclick="selectAllBatItems(false)">None</button></div></div>
+    <div class="infobar" style="line-height:1.8">
+  <strong>Flow:</strong> Payments &rarr; Old Gold &rarr; appears here as unbatched &nbsp;&bull;&nbsp;
+  Select items &rarr; enter Refinery name &rarr; Create Batch &nbsp;&bull;&nbsp;
+  Metal Flow &rarr; Refinery tab &rarr; enter return weight &amp; purity &rarr; Complete
+</div>
     <div class="g2" style="margin-bottom:12px"><div class="field"><label>Metal Type</label><select id="bat-metal" onchange="loadUnbatched()"><option value="Gold">Gold</option><option value="Silver">Silver</option></select></div><div class="field"><label>Refinery / Party Name</label><input type="text" id="bat-ref" placeholder="Refinery name"></div></div>
     <div id="unbatched-list"><div class="empty" style="padding:16px"><div class="etxt">No unbatched items for selected metal</div></div></div>
     <div style="background:var(--gold-pale);border-radius:9px;padding:11px 14px;margin-top:10px;border:1px solid rgba(201,152,10,0.3);display:flex;justify-content:space-between;font-size:13px;font-weight:700"><span>Total Selected Weight</span><span id="bat-tot">0.000g</span></div>
@@ -1188,6 +1285,12 @@ input:checked+.tslider::before { transform:translateX(17px); }
 <!-- MODALS -->
 <div class="modal-bg" id="m-rates"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128202; Board Rates (&#8377;/g)</div><div class="field" style="margin-bottom:14px"><label>Effective Date</label><input type="date" id="mr-date" class="igold"></div><div class="g3" style="gap:10px"><div class="field"><label>22K Gold</label><input type="number" id="mr-22k" class="igold" inputmode="decimal"></div><div class="field"><label>18K Gold</label><input type="number" id="mr-18k" class="igold" inputmode="decimal"></div><div class="field"><label>916 Gold</label><input type="number" id="mr-916" class="igold" inputmode="decimal"></div><div class="field"><label>Silver &#8377;/g</label><input type="number" id="mr-sil" class="igold" inputmode="decimal"></div><div class="field"><label>Diamond &#8377;/ct</label><input type="number" id="mr-dia" class="igold" inputmode="decimal"></div><div class="field"><label>Platinum &#8377;/g</label><input type="number" id="mr-plat" class="igold" inputmode="decimal"></div></div><div class="mfoot"><button class="btn" onclick="closeM('m-rates')">Cancel</button><button class="btn btng" onclick="saveRates()">&#10003; Update Rates</button></div></div></div>
 
+<div class="modal-bg" id="m-newcust-og"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128101; New Customer (Old Gold)</div>
+  <div class="g2"><div class="field"><label>Full Name *</label><input type="text" id="nog-name"></div><div class="field"><label>Phone *</label><input type="tel" id="nog-phone" maxlength="10" inputmode="numeric"></div></div>
+  <div class="g2"><div class="field"><label>City</label><input type="text" id="nog-city"></div><div class="field"><label>Notes</label><input type="text" id="nog-notes" placeholder="Optional"></div></div>
+  <div class="mfoot"><button class="btn" onclick="closeM('m-newcust-og')">Cancel</button><button class="btn btng" onclick="saveOGNewCust()">Save &amp; Continue</button></div>
+</div></div>
+
 <div class="modal-bg" id="m-newcust"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128101; Register Customer</div><div class="g2"><div class="field"><label>Full Name *</label><input type="text" id="nc-name" autocomplete="off"></div><div class="field"><label>Phone *</label><input type="tel" id="nc-phone" maxlength="10" inputmode="numeric"></div></div><div class="g2"><div class="field"><label>City</label><input type="text" id="nc-city"></div><div class="field"><label>Anniversary</label><input type="date" id="nc-anni"></div></div><div class="field"><label>Opening Balance (&#8377;) — owes you</label><input type="number" id="nc-ob" inputmode="decimal" placeholder="0.00"></div><div class="field"><label>Notes</label><input type="text" id="nc-notes"></div><div class="mfoot"><button class="btn" onclick="closeM('m-newcust')">Cancel</button><button class="btn btng" onclick="saveNewCust()">Save &amp; Map to Sale</button></div></div></div>
 
 <div class="modal-bg" id="m-cust"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128101; Add Customer</div><div class="g2"><div class="field"><label>Full Name *</label><input type="text" id="cm-name"></div><div class="field"><label>Phone *</label><input type="tel" id="cm-phone" maxlength="10" inputmode="numeric"></div></div><div class="g2"><div class="field"><label>City</label><input type="text" id="cm-city"></div><div class="field"><label>Anniversary</label><input type="date" id="cm-anni"></div></div><div class="field"><label>Opening Balance (&#8377;)</label><input type="number" id="cm-ob" inputmode="decimal" placeholder="0.00"></div><div class="field"><label>Notes</label><input type="text" id="cm-notes"></div><div class="mfoot"><button class="btn" onclick="closeM('m-cust')">Cancel</button><button class="btn btng" onclick="saveCust()">Save Customer</button></div></div></div>
@@ -1226,14 +1329,26 @@ input:checked+.tslider::before { transform:translateX(17px); }
   </div>
   <div class="field"><label>Customer Phone</label><input type="tel" id="cp-phone" maxlength="10" inputmode="numeric" oninput="custLookup('cp')"><div id="cp-cust-res" style="margin-top:4px"></div><input type="hidden" id="cp-cid"><input type="hidden" id="cp-cname"></div>
   <div id="cp-og-row" style="display:none">
-    <div class="warnbar">&#9432; Old gold weight is added to the unbatched metal pool (visible in Metal Flow &rarr; Batch tab).</div>
-    <div class="g3"><div class="field"><label>Metal</label><select id="cp-og-metal"><option>Gold</option><option>Silver</option></select></div><div class="field"><label>Weight (g)</label><input type="number" id="cp-og-wt" step="0.001" inputmode="decimal" placeholder="e.g. 1.93"></div><div class="field"><label>Value (&#8377;)</label><input type="number" id="cp-og-val" step="0.01" inputmode="decimal" oninput="syncCPAmt()" placeholder="e.g. 25000"></div></div>
+    <div class="infobar" style="margin-bottom:10px">&#9432; This gold is added to the <strong>Unbatched Pool</strong> &rarr; Metal Flow &rarr; Batch tab &rarr; send to Refinery.</div>
+    <div class="g2" style="margin-bottom:8px">
+      <div class="field"><label>Metal</label><select id="cp-og-metal" onchange="calcOGVal()"><option>Gold</option><option>Silver</option></select></div>
+      <div class="field"><label>Purity</label><select id="cp-og-purity" onchange="calcOGVal()"><option value="1">Pure / 999</option><option value="0.9167">22K (91.67%)</option><option value="0.75">18K (75%)</option><option value="0.8">20K (80%)</option><option value="0.585">14K (58.5%)</option><option value="custom">Custom %</option></select></div>
+    </div>
+    <div class="g3" style="margin-bottom:8px">
+      <div class="field"><label>Gross Weight (g)</label><input type="number" id="cp-og-wt" step="0.001" inputmode="decimal" placeholder="e.g. 5.500" oninput="calcOGVal()"></div>
+      <div class="field"><label>Rate &#8377;/g (auto)</label><input type="number" id="cp-og-rate" step="0.01" inputmode="decimal" oninput="this._edited=true;calcOGVal()"></div>
+      <div class="field"><label>Pure Weight (g)</label><input type="number" id="cp-og-pure" step="0.001" inputmode="decimal" readonly class="igold"></div>
+    </div>
+    <div class="totpanel" style="margin-bottom:10px">
+      <div class="trow"><span class="tlbl">Metal Value (&#8377;)</span><span class="tval" id="cp-og-metalval">&#8377;0.00</span></div>
+      <div class="trow big"><span class="tlbl">Offer Value (&#8377;)</span><input type="number" id="cp-og-val" step="0.01" inputmode="decimal" oninput="this._edited=true;syncCPAmt()" style="width:150px;text-align:right;font-size:18px;font-weight:800;color:var(--gold-dark);background:transparent;border:none;outline:none;font-family:inherit" placeholder="0.00"></div>
+    </div>
   </div>
   <div id="cp-cash-row">
     <div class="g2"><div class="field"><label id="cp-amt-lbl">Cash Amount (&#8377;)</label><input type="number" id="cp-amt" inputmode="decimal"></div><div class="field"><label>Date</label><input type="date" id="cp-date"></div></div>
     <div class="field"><label>Payment Mode</label><select id="cp-mode"><option>Cash</option><option>UPI - GPay</option><option>UPI - Paytm</option><option>Bank Transfer</option></select></div>
   </div>
-  <div class="field"><label>Note / Reference</label><input type="text" id="cp-note" placeholder="UTR number, reason..."></div>
+  <div class="field"><label>Note / Reference</label><input type="text" id="cp-note" placeholder="Stone deducted, condition, etc..."></div>
   <div class="mfoot"><button class="btn" onclick="closeM('m-payment')">Cancel</button><button class="btn btng" onclick="savePayment()">&#10003; Save</button></div>
 </div></div>
 
@@ -1474,7 +1589,7 @@ function showPg(id,btn,title){
   // Scroll to top
   var mc=G('main-content');if(mc)mc.scrollTop=0;
   // Init
-  var inits={'pg-sale':initSaleForm,'pg-saleslist':renderSalesList,'pg-customers':renderCusts,'pg-suppliers':function(){renderSups();populateSupSelects();},'pg-dash':renderDash,'pg-suspense':function(){populateSupSelects();renderSuspense();},'pg-purchase':function(){populateSupSelects();renderPurchases();},'pg-expense':renderExpenses,'pg-cashflow':renderCashFlow,'pg-metalflow':function(){populateSupSelects();},'pg-orders':renderOrders,'pg-payments':function(){populateSupSelects();renderPayments();},'pg-settings':renderSettings};
+  var inits={'pg-sale':initSaleForm,'pg-saleslist':renderSalesList,'pg-customers':renderCusts,'pg-suppliers':function(){renderSups();populateSupSelects();},'pg-dash':renderDash,'pg-suspense':function(){populateSupSelects();renderSuspense();},'pg-purchase':function(){populateSupSelects();renderPurchases();},'pg-expense':renderExpenses,'pg-cashflow':renderCashFlow,'pg-metalflow':function(){populateSupSelects();loadUnbatched();},'pg-orders':renderOrders,'pg-payments':function(){populateSupSelects();renderPayments();var r=G('og-rate');if(r&&!r.value)r.value=R.k22.toFixed(2);},'pg-settings':renderSettings};
   if(inits[id])inits[id]();
 }
 function goBack(){showPg(prevPage,null,prevPage.replace('pg-',''));}
@@ -1484,6 +1599,7 @@ function topbarAction(){var pg=document.querySelector('.page.active');if(pg&&pag
 function openM(id){
   var e=G(id);if(!e)return;e.classList.add('open');
   if(id==='m-rates'){G('mr-22k').value=R.k22;G('mr-18k').value=R.k18;G('mr-916').value=R.k916;G('mr-sil').value=R.sil;G('mr-dia').value=R.dia;G('mr-plat').value=R.plat;G('mr-date').value=td();}
+  if(id==='m-payment'){var rr=G('cp-og-rate');if(rr){rr.value=R.k22.toFixed(2);rr._edited=false;}var ov=G('cp-og-val');if(ov)ov._edited=false;}
   if(id==='m-order'){populateSupSelects();initOrderForm();}
   if(id==='m-payment'||id==='m-suppay'||id==='m-suspense'||id==='m-si')populateSupSelects();
 }
@@ -1527,8 +1643,19 @@ function custLookup(pfx){
   if(!res||!cidEl||!cnEl)return;
   if(ph.length<10){res.innerHTML='';cidEl.value='';cnEl.value='';return;}
   var found=null;Object.values(DB.custs).forEach(function(c){if(c.phone===ph)found=c;});
-  if(found){cidEl.value=found.id;cnEl.value=found.name;res.innerHTML='<div class="custok"><strong>&#10003; '+found.name+'</strong>'+(found.city?' &middot; '+found.city:'')+'</div>';}
-  else{cidEl.value='';cnEl.value='';if(pfx==='s')res.innerHTML='<div class="custno">Not found. <button class="btn btnsm btnog" onclick="G(\'nc-phone\').value=\''+ph+'\';openM(\'m-newcust\')">+ Register</button></div>';else res.innerHTML='<div class="custno">Customer not found</div>';}
+  if(found){
+    cidEl.value=found.id;cnEl.value=found.name;
+    res.innerHTML='<div class="custok"><strong>✓ '+found.name+'</strong>'+(found.city?' &middot; '+found.city:'')+'</div>';
+  } else {
+    cidEl.value='';cnEl.value='';
+    if(pfx==='s'){
+      res.innerHTML='<div class="custno">Not found. <button id="cust-reg-btn" class="btn btnsm btnog">+ Register</button></div>';
+      var btn=G('cust-reg-btn');
+      if(btn)btn.onclick=function(){G('nc-phone').value=ph;openM('m-newcust');};
+    } else {
+      res.innerHTML='<div class="custno">Customer not found</div>';
+    }
+  }
 }
 function clearCust(pfx){['phone','cid','cname'].forEach(function(k){var e=G(pfx+'-'+k);if(e)e.value='';});var r=G(pfx+'-cust-res');if(r)r.innerHTML='';}
 function saveNewCust(){
@@ -1622,11 +1749,32 @@ function addPay(cid){
   var div=document.createElement('div');div.className='payrow';div.id=rid;div.dataset.cont=cid;
   div.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span style="font-size:12px;font-weight:700;color:var(--gold-dark)">Payment #'+payC+'</span><button class="btn btnsm btnd" style="padding:3px 9px" onclick="removePay(\''+rid+'\',\''+cid+'\')">&#10005;</button></div>'+
   '<div class="g2" style="margin-bottom:8px"><div class="field"><label>Mode</label><select id="'+rid+'-mode" onchange="onPayMode(\''+rid+'\',\''+cid+'\')"><option>Cash</option><option>UPI - GPay</option><option>UPI - Paytm</option><option>Bank Transfer / RTGS</option><option>Exchange - Old Gold</option><option>Exchange - Old Silver</option><option>Chit - Weight</option><option>Chit - Bonus</option></select></div><div class="field"><label>Amount (&#8377;)</label><input type="number" id="'+rid+'-amt" step="0.01" inputmode="decimal" oninput="onPayAmt(\''+cid+'\')"></div></div>'+
-  '<div id="'+rid+'-exchbox" style="display:none" class="exchbox"><div class="g2"><div class="field"><label>Metal Wt (g)</label><input type="number" id="'+rid+'-ewt" step="0.001" inputmode="decimal" placeholder="e.g. 1.93"></div><div class="field"><label>Value (&#8377;)</label><input type="number" id="'+rid+'-eval" step="0.01" inputmode="decimal" oninput="syncExch(\''+rid+'\',\''+cid+'\')"></div></div></div>'+
+  '<div id="'+rid+'-exchbox" style="display:none" class="exchbox"><div class="g2"><div class="field"><label>Weight (g) → Batch pool</label><input type="number" id="'+rid+'-ewt" step="0.001" inputmode="decimal" placeholder="e.g. 1.93"></div><div class="field"><label>Value (&#8377;)</label><input type="number" id="'+rid+'-eval" step="0.01" inputmode="decimal" oninput="syncExch(\''+rid+'\',\''+cid+'\')"></div></div></div>'+
   '<div class="field"><label>Reference / Note</label><input type="text" id="'+rid+'-ref" placeholder="UTR, weight, chit no..."></div>';
   cont.appendChild(div);
 }
-function onPayMode(rid,cid){var m=V(rid+'-mode');var eb=G(rid+'-exchbox');var ae=G(rid+'-amt');if(!eb)return;var isE=m.indexOf('Exchange')>=0;eb.style.display=isE?'block':'none';if(ae)ae.readOnly=isE;}
+function onPayMode(rid,cid){
+  var m=V(rid+'-mode');var eb=G(rid+'-exchbox');var ae=G(rid+'-amt');
+  if(!eb)return;
+  var isE=m.indexOf('Exchange')>=0;
+  eb.style.display=isE?'block':'none';
+  if(ae)ae.readOnly=isE;
+  // Pre-fill rate from board rates
+  if(isE){
+    var re=G(rid+'-erate');
+    if(re&&!re._edited){re.value=(m.indexOf('Gold')>=0?R.k22:R.sil).toFixed(2);}
+  }
+}
+function autoCalcExchVal(rid,cid){
+  var mode=V(rid+'-mode');
+  var isGoldMode=mode&&mode.indexOf('Gold')>=0;
+  var wt=N(rid+'-ewt');
+  var rate=N(rid+'-erate');
+  // Auto-fill rate from board rates if empty
+  if(!rate){rate=isGoldMode?R.k22:R.sil;var re=G(rid+'-erate');if(re&&!re._edited)re.value=rate.toFixed(2);}
+  if(wt>0&&rate>0){var val=wt*rate;var ev=G(rid+'-eval');if(ev)ev.value=val.toFixed(2);}
+  syncExch(rid,cid);
+}
 function syncExch(rid,cid){var v=N(rid+'-eval');var ae=G(rid+'-amt');if(ae)ae.value=v.toFixed(2);onPayAmt(cid);}
 function removePay(id,cid){var e=G(id);if(e)e.remove();onPayAmt(cid);}
 function onPayAmt(cid){if(cid==='pay-container')calcBal();else if(cid==='or-pay-container')calcOrdBal();}
@@ -1664,6 +1812,7 @@ function saveSale(){
   if(cid&&DB.custs[cid])DB.custs[cid].txns.push({type:'sale',date:date,bill:bill,amount:grand,paid:paid,balance:bal});
   suspIds.forEach(function(sid){var item=null;DB.suspense.forEach(function(i){if(i.id===sid)item=i;});if(item){item.status='sold';item.soldBill=bill;item.soldDate=date;dbMarkSuspenseSold(item.id,bill,date);var sup=DB.sups[item.supplierId];if(sup){if(!sup.txns)sup.txns=[];var cv=item.gross*gR(item.metal)*(1+item.va/100)+item.mc;sup.txns.push({type:'suspense_sold',date:date,bill:bill,desc:item.desc,debit:cv,credit:0,note:'Sold to '+cname});sup.balance=(sup.balance||0)+cv;}}});
   exchItems.forEach(function(ei){var omItem={id:uid(),metal:ei.metal,wt:ei.wt,val:ei.val,date:ei.date,src:ei.src,batched:false};DB.oldMetal.push(omItem);dbSaveOldMetal(omItem);});
+  if(exchItems.length){var du=G('ds-unbat');if(du)du.textContent=DB.oldMetal.filter(function(i){return!i.batched;}).length;}
   if(cashR>0)DB.cashLog.push({type:'in',date:date,amount:cashR,desc:'Sale '+bill+' Cash',src:'sale'});
   var tEl=G('s-total');if(tEl)tEl._ov=false;
   dbSaveSale(DB.sales[0]);
@@ -1711,11 +1860,25 @@ function deliverOrder(id){var o=null;DB.orders.forEach(function(x){if(x.id===id)
 
 // ── PAYMENTS ──
 function onCPType(){var type=V('cp-type');var ogRow=G('cp-og-row');var cashRow=G('cp-cash-row');var lbl=G('cp-amt-lbl');if(!ogRow||!cashRow)return;var isOG=(type==='oldgold'||type==='oldgold-adv');ogRow.style.display=isOG?'block':'none';if(type==='oldgold'){cashRow.style.display='block';if(lbl)lbl.textContent='Cash Paid to Customer (\u20B9)';}else if(type==='oldgold-adv'){cashRow.style.display='none';}else{cashRow.style.display='block';if(lbl)lbl.textContent='Amount (\u20B9)';}}
+function calcOGVal(){
+  var metal=V('cp-og-metal'),wt=N('cp-og-wt'),pStr=V('cp-og-purity');
+  var purity=pStr==='custom'?1:parseFloat(pStr)||1;
+  var rate=N('cp-og-rate');
+  if(!rate){rate=metal==='Gold'?R.k22:R.sil;var re=G('cp-og-rate');if(re&&!re._edited)re.value=rate.toFixed(2);}
+  var pure=wt*purity;
+  var metalVal=pure*rate;
+  var rp=G('cp-og-pure');if(rp)rp.value=pure.toFixed(3);
+  var mv=G('cp-og-metalval');if(mv)mv.innerHTML=fmt(metalVal);
+  // Auto-fill offer value if not manually set
+  var ov=G('cp-og-val');if(ov&&!ov._edited)ov.value=metalVal.toFixed(2);
+  syncCPAmt();
+}
 function syncCPAmt(){var v=N('cp-og-val');var ae=G('cp-amt');if(ae)ae.value=v.toFixed(2);}
+
 function savePayment(){
   var cid=V('cp-cid'),cname=V('cp-cname');if(!cname){alert('Enter customer phone first.');return;}
   var type=V('cp-type'),date=V('cp-date')||td(),note=V('cp-note'),isOG=(type==='oldgold'||type==='oldgold-adv');
-  if(isOG){var ogWt=N('cp-og-wt'),ogVal=N('cp-og-val'),ogM=V('cp-og-metal');if(!ogWt){alert('Enter old gold weight.');return;}var ogItem={id:uid(),metal:ogM,wt:ogWt,val:ogVal,date:date,src:'Old '+ogM+' from '+cname,batched:false};DB.oldMetal.push(ogItem);dbSaveOldMetal(ogItem);var cashAmt=type==='oldgold'?N('cp-amt'):0;if(type==='oldgold'&&cashAmt>0)DB.cashLog.push({type:'out',date:date,amount:cashAmt,desc:'Old gold pmt to '+cname,src:'payment'});if(type==='oldgold-adv'&&DB.custs[cid])DB.custs[cid].txns.push({type:'old_gold_advance',date:date,bill:'OGA-'+Date.now().toString(36).slice(-4),amount:ogVal,paid:ogVal,balance:0});DB.payments.unshift({id:uid(),cid:cid,customer:cname,type:type,amt:type==='oldgold-adv'?ogVal:cashAmt,mode:type==='oldgold-adv'?'Old Gold (Advance)':V('cp-mode'),date:date,note:note,ogWt:ogWt,ogMetal:ogM,ogVal:ogVal});renderCashFlow();}
+  if(isOG){var ogWt=N('cp-og-wt'),ogVal=N('cp-og-val'),ogM=V('cp-og-metal');if(!ogWt){alert('Enter old gold weight.');return;}var ogPure=N('cp-og-pure')||ogWt;var ogItem={id:uid(),metal:ogM,wt:ogWt,pure:ogPure,val:ogVal,date:date,src:'Old '+ogM+' from '+cname+' ('+ogWt.toFixed(3)+'g)',batched:false};DB.oldMetal.push(ogItem);dbSaveOldMetal(ogItem);var cashAmt=type==='oldgold'?N('cp-amt'):0;if(type==='oldgold'&&cashAmt>0){DB.cashLog.push({type:'out',date:date,amount:cashAmt,desc:'Old Gold Cash Out: '+cname+' '+ogWt+'g',src:'payment'});dbSaveCashEntry('out',date,cashAmt,'Old Gold Cash Out: '+cname,'payment');}if(type==='oldgold-adv'&&DB.custs[cid])DB.custs[cid].txns.push({type:'old_gold_advance',date:date,bill:'OGA-'+Date.now().toString(36).slice(-4),amount:ogVal,paid:ogVal,balance:0});DB.payments.unshift({id:uid(),cid:cid,customer:cname,type:type,amt:type==='oldgold-adv'?ogVal:cashAmt,mode:type==='oldgold-adv'?'Old Gold (Advance)':V('cp-mode'),date:date,note:note,ogWt:ogWt,ogMetal:ogM,ogVal:ogVal});renderCashFlow();}
   else{var amt=N('cp-amt');if(!amt){alert('Enter amount.');return;}var mode=V('cp-mode');var py={id:uid(),cid:cid,customer:cname,type:type,amt:amt,mode:mode,date:date,note:note};DB.payments.unshift(py);var isIn=(type==='in');if(DB.custs[cid])DB.custs[cid].txns.push({type:isIn?'payment_in':'payment_out',date:date,bill:'PAY-'+py.id.slice(-4),amount:isIn?0:amt,paid:isIn?amt:0,balance:isIn?-amt:amt});if(mode==='Cash'){if(isIn)DB.cashLog.push({type:'in',date:date,amount:amt,desc:'Cust pmt '+cname,src:'payment'});else DB.cashLog.push({type:'out',date:date,amount:amt,desc:'Payout '+cname,src:'payment'});renderCashFlow();}}
   closeM('m-payment');renderPayments();renderDash();
   dbSavePayment(DB.payments[0]);
@@ -1765,8 +1928,57 @@ function renderSuspense(){
 // ── METAL FLOW ──
 function mfTab(tab,btn){['in','batch','refinery','out','log'].forEach(function(t){var e=G('mf-'+t);if(e)e.style.display='none';});var te=G('mf-'+tab);if(te)te.style.display='block';document.querySelectorAll('#pg-metalflow .tab').forEach(function(b){b.classList.remove('active');});if(btn)btn.classList.add('active');if(tab==='batch')loadUnbatched();if(tab==='refinery')loadPendingBatches();if(tab==='log')renderMFLog();}
 function saveMFIn(){var metal=V('mfi-metal'),gross=N('mfi-gross'),pure=N('mfi-pure')||gross;if(!gross){alert('Enter weight.');return;}if(metal==='Gold')metalR.gold+=pure;else metalR.silver+=pure;var mfEntry={type:'in',date:td(),metal:metal,src:V('mfi-src'),gross:gross,pure:pure,rate:N('mfi-rate')};DB.metalLog.unshift(mfEntry);dbSaveMetalLog(mfEntry);updateMFDisp();renderMFLog();alert('&#10003; Added: '+pure.toFixed(3)+'g '+metal);}
-function loadUnbatched(){var metal=V('bat-metal')||'Gold';var items=DB.oldMetal.filter(function(i){return i.metal===metal&&!i.batched;});var cont=G('unbatched-list');if(!cont)return;if(!items.length){cont.innerHTML='<div class="empty" style="padding:16px"><div class="etxt">No unbatched '+metal+' items.<br><small>Add via Payments &rarr; Old Gold types.</small></div></div>';var bt=G('bat-tot');if(bt)bt.textContent='0.000g';return;}cont.innerHTML=items.map(function(i){return '<div class="bat-item"><input type="checkbox" class="bat-chk" data-id="'+i.id+'" data-wt="'+i.wt+'" onchange="updateBatTot()"><div style="flex:1"><div style="font-weight:600;font-size:13px">'+i.src+'</div><div style="font-size:11px;color:var(--tx3)">'+i.date+' &middot; '+i.wt.toFixed(3)+'g &middot; '+fmt(i.val)+'</div></div></div>';}).join('');updateBatTot();}
+function loadUnbatched(){
+  var metal=V('bat-metal')||'Gold';
+  var allGold=DB.oldMetal.filter(function(i){return i.metal==='Gold'&&!i.batched;});
+  var allSilver=DB.oldMetal.filter(function(i){return i.metal==='Silver'&&!i.batched;});
+  // Update selector labels with counts
+  var sel=G('bat-metal');
+  if(sel){
+    sel.options[0].text='Gold ('+allGold.length+' items, '+allGold.reduce(function(s,i){return s+i.wt;},0).toFixed(3)+'g)';
+    sel.options[1].text='Silver ('+allSilver.length+' items, '+allSilver.reduce(function(s,i){return s+i.wt;},0).toFixed(3)+'g)';
+  }
+  var items=metal==='Gold'?allGold:allSilver;
+  var cont=G('unbatched-list');if(!cont)return;
+  if(!items.length){
+    cont.innerHTML='<div class="empty" style="padding:16px"><div class="etxt">No unbatched '+metal+' items.</div><div style="font-size:11px;color:var(--tx3);margin-top:6px">Sources: Payments &rarr; Old Gold, or Sale payments with Exchange mode</div></div>';
+    var bt=G('bat-tot');if(bt)bt.textContent='0.000g';
+    return;
+  }
+  // Group by source type for clarity
+  var oldGoldItems=items.filter(function(i){return i.src&&i.src.indexOf('Exchange-Sale')<0;});
+  var exchItems=items.filter(function(i){return i.src&&i.src.indexOf('Exchange-Sale')>=0;});
+  var html='';
+  if(oldGoldItems.length){
+    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--tx3);padding:8px 0 4px">Old Gold / Silver Purchase</div>';
+    html+=oldGoldItems.map(function(i){return buildBatItem(i);}).join('');
+  }
+  if(exchItems.length){
+    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--blu);padding:8px 0 4px">Exchange via Sale</div>';
+    html+=exchItems.map(function(i){return buildBatItem(i);}).join('');
+  }
+  cont.innerHTML=html;
+  updateBatTot();
+}
+function buildBatItem(i){
+  var isExch=i.src&&i.src.indexOf('Exchange-Sale')>=0;
+  var srcLabel=i.src||'Unknown source';
+  var icon=isExch?'&#128260;':'&#129760;';
+  var srcColor=isExch?'color:var(--blu)':'color:var(--amb)';
+  return '<div class="bat-item">'+
+    '<input type="checkbox" class="bat-chk" data-id="'+i.id+'" data-wt="'+i.wt+'" onchange="updateBatTot()">'+
+    '<div style="flex:1">'+
+      '<div style="display:flex;align-items:center;gap:6px">'+
+        '<span style="font-size:13px">'+icon+'</span>'+
+        '<span style="font-weight:600;font-size:13px">'+srcLabel+'</span>'+
+        '<span class="badge '+(isExch?'bb':'ba')+'" style="font-size:9px">'+(isExch?'Exchange':'Old Gold')+'</span>'+
+      '</div>'+
+      '<div style="font-size:11px;color:var(--tx3);margin-top:2px">'+i.date+' &middot; <strong>'+i.wt.toFixed(3)+'g</strong>'+(i.pure&&i.pure!==i.wt?' ('+i.pure.toFixed(3)+'g pure)':'')+' &middot; '+fmt(i.val)+'</div>'+
+    '</div>'+
+  '</div>';
+}
 function updateBatTot(){var tot=0;document.querySelectorAll('.bat-chk:checked').forEach(function(cb){tot+=parseFloat(cb.dataset.wt)||0;});var bt=G('bat-tot');if(bt)bt.textContent=tot.toFixed(3)+'g';}
+function selectAllBatItems(check){document.querySelectorAll('.bat-chk').forEach(function(cb){cb.checked=check;});updateBatTot();}
 function createBatch(){var metal=V('bat-metal')||'Gold',ref=V('bat-ref');if(!ref){alert('Enter refinery name.');return;}var selected=[];document.querySelectorAll('.bat-chk:checked').forEach(function(cb){selected.push(cb.dataset.id);});if(!selected.length){alert('Select at least one item.');return;}var totalWt=0,items=[];selected.forEach(function(sid){var item=null;DB.oldMetal.forEach(function(i){if(i.id===sid)item=i;});if(item){item.batched=true;totalWt+=item.wt;items.push({id:item.id,src:item.src,wt:item.wt,val:item.val});}});var batchId=uid();var batObj={id:batchId,metal:metal,ref:ref,totalWt:totalWt,items:items,status:'pending',date:td()};DB.batches.push(batObj);dbSaveBatch(batObj);dbMarkBatched(selected,batchId);metalR.refinery+=totalWt;updateMFDisp();loadUnbatched();var dsb=G('ds-bat');if(dsb)dsb.textContent=DB.batches.filter(function(b){return b.status==='pending';}).length;alert('&#10003; Batch created! '+totalWt.toFixed(3)+'g '+metal+' sent to: '+ref);}
 function loadPendingBatches(){var sel=G('ref-batch');if(!sel)return;var pending=DB.batches.filter(function(b){return b.status==='pending';});sel.innerHTML='<option value="">-- Select Pending Batch --</option>'+pending.map(function(b){return '<option value="'+b.id+'">'+b.metal+' '+b.totalWt.toFixed(3)+'g ('+b.date+') '+b.ref+'</option>';}).join('');G('ref-info').style.display='none';var rfm=G('ref-formula');if(rfm)rfm.style.display='none';}
 function loadBatchDetail(){var bid=V('ref-batch');if(!bid){G('ref-info').style.display='none';return;}var batch=null;DB.batches.forEach(function(b){if(b.id===bid)batch=b;});if(!batch)return;G('ref-sent').textContent=batch.totalWt.toFixed(3)+'g';G('ref-items').textContent=batch.items.length+' items';G('ref-refname').textContent=batch.ref;G('ref-info').style.display='block';var rfm=G('ref-formula');if(rfm)rfm.style.display='none';}
@@ -1903,20 +2115,24 @@ function dbSaveMetalLog(entry){
 
 function dbSaveOldMetal(item){
   if(!sbHasConfig())return;
-  dbPost('old_metal_items',{metal:item.metal,weight_g:item.wt,value_inr:item.val||0,item_date:item.date,source:item.src||'',is_batched:false},function(rows,e){
+  dbPost('old_metal_items',{id:item.id,metal:item.metal,weight_g:item.wt,value_inr:item.val||0,item_date:item.date,source:item.src||'',is_batched:false},function(rows,e){
     if(!e&&rows&&rows[0])item._dbId=rows[0].id;
   });
 }
 
 function dbMarkBatched(ids){
-  // ids are local — mark all unbatched old metal as batched; use is_batched flag
-  if(!sbHasConfig())return;
-  // Update via individual patches would be slow; skip for now — dbLoadAll will exclude batched items
+  if(!sbHasConfig()||!ids||!ids.length)return;
+  // Patch each old_metal_item to is_batched=true using its id
+  ids.forEach(function(id){
+    dbPatch('old_metal_items','id=eq.'+id,{is_batched:true},function(ok,e){
+      if(e)console.error('MarkBatched id='+id+':',e);
+    });
+  });
 }
 
 function dbSaveBatch(b){
   if(!sbHasConfig())return;
-  dbPost('refinery_batches',{metal:b.metal,refinery_name:b.ref,total_wt_g:b.totalWt,sent_date:b.date,status:'pending'},function(d,e){
+  dbPost('refinery_batches',{id:b.id,metal:b.metal,refinery_name:b.ref,total_wt_g:b.totalWt,sent_date:b.date,status:'pending'},function(d,e){
     if(e)console.error('Batch:',e);else showDbStatus('Batch saved ✓');
   });
 }
@@ -1930,7 +2146,7 @@ function dbCompleteRefinery(batchId,returnWt,purity){
 
 function dbSaveSuspense(item){
   if(!sbHasConfig())return;
-  dbPost('suspense_items',{supplier_id:item.supplierId||null,description:item.desc,metal:item.metal,gross_wt_g:item.gross||0,va_pct:item.va||0,mc_stone_inr:item.mc||0,tag:item.tag||null,status:'available',added_date:item.addedDate||td()},function(rows,e){
+  dbPost('suspense_items',{id:item.id,supplier_id:item.supplierId||null,description:item.desc,metal:item.metal,gross_wt_g:item.gross||0,va_pct:item.va||0,mc_stone_inr:item.mc||0,tag:item.tag||null,status:'available',added_date:item.addedDate||td()},function(rows,e){
     if(!e&&rows&&rows[0])item._dbId=rows[0].id;
     if(e)console.error('Suspense:',e);else showDbStatus('Suspense saved ✓');
   });
@@ -2069,8 +2285,119 @@ function loadRatesFromDB(){
 }
 
 
+// ═══════════════════════════════════════════════════════
+// OLD GOLD PURCHASE — Payments Page Quick Entry
+// ═══════════════════════════════════════════════════════
+
+function openPayModal(type){
+  G('cp-type').value=type;
+  onCPType();
+  openM('m-payment');
+}
+
+// Customer lookup for OG quick entry
+function ogCustLookup(){
+  var ph=V('og-phone').trim();
+  var res=G('og-cust-res'),cidEl=G('og-cid'),cnEl=G('og-cname');
+  if(!res)return;
+  if(ph.length<10){res.innerHTML='';cidEl.value='';cnEl.value='';return;}
+  var found=null;
+  Object.values(DB.custs).forEach(function(c){if(c.phone===ph)found=c;});
+  if(found){
+    cidEl.value=found.id;cnEl.value=found.name;
+    res.innerHTML='<div class="custok"><strong>✓ '+found.name+'</strong>'+(found.city?' &middot; '+found.city:'')+'</div>';
+  } else {
+    cidEl.value='';cnEl.value='';
+    res.innerHTML='<div class="custno">Customer not found. <button id="og-reg-btn" class="btn btnsm btnog">+ Register</button></div>';
+    var btn=G('og-reg-btn');
+    if(btn)btn.onclick=function(){G('nog-phone').value=ph;openM('m-newcust-og');};
+  }
+}
+
+// Save new customer from OG flow
+function saveOGNewCust(){
+  var name=V('nog-name').trim(),phone=V('nog-phone').trim();
+  if(!name||!phone){alert('Name and phone are required.');return;}
+  var id=uid();
+  DB.custs[id]={id:id,name:name,phone:phone,city:V('nog-city').trim(),notes:V('nog-notes').trim(),ob:0,txns:[]};
+  dbSaveCust(DB.custs[id]);
+  G('og-cid').value=id;G('og-cname').value=name;G('og-phone').value=phone;
+  G('og-cust-res').innerHTML='<div class="custok"><strong>&#10003; '+name+' <span class="badge bg">New</span></strong></div>';
+  closeM('m-newcust-og');
+}
+
+// Auto-calculate old gold value
+function ogCalcVal(){
+  var metal=V('og-metal'),purity=parseFloat(V('og-purity'))||0.9167;
+  var gross=N('og-gross'),rate=N('og-rate');
+  if(!rate){rate=metal==='Gold'?R.k22:R.sil;var re=G('og-rate');if(re)re.value=rate.toFixed(2);}
+  var pure=gross*purity;
+  var metalVal=pure*rate;
+  var pe=G('og-pure');if(pe)pe.value=pure.toFixed(3);
+  var mv=G('og-mval');if(mv)mv.innerHTML=fmt(metalVal);
+  var ov=G('og-val');if(ov&&!ov._edited)ov.value=metalVal.toFixed(2);
+}
+
+// Save old gold purchase
+function saveOGPurchase(mode){
+  var cid=V('og-cid'),cname=V('og-cname').trim();
+  if(!cname){alert('Please search for or register the customer first.');return;}
+  var gross=N('og-gross'),pure=N('og-pure'),val=N('og-val'),metal=V('og-metal');
+  if(!gross){alert('Enter the weight.');return;}
+  if(!val){alert('Enter the offer value.');return;}
+  var date=V('og-date')||td(),note=V('og-note');
+  var isCash=(mode==='cash');
+  var type=isCash?'oldgold':'oldgold-adv';
+
+  // Add to old metal pool (goes to batch tab)
+  var omItem={id:uid(),metal:metal,wt:gross,pure:pure,val:val,date:date,
+    src:'Old '+metal+' from '+cname+' ('+gross.toFixed(3)+'g @ '+fmt(val)+')',batched:false};
+  DB.oldMetal.push(omItem);
+  dbSaveOldMetal(omItem);
+
+  // Create payment record
+  var py={id:uid(),cid:cid,customer:cname,type:type,
+    amt:isCash?val:val,
+    mode:isCash?'Cash':'Old Gold (Advance)',
+    date:date,note:note,
+    ogWt:gross,ogMetal:metal,ogVal:val,ogPure:pure};
+  DB.payments.unshift(py);
+  dbSavePayment(py);
+
+  // Cash out if paying immediately
+  if(isCash&&val>0){
+    DB.cashLog.push({type:'out',date:date,amount:val,desc:'Old Gold Cash Out: '+cname+' '+gross.toFixed(3)+'g',src:'payment'});
+    dbSaveCashEntry('out',date,val,'Old Gold Cash Out: '+cname,'payment');
+    renderCashFlow();
+  }
+
+  // If advance — credit customer account
+  if(!isCash&&DB.custs[cid]){
+    DB.custs[cid].txns.push({type:'old_gold_advance',date:date,bill:'OGA-'+Date.now().toString(36).slice(-4),amount:val,paid:val,balance:0});
+  }
+
+  // Update dashboard unbatched count
+  var du=G('ds-unbat');if(du)du.textContent=DB.oldMetal.filter(function(i){return!i.batched;}).length;
+
+  // Clear form
+  G('og-phone').value='';G('og-cid').value='';G('og-cname').value='';
+  G('og-cust-res').innerHTML='';G('og-gross').value='';G('og-pure').value='';
+  G('og-val').value='';G('og-note').value='';G('og-rate').value='';
+  var ov=G('og-val');if(ov)ov._edited=false;
+  var mv=G('og-mval');if(mv)mv.innerHTML=fmt(0);
+  G('og-mval').innerHTML='\u20B90.00';
+
+  renderPayments();renderDash();
+
+  var msg=isCash?
+    '\u2713 Old Gold purchased!\n'+gross.toFixed(3)+'g '+metal+' | Cash paid: '+fmt(val)+'\nGold added to Unbatched Pool':
+    '\u2713 Old Gold received as Advance!\n'+gross.toFixed(3)+'g '+metal+' | Credit: '+fmt(val)+'\nGold added to Unbatched Pool';
+  alert(msg);
+}
+
+
 // ── INIT ──
-['ex-date','pu-date','cob-date','ce-date','st-date','or-date','cp-date','spy-date'].forEach(function(id){var e=G(id);if(e)e.value=td();});
+['ex-date','pu-date','cob-date','ce-date','st-date','or-date','cp-date','spy-date','og-date'].forEach(function(id){var e=G(id);if(e)e.value=td();});
 var sd=G('s-date');if(sd)sd.value=td();
 var dd=G('dash-date');if(dd)dd.textContent=new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');
