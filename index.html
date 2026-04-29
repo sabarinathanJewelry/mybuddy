@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>JewelERP</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
 <style>
@@ -1185,7 +1186,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
 </div>
 
 <!-- MODALS -->
-<div class="modal-bg" id="m-rates"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128202; Board Rates (&#8377;/g)</div><div class="g3" style="gap:10px"><div class="field"><label>22K Gold</label><input type="number" id="mr-22k" class="igold" inputmode="decimal"></div><div class="field"><label>18K Gold</label><input type="number" id="mr-18k" class="igold" inputmode="decimal"></div><div class="field"><label>916 Gold</label><input type="number" id="mr-916" class="igold" inputmode="decimal"></div><div class="field"><label>Silver &#8377;/g</label><input type="number" id="mr-sil" class="igold" inputmode="decimal"></div><div class="field"><label>Diamond &#8377;/ct</label><input type="number" id="mr-dia" class="igold" inputmode="decimal"></div><div class="field"><label>Platinum &#8377;/g</label><input type="number" id="mr-plat" class="igold" inputmode="decimal"></div></div><div class="mfoot"><button class="btn" onclick="closeM('m-rates')">Cancel</button><button class="btn btng" onclick="saveRates()">&#10003; Update Rates</button></div></div></div>
+<div class="modal-bg" id="m-rates"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128202; Board Rates (&#8377;/g)</div><div class="field" style="margin-bottom:14px"><label>Effective Date</label><input type="date" id="mr-date" class="igold"></div><div class="g3" style="gap:10px"><div class="field"><label>22K Gold</label><input type="number" id="mr-22k" class="igold" inputmode="decimal"></div><div class="field"><label>18K Gold</label><input type="number" id="mr-18k" class="igold" inputmode="decimal"></div><div class="field"><label>916 Gold</label><input type="number" id="mr-916" class="igold" inputmode="decimal"></div><div class="field"><label>Silver &#8377;/g</label><input type="number" id="mr-sil" class="igold" inputmode="decimal"></div><div class="field"><label>Diamond &#8377;/ct</label><input type="number" id="mr-dia" class="igold" inputmode="decimal"></div><div class="field"><label>Platinum &#8377;/g</label><input type="number" id="mr-plat" class="igold" inputmode="decimal"></div></div><div class="mfoot"><button class="btn" onclick="closeM('m-rates')">Cancel</button><button class="btn btng" onclick="saveRates()">&#10003; Update Rates</button></div></div></div>
 
 <div class="modal-bg" id="m-newcust"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128101; Register Customer</div><div class="g2"><div class="field"><label>Full Name *</label><input type="text" id="nc-name" autocomplete="off"></div><div class="field"><label>Phone *</label><input type="tel" id="nc-phone" maxlength="10" inputmode="numeric"></div></div><div class="g2"><div class="field"><label>City</label><input type="text" id="nc-city"></div><div class="field"><label>Anniversary</label><input type="date" id="nc-anni"></div></div><div class="field"><label>Opening Balance (&#8377;) — owes you</label><input type="number" id="nc-ob" inputmode="decimal" placeholder="0.00"></div><div class="field"><label>Notes</label><input type="text" id="nc-notes"></div><div class="mfoot"><button class="btn" onclick="closeM('m-newcust')">Cancel</button><button class="btn btng" onclick="saveNewCust()">Save &amp; Map to Sale</button></div></div></div>
 
@@ -1256,8 +1257,8 @@ input:checked+.tslider::before { transform:translateX(17px); }
 
 // ── CONFIG ──
 var CFG = {
-  supabaseUrl: localStorage.getItem('erp_supabase_url') || '',
-  supabaseKey: localStorage.getItem('erp_supabase_key') || '',
+  supabaseUrl: localStorage.getItem('erp_supabase_url') || 'https://xnrrdmckxfdpeeemuphh.supabase.co',
+  supabaseKey: localStorage.getItem('erp_supabase_key') || 'sb_publishable_cLduMsrh35viwkbWBiZwHw_3oUtGsZP',
   useSupabase: true,
   currentUser: null
 };
@@ -1302,16 +1303,86 @@ function doLogin(){
 }
 function showAuth(){var e=G('auth-screen');if(e)e.classList.add('show');}
 
-// ── SUPABASE REST HELPER ──
+// ── SUPABASE SDK HELPER ──
+var _sb = null; // Supabase client instance
+
 function sbUrl(){return localStorage.getItem('erp_supabase_url')||CFG.supabaseUrl||'';}
 function sbKey(){return localStorage.getItem('erp_supabase_key')||CFG.supabaseKey||'';}
-function sbHeaders(){return{'apikey':sbKey(),'Authorization':'Bearer '+sbKey(),'Content-Type':'application/json','Prefer':'return=representation'};}
 function sbHasConfig(){return !!(sbUrl()&&sbKey());}
 
-// Generic Supabase REST call
-function sbFetch(table, method, body, query){
-  var url=sbUrl()+'/rest/v1/'+table+(query?'?'+query:'');
-  return fetch(url,{method:method||'GET',headers:sbHeaders(),body:body?JSON.stringify(body):undefined});
+// Initialize Supabase SDK client
+function initSB(){
+  if(!sbHasConfig())return null;
+  if(!_sb){
+    try{
+      _sb = supabase.createClient(sbUrl(), sbKey(), {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+          storage: { getItem:function(){return null;}, setItem:function(){}, removeItem:function(){} }
+        }
+      });
+      console.log('Supabase client initialized');
+    } catch(e){
+      console.error('Supabase init failed:',e);
+      return null;
+    }
+  }
+  return _sb;
+}
+
+// Insert a row — cb(true) on success, cb(false, errMsg) on fail
+function sbSave(table, payload, cb){
+  var client=initSB();
+  if(!client){if(cb)cb(false,'Supabase not configured');return;}
+  client.from(table).insert(payload)
+    .then(function(res){
+      if(res.error){
+        console.error('sbSave error on '+table+':', res.error);
+        if(cb)cb(false, res.error.message||JSON.stringify(res.error));
+      } else {
+        if(cb)cb(true);
+      }
+    })
+    .catch(function(e){if(cb)cb(false,e.message);});
+}
+
+// Select rows — cb(rows) on success, cb(null, errMsg) on fail
+function sbLoad(table, query, cb){
+  var client=initSB();
+  if(!client){if(cb)cb(null,'Supabase not configured');return;}
+  var q=client.from(table).select('*');
+  if(query&&query.order)q=q.order(query.order,{ascending:false});
+  if(query&&query.limit)q=q.limit(query.limit);
+  if(query&&query.eq)q=q.eq(query.eq[0],query.eq[1]);
+  q.then(function(res){
+    if(res.error){if(cb)cb(null,res.error.message);}
+    else{if(cb)cb(res.data);}
+  }).catch(function(e){if(cb)cb(null,e.message);});
+}
+
+// Update rows — cb(true/false)
+function sbUpdate(table, match, payload, cb){
+  var client=initSB();
+  if(!client){if(cb)cb(false,'Supabase not configured');return;}
+  var q=client.from(table).update(payload);
+  Object.keys(match).forEach(function(k){q=q.eq(k,match[k]);});
+  q.then(function(res){
+    if(res.error){if(cb)cb(false,res.error.message);}
+    else{if(cb)cb(true);}
+  }).catch(function(e){if(cb)cb(false,e.message);});
+}
+
+// Show topbar status
+function showDbStatus(msg, type){
+  var dot=G('db-dot'),st=G('db-status');
+  if(dot)dot.style.background=(type==='err'?'var(--red)':'var(--grn)');
+  if(st)st.textContent=msg;
+  setTimeout(function(){
+    if(dot)dot.style.background='var(--grn)';
+    if(st)st.textContent='Supabase';
+  },3000);
 }
 
 // ── SUPABASE CONFIG ──
@@ -1321,6 +1392,8 @@ function saveSupabaseConfig(){
   CFG.supabaseUrl=url; CFG.supabaseKey=key;
   localStorage.setItem('erp_supabase_url',url);
   localStorage.setItem('erp_supabase_key',key);
+  _sb=null; // Force re-init with new credentials
+  initSB();
   G('cfg-status').innerHTML='<span style="color:var(--grn)">&#10003; Config saved. Loading rates from DB...</span>';
   G('db-mode-badge').textContent='Supabase (Connected)';
   G('db-dot').style.background='var(--grn)';
@@ -1329,35 +1402,46 @@ function saveSupabaseConfig(){
 }
 function testConnection(){
   G('cfg-status').innerHTML='Testing...';
-  var url=V('cfg-url').trim(), key=V('cfg-key').trim();
+  var url=V('cfg-url').trim()||sbUrl(), key=V('cfg-key').trim()||sbKey();
   if(!url||!key){G('cfg-status').innerHTML='<span style="color:var(--red)">Enter URL and key first</span>';return;}
-  fetch(url+'/rest/v1/',{headers:{'apikey':key,'Authorization':'Bearer '+key}})
-    .then(function(r){G('cfg-status').innerHTML=r.ok?'<span style="color:var(--grn)">&#10003; Connected successfully!</span>':'<span style="color:var(--red)">&#10005; Connection failed ('+r.status+')</span>';})
-    .catch(function(e){G('cfg-status').innerHTML='<span style="color:var(--red)">&#10005; '+e.message+'</span>';});
+  try{
+    var testClient=supabase.createClient(url,key,{
+      auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false,
+        storage:{getItem:function(){return null;},setItem:function(){},removeItem:function(){}}}
+    });
+    testClient.from('board_rates').select('id').limit(1)
+      .then(function(res){
+        if(res.error){
+          G('cfg-status').innerHTML='<span style="color:var(--red)">&#10005; Error: '+res.error.message+'</span>';
+        } else {
+          G('cfg-status').innerHTML='<span style="color:var(--grn)">&#10003; Connected! Found '+res.data.length+' rate records.</span>';
+        }
+      })
+      .catch(function(e){G('cfg-status').innerHTML='<span style="color:var(--red)">&#10005; '+e.message+'</span>';});
+  } catch(e){G('cfg-status').innerHTML='<span style="color:var(--red)">&#10005; '+e.message+'</span>';}
 }
 function clearAllData(){DB={sales:[],custs:{},sups:{},suspense:[],purchases:[],expenses:[],metalLog:[],cashLog:[],orders:[],payments:[],batches:[],oldMetal:[],cashOB:0};metalR={gold:0,silver:0,goldsmiths:0,refinery:0};goldBN=1;silverBN=1;renderDash();renderCashFlow();alert('Local data cleared.');}
 
 // ── LOAD RATES FROM DB ──
 function loadRatesFromDB(){
   if(!sbHasConfig())return;
-  sbFetch('board_rates','GET',null,'order=updated_at.desc&limit=1')
-    .then(function(r){return r.json();})
-    .then(function(data){
-      if(data&&data.length>0){
-        var row=data[0];
-        R.k22=parseFloat(row.k22)||R.k22;
-        R.k18=parseFloat(row.k18)||R.k18;
-        R.k916=parseFloat(row.k916)||R.k916;
-        R.sil=parseFloat(row.silver)||R.sil;
-        R.dia=parseFloat(row.diamond)||R.dia;
-        R.plat=parseFloat(row.platinum)||R.plat;
-        G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');
-        G('r18t').textContent='\u20B9'+R.k18.toLocaleString('en-IN');
-        G('rsilt').textContent='\u20B9'+R.sil.toLocaleString('en-IN');
-        var cs=G('cfg-status');if(cs&&cs.innerHTML.indexOf('Loading')>=0)cs.innerHTML='<span style="color:var(--grn)">&#10003; Rates loaded from DB</span>';
-      }
-    })
-    .catch(function(e){console.warn('Could not load rates:',e);});
+  sbLoad('board_rates',{order:'updated_at',limit:1},function(data,err){
+    if(err){console.warn('Could not load rates:',err);return;}
+    if(data&&data.length>0){
+      var row=data[0];
+      R.k22=parseFloat(row.k22)||R.k22;
+      R.k18=parseFloat(row.k18)||R.k18;
+      R.k916=parseFloat(row.k916)||R.k916;
+      R.sil=parseFloat(row.silver)||R.sil;
+      R.dia=parseFloat(row.diamond)||R.dia;
+      R.plat=parseFloat(row.platinum)||R.plat;
+      G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');
+      G('r18t').textContent='\u20B9'+R.k18.toLocaleString('en-IN');
+      G('rsilt').textContent='\u20B9'+R.sil.toLocaleString('en-IN');
+      var cs=G('cfg-status');if(cs&&cs.innerHTML.indexOf('Loading')>=0)cs.innerHTML='<span style="color:var(--grn)">&#10003; Rates loaded from DB</span>';
+      console.log('Rates loaded from DB:',row);
+    }
+  });
 }
 
 // ── SIDEBAR ──
@@ -1399,7 +1483,7 @@ function topbarAction(){var pg=document.querySelector('.page.active');if(pg&&pag
 // ── MODAL ──
 function openM(id){
   var e=G(id);if(!e)return;e.classList.add('open');
-  if(id==='m-rates'){G('mr-22k').value=R.k22;G('mr-18k').value=R.k18;G('mr-916').value=R.k916;G('mr-sil').value=R.sil;G('mr-dia').value=R.dia;G('mr-plat').value=R.plat;}
+  if(id==='m-rates'){G('mr-22k').value=R.k22;G('mr-18k').value=R.k18;G('mr-916').value=R.k916;G('mr-sil').value=R.sil;G('mr-dia').value=R.dia;G('mr-plat').value=R.plat;G('mr-date').value=td();}
   if(id==='m-order'){populateSupSelects();initOrderForm();}
   if(id==='m-payment'||id==='m-suppay'||id==='m-suspense'||id==='m-si')populateSupSelects();
 }
@@ -1409,24 +1493,16 @@ document.querySelectorAll('.modal-bg').forEach(function(mb){mb.addEventListener(
 // ── RATES ──
 function saveRates(){
   R.k22=N('mr-22k')||R.k22;R.k18=N('mr-18k')||R.k18;R.k916=N('mr-916')||R.k916;R.sil=N('mr-sil')||R.sil;R.dia=N('mr-dia')||R.dia;R.plat=N('mr-plat')||R.plat;
+  var rDate=V('mr-date')||td();
   G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');G('r18t').textContent='\u20B9'+R.k18.toLocaleString('en-IN');G('rsilt').textContent='\u20B9'+R.sil.toLocaleString('en-IN');
   closeM('m-rates');
   document.querySelectorAll('.li-box').forEach(function(li){var ctx=li.dataset.ctx||'sale';recalcLI(li.id,ctx);});
-  // Save to Supabase
   if(sbHasConfig()){
-    var payload={k22:R.k22,k18:R.k18,k916:R.k916,silver:R.sil,diamond:R.dia,platinum:R.plat,updated_at:new Date().toISOString()};
-    sbFetch('board_rates','POST',payload)
-      .then(function(r){
-        if(r.ok){
-          var dot=G('db-dot'),st=G('db-status');
-          if(dot)dot.style.background='var(--grn)';
-          if(st)st.textContent='Saved \u2713';
-          setTimeout(function(){if(st)st.textContent='Supabase';},2500);
-        } else {
-          return r.text().then(function(t){alert('DB Error '+r.status+': '+t);});
-        }
-      })
-      .catch(function(e){alert('Save failed: '+e.message);});
+    var payload={k22:R.k22,k18:R.k18,k916:R.k916,silver:R.sil,diamond:R.dia,platinum:R.plat,updated_at:new Date().toISOString(),effective_date:rDate};
+    sbSave('board_rates',payload,function(ok,err){
+      if(ok){showDbStatus('Saved \u2713');}
+      else{showDbStatus('Error','err');console.error('Rate save:',err);}
+    });
   }
 }
 
@@ -1709,8 +1785,8 @@ function renderDash(){
 
 // ── SETTINGS ──
 function renderSettings(){
-  var ui=G('cfg-url');if(ui)ui.value=CFG.supabaseUrl;
-  var ki=G('cfg-key');if(ki)ki.value=CFG.supabaseKey;
+  var ui=G('cfg-url');if(ui)ui.value=sbUrl();
+  var ki=G('cfg-key');if(ki)ki.value=sbKey();
   var total=DB.sales.length+Object.keys(DB.custs).length+Object.keys(DB.sups).length+DB.payments.length;
   var dr=G('db-records');if(dr)dr.textContent=total+' total records';
 }
@@ -1726,6 +1802,9 @@ G('rsilt').textContent='\u20B9'+R.sil.toLocaleString('en-IN');
 if(sbHasConfig()){
   var dbs=G('db-status');if(dbs)dbs.textContent='Supabase';
   var dot=G('db-dot');if(dot)dot.style.background='var(--grn)';
+  // Init SDK client immediately
+  initSB();
+  // Load latest rates from DB
   loadRatesFromDB();
 }
 renderDash();
