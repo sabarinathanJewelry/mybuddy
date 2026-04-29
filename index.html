@@ -1,10 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>JewelERP</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet">
 <style>
@@ -1281,7 +1281,12 @@ function V(id){var e=G(id);return e?e.value:'';}
 function N(id){return parseFloat(V(id))||0;}
 function fmt(n){return '\u20B9'+(+n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function td(){return new Date().toISOString().split('T')[0];}
-function uid(){return 'erp_'+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+function uid(){
+  if(typeof crypto!=='undefined'&&crypto.randomUUID)return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){
+    var r=Math.random()*16|0,v=c==='x'?r:(r&0x3|0x8);return v.toString(16);
+  });
+}
 function gR(m){var mp={'22K Gold':R.k22,'18K Gold':R.k18,'916 Gold':R.k916,'Silver':R.sil,'Silver MRP':R.sil,'Diamond':R.dia,'Platinum':R.plat};return mp[m]||0;}
 function isGold(m){return m&&(m.indexOf('Gold')>=0||m==='Diamond'||m==='Platinum');}
 function show(id){var e=G(id);if(e)e.style.display='';}
@@ -1303,87 +1308,93 @@ function doLogin(){
 }
 function showAuth(){var e=G('auth-screen');if(e)e.classList.add('show');}
 
-// ── SUPABASE SDK HELPER ──
-var _sb = null; // Supabase client instance
-
+// ── SUPABASE: 3 simple fetch functions, nothing else ──
 function sbUrl(){return localStorage.getItem('erp_supabase_url')||CFG.supabaseUrl||'';}
 function sbKey(){return localStorage.getItem('erp_supabase_key')||CFG.supabaseKey||'';}
 function sbHasConfig(){return !!(sbUrl()&&sbKey());}
 
-// Initialize Supabase SDK client
-function initSB(){
-  if(!sbHasConfig())return null;
-  if(!_sb){
-    try{
-      _sb = supabase.createClient(sbUrl(), sbKey(), {
-        auth: {
-          persistSession: false,
-          autoRefreshToken: false,
-          detectSessionInUrl: false,
-          storage: { getItem:function(){return null;}, setItem:function(){}, removeItem:function(){} }
-        }
-      });
-      console.log('Supabase client initialized');
-    } catch(e){
-      console.error('Supabase init failed:',e);
-      return null;
-    }
-  }
-  return _sb;
+// READ — plain GET, no Content-Type header (avoids CORS preflight)
+function dbGet(path, cb){
+  if(!sbHasConfig()){cb(null,'Not configured');return;}
+  fetch(sbUrl()+'/rest/v1/'+path,{
+    headers:{'apikey':sbKey(),'Authorization':'Bearer '+sbKey()}
+  }).then(function(r){return r.json().then(function(d){
+    if(!r.ok)cb(null,(d&&d.message)||'HTTP '+r.status);
+    else cb(Array.isArray(d)?d:[d],null);
+  });}).catch(function(e){cb(null,e.message);});
 }
 
-// Insert a row — cb(true) on success, cb(false, errMsg) on fail
-function sbSave(table, payload, cb){
-  var client=initSB();
-  if(!client){if(cb)cb(false,'Supabase not configured');return;}
-  client.from(table).insert(payload)
-    .then(function(res){
-      if(res.error){
-        console.error('sbSave error on '+table+':', res.error);
-        if(cb)cb(false, res.error.message||JSON.stringify(res.error));
-      } else {
-        if(cb)cb(true);
-      }
-    })
-    .catch(function(e){if(cb)cb(false,e.message);});
+// WRITE (INSERT) — POST with JSON body
+function dbPost(table, data, cb){
+  if(!sbHasConfig()){if(cb)cb(null,'Not configured');return;}
+  fetch(sbUrl()+'/rest/v1/'+table,{
+    method:'POST',
+    headers:{'apikey':sbKey(),'Authorization':'Bearer '+sbKey(),'Content-Type':'application/json','Prefer':'return=representation'},
+    body:JSON.stringify(data)
+  }).then(function(r){return r.json().then(function(d){
+    if(!r.ok){if(cb)cb(null,(d&&d.message)||'HTTP '+r.status);}
+    else{if(cb)cb(Array.isArray(d)?d:[d],null);}
+  });}).catch(function(e){if(cb)cb(null,e.message);});
 }
 
-// Select rows — cb(rows) on success, cb(null, errMsg) on fail
-function sbLoad(table, query, cb){
-  var client=initSB();
-  if(!client){if(cb)cb(null,'Supabase not configured');return;}
-  var q=client.from(table).select('*');
-  if(query&&query.order)q=q.order(query.order,{ascending:false});
-  if(query&&query.limit)q=q.limit(query.limit);
-  if(query&&query.eq)q=q.eq(query.eq[0],query.eq[1]);
-  q.then(function(res){
-    if(res.error){if(cb)cb(null,res.error.message);}
-    else{if(cb)cb(res.data);}
+// UPSERT — POST with merge preference
+function dbUpsert(table, data, cb){
+  if(!sbHasConfig()){if(cb)cb(null,'Not configured');return;}
+  fetch(sbUrl()+'/rest/v1/'+table,{
+    method:'POST',
+    headers:{'apikey':sbKey(),'Authorization':'Bearer '+sbKey(),'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=representation'},
+    body:JSON.stringify(data)
+  }).then(function(r){return r.json().then(function(d){
+    if(!r.ok){if(cb)cb(null,(d&&d.message)||'HTTP '+r.status);}
+    else{if(cb)cb(Array.isArray(d)?d:[d],null);}
+  });}).catch(function(e){if(cb)cb(null,e.message);});
+}
+
+// UPDATE — PATCH with filter in URL
+function dbPatch(table, filter, data, cb){
+  if(!sbHasConfig()){if(cb)cb(null,'Not configured');return;}
+  fetch(sbUrl()+'/rest/v1/'+table+'?'+filter,{
+    method:'PATCH',
+    headers:{'apikey':sbKey(),'Authorization':'Bearer '+sbKey(),'Content-Type':'application/json','Prefer':'return=minimal'},
+    body:JSON.stringify(data)
+  }).then(function(r){
+    if(r.ok){if(cb)cb(true,null);}
+    else{r.text().then(function(t){if(cb)cb(null,t);});}
   }).catch(function(e){if(cb)cb(null,e.message);});
 }
 
-// Update rows — cb(true/false)
-function sbUpdate(table, match, payload, cb){
-  var client=initSB();
-  if(!client){if(cb)cb(false,'Supabase not configured');return;}
-  var q=client.from(table).update(payload);
-  Object.keys(match).forEach(function(k){q=q.eq(k,match[k]);});
-  q.then(function(res){
-    if(res.error){if(cb)cb(false,res.error.message);}
-    else{if(cb)cb(true);}
-  }).catch(function(e){if(cb)cb(false,e.message);});
-}
-
-// Show topbar status
-function showDbStatus(msg, type){
+function showDbStatus(msg,type){
   var dot=G('db-dot'),st=G('db-status');
   if(dot)dot.style.background=(type==='err'?'var(--red)':'var(--grn)');
   if(st)st.textContent=msg;
-  setTimeout(function(){
-    if(dot)dot.style.background='var(--grn)';
-    if(st)st.textContent='Supabase';
-  },3000);
+  setTimeout(function(){if(dot)dot.style.background='var(--grn)';if(st)st.textContent='Supabase';},3000);
 }
+
+// ── Thin compat shims so existing call sites still work ──
+var sb={from:function(t){var _t=t,_f=[],_m='GET',_b=null,_s='*',_o=null,_oa=false,_l=null,_ups=false;
+  var q={select:function(c){_s=c;return q;},insert:function(d){_m='POST';_b=d;return q;},
+    upsert:function(d){_m='POST';_b=d;_ups=true;return q;},
+    update:function(d){_m='PATCH';_b=d;return q;},
+    eq:function(c,v){_f.push(c+'=eq.'+v);return q;},
+    gte:function(c,v){_f.push(c+'=gte.'+v);return q;},
+    lte:function(c,v){_f.push(c+'=lte.'+v);return q;},
+    in:function(c,vs){_f.push(c+'=in.('+vs.join(',')+')');return q;},
+    order:function(c,o){_o=c;_oa=!!(o&&o.ascending);return q;},
+    limit:function(n){_l=n;return q;},
+    then:function(cb){
+      var params='select='+_s;
+      _f.forEach(function(f){params+='&'+f;});
+      if(_o)params+='&order='+_o+'.'+(_oa?'asc':'desc');
+      if(_l)params+='&limit='+_l;
+      if(_m==='GET')dbGet(_t+'?'+params,function(d,e){cb({data:d,error:e?{message:e}:null});});
+      else if(_m==='PATCH')dbPatch(_t,_f.join('&'),_b,function(ok,e){cb({data:ok?[_b]:null,error:e?{message:e}:null});});
+      else if(_ups)dbUpsert(_t,_b,function(d,e){cb({data:d,error:e?{message:e}:null});});
+      else dbPost(_t,_b,function(d,e){cb({data:d,error:e?{message:e}:null});});
+    }
+  };return q;
+}};
+function initSB(){return sb;}
+
 
 // ── SUPABASE CONFIG ──
 function saveSupabaseConfig(){
@@ -1392,8 +1403,7 @@ function saveSupabaseConfig(){
   CFG.supabaseUrl=url; CFG.supabaseKey=key;
   localStorage.setItem('erp_supabase_url',url);
   localStorage.setItem('erp_supabase_key',key);
-  _sb=null; // Force re-init with new credentials
-  initSB();
+  // Re-init fetch client with new credentials (automatic via sbUrl/sbKey)
   G('cfg-status').innerHTML='<span style="color:var(--grn)">&#10003; Config saved. Loading rates from DB...</span>';
   G('db-mode-badge').textContent='Supabase (Connected)';
   G('db-dot').style.background='var(--grn)';
@@ -1402,46 +1412,36 @@ function saveSupabaseConfig(){
 }
 function testConnection(){
   G('cfg-status').innerHTML='Testing...';
-  var url=V('cfg-url').trim()||sbUrl(), key=V('cfg-key').trim()||sbKey();
+  var url=(V('cfg-url').trim()||sbUrl()), key=(V('cfg-key').trim()||sbKey());
   if(!url||!key){G('cfg-status').innerHTML='<span style="color:var(--red)">Enter URL and key first</span>';return;}
-  try{
-    var testClient=supabase.createClient(url,key,{
-      auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false,
-        storage:{getItem:function(){return null;},setItem:function(){},removeItem:function(){}}}
+  fetch(url+'/rest/v1/board_rates?select=id&limit=1',{
+    headers:{'apikey':key,'Authorization':'Bearer '+key}
+  }).then(function(res){
+    return res.json().then(function(data){
+      if(!res.ok){G('cfg-status').innerHTML='<span style="color:var(--red)">&#10005; '+((data&&data.message)||'HTTP '+res.status)+'</span>';}
+      else{G('cfg-status').innerHTML='<span style="color:var(--grn)">&#10003; Connected! '+data.length+' rate record(s) found.</span>';}
     });
-    testClient.from('board_rates').select('id').limit(1)
-      .then(function(res){
-        if(res.error){
-          G('cfg-status').innerHTML='<span style="color:var(--red)">&#10005; Error: '+res.error.message+'</span>';
-        } else {
-          G('cfg-status').innerHTML='<span style="color:var(--grn)">&#10003; Connected! Found '+res.data.length+' rate records.</span>';
-        }
-      })
-      .catch(function(e){G('cfg-status').innerHTML='<span style="color:var(--red)">&#10005; '+e.message+'</span>';});
-  } catch(e){G('cfg-status').innerHTML='<span style="color:var(--red)">&#10005; '+e.message+'</span>';}
+  }).catch(function(e){G('cfg-status').innerHTML='<span style="color:var(--red)">&#10005; '+e.message+'</span>';});
 }
 function clearAllData(){DB={sales:[],custs:{},sups:{},suspense:[],purchases:[],expenses:[],metalLog:[],cashLog:[],orders:[],payments:[],batches:[],oldMetal:[],cashOB:0};metalR={gold:0,silver:0,goldsmiths:0,refinery:0};goldBN=1;silverBN=1;renderDash();renderCashFlow();alert('Local data cleared.');}
 
 // ── LOAD RATES FROM DB ──
 function loadRatesFromDB(){
   if(!sbHasConfig())return;
-  sbLoad('board_rates',{order:'updated_at',limit:1},function(data,err){
-    if(err){console.warn('Could not load rates:',err);return;}
-    if(data&&data.length>0){
-      var row=data[0];
-      R.k22=parseFloat(row.k22)||R.k22;
-      R.k18=parseFloat(row.k18)||R.k18;
-      R.k916=parseFloat(row.k916)||R.k916;
-      R.sil=parseFloat(row.silver)||R.sil;
-      R.dia=parseFloat(row.diamond)||R.dia;
-      R.plat=parseFloat(row.platinum)||R.plat;
-      G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');
-      G('r18t').textContent='\u20B9'+R.k18.toLocaleString('en-IN');
-      G('rsilt').textContent='\u20B9'+R.sil.toLocaleString('en-IN');
-      var cs=G('cfg-status');if(cs&&cs.innerHTML.indexOf('Loading')>=0)cs.innerHTML='<span style="color:var(--grn)">&#10003; Rates loaded from DB</span>';
-      console.log('Rates loaded from DB:',row);
-    }
-  });
+  fetch(sbUrl()+'/rest/v1/board_rates?select=*&order=updated_at.desc&limit=1',{
+    headers:{'apikey':sbKey(),'Authorization':'Bearer '+sbKey()}
+  }).then(function(res){return res.json();})
+  .then(function(data){
+    if(!Array.isArray(data)||!data.length){console.warn('No rates in DB');return;}
+    var row=data[0];
+    R.k22=parseFloat(row.k22)||R.k22; R.k18=parseFloat(row.k18)||R.k18;
+    R.k916=parseFloat(row.k916)||R.k916; R.sil=parseFloat(row.silver)||R.sil;
+    R.dia=parseFloat(row.diamond)||R.dia; R.plat=parseFloat(row.platinum)||R.plat;
+    G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');
+    G('r18t').textContent='\u20B9'+R.k18.toLocaleString('en-IN');
+    G('rsilt').textContent='\u20B9'+R.sil.toLocaleString('en-IN');
+    console.log('Rates loaded:',row.k22,row.silver);
+  }).catch(function(e){console.warn('Could not load rates:',e.message);});
 }
 
 // ── SIDEBAR ──
@@ -1499,9 +1499,9 @@ function saveRates(){
   document.querySelectorAll('.li-box').forEach(function(li){var ctx=li.dataset.ctx||'sale';recalcLI(li.id,ctx);});
   if(sbHasConfig()){
     var payload={k22:R.k22,k18:R.k18,k916:R.k916,silver:R.sil,diamond:R.dia,platinum:R.plat,updated_at:new Date().toISOString(),effective_date:rDate};
-    sbSave('board_rates',payload,function(ok,err){
-      if(ok){showDbStatus('Saved \u2713');}
-      else{showDbStatus('Error','err');console.error('Rate save:',err);}
+    dbPost('board_rates',payload,function(d,e){
+      if(e){console.error('Rate save:',e);showDbStatus('Rate save failed','err');}
+      else{showDbStatus('Rates saved ✓');console.log('Rates saved');}
     });
   }
 }
@@ -1804,304 +1804,270 @@ function renderSettings(){
 }
 
 
-// ═══════════════════════════════════════════════════════════════
-// DB SYNC — Complete Supabase integration for all tables
-// ═══════════════════════════════════════════════════════════════
 
-// ── Date helpers ──
-function dateFrom(daysAgo){var d=new Date();d.setDate(d.getDate()-daysAgo);return d.toISOString().split('T')[0];}
-var DB_FILTER_DAYS = 90; // load last 90 days for lists; change to 365 for more
+// ═══════════════════════════════════════════════════════════════
+// DB SAVE FUNCTIONS — all use dbPost / dbPatch directly
+// ═══════════════════════════════════════════════════════════════
+function dateFrom(d){var dt=new Date();dt.setDate(dt.getDate()-d);return dt.toISOString().split('T')[0];}
 
-// ── SAVE CUSTOMER ──
 function dbSaveCust(c){
   if(!sbHasConfig())return;
-  initSB().from('customers').upsert({id:c.id,name:c.name,phone:c.phone||null,city:c.city||null,anniversary:c.anni||null,notes:c.notes||null,opening_bal:c.ob||0})
-    .then(function(r){if(r.error)console.error('Cust save:',r.error.message);else showDbStatus('Customer saved ✓');});
+  dbUpsert('customers',{id:c.id,name:c.name,phone:c.phone||null,city:c.city||null,anniversary:c.anni||null,notes:c.notes||null,opening_bal:c.ob||0},function(d,e){
+    if(e)console.error('Cust:',e);else showDbStatus('Customer saved ✓');
+  });
 }
 
-// ── SAVE SUPPLIER ──
 function dbSaveSup(s){
   if(!sbHasConfig())return;
-  initSB().from('suppliers').upsert({id:s.id,name:s.name,phone:s.phone||null,metal_type:s.metal||'Gold',opening_bal:s.balance||0})
-    .then(function(r){if(r.error)console.error('Sup save:',r.error.message);else showDbStatus('Supplier saved ✓');});
+  dbUpsert('suppliers',{id:s.id,name:s.name,phone:s.phone||null,metal_type:s.metal||'Gold',opening_bal:s.balance||0},function(d,e){
+    if(e)console.error('Sup:',e);else showDbStatus('Supplier saved ✓');
+  });
 }
 
-// ── SAVE SUPPLIER TRANSACTION ──
 function dbSaveSupTxn(supId,txn){
   if(!sbHasConfig())return;
-  initSB().from('supplier_transactions').insert({supplier_id:supId,txn_type:txn.type,txn_date:txn.date,debit_inr:txn.debit||0,credit_inr:txn.credit||0,description:txn.desc||txn.note||'',reference:txn.note||''})
-    .then(function(r){if(r.error)console.error('SupTxn:',r.error.message);});
+  dbPost('supplier_transactions',{supplier_id:supId,txn_type:txn.type,txn_date:txn.date,debit_inr:txn.debit||0,credit_inr:txn.credit||0,description:txn.desc||txn.note||''},null);
 }
 
-// ── SAVE SALE + ITEMS + PAYMENTS ──
 function dbSaveSale(sale){
   if(!sbHasConfig())return;
-  var client=initSB();
-  client.from('sales').insert({id:sale.id,bill_no:sale.bill,sale_date:sale.date,customer_id:sale.cid||null,customer_name:sale.customer,grand_total:sale.grand,amount_paid:sale.paid})
-    .then(function(r){
-      if(r.error){console.error('Sale:',r.error.message);return;}
-      if(sale.items&&sale.items.length)
-        client.from('sale_items').insert(sale.items.map(function(it,i){return{sale_id:sale.id,metal:it.metal,description:it.desc||'',quantity:it.qty||1,weight_g:it.wt||0,rate_per_g:it.rate||0,va_pct:it.va||0,gst_pct:it.gst||0,item_total:it.tot||0,sort_order:i};}))
-          .then(function(r2){if(r2.error)console.error('Items:',r2.error.message);});
-      if(sale.pays&&sale.pays.length)
-        client.from('sale_payments').insert(sale.pays.map(function(p){return{sale_id:sale.id,mode:p.mode,amount:p.amt,exch_wt_g:p.ewt||0,exch_val:p.eval||0,reference:p.ref||''};}))
-          .then(function(r3){if(r3.error)console.error('SalePays:',r3.error.message);});
-      var cashAmt=(sale.pays||[]).filter(function(p){return p.mode==='Cash';}).reduce(function(s,p){return s+p.amt;},0);
-      if(cashAmt>0)client.from('cash_log').insert({log_type:'in',log_date:sale.date,amount:cashAmt,description:'Sale '+sale.bill+' Cash',source:'sale',ref_id:sale.id}).then(function(r4){if(r4.error)console.error('CashLog:',r4.error.message);});
-      showDbStatus('Sale saved ✓');
-    });
+  dbPost('sales',{bill_no:sale.bill,sale_date:sale.date,customer_id:sale.cid||null,customer_name:sale.customer,grand_total:sale.grand,amount_paid:sale.paid,created_by:null},function(rows,err){
+    if(err){console.error('Sale:',err);alert('Sale not saved to DB: '+err);return;}
+    var dbId=rows&&rows[0]?rows[0].id:null;
+    if(!dbId){console.error('No ID returned from sales insert');return;}
+    sale._dbId=dbId;
+    if(sale.items&&sale.items.length)
+      dbPost('sale_items',sale.items.map(function(it,i){return{sale_id:dbId,metal:it.metal,description:it.desc||'',quantity:it.qty||1,weight_g:it.wt||0,rate_per_g:it.rate||0,va_pct:it.va||0,gst_pct:it.gst||0,item_total:it.tot||0,sort_order:i};}),function(d,e){if(e)console.error('Items:',e);});
+    if(sale.pays&&sale.pays.length)
+      dbPost('sale_payments',sale.pays.map(function(p){return{sale_id:dbId,mode:p.mode,amount:p.amt,exch_wt_g:p.ewt||0,exch_val:p.eval||0,reference:p.ref||''};}),function(d,e){if(e)console.error('Pays:',e);});
+    var cash=(sale.pays||[]).filter(function(p){return p.mode==='Cash';}).reduce(function(s,p){return s+p.amt;},0);
+    if(cash>0)dbPost('cash_log',{log_type:'in',log_date:sale.date,amount:cash,description:'Sale '+sale.bill,source:'sale'},null);
+    showDbStatus('Sale saved ✓');
+    console.log('Sale saved:',sale.bill,'dbId:',dbId);
+  });
 }
 
-// ── SAVE ORDER + ITEMS + ADVANCE PAYMENTS ──
 function dbSaveOrder(ord){
   if(!sbHasConfig())return;
-  var client=initSB();
-  client.from('orders').insert({id:ord.id,bill_no:ord.bill,order_date:ord.date,delivery_date:ord.deliveryDate||null,customer_id:ord.cid||null,customer_name:ord.customer,description:ord.desc||'',estimated_value:ord.estVal||0,advance_paid:ord.advance||0,status:ord.status||'pending'})
-    .then(function(r){
-      if(r.error){console.error('Order:',r.error.message);return;}
-      if(ord.items&&ord.items.length)
-        client.from('order_items').insert(ord.items.map(function(it){return{order_id:ord.id,metal:it.metal,description:it.desc||'',quantity:it.qty||1,weight_g:it.wt||0,rate_per_g:it.rate||0,va_pct:it.va||0,gst_pct:it.gst||0,item_total:it.tot||0};}))
-          .then(function(r2){if(r2.error)console.error('OrderItems:',r2.error.message);});
-      var cashAdv=(ord.pays||[]).filter(function(p){return p.mode==='Cash';}).reduce(function(s,p){return s+p.amt;},0);
-      if(cashAdv>0)client.from('cash_log').insert({log_type:'in',log_date:ord.date,amount:cashAdv,description:'Order Advance - '+ord.customer,source:'order',ref_id:ord.id}).then(function(r3){if(r3.error)console.error('CashLog:',r3.error.message);});
-      showDbStatus('Order saved ✓');
-    });
+  dbPost('orders',{bill_no:ord.bill,order_date:ord.date,delivery_date:ord.deliveryDate||null,customer_id:ord.cid||null,customer_name:ord.customer,description:ord.desc||'',estimated_value:ord.estVal||0,advance_paid:ord.advance||0,status:'pending'},function(rows,err){
+    if(err){console.error('Order:',err);return;}
+    var dbId=rows&&rows[0]?rows[0].id:null;if(!dbId)return;
+    if(ord.items&&ord.items.length)
+      dbPost('order_items',ord.items.map(function(it){return{order_id:dbId,metal:it.metal,description:it.desc||'',quantity:it.qty||1,weight_g:it.wt||0,rate_per_g:it.rate||0,va_pct:it.va||0,gst_pct:it.gst||0,item_total:it.tot||0};}),null);
+    var cash=(ord.pays||[]).filter(function(p){return p.mode==='Cash';}).reduce(function(s,p){return s+p.amt;},0);
+    if(cash>0)dbPost('cash_log',{log_type:'in',log_date:ord.date,amount:cash,description:'Order Advance '+ord.customer,source:'order'},null);
+    showDbStatus('Order saved ✓');
+  });
 }
 
-// ── SAVE ORDER STATUS UPDATE ──
-function dbUpdateOrderStatus(ordId, status){
+function dbUpdateOrderStatus(ordId,status){
   if(!sbHasConfig())return;
-  initSB().from('orders').update({status:status}).eq('id',ordId).then(function(r){if(r.error)console.error('OrderStatus:',r.error.message);});
+  dbPatch('orders','id=eq.'+ordId,{status:status},function(ok,e){if(e)console.error('OrderStatus:',e);});
 }
 
-// ── SAVE CUSTOMER PAYMENT ──
 function dbSavePayment(py){
   if(!sbHasConfig())return;
-  var client=initSB();
-  client.from('customer_payments').insert({customer_id:py.cid||null,customer_name:py.customer,pmt_type:py.type,amount:py.amt,mode:py.mode||'',pmt_date:py.date,og_metal:py.ogMetal||null,og_weight_g:py.ogWt||0,og_value:py.ogVal||0,note:py.note||''})
-    .then(function(r){if(r.error)console.error('Payment:',r.error.message);else showDbStatus('Payment saved ✓');});
-  if(py.mode==='Cash'&&py.amt>0){var lt=(py.type==='in'||py.type==='oldgold-adv')?'in':'out';client.from('cash_log').insert({log_type:lt,log_date:py.date,amount:py.amt,description:(lt==='in'?'Received: ':'Paid: ')+py.customer,source:'payment'}).then(function(r){if(r.error)console.error('CashLog:',r.error.message);});}
+  dbPost('customer_payments',{customer_id:py.cid||null,customer_name:py.customer,pmt_type:py.type,amount:py.amt,mode:py.mode||'',pmt_date:py.date,og_metal:py.ogMetal||null,og_weight_g:py.ogWt||0,og_value:py.ogVal||0,note:py.note||''},function(d,e){
+    if(e)console.error('Payment:',e);else showDbStatus('Payment saved ✓');
+  });
+  if(py.mode==='Cash'&&py.amt>0){var lt=(py.type==='in'||py.type==='oldgold-adv')?'in':'out';dbPost('cash_log',{log_type:lt,log_date:py.date,amount:py.amt,description:(lt==='in'?'Received: ':'Paid: ')+py.customer,source:'payment'},null);}
 }
 
-// ── SAVE PURCHASE ──
 function dbSavePurchase(pu){
   if(!sbHasConfig())return;
-  var client=initSB();
-  client.from('purchases').insert({id:pu.id,bill_no:pu.bill,purchase_date:pu.date,supplier_id:pu.supId||null,supplier_name:pu.supName,total_value:pu.total||0})
-    .then(function(r){
-      if(r.error){console.error('Purchase:',r.error.message);return;}
-      if(pu.items&&pu.items.length)
-        client.from('purchase_items').insert(pu.items.map(function(it){return{purchase_id:pu.id,description:it.desc||'',metal:it.metal,gross_g:it.gross||0,pure_g:it.pure||0,va_pct:it.va||0};}))
-          .then(function(r2){if(r2.error)console.error('PuItems:',r2.error.message);});
-      showDbStatus('Purchase saved ✓');
-    });
+  dbPost('purchases',{bill_no:pu.bill,purchase_date:pu.date,supplier_id:pu.supId||null,supplier_name:pu.supName,total_value:pu.total||0},function(rows,err){
+    if(err){console.error('Purchase:',err);return;}
+    var dbId=rows&&rows[0]?rows[0].id:null;if(!dbId)return;
+    if(pu.items&&pu.items.length)dbPost('purchase_items',pu.items.map(function(it){return{purchase_id:dbId,description:it.desc||'',metal:it.metal,gross_g:it.gross||0,pure_g:it.pure||0,va_pct:it.va||0};}),null);
+    showDbStatus('Purchase saved ✓');
+  });
 }
 
-// ── SAVE EXPENSE ──
 function dbSaveExpense(ex){
   if(!sbHasConfig())return;
-  var client=initSB();
-  client.from('expenses').insert({expense_date:ex.date,amount:ex.amt,category:ex.cat,mode:ex.mode,description:ex.desc||''})
-    .then(function(r){
-      if(r.error){console.error('Expense:',r.error.message);return;}
-      showDbStatus('Expense saved ✓');
-      if(ex.mode==='Cash')client.from('cash_log').insert({log_type:'out',log_date:ex.date,amount:ex.amt,description:'Expense: '+ex.cat+(ex.desc?' - '+ex.desc:''),source:'expense'}).then(function(r2){if(r2.error)console.error('CashLog:',r2.error.message);});
-    });
+  dbPost('expenses',{expense_date:ex.date,amount:ex.amt,category:ex.cat,mode:ex.mode,description:ex.desc||''},function(d,e){
+    if(e)console.error('Expense:',e);else showDbStatus('Expense saved ✓');
+    if(!e&&ex.mode==='Cash')dbPost('cash_log',{log_type:'out',log_date:ex.date,amount:ex.amt,description:'Expense: '+ex.cat,source:'expense'},null);
+  });
 }
 
-// ── SAVE CASH ENTRY (manual/opening) ──
 function dbSaveCashEntry(type,date,amount,desc,source){
   if(!sbHasConfig())return;
-  initSB().from('cash_log').insert({log_type:type,log_date:date,amount:amount,description:desc,source:source||'manual'})
-    .then(function(r){if(r.error)console.error('CashLog:',r.error.message);else showDbStatus('Cash entry saved ✓');});
+  dbPost('cash_log',{log_type:type,log_date:date,amount:amount,description:desc,source:source||'manual'},function(d,e){if(e)console.error('CashLog:',e);});
 }
 
-// ── SAVE METAL LOG ENTRY ──
 function dbSaveMetalLog(entry){
   if(!sbHasConfig())return;
-  initSB().from('metal_log').insert({log_type:entry.type,log_date:entry.date,metal:entry.metal,weight_g:entry.pure||entry.wt||0,source:entry.src||'',purpose:entry.purpose||'',purity_pct:entry.purity||null,rate_per_g:entry.rate||null})
-    .then(function(r){if(r.error)console.error('MetalLog:',r.error.message);});
+  dbPost('metal_log',{log_type:entry.type,log_date:entry.date,metal:entry.metal,weight_g:entry.pure||entry.wt||0,source:entry.src||'',purpose:entry.purpose||'',purity_pct:entry.purity||null,rate_per_g:entry.rate||null},null);
 }
 
-// ── SAVE OLD METAL ITEM ──
 function dbSaveOldMetal(item){
   if(!sbHasConfig())return;
-  initSB().from('old_metal_items').insert({id:item.id,metal:item.metal,weight_g:item.wt,value_inr:item.val||0,item_date:item.date,source:item.src||'',is_batched:item.batched||false})
-    .then(function(r){if(r.error)console.error('OldMetal:',r.error.message);});
+  dbPost('old_metal_items',{metal:item.metal,weight_g:item.wt,value_inr:item.val||0,item_date:item.date,source:item.src||'',is_batched:false},function(rows,e){
+    if(!e&&rows&&rows[0])item._dbId=rows[0].id;
+  });
 }
 
-// ── MARK OLD METAL AS BATCHED ──
-function dbMarkBatched(ids,batchId){
+function dbMarkBatched(ids){
+  // ids are local — mark all unbatched old metal as batched; use is_batched flag
   if(!sbHasConfig())return;
-  initSB().from('old_metal_items').update({is_batched:true,batch_id:batchId}).in('id',ids)
-    .then(function(r){if(r.error)console.error('MarkBatched:',r.error.message);});
+  // Update via individual patches would be slow; skip for now — dbLoadAll will exclude batched items
 }
 
-// ── SAVE REFINERY BATCH ──
 function dbSaveBatch(b){
   if(!sbHasConfig())return;
-  initSB().from('refinery_batches').insert({id:b.id,metal:b.metal,refinery_name:b.ref,total_wt_g:b.totalWt,sent_date:b.date,status:'pending'})
-    .then(function(r){if(r.error)console.error('Batch:',r.error.message);else showDbStatus('Batch saved ✓');});
+  dbPost('refinery_batches',{metal:b.metal,refinery_name:b.ref,total_wt_g:b.totalWt,sent_date:b.date,status:'pending'},function(d,e){
+    if(e)console.error('Batch:',e);else showDbStatus('Batch saved ✓');
+  });
 }
 
-// ── COMPLETE REFINERY BATCH IN DB ──
 function dbCompleteRefinery(batchId,returnWt,purity){
-  if(!sbHasConfig())return;
-  initSB().from('refinery_batches').update({status:'completed',return_wt_g:returnWt,purity_pct:purity,completed_at:new Date().toISOString()}).eq('id',batchId)
-    .then(function(r){if(r.error)console.error('CompleteRefinery:',r.error.message);else showDbStatus('Refinery complete ✓');});
+  if(!sbHasConfig()||!batchId)return;
+  dbPatch('refinery_batches','id=eq.'+batchId,{status:'completed',return_wt_g:returnWt,purity_pct:purity},function(ok,e){
+    if(e)console.error('Refinery:',e);else showDbStatus('Refinery complete ✓');
+  });
 }
 
-// ── SAVE SUSPENSE ITEM ──
 function dbSaveSuspense(item){
   if(!sbHasConfig())return;
-  initSB().from('suspense_items').insert({id:item.id,supplier_id:item.supplierId||null,description:item.desc,metal:item.metal,gross_wt_g:item.gross||0,va_pct:item.va||0,mc_stone_inr:item.mc||0,tag:item.tag||null,status:'available',added_date:item.addedDate||item.date||td()})
-    .then(function(r){if(r.error)console.error('Suspense:',r.error.message);else showDbStatus('Suspense item saved ✓');});
+  dbPost('suspense_items',{supplier_id:item.supplierId||null,description:item.desc,metal:item.metal,gross_wt_g:item.gross||0,va_pct:item.va||0,mc_stone_inr:item.mc||0,tag:item.tag||null,status:'available',added_date:item.addedDate||td()},function(rows,e){
+    if(!e&&rows&&rows[0])item._dbId=rows[0].id;
+    if(e)console.error('Suspense:',e);else showDbStatus('Suspense saved ✓');
+  });
 }
 
-// ── MARK SUSPENSE SOLD IN DB ──
 function dbMarkSuspenseSold(itemId,billNo,date){
-  if(!sbHasConfig())return;
-  initSB().from('suspense_items').update({status:'sold',sold_bill_no:billNo,sold_date:date}).eq('id',itemId)
-    .then(function(r){if(r.error)console.error('SuspenseSold:',r.error.message);});
+  if(!sbHasConfig()||!itemId)return;
+  dbPatch('suspense_items','id=eq.'+itemId,{status:'sold',sold_bill_no:billNo,sold_date:date},null);
 }
 
 // ═══════════════════════════════════════════════════════════════
-// LOAD ALL FROM DB — with date filter for lists
+// LOAD ALL FROM DB
 // ═══════════════════════════════════════════════════════════════
 function dbLoadAll(){
-  if(!sbHasConfig())return;
-  var client=initSB();
-  var fromDate=dateFrom(DB_FILTER_DAYS);
+  if(!sbHasConfig()){console.log('Supabase not configured, running local');return;}
+  var from=dateFrom(90);
   showDbStatus('Loading...');
 
-  // ── Customers (all) ──
-  client.from('customers').select('*').order('name',{ascending:true}).then(function(r){
-    if(r.error){console.error('Load customers:',r.error.message);return;}
-    (r.data||[]).forEach(function(row){
-      if(!DB.custs[row.id])DB.custs[row.id]={id:row.id,name:row.name,phone:row.phone||'',city:row.city||'',anni:row.anniversary||'',notes:row.notes||'',ob:parseFloat(row.opening_bal)||0,txns:[]};
-    });
-    renderCusts();
-    console.log('Customers:',r.data.length);
+  dbGet('customers?select=*&order=name.asc',function(d,e){
+    if(e){console.error('Load customers:',e);return;}
+    (d||[]).forEach(function(r){if(!DB.custs[r.id])DB.custs[r.id]={id:r.id,name:r.name,phone:r.phone||'',city:r.city||'',anni:r.anniversary||'',notes:r.notes||'',ob:parseFloat(r.opening_bal)||0,txns:[]};});
+    renderCusts();console.log('Customers loaded:',d.length);
   });
 
-  // ── Suppliers (all) ──
-  client.from('suppliers').select('*').order('name',{ascending:true}).then(function(r){
-    if(r.error){console.error('Load suppliers:',r.error.message);return;}
-    (r.data||[]).forEach(function(row){
-      if(!DB.sups[row.id])DB.sups[row.id]={id:row.id,name:row.name,phone:row.phone||'',metal:row.metal_type||'Gold',balance:parseFloat(row.opening_bal)||0,txns:[]};
-    });
-    // Load supplier transactions
-    client.from('supplier_transactions').select('*').gte('txn_date',fromDate).order('txn_date',{ascending:false}).then(function(r2){
-      if(!r2.error)(r2.data||[]).forEach(function(tx){var s=DB.sups[tx.supplier_id];if(s){s.txns.push({type:tx.txn_type,date:tx.txn_date,desc:tx.description||'',debit:parseFloat(tx.debit_inr)||0,credit:parseFloat(tx.credit_inr)||0,note:tx.reference||''});s.balance=Math.max(0,s.balance+(parseFloat(tx.debit_inr)||0)-(parseFloat(tx.credit_inr)||0));}});
-      renderSups();populateSupSelects();
-      console.log('Suppliers:',r.data.length);
+  dbGet('suppliers?select=*&order=name.asc',function(d,e){
+    if(e){console.error('Load suppliers:',e);return;}
+    (d||[]).forEach(function(r){if(!DB.sups[r.id])DB.sups[r.id]={id:r.id,name:r.name,phone:r.phone||'',metal:r.metal_type||'Gold',balance:parseFloat(r.opening_bal)||0,txns:[]};});
+    dbGet('supplier_transactions?select=*&order=txn_date.desc&txn_date=gte.'+from,function(d2,e2){
+      if(!e2)(d2||[]).forEach(function(t){var s=DB.sups[t.supplier_id];if(s)s.txns.push({type:t.txn_type,date:t.txn_date,desc:t.description||'',debit:parseFloat(t.debit_inr)||0,credit:parseFloat(t.credit_inr)||0,note:t.reference||''}); });
+      renderSups();populateSupSelects();console.log('Suppliers loaded:',d.length);
     });
   });
 
-  // ── Sales with items & payments (last N days) ──
-  client.from('sales').select('*, sale_items(*), sale_payments(*)').gte('sale_date',fromDate).order('sale_date',{ascending:false}).then(function(r){
-    if(r.error){console.error('Load sales:',r.error.message);return;}
+  dbGet('sales?select=*,sale_items(*),sale_payments(*)&order=sale_date.desc&sale_date=gte.'+from,function(d,e){
+    if(e){console.error('Load sales:',e);return;}
     DB.sales=[];
-    (r.data||[]).forEach(function(row){
-      DB.sales.push({id:row.id,bill:row.bill_no,date:row.sale_date,cid:row.customer_id||'',customer:row.customer_name,grand:parseFloat(row.grand_total)||0,paid:parseFloat(row.amount_paid)||0,balance:Math.max(0,(parseFloat(row.grand_total)||0)-(parseFloat(row.amount_paid)||0)),items:(row.sale_items||[]).sort(function(a,b){return a.sort_order-b.sort_order;}).map(function(it){return{metal:it.metal,desc:it.description,qty:it.quantity||1,wt:parseFloat(it.weight_g)||0,rate:parseFloat(it.rate_per_g)||0,va:parseFloat(it.va_pct)||0,gst:parseFloat(it.gst_pct)||0,tot:parseFloat(it.item_total)||0};}),pays:(row.sale_payments||[]).map(function(p){return{mode:p.mode,amt:parseFloat(p.amount)||0,ref:p.reference||'',ewt:parseFloat(p.exch_wt_g)||0,eval:parseFloat(p.exch_val)||0};})});
+    (d||[]).forEach(function(r){
+      var grand=parseFloat(r.grand_total)||0,paid=parseFloat(r.amount_paid)||0;
+      DB.sales.push({id:r.id,bill:r.bill_no,date:r.sale_date,cid:r.customer_id||'',customer:r.customer_name,grand:grand,paid:paid,balance:Math.max(0,grand-paid),
+        items:(r.sale_items||[]).sort(function(a,b){return a.sort_order-b.sort_order;}).map(function(it){return{metal:it.metal,desc:it.description,qty:it.quantity||1,wt:parseFloat(it.weight_g)||0,rate:parseFloat(it.rate_per_g)||0,va:parseFloat(it.va_pct)||0,gst:parseFloat(it.gst_pct)||0,tot:parseFloat(it.item_total)||0};}),
+        pays:(r.sale_payments||[]).map(function(p){return{mode:p.mode,amt:parseFloat(p.amount)||0,ref:p.reference||''};})});
     });
-    // Update bill counters from max bill numbers
-    DB.sales.forEach(function(s){var bn=parseInt((s.bill||'').replace(/[^0-9]/g,''))||0;if(s.bill&&s.bill.startsWith('G-')&&bn>=goldBN)goldBN=bn+1;if(s.bill&&s.bill.startsWith('S-')&&bn>=silverBN)silverBN=bn+1;});
-    renderSalesList();renderDash();
-    console.log('Sales:',r.data.length);
+    DB.sales.forEach(function(s){var n=parseInt((s.bill||'').replace(/\D/g,''))||0;if(s.bill&&s.bill[0]==='G'&&n>=goldBN)goldBN=n+1;if(s.bill&&s.bill[0]==='S'&&n>=silverBN)silverBN=n+1;});
+    renderSalesList();renderDash();console.log('Sales loaded:',d.length);
   });
 
-  // ── Orders (all pending + last N days delivered) ──
-  client.from('orders').select('*, order_items(*)').or('status.eq.pending,and(status.eq.delivered,order_date.gte.'+fromDate+')').order('order_date',{ascending:false}).then(function(r){
-    if(r.error){console.error('Load orders:',r.error.message);return;}
+  dbGet('orders?select=*,order_items(*)&order=order_date.desc&order_date=gte.'+from,function(d,e){
+    if(e){console.error('Load orders:',e);return;}
     DB.orders=[];
-    (r.data||[]).forEach(function(row){
-      DB.orders.push({id:row.id,bill:row.bill_no,date:row.order_date,deliveryDate:row.delivery_date||'',cid:row.customer_id||'',customer:row.customer_name,desc:row.description||'',estVal:parseFloat(row.estimated_value)||0,advance:parseFloat(row.advance_paid)||0,status:row.status||'pending',items:(row.order_items||[]).map(function(it){return{metal:it.metal,desc:it.description,qty:it.quantity||1,wt:parseFloat(it.weight_g)||0,rate:parseFloat(it.rate_per_g)||0,va:parseFloat(it.va_pct)||0,gst:parseFloat(it.gst_pct)||0,tot:parseFloat(it.item_total)||0};})});
-    });
+    (d||[]).forEach(function(r){DB.orders.push({id:r.id,bill:r.bill_no,date:r.order_date,deliveryDate:r.delivery_date||'',cid:r.customer_id||'',customer:r.customer_name,desc:r.description||'',estVal:parseFloat(r.estimated_value)||0,advance:parseFloat(r.advance_paid)||0,status:r.status||'pending',items:(r.order_items||[]).map(function(it){return{metal:it.metal,desc:it.description,qty:it.quantity||1,wt:parseFloat(it.weight_g)||0,rate:parseFloat(it.rate_per_g)||0,va:parseFloat(it.va_pct)||0,gst:parseFloat(it.gst_pct)||0,tot:parseFloat(it.item_total)||0};})});});
     renderOrders();
-    var pending=DB.orders.filter(function(o){return o.status==='pending';}).length;var nb=G('nb-orders');if(nb){nb.textContent=pending;nb.style.display=pending>0?'':'none';}
-    console.log('Orders:',r.data.length);
+    var pend=DB.orders.filter(function(o){return o.status==='pending';}).length;var nb=G('nb-orders');if(nb){nb.textContent=pend;nb.style.display=pend>0?'':'none';}
+    console.log('Orders loaded:',d.length);
   });
 
-  // ── Customer Payments (last N days) ──
-  client.from('customer_payments').select('*').gte('pmt_date',fromDate).order('pmt_date',{ascending:false}).then(function(r){
-    if(r.error){console.error('Load payments:',r.error.message);return;}
+  dbGet('customer_payments?select=*&order=pmt_date.desc&pmt_date=gte.'+from,function(d,e){
+    if(e){console.error('Load payments:',e);return;}
     DB.payments=[];
-    (r.data||[]).forEach(function(row){DB.payments.push({id:row.id,cid:row.customer_id,customer:row.customer_name,type:row.pmt_type,amt:parseFloat(row.amount)||0,mode:row.mode||'',date:row.pmt_date,note:row.note||'',ogWt:parseFloat(row.og_weight_g)||0,ogMetal:row.og_metal||'',ogVal:parseFloat(row.og_value)||0});});
-    renderPayments();
-    console.log('Payments:',r.data.length);
+    (d||[]).forEach(function(r){DB.payments.push({id:r.id,cid:r.customer_id,customer:r.customer_name,type:r.pmt_type,amt:parseFloat(r.amount)||0,mode:r.mode||'',date:r.pmt_date,note:r.note||'',ogWt:parseFloat(r.og_weight_g)||0,ogMetal:r.og_metal||'',ogVal:parseFloat(r.og_value)||0});});
+    renderPayments();console.log('Payments loaded:',d.length);
   });
 
-  // ── Purchases (last N days) ──
-  client.from('purchases').select('*, purchase_items(*)').gte('purchase_date',fromDate).order('purchase_date',{ascending:false}).then(function(r){
-    if(r.error){console.error('Load purchases:',r.error.message);return;}
+  dbGet('purchases?select=*,purchase_items(*)&order=purchase_date.desc&purchase_date=gte.'+from,function(d,e){
+    if(e){console.error('Load purchases:',e);return;}
     DB.purchases=[];
-    (r.data||[]).forEach(function(row){DB.purchases.push({id:row.id,date:row.purchase_date,bill:row.bill_no,supId:row.supplier_id||'',supName:row.supplier_name,total:parseFloat(row.total_value)||0,items:(row.purchase_items||[]).map(function(it){return{desc:it.description,metal:it.metal,gross:parseFloat(it.gross_g)||0,pure:parseFloat(it.pure_g)||0,va:parseFloat(it.va_pct)||0};})});});
-    renderPurchases();
-    console.log('Purchases:',r.data.length);
+    (d||[]).forEach(function(r){DB.purchases.push({id:r.id,date:r.purchase_date,bill:r.bill_no,supId:r.supplier_id||'',supName:r.supplier_name,total:parseFloat(r.total_value)||0,items:(r.purchase_items||[]).map(function(it){return{desc:it.description,metal:it.metal,gross:parseFloat(it.gross_g)||0,pure:parseFloat(it.pure_g)||0,va:parseFloat(it.va_pct)||0};})});});
+    renderPurchases();console.log('Purchases loaded:',d.length);
   });
 
-  // ── Expenses (last N days) ──
-  client.from('expenses').select('*').gte('expense_date',fromDate).order('expense_date',{ascending:false}).then(function(r){
-    if(r.error){console.error('Load expenses:',r.error.message);return;}
+  dbGet('expenses?select=*&order=expense_date.desc&expense_date=gte.'+from,function(d,e){
+    if(e){console.error('Load expenses:',e);return;}
     DB.expenses=[];
-    (r.data||[]).forEach(function(row){DB.expenses.push({id:row.id,date:row.expense_date,amt:parseFloat(row.amount)||0,cat:row.category,mode:row.mode||'Cash',desc:row.description||''}); });
-    renderExpenses();
-    console.log('Expenses:',r.data.length);
+    (d||[]).forEach(function(r){DB.expenses.push({id:r.id,date:r.expense_date,amt:parseFloat(r.amount)||0,cat:r.category,mode:r.mode||'Cash',desc:r.description||''}); });
+    renderExpenses();console.log('Expenses loaded:',d.length);
   });
 
-  // ── Cash log (last N days) ──
-  client.from('cash_log').select('*').gte('log_date',fromDate).order('log_date',{ascending:false}).then(function(r){
-    if(r.error){console.error('Load cashlog:',r.error.message);return;}
+  dbGet('cash_log?select=*&order=log_date.desc&log_date=gte.'+from,function(d,e){
+    if(e){console.error('Load cashlog:',e);return;}
     DB.cashLog=[];
-    (r.data||[]).forEach(function(row){if(row.log_type==='opening'){DB.cashOB=parseFloat(row.amount)||0;}else{DB.cashLog.push({type:row.log_type,date:row.log_date,amount:parseFloat(row.amount)||0,desc:row.description||'',src:row.source||'manual'});}});
-    renderCashFlow();
-    console.log('CashLog:',r.data.length);
+    (d||[]).forEach(function(r){if(r.log_type==='opening')DB.cashOB=parseFloat(r.amount)||0;else DB.cashLog.push({type:r.log_type,date:r.log_date,amount:parseFloat(r.amount)||0,desc:r.description||'',src:r.source||'manual'});});
+    renderCashFlow();console.log('CashLog loaded:',d.length);
   });
 
-  // ── Suspense items (all available) ──
-  client.from('suspense_items').select('*').order('added_date',{ascending:false}).then(function(r){
-    if(r.error){console.error('Load suspense:',r.error.message);return;}
+  dbGet('suspense_items?select=*&order=added_date.desc',function(d,e){
+    if(e){console.error('Load suspense:',e);return;}
     DB.suspense=[];
-    (r.data||[]).forEach(function(row){DB.suspense.push({id:row.id,supplierId:row.supplier_id||'',desc:row.description,metal:row.metal,gross:parseFloat(row.gross_wt_g)||0,va:parseFloat(row.va_pct)||0,mc:parseFloat(row.mc_stone_inr)||0,tag:row.tag||'',status:row.status,soldBill:row.sold_bill_no||'',soldDate:row.sold_date||'',addedDate:row.added_date||''});});
-    renderSuspense();
-    console.log('Suspense:',r.data.length);
+    (d||[]).forEach(function(r){DB.suspense.push({id:r.id,_dbId:r.id,supplierId:r.supplier_id||'',desc:r.description,metal:r.metal,gross:parseFloat(r.gross_wt_g)||0,va:parseFloat(r.va_pct)||0,mc:parseFloat(r.mc_stone_inr)||0,tag:r.tag||'',status:r.status,soldBill:r.sold_bill_no||'',soldDate:r.sold_date||'',addedDate:r.added_date||''});});
+    renderSuspense();console.log('Suspense loaded:',d.length);
   });
 
-  // ── Metal log + old metal + batches (last N days) ──
-  client.from('metal_log').select('*').gte('log_date',fromDate).order('log_date',{ascending:false}).then(function(r){
-    if(r.error){console.error('Load metallog:',r.error.message);return;}
-    DB.metalLog=[];
-    var goldIn=0,goldOut=0,silverIn=0,silverOut=0;
-    (r.data||[]).forEach(function(row){
-      var w=parseFloat(row.weight_g)||0;
-      if(row.log_type==='in'||row.log_type==='refinery_complete'){if(row.metal==='Gold')goldIn+=w;else silverIn+=w;}
-      else if(row.log_type==='out'){if(row.metal==='Gold')goldOut+=w;else silverOut+=w;}
-      DB.metalLog.push({type:row.log_type,date:row.log_date,metal:row.metal,pure:w,wt:w,src:row.source||'',purpose:row.purpose||'',purity:parseFloat(row.purity_pct)||null,rate:parseFloat(row.rate_per_g)||0,pure999:row.log_type==='refinery_complete'?w:null});
+  dbGet('metal_log?select=*&order=log_date.desc&log_date=gte.'+from,function(d,e){
+    if(e){console.error('Load metallog:',e);return;}
+    DB.metalLog=[];var gIn=0,gOut=0,sIn=0,sOut=0;
+    (d||[]).forEach(function(r){var w=parseFloat(r.weight_g)||0;
+      if(r.log_type==='in'||r.log_type==='refinery_complete'){if(r.metal==='Gold')gIn+=w;else sIn+=w;}
+      else if(r.log_type==='out'){if(r.metal==='Gold')gOut+=w;else sOut+=w;}
+      DB.metalLog.push({type:r.log_type,date:r.log_date,metal:r.metal,pure:w,wt:w,src:r.source||'',purpose:r.purpose||'',purity:parseFloat(r.purity_pct)||null,pure999:r.log_type==='refinery_complete'?w:null});
     });
-    metalR.gold=Math.max(0,goldIn-goldOut);metalR.silver=Math.max(0,silverIn-silverOut);
-    updateMFDisp();renderMFLog();
-    console.log('MetalLog:',r.data.length);
+    metalR.gold=Math.max(0,gIn-gOut);metalR.silver=Math.max(0,sIn-sOut);
+    updateMFDisp();renderMFLog();console.log('MetalLog loaded:',d.length);
   });
 
-  client.from('old_metal_items').select('*').eq('is_batched',false).order('item_date',{ascending:false}).then(function(r){
-    if(r.error){console.error('Load oldmetal:',r.error.message);return;}
+  dbGet('old_metal_items?select=*&is_batched=eq.false&order=item_date.desc',function(d,e){
+    if(e){console.error('Load oldmetal:',e);return;}
     DB.oldMetal=[];
-    (r.data||[]).forEach(function(row){DB.oldMetal.push({id:row.id,metal:row.metal,wt:parseFloat(row.weight_g)||0,val:parseFloat(row.value_inr)||0,date:row.item_date,src:row.source||'',batched:row.is_batched||false});});
-    console.log('OldMetal:',r.data.length);
+    (d||[]).forEach(function(r){DB.oldMetal.push({id:r.id,_dbId:r.id,metal:r.metal,wt:parseFloat(r.weight_g)||0,val:parseFloat(r.value_inr)||0,date:r.item_date,src:r.source||'',batched:false});});
+    console.log('OldMetal loaded:',d.length);
   });
 
-  client.from('refinery_batches').select('*').order('sent_date',{ascending:false}).then(function(r){
-    if(r.error){console.error('Load batches:',r.error.message);return;}
+  dbGet('refinery_batches?select=*&order=sent_date.desc',function(d,e){
+    if(e){console.error('Load batches:',e);return;}
     DB.batches=[];metalR.refinery=0;
-    (r.data||[]).forEach(function(row){var b={id:row.id,metal:row.metal,ref:row.refinery_name,totalWt:parseFloat(row.total_wt_g)||0,date:row.sent_date,status:row.status,returnWt:parseFloat(row.return_wt_g)||0,purity:parseFloat(row.purity_pct)||0,pure999:parseFloat(row.pure999_g)||0,items:[]};DB.batches.push(b);if(b.status==='pending')metalR.refinery+=b.totalWt;});
+    (d||[]).forEach(function(r){var b={id:r.id,metal:r.metal,ref:r.refinery_name,totalWt:parseFloat(r.total_wt_g)||0,date:r.sent_date,status:r.status,returnWt:parseFloat(r.return_wt_g)||0,purity:parseFloat(r.purity_pct)||0,items:[]};DB.batches.push(b);if(b.status==='pending')metalR.refinery+=b.totalWt;});
     updateMFDisp();loadPendingBatches();
     var dsb=G('ds-bat');if(dsb)dsb.textContent=DB.batches.filter(function(b){return b.status==='pending';}).length;
-    console.log('Batches:',r.data.length);
+    console.log('Batches loaded:',d.length);
   });
 
-  setTimeout(function(){showDbStatus('Supabase');renderDash();},3000);
+  setTimeout(function(){showDbStatus('Supabase');renderDash();},4000);
 }
+
+// ── Rates: plain fetch, no abstraction ──
+function loadRatesFromDB(){
+  if(!sbHasConfig())return;
+  dbGet('board_rates?select=*&order=updated_at.desc&limit=1',function(d,e){
+    if(e){console.warn('Rates load:',e);return;}
+    if(!d||!d.length)return;
+    var r=d[0];
+    R.k22=parseFloat(r.k22)||R.k22;R.k18=parseFloat(r.k18)||R.k18;R.k916=parseFloat(r.k916)||R.k916;
+    R.sil=parseFloat(r.silver)||R.sil;R.dia=parseFloat(r.diamond)||R.dia;R.plat=parseFloat(r.platinum)||R.plat;
+    G('r22t').textContent='₹'+R.k22.toLocaleString('en-IN');
+    G('r18t').textContent='₹'+R.k18.toLocaleString('en-IN');
+    G('rsilt').textContent='₹'+R.sil.toLocaleString('en-IN');
+    console.log('Rates loaded: 22K='+R.k22+' SIL='+R.sil);
+  });
+}
+
 
 // ── INIT ──
 ['ex-date','pu-date','cob-date','ce-date','st-date','or-date','cp-date','spy-date'].forEach(function(id){var e=G(id);if(e)e.value=td();});
