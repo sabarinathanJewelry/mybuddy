@@ -1302,6 +1302,18 @@ function doLogin(){
 }
 function showAuth(){var e=G('auth-screen');if(e)e.classList.add('show');}
 
+// ── SUPABASE REST HELPER ──
+function sbUrl(){return localStorage.getItem('erp_supabase_url')||CFG.supabaseUrl||'';}
+function sbKey(){return localStorage.getItem('erp_supabase_key')||CFG.supabaseKey||'';}
+function sbHeaders(){return{'apikey':sbKey(),'Authorization':'Bearer '+sbKey(),'Content-Type':'application/json','Prefer':'return=representation'};}
+function sbHasConfig(){return !!(sbUrl()&&sbKey());}
+
+// Generic Supabase REST call
+function sbFetch(table, method, body, query){
+  var url=sbUrl()+'/rest/v1/'+table+(query?'?'+query:'');
+  return fetch(url,{method:method||'GET',headers:sbHeaders(),body:body?JSON.stringify(body):undefined});
+}
+
 // ── SUPABASE CONFIG ──
 function saveSupabaseConfig(){
   var url=V('cfg-url').trim(), key=V('cfg-key').trim();
@@ -1309,8 +1321,11 @@ function saveSupabaseConfig(){
   CFG.supabaseUrl=url; CFG.supabaseKey=key;
   localStorage.setItem('erp_supabase_url',url);
   localStorage.setItem('erp_supabase_key',key);
-  G('cfg-status').innerHTML='<span style="color:var(--grn)">&#10003; Config saved. Refresh to connect.</span>';
-  G('db-mode-badge').textContent='Supabase (Ready)';
+  G('cfg-status').innerHTML='<span style="color:var(--grn)">&#10003; Config saved. Loading rates from DB...</span>';
+  G('db-mode-badge').textContent='Supabase (Connected)';
+  G('db-dot').style.background='var(--grn)';
+  G('db-status').textContent='Supabase';
+  loadRatesFromDB();
 }
 function testConnection(){
   G('cfg-status').innerHTML='Testing...';
@@ -1321,6 +1336,29 @@ function testConnection(){
     .catch(function(e){G('cfg-status').innerHTML='<span style="color:var(--red)">&#10005; '+e.message+'</span>';});
 }
 function clearAllData(){DB={sales:[],custs:{},sups:{},suspense:[],purchases:[],expenses:[],metalLog:[],cashLog:[],orders:[],payments:[],batches:[],oldMetal:[],cashOB:0};metalR={gold:0,silver:0,goldsmiths:0,refinery:0};goldBN=1;silverBN=1;renderDash();renderCashFlow();alert('Local data cleared.');}
+
+// ── LOAD RATES FROM DB ──
+function loadRatesFromDB(){
+  if(!sbHasConfig())return;
+  sbFetch('board_rates','GET',null,'order=updated_at.desc&limit=1')
+    .then(function(r){return r.json();})
+    .then(function(data){
+      if(data&&data.length>0){
+        var row=data[0];
+        R.k22=parseFloat(row.k22)||R.k22;
+        R.k18=parseFloat(row.k18)||R.k18;
+        R.k916=parseFloat(row.k916)||R.k916;
+        R.sil=parseFloat(row.silver)||R.sil;
+        R.dia=parseFloat(row.diamond)||R.dia;
+        R.plat=parseFloat(row.platinum)||R.plat;
+        G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');
+        G('r18t').textContent='\u20B9'+R.k18.toLocaleString('en-IN');
+        G('rsilt').textContent='\u20B9'+R.sil.toLocaleString('en-IN');
+        var cs=G('cfg-status');if(cs&&cs.innerHTML.indexOf('Loading')>=0)cs.innerHTML='<span style="color:var(--grn)">&#10003; Rates loaded from DB</span>';
+      }
+    })
+    .catch(function(e){console.warn('Could not load rates:',e);});
+}
 
 // ── SIDEBAR ──
 function toggleSidebar(){var sb=G('sidebar'),ov=G('sidebar-overlay');if(!sb)return;sb.classList.toggle('open');if(ov)ov.classList.toggle('show');}
@@ -1374,6 +1412,22 @@ function saveRates(){
   G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');G('r18t').textContent='\u20B9'+R.k18.toLocaleString('en-IN');G('rsilt').textContent='\u20B9'+R.sil.toLocaleString('en-IN');
   closeM('m-rates');
   document.querySelectorAll('.li-box').forEach(function(li){var ctx=li.dataset.ctx||'sale';recalcLI(li.id,ctx);});
+  // Save to Supabase
+  if(sbHasConfig()){
+    var payload={k22:R.k22,k18:R.k18,k916:R.k916,silver:R.sil,diamond:R.dia,platinum:R.plat,updated_at:new Date().toISOString()};
+    sbFetch('board_rates','POST',payload)
+      .then(function(r){
+        if(r.ok){
+          var dot=G('db-dot'),st=G('db-status');
+          if(dot)dot.style.background='var(--grn)';
+          if(st)st.textContent='Saved \u2713';
+          setTimeout(function(){if(st)st.textContent='Supabase';},2500);
+        } else {
+          return r.text().then(function(t){alert('DB Error '+r.status+': '+t);});
+        }
+      })
+      .catch(function(e){alert('Save failed: '+e.message);});
+  }
 }
 
 function populateSupSelects(){
@@ -1669,7 +1723,11 @@ G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');
 G('r18t').textContent='\u20B9'+R.k18.toLocaleString('en-IN');
 G('rsilt').textContent='\u20B9'+R.sil.toLocaleString('en-IN');
 // Load saved Supabase config
-if(CFG.supabaseUrl){var dbs=G('db-status');if(dbs)dbs.textContent='Supabase';}
+if(sbHasConfig()){
+  var dbs=G('db-status');if(dbs)dbs.textContent='Supabase';
+  var dot=G('db-dot');if(dot)dot.style.background='var(--grn)';
+  loadRatesFromDB();
+}
 renderDash();
 setTimeout(function(){initSaleForm();},100);
 // Check if we should show auth
