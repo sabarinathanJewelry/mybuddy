@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -835,6 +834,35 @@ input:checked+.tslider::before { transform:translateX(17px); }
 .gl-unlock-flash.go{animation:unlock-flash .6s ease forwards;}
 @keyframes unlock-flash{0%{opacity:0}30%{opacity:.7}100%{opacity:0}}
 
+/* ═══ LOGIN SCREEN ═══ */
+.login-screen{display:none;position:fixed;inset:0;background:#0D0B08;z-index:9998;flex-direction:column;align-items:center;justify-content:center;padding:20px;}
+.login-screen.show{display:flex;}
+.login-card{background:var(--card);border-radius:20px;padding:28px 24px;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,0.4);}
+.login-logo{text-align:center;margin-bottom:20px;}
+.login-gem{width:48px;height:48px;background:linear-gradient(135deg,var(--gold-light),var(--gold-dark));border-radius:14px;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-size:24px;}
+.login-title{font-family:'DM Serif Display',serif;font-size:20px;text-align:center;color:var(--tx);}
+.login-sub{font-size:11px;color:var(--tx3);text-align:center;margin-top:3px;}
+.login-users-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tx3);margin-bottom:10px;}
+.login-user-btns{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;}
+.login-user-btn{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 12px;border:1.5px solid var(--bdr);border-radius:12px;background:var(--card);cursor:pointer;font-family:inherit;transition:all .15s;min-width:70px;flex:1;}
+.login-user-btn:hover{border-color:var(--gold);background:var(--gold-pale);}
+.login-user-btn.selected{border-color:var(--gold);background:var(--gold-pale);box-shadow:0 0 0 3px rgba(201,152,10,.15);}
+.login-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;}
+.login-uname{font-size:11px;font-weight:700;color:var(--tx);}
+.login-urole{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;}
+.pin-entry{display:none;border-top:1px solid var(--bdr);padding-top:16px;margin-top:4px;}
+.pin-user-label-wrap{text-align:center;margin-bottom:14px;}
+.pin-user-label{font-size:15px;font-weight:700;color:var(--tx);}
+.pin-dots{display:flex;justify-content:center;gap:12px;margin-bottom:18px;}
+.pin-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--bdr);background:transparent;transition:all .15s;}
+.pin-dot.filled{background:var(--gold);border-color:var(--gold-dark);transform:scale(1.1);}
+.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:240px;margin:0 auto;}
+.pin-key{padding:14px;border-radius:12px;border:1.5px solid var(--bdr);background:var(--card);font-size:18px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--tx);transition:all .12s;-webkit-tap-highlight-color:transparent;}
+.pin-key:active{background:var(--gold-pale);border-color:var(--gold);transform:scale(.93);}
+.pin-key.del{font-size:16px;color:var(--red);border-color:rgba(192,57,43,.2);background:var(--rdbg);}
+.pin-key.zero{grid-column:2;}
+#login-error{text-align:center;color:var(--red);font-size:12px;font-weight:600;min-height:18px;margin-top:8px;}
+
 </style>
 </head>
 <body>
@@ -932,6 +960,45 @@ input:checked+.tslider::before { transform:translateX(17px); }
   </div>
 </div>
 
+<!-- ═══ LOGIN SCREEN (after gun game) ═══ -->
+<div class="login-screen" id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-gem">💰</div>
+      <div class="login-title">MyBuddy</div>
+      <div class="login-sub">Select your profile</div>
+    </div>
+    <div class="login-users-label">Who are you?</div>
+    <div class="login-user-btns" id="login-user-btns">
+      <!-- Populated by JS -->
+    </div>
+    <div class="pin-entry" id="pin-entry-area">
+      <div class="pin-user-label-wrap">
+        <div style="font-size:10px;color:var(--tx3);margin-bottom:2px">Enter PIN for</div>
+        <div class="pin-user-label" id="pin-user-label">-</div>
+      </div>
+      <div class="pin-dots" id="pin-dots">
+        <div class="pin-dot"></div><div class="pin-dot"></div>
+        <div class="pin-dot"></div><div class="pin-dot"></div>
+      </div>
+      <div class="pin-pad">
+        <button class="pin-key" onclick="pinPress(1)">1</button>
+        <button class="pin-key" onclick="pinPress(2)">2</button>
+        <button class="pin-key" onclick="pinPress(3)">3</button>
+        <button class="pin-key" onclick="pinPress(4)">4</button>
+        <button class="pin-key" onclick="pinPress(5)">5</button>
+        <button class="pin-key" onclick="pinPress(6)">6</button>
+        <button class="pin-key" onclick="pinPress(7)">7</button>
+        <button class="pin-key" onclick="pinPress(8)">8</button>
+        <button class="pin-key" onclick="pinPress(9)">9</button>
+        <button class="pin-key del" onclick="pinBackspace()">⌫</button>
+        <button class="pin-key zero" onclick="pinPress(0)">0</button>
+      </div>
+      <div id="login-error"></div>
+    </div>
+  </div>
+</div>
+
 <div class="app">
 <!-- ── SIDEBAR ── -->
 <nav class="sidebar" id="sidebar">
@@ -946,7 +1013,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
     <div class="rate-chip" onclick="openM('m-rates')"><span class="rl">22K</span> <span class="rv" id="r22t">&#8377;7,450</span></div>
     <div class="rate-chip" onclick="openM('m-rates')"><span class="rl">18K</span> <span class="rv" id="r18t">&#8377;6,090</span></div>
     <div class="rate-chip" onclick="openM('m-rates')"><span class="rl">SIL</span> <span class="rv" id="rsilt">&#8377;92</span></div>
-    <div class="rate-chip edit-chip" onclick="openM('m-rates')"><span class="rv">&#9881; Edit</span></div>
+    <div class="rate-chip edit-chip admin-only" onclick="if(requireAdmin())openM('m-rates')"><span class="rv">&#9881; Edit</span></div>
   </div>
   <div class="sidebar-nav">
     <div class="nav-section-label">Main</div>
@@ -965,6 +1032,10 @@ input:checked+.tslider::before { transform:translateX(17px); }
     <button class="nav-item" id="ni-metalflow" onclick="showPg('pg-metalflow',this,'Metal Flow')"><span class="ni">&#9879;</span>Metal Flow</button>
     <button class="nav-item" id="ni-suspense" onclick="showPg('pg-suspense',this,'Suspense Stock')"><span class="ni">&#128274;</span>Suspense</button>
 
+    <div class="nav-section-label">Reports</div>
+    <button class="nav-item" id="ni-reports" onclick="showPg('pg-reports',this,'Reports')"><span class="ni">&#128202;</span>Reports</button>
+    <button class="nav-item" id="ni-balance" onclick="showPg('pg-balance',this,'Balance Sheet')"><span class="ni">&#9878;</span>Balance Sheet</button>
+    <button class="nav-item" id="ni-loans" onclick="showPg('pg-loans',this,'Loans')"><span class="ni">&#127981;</span>Loans</button>
     <div class="nav-section-label">People</div>
     <button class="nav-item" id="ni-customers" onclick="showPg('pg-customers',this,'Customers')"><span class="ni">&#128101;</span>Customers</button>
     <button class="nav-item" id="ni-suppliers" onclick="showPg('pg-suppliers',this,'Suppliers')"><span class="ni">&#127970;</span>Suppliers</button>
@@ -1383,6 +1454,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
       <div id="sl-table" style="overflow-x:auto"></div>
     </div>
   </div>
+  </div>
 </div>
 
 <!-- SALES LIST -->
@@ -1402,11 +1474,151 @@ input:checked+.tslider::before { transform:translateX(17px); }
     <div id="sed-pays"></div>
     <button class="btn btng" style="margin-top:10px" onclick="saveSaleEdit()">Save Changes</button>
   </div>
+
+  </div><!-- end settings-db-tab -->
+
+  <div id="settings-users-tab" style="display:none">
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-header"><div><div class="card-title">App Users</div><div class="card-sub">Each user has their own gun-lock sequence</div></div><button class="btn btnsm btnog" onclick="openM('m-adduser')">+ Add User</button></div>
+      <div id="users-list"><div class="empty"><div class="etxt">Loading users...</div></div></div>
+    </div>
+    <div class="card"><div class="card-header"><div class="card-title">Roles & Permissions</div></div><div id="roles-list"></div></div>
+  </div>
+</div>
+
+<div class="page" id="pg-reports">
+  <div class="page-header">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div><h1>Reports</h1><p>Sales analytics by date, payment mode and metal</p></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn btnsm btnog" onclick="rptSetDate('today')">Today</button>
+        <button class="btn btnsm btnog" onclick="rptSetDate('week')">This Week</button>
+        <button class="btn btnsm btnog" onclick="rptSetDate('month')">This Month</button>
+        <button class="btn btnsm btnog" onclick="rptSetDate('fin')">This FY</button>
+        <button class="btn btnsm btnog" onclick="rptSetDate('lastfin')">Last FY</button>
+        <button class="btn btnsm btnog" onclick="rptSetDate('year')">This Year</button>
+      </div>
+    </div>
+    <div class="g3" style="margin-top:12px">
+      <div class="field"><label>From</label><input type="date" id="rpt-from" onchange="renderReports()"></div>
+      <div class="field"><label>To</label><input type="date" id="rpt-to" onchange="renderReports()"></div>
+      <div style="display:flex;align-items:flex-end"><button class="btn btng btnfull" onclick="renderReports()">&#128200; Generate</button></div>
+    </div>
+  </div>
+
+  <!-- Summary cards -->
+  <div class="metrics c4" id="rpt-summary" style="margin-bottom:16px"></div>
+
+  <!-- Payment mode breakdown -->
+  <div class="g2" style="align-items:start;gap:16px;margin-bottom:16px">
+    <div class="card">
+      <div class="card-header"><div class="card-title">&#128176; Collection by Mode</div></div>
+      <div id="rpt-modes"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">&#129680; Metal Weight Sold</div></div>
+      <div id="rpt-metals"></div>
+    </div>
+  </div>
+
+  <!-- Daily breakdown table -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Daily Sales Breakdown</div>
+      <select id="rpt-group" onchange="renderReports()" style="font-size:12px;width:130px">
+        <option value="day">By Day</option>
+        <option value="month">By Month</option>
+      </select>
+    </div>
+    <div id="rpt-table" style="overflow-x:auto"></div>
+  </div>
+
+  <!-- Refined gold profit section -->
+  <div class="card" style="margin-top:16px">
+    <div class="card-header">
+      <div><div class="card-title">&#129753; Refined Gold Sale & Profit</div><div class="card-sub">Record when refined gold is sold. Profit = Sale Price - Purchase Cost - Testing Fee</div></div>
+      <button class="btn btnsm btnog" onclick="openM('m-refgold')">+ Record Sale</button>
+    </div>
+    <div id="rpt-refgold"><div class="empty"><div class="etxt">No refined gold sales recorded</div></div></div>
+  </div>
+</div>
+
+<!-- ════ BALANCE SHEET PAGE ════ -->
+<div class="page" id="pg-balance">
+  <div class="page-header"><h1>Balance Sheet</h1><p>Assets, liabilities and net worth — as of today</p></div>
+  <div class="g2" style="align-items:start;gap:16px">
+    <!-- Assets -->
+    <div class="card">
+      <div class="card-header"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">&#128200;</span><div class="card-title" style="color:var(--grn)">Assets</div></div></div>
+      <div id="bs-assets"></div>
+      <div class="totpanel" style="margin-top:12px;border-color:rgba(29,122,58,0.3);background:var(--gnbg)">
+        <div class="trow big" style="border-color:rgba(29,122,58,0.3)"><span class="tlbl" style="color:var(--grn)">Total Assets</span><span class="tval" id="bs-total-assets" style="color:var(--grn)">&#8377;0</span></div>
+      </div>
+    </div>
+    <!-- Liabilities + Net Worth -->
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">&#128178;</span><div class="card-title" style="color:var(--red)">Liabilities</div></div></div>
+        <div id="bs-liabilities"></div>
+        <div class="totpanel" style="margin-top:12px;border-color:rgba(192,57,43,0.3);background:var(--rdbg)">
+          <div class="trow big" style="border-color:rgba(192,57,43,0.3)"><span class="tlbl" style="color:var(--red)">Total Liabilities</span><span class="tval" id="bs-total-liab" style="color:var(--red)">&#8377;0</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">&#9878;</span><div class="card-title" style="color:var(--gold-dark)">Net Worth</div></div></div>
+        <div id="bs-networth"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════ LOANS PAGE ════ -->
+<div class="page" id="pg-loans">
+  <div class="page-header">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div><h1>Loans</h1><p>Bank loans, local borrowings and interest tracking</p></div>
+      <button class="btn btng" onclick="openM('m-addloan')">+ Add Loan</button>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="metrics c3" style="margin-bottom:16px">
+    <div class="met"><div class="ml">Total Borrowed</div><div class="mv r" id="loan-total">&#8377;0</div></div>
+    <div class="met"><div class="ml">Total Outstanding</div><div class="mv r" id="loan-outstanding">&#8377;0</div></div>
+    <div class="met"><div class="ml">Monthly Interest</div><div class="mv a" id="loan-interest">&#8377;0</div></div>
+  </div>
+
+  <!-- Loan list -->
+  <div class="card">
+    <div class="card-header"><div class="card-title">Active Loans</div></div>
+    <div id="loan-list"><div class="empty"><div class="etxt">No loans added</div></div></div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <div class="card-header"><div class="card-title">Closed / Repaid Loans</div></div>
+    <div id="loan-closed"><div class="empty" style="padding:16px"><div class="etxt">No closed loans</div></div></div>
+  </div>
 </div>
 
 <!-- SETTINGS -->
 <div class="page" id="pg-settings">
-  <div class="page-header"><h1>Settings</h1><p>Database and account configuration</p></div>
+  <div class="page-header"><h1>Settings</h1><p>Database, users and configuration</p></div>
+  <div class="card admin-only" style="margin-bottom:16px">
+    <div class="card-header"><div><div class="card-title">👥 User Management</div><div class="card-sub">5 users — 4 Admin, 1 Staff</div></div><button class="btn btnsm btnog" onclick="renderUsersSettings()">Refresh</button></div>
+    <table class="data-table" style="margin-bottom:10px"><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>PIN</th></tr></thead><tbody id="users-table"><tr><td colspan="4" style="text-align:center;color:var(--tx3);padding:14px">Loading...</td></tr></tbody></table>
+    <div class="warnbar" style="font-size:11px">Run the SQL below in Supabase to create the users table. Default PIN: <strong>1234</strong> (admin) / <strong>0000</strong> (staff).</div>
+    <details style="margin-top:8px"><summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--gold-dark)">Show SQL to create users table</summary>
+    <pre style="background:var(--sidebar-bg);color:#E8B84B;padding:12px;border-radius:8px;font-size:11px;overflow-x:auto;margin-top:8px">CREATE TABLE shop_users (
+  id uuid DEFAULT uuid_generate_v4() PRIMARY KEY,
+  username text UNIQUE NOT NULL,
+  full_name text NOT NULL,
+  role text DEFAULT 'staff' CHECK (role IN ('admin','staff')),
+  pin_hash text,
+  active boolean DEFAULT true,
+  last_login timestamptz,
+  created_at timestamptz DEFAULT now()
+);</pre>
+    </details>
+  </div>
   <div class="g2" style="align-items:start;gap:16px">
     <div class="card">
       <div class="card-header"><div class="card-title">&#9889; Supabase Connection</div></div>
@@ -2257,6 +2469,8 @@ function renderDash(){
 
 // ── SETTINGS ──
 function renderSettings(){
+  // Load fresh user data if on users tab
+  if(G('settings-users-tab')&&G('settings-users-tab').style.display!=='none')renderUsersTab();
   var ui=G('cfg-url');if(ui)ui.value=sbUrl();
   var ki=G('cfg-key');if(ki)ki.value=sbKey();
   var total=DB.sales.length+Object.keys(DB.custs).length+Object.keys(DB.sups).length+DB.payments.length;
@@ -2750,8 +2964,15 @@ function glFire(side){
 
   // ── Secret sequence check (invisible to user) ──
   glSeq.push(side);
-  if(glSeq.length>GUN_CODE.length)glSeq.shift(); // rolling window
-  if(JSON.stringify(glSeq)===JSON.stringify(GUN_CODE)){
+  if(glSeq.length>5)glSeq.shift(); // rolling window of 5
+  // Check if the last N shots match ANY user's code
+  var _matched=USERS.find(function(u){
+    var last=glSeq.slice(-u.code.length);
+    return JSON.stringify(last)===JSON.stringify(u.code);
+  });
+  if(_matched){
+    CURRENT_USER=_matched;
+    GUN_CODE=_matched.code;
     glUnlock();
   }
 }
@@ -2794,18 +3015,9 @@ function glUnlock(){
         lock.classList.remove('show');
         lock.style.display='none';
         glLocked=false;
-        // Boot the real app
-        G('r22t').textContent='₹'+R.k22.toLocaleString('en-IN');
-        G('r18t').textContent='₹'+R.k18.toLocaleString('en-IN');
-        G('rsilt').textContent='₹'+R.sil.toLocaleString('en-IN');
-        if(sbHasConfig()){
-          var dbs=G('db-status');if(dbs)dbs.textContent='Supabase';
-          var dot=G('db-dot');if(dot)dot.style.background='var(--grn)';
-          dbLoadAll();loadRatesFromDB();
-        }
-        renderDash();
-        setTimeout(function(){initSaleForm();},100);
-        setTimeout(function(){applyTranslations();},200);
+        // Show login screen — app boots after user selects and enters PIN
+        if(sbHasConfig())initUsersTable();
+        showLoginScreen();
       },500);
     }
   },300);
@@ -3312,6 +3524,830 @@ var _editOrdId=null;
 function openEditOrder(id){var o=null;DB.orders.forEach(function(x){if(x.id===id)o=x;});if(!o)return;_editOrdId=id;G('eo-del').value=o.deliveryDate||'';G('eo-desc').value=o.desc||'';openM('m-editord');}
 function saveEditOrder(){var o=null;DB.orders.forEach(function(x){if(x.id===_editOrdId)o=x;});if(!o)return;o.deliveryDate=V('eo-del');o.desc=V('eo-desc');closeM('m-editord');renderOrders();alert('✓ Order updated!');}
 
+// ═══════════════════════════════════════════════════════════════
+// USER AUTHENTICATION & ROLES
+// Users: Sabari, Vikash, Ravi, Subramanian (admin) | RSJ Staff (staff)
+// ═══════════════════════════════════════════════════════════════
+
+var CURRENT_USER = null; // {id, username, fullName, role, pin_hash}
+
+// Default users — stored in Supabase shop_users table.
+// PINs are SHA-256 hashed. Defaults below; change via Settings → Users.
+var DEFAULT_USERS = [
+  {username:'sabari',      fullName:'Sabari',       role:'admin', pin:'1234'},
+  {username:'vikash',      fullName:'Vikash',        role:'admin', pin:'1234'},
+  {username:'ravi',        fullName:'Ravi',          role:'admin', pin:'1234'},
+  {username:'subramanian', fullName:'Subramanian',   role:'admin', pin:'1234'},
+  {username:'rsjstaff',    fullName:'RSJ Staff',     role:'staff', pin:'0000'},
+];
+
+// Staff restrictions — nav items hidden, actions blocked
+var STAFF_HIDDEN_NAV = ['ni-cashflow','ni-purchase','ni-metalflow','ni-suspense','ni-suppliers'];
+var STAFF_HIDDEN_PAGES = ['pg-cashflow','pg-purchase','pg-metalflow','pg-suspense','pg-suppliers','pg-settings'];
+var STAFF_READONLY_PAGES = ['pg-customers'];
+
+function isAdmin(){ return CURRENT_USER && CURRENT_USER.role==='admin'; }
+function isStaff(){ return CURRENT_USER && CURRENT_USER.role==='staff'; }
+
+// ── SHA-256 using Web Crypto ──
+async function sha256(str){
+  var buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,'0');}).join('');
+}
+
+// ── Login after gun game ──
+function showLoginScreen(){
+  var ls=G('login-screen');
+  if(ls)ls.classList.add('show');
+  // Populate user buttons
+  var ub=G('login-user-btns');
+  if(!ub)return;
+  // Load from Supabase or use defaults
+  loadUsersForLogin();
+}
+
+var _loginUsers = []; // loaded users list
+
+function loadUsersForLogin(){
+  if(sbHasConfig()){
+    dbGet('shop_users?select=*&active=eq.true&order=full_name.asc', function(d,e){
+      if(e||!d||!d.length){
+        _loginUsers=DEFAULT_USERS.map(function(u){return{username:u.username,fullName:u.fullName,role:u.role,pin_hash:null};});
+      } else {
+        _loginUsers=d.map(function(r){return{id:r.id,username:r.username,fullName:r.full_name,role:r.role,pin_hash:r.pin_hash};});
+      }
+      renderLoginUsers();
+    });
+  } else {
+    _loginUsers=DEFAULT_USERS.map(function(u){return{username:u.username,fullName:u.fullName,role:u.role,pin_hash:null};});
+    renderLoginUsers();
+  }
+}
+
+var _selectedUser = null;
+
+function renderLoginUsers(){
+  var ub=G('login-user-btns'); if(!ub)return;
+  ub.innerHTML=_loginUsers.map(function(u){
+    var initials=u.fullName.split(' ').map(function(w){return w[0];}).join('').toUpperCase().slice(0,2);
+    var color=u.role==='admin'?'var(--gold)':'var(--blu)';
+    return '<button class="login-user-btn" onclick="selectLoginUser(\''+u.username+'\')" data-user="'+u.username+'">'+
+      '<div class="login-avatar" style="background:'+color+'">'+initials+'</div>'+
+      '<div class="login-uname">'+u.fullName+'</div>'+
+      '<div class="login-urole" style="color:'+(u.role==='admin'?'var(--gold-light)':'var(--tx3)')+'">'+u.role+'</div>'+
+    '</button>';
+  }).join('');
+}
+
+function selectLoginUser(username){
+  _selectedUser=_loginUsers.find(function(u){return u.username===username;});
+  if(!_selectedUser)return;
+  // Highlight selected
+  document.querySelectorAll('.login-user-btn').forEach(function(b){
+    b.classList.toggle('selected', b.dataset.user===username);
+  });
+  // Show PIN entry
+  var pd=G('pin-entry-area');
+  if(pd){pd.style.display='block';}
+  var lbl=G('pin-user-label');
+  if(lbl)lbl.textContent=_selectedUser.fullName;
+  clearPin();
+  G('login-error').textContent='';
+}
+
+var _pinVal = '';
+function pinPress(d){
+  if(_pinVal.length>=4)return;
+  _pinVal+=d.toString();
+  renderPinDots();
+  if(_pinVal.length===4)setTimeout(submitPin,200);
+}
+function pinBackspace(){_pinVal=_pinVal.slice(0,-1);renderPinDots();}
+function clearPin(){_pinVal='';renderPinDots();}
+function renderPinDots(){
+  var dots=G('pin-dots');
+  if(!dots)return;
+  dots.innerHTML='';
+  for(var i=0;i<4;i++){
+    var d=document.createElement('div');
+    d.className='pin-dot'+(i<_pinVal.length?' filled':'');
+    dots.appendChild(d);
+  }
+}
+
+async function submitPin(){
+  if(!_selectedUser)return;
+  var entered=_pinVal;
+  var err=G('login-error');
+  // Try Supabase lookup first
+  if(sbHasConfig()&&_selectedUser.pin_hash){
+    var hashed=await sha256(entered);
+    if(hashed===_selectedUser.pin_hash){
+      doAppLogin(_selectedUser);
+    } else {
+      if(err)err.textContent='Wrong PIN. Try again.';
+      clearPin();
+    }
+  } else {
+    // Fallback: match against defaults
+    var def=DEFAULT_USERS.find(function(u){return u.username===_selectedUser.username;});
+    if(def&&entered===def.pin){
+      doAppLogin(_selectedUser);
+    } else if(entered==='1234'&&_selectedUser.role==='admin'){
+      doAppLogin(_selectedUser);
+    } else if(entered==='0000'&&_selectedUser.role==='staff'){
+      doAppLogin(_selectedUser);
+    } else {
+      if(err)err.textContent='Wrong PIN. Try again.';
+      clearPin();
+    }
+  }
+}
+
+function doAppLogin(user){
+  CURRENT_USER=user;
+  // Hide login screen
+  var ls=G('login-screen');
+  if(ls){ls.style.opacity='0';ls.style.transform='scale(1.05)';setTimeout(function(){ls.classList.remove('show');ls.style.cssText='';},400);}
+  // Update sidebar user info
+  var un=G('user-name');if(un)un.textContent=user.fullName;
+  var ur=G('user-role');if(ur)ur.textContent=user.role==='admin'?'Admin':'Staff';
+  var ua=G('user-avatar');if(ua){ua.textContent=user.fullName.split(' ').map(function(w){return w[0];}).join('').slice(0,2).toUpperCase();ua.style.background=user.role==='admin'?'linear-gradient(135deg,var(--gold-light),var(--gold-dark))':'var(--blu)';}
+  // Apply role restrictions
+  applyRoleRestrictions();
+  // Boot app
+  G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');
+  G('r18t').textContent='\u20B9'+R.k18.toLocaleString('en-IN');
+  G('rsilt').textContent='\u20B9'+R.sil.toLocaleString('en-IN');
+  if(sbHasConfig()){dbLoadAll();loadRatesFromDB();}
+  renderDash();
+  setTimeout(function(){initSaleForm();},100);
+  setTimeout(function(){applyTranslations();},200);
+  // Log login time
+  if(sbHasConfig()&&user.id){dbPatch('shop_users','id=eq.'+user.id,{last_login:new Date().toISOString()},null);}
+}
+
+function applyRoleRestrictions(){
+  if(isAdmin()){
+    // Show everything
+    document.querySelectorAll('.nav-item,.bni').forEach(function(el){el.style.display='';});
+    document.querySelectorAll('.admin-only').forEach(function(el){el.style.display='';});
+    document.querySelectorAll('.staff-hidden').forEach(function(el){el.style.display='';});
+    return;
+  }
+  // Staff: hide restricted nav
+  STAFF_HIDDEN_NAV.forEach(function(id){var e=G(id);if(e)e.style.display='none';});
+  // Hide admin-only UI elements
+  document.querySelectorAll('.admin-only').forEach(function(el){el.style.display='none';});
+  // Hide rates edit button
+  var editRates=document.querySelectorAll('[onclick*="m-rates"]');
+  editRates.forEach(function(e){if(e.textContent&&e.textContent.indexOf('Edit')>=0)e.style.display='none';});
+}
+
+// Guard function — call before any admin action
+function requireAdmin(action){
+  if(isAdmin())return true;
+  alert('This action requires admin access.\nPlease ask an admin to perform this.');
+  return false;
+}
+
+// ── USER MANAGEMENT (Settings page) ──
+function renderUsersSettings(){
+  var t=G('users-table');if(!t)return;
+  t.innerHTML=_loginUsers.map(function(u){
+    return '<tr>'+
+      '<td style="font-weight:600">'+u.fullName+'</td>'+
+      '<td style="font-size:12px;color:var(--tx3)">'+u.username+'</td>'+
+      '<td><span class="badge '+(u.role==='admin'?'bgold':'bb')+'">'+u.role+'</span></td>'+
+      '<td><button class="btn btnsm btnog" onclick="openChangePIN(\''+u.username+'\')">Change PIN</button></td>'+
+    '</tr>';
+  }).join('');
+}
+
+var _changePinUser = null;
+function openChangePIN(username){
+  if(!requireAdmin())return;
+  _changePinUser=username;
+  var u=_loginUsers.find(function(x){return x.username===username;});
+  var el=G('cp-pin-user');if(el)el.textContent=u?u.fullName:username;
+  G('cp-pin-val').value='';
+  openM('m-change-pin');
+}
+async function saveNewPIN(){
+  var pin=V('cp-pin-val').trim();
+  if(pin.length<4){alert('PIN must be at least 4 digits.');return;}
+  if(!sbHasConfig()){alert('Connect Supabase to save PIN changes.');return;}
+  var hashed=await sha256(pin);
+  var user=_loginUsers.find(function(u){return u.username===_changePinUser;});
+  if(!user){alert('User not found.');return;}
+  dbPatch('shop_users','username=eq.'+_changePinUser,{pin_hash:hashed},function(ok,e){
+    if(e){alert('Error: '+e);}else{
+      user.pin_hash=hashed;
+      closeM('m-change-pin');
+      alert('\u2713 PIN changed for '+user.fullName);
+    }
+  });
+}
+
+// ── INIT SUPABASE USERS TABLE ──
+function initUsersTable(){
+  if(!sbHasConfig())return;
+  // Check if table has users, if not seed defaults
+  dbGet('shop_users?select=id&limit=1',function(d,e){
+    if(e){
+      // Table might not exist — show SQL hint
+      console.warn('shop_users table not found. Run the SQL from Settings page.');
+      return;
+    }
+    if(!d||!d.length){
+      // Seed default users
+      seedDefaultUsers();
+    }
+  });
+}
+
+async function seedDefaultUsers(){
+  for(var i=0;i<DEFAULT_USERS.length;i++){
+    var u=DEFAULT_USERS[i];
+    var hashed=await sha256(u.pin);
+    dbPost('shop_users',{username:u.username,full_name:u.fullName,role:u.role,pin_hash:hashed,active:true},null);
+  }
+  console.log('Default users seeded');
+}
+
+
+
+
+// ════════════════════════════════════════════════════════════════
+// NEW FEATURES: Reports, Loans, Balance Sheet, Refined Gold, Users
+// ════════════════════════════════════════════════════════════════
+
+// ── DATA ──
+DB.loans = DB.loans || [];
+DB.refGoldSales = DB.refGoldSales || [];
+
+// ── USERS & ROLES ──
+var USERS = [
+  {id:'sabari',    name:'Sabari',       role:'admin', code:['R','R','R','L','L']},
+  {id:'vikash',    name:'Vikash',       role:'admin', code:['R','L','R','L','R']},
+  {id:'ravi',      name:'Ravi',         role:'admin', code:['L','L','R','R','R']},
+  {id:'subramanian',name:'Subramanian', role:'admin', code:['R','R','L','L','R']},
+  {id:'rsj_staff', name:'RSJ Staff',    role:'staff', code:['L','R','R','L','L']},
+];
+var CURRENT_USER = null;
+var ROLE_RESTRICT = ['pg-balance','pg-loans','pg-cashflow'];// staff can't see these
+
+function findUserByCode(seq){
+  return USERS.find(function(u){
+    return JSON.stringify(u.code)===JSON.stringify(seq);
+  })||null;
+}
+
+// Override glUnlock to set user
+var _origGlUnlock = glUnlock;
+glUnlock = function(){
+  var user = findUserByCode(GUN_CODE===glSeq?GUN_CODE:glSeq.slice(-5));
+  // Try last 5 shots as sequence
+  var seq5 = glSeq.slice(-5);
+  user = USERS.find(function(u){
+    return JSON.stringify(u.code)===JSON.stringify(seq5);
+  })||USERS.find(function(u){
+    return JSON.stringify(u.code)===JSON.stringify(glSeq);
+  });
+  if(user){
+    CURRENT_USER = user;
+    GUN_CODE = user.code; // ensure the check passes
+    // Update UI
+    var un=G('user-name'), ua=G('user-avatar'), ur=G('user-role');
+    if(un)un.textContent=user.name;
+    if(ua)ua.textContent=user.name[0];
+    if(ur)ur.textContent=user.role==='admin'?'Admin':'Staff';
+    // Hide restricted pages for staff
+    if(user.role==='staff'){
+      ROLE_RESTRICT.forEach(function(pgId){
+        var ni=G('ni-'+pgId.replace('pg-',''));
+        if(ni)ni.style.display='none';
+      });
+    }
+  }
+  _origGlUnlock();
+};
+
+// ── REPORTS ──
+function rptSetDate(mode){
+  var now=new Date(), y=now.getFullYear(), m=now.getMonth(), d=now.getDate();
+  var from, to;
+  var fmt=function(dt){return dt.toISOString().split('T')[0];};
+  if(mode==='today'){from=to=fmt(now);}
+  else if(mode==='week'){
+    var day=now.getDay()||7;
+    from=fmt(new Date(y,m,d-day+1)); to=fmt(now);
+  }
+  else if(mode==='month'){from=y+'-'+(m+1<10?'0':'')+(m+1)+'-01'; to=fmt(now);}
+  else if(mode==='year'){from=y+'-01-01'; to=fmt(now);}
+  else if(mode==='fin'){ // Apr 1 to now
+    var fy=m>=3?y:y-1;
+    from=fy+'-04-01'; to=fmt(now);
+  }
+  else if(mode==='lastfin'){
+    var lfy=m>=3?y-1:y-2;
+    from=lfy+'-04-01'; to=(lfy+1)+'-03-31';
+  }
+  var fi=G('rpt-from'), ti=G('rpt-to');
+  if(fi)fi.value=from; if(ti)ti.value=to;
+  renderReports();
+}
+
+function renderReports(){
+  var from=G('rpt-from')&&G('rpt-from').value;
+  var to=G('rpt-to')&&G('rpt-to').value;
+  if(!from||!to)return;
+
+  // Filter sales in range
+  var sales=DB.sales.filter(function(s){return s.date>=from&&s.date<=to;});
+
+  // ── Summary cards ──
+  var totalAmt=sales.reduce(function(s,x){return s+x.grand;},0);
+  var totalPaid=sales.reduce(function(s,x){return s+x.paid;},0);
+  var totalBal=sales.reduce(function(s,x){return s+x.balance;},0);
+  var goldWt=0,silverWt=0;
+  sales.forEach(function(s){
+    (s.items||[]).forEach(function(it){
+      if(it.metal&&it.metal.indexOf('Gold')>=0)goldWt+=it.wt||0;
+      else if(it.metal&&(it.metal.indexOf('Silver')>=0))silverWt+=it.wt||0;
+    });
+  });
+  var sm=G('rpt-summary');
+  if(sm)sm.innerHTML=
+    '<div class="met" style="background:var(--card);border:1px solid var(--bdr)"><div class="ml">Total Sales</div><div class="mv gold">'+fmt(totalAmt)+'</div></div>'+
+    '<div class="met" style="background:var(--card);border:1px solid var(--bdr)"><div class="ml">Collected</div><div class="mv g">'+fmt(totalPaid)+'</div></div>'+
+    '<div class="met" style="background:var(--card);border:1px solid var(--bdr)"><div class="ml">Gold Sold (g)</div><div class="mv gold">'+goldWt.toFixed(3)+'g</div></div>'+
+    '<div class="met" style="background:var(--card);border:1px solid var(--bdr)"><div class="ml">Silver Sold (g)</div><div class="mv">'+silverWt.toFixed(3)+'g</div></div>';
+
+  // ── Payment mode breakdown ──
+  var modes={};
+  sales.forEach(function(s){
+    (s.pays||[]).forEach(function(p){
+      var m=p.mode||'Cash';
+      if(!modes[m])modes[m]={amt:0,count:0};
+      modes[m].amt+=p.amt; modes[m].count++;
+    });
+  });
+  var modeOrder=['Cash','UPI - GPay','UPI - Paytm','Bank Transfer / RTGS','Customer Advance','Chit - Bonus','Exchange - Old Gold','Exchange - Old Silver'];
+  var modeIcons={'Cash':'💵','UPI - GPay':'📱','UPI - Paytm':'📱','Bank Transfer / RTGS':'🏦','Customer Advance':'💎','Chit - Bonus':'🎟','Exchange - Old Gold':'♻️','Exchange - Old Silver':'♻️'};
+  var modesHtml='<table class="data-table"><thead><tr><th>Mode</th><th class="num">Amount</th><th class="num">Bills</th></tr></thead><tbody>';
+  var allModes=Object.keys(modes);
+  modeOrder.forEach(function(m){if(modes[m])allModes=allModes.filter(function(x){return x!==m;});});
+  var ordered=modeOrder.filter(function(m){return modes[m];}).concat(allModes.filter(function(m){return modes[m];}));
+  ordered.forEach(function(m){
+    modesHtml+='<tr><td>'+(modeIcons[m]||'💳')+' '+m+'</td><td class="num" style="font-weight:700">'+fmt(modes[m].amt)+'</td><td class="num" style="color:var(--tx3)">'+modes[m].count+'</td></tr>';
+  });
+  modesHtml+='<tr style="background:var(--gold-pale)"><td style="font-weight:700">Total</td><td class="num" style="font-weight:700;color:var(--gold-dark)">'+fmt(totalPaid)+'</td><td class="num" style="color:var(--tx3)">'+sales.length+'</td></tr>';
+  modesHtml+='</tbody></table>';
+  var rm=G('rpt-modes'); if(rm)rm.innerHTML=modesHtml||'<div class="empty"><div class="etxt">No data</div></div>';
+
+  // ── Metal weight breakdown ──
+  var metalMap={};
+  sales.forEach(function(s){
+    (s.items||[]).forEach(function(it){
+      var k=it.metal||'Other';
+      if(!metalMap[k])metalMap[k]={wt:0,count:0,amt:0};
+      metalMap[k].wt+=it.wt||0; metalMap[k].count++;metalMap[k].amt+=it.tot||0;
+    });
+  });
+  var metHtml='<table class="data-table"><thead><tr><th>Metal</th><th class="num">Weight (g)</th><th class="num">Value</th></tr></thead><tbody>';
+  Object.keys(metalMap).forEach(function(m){
+    metHtml+='<tr><td><span class="badge bgold">'+m+'</span></td><td class="num" style="font-weight:700">'+metalMap[m].wt.toFixed(3)+'</td><td class="num">'+fmt(metalMap[m].amt)+'</td></tr>';
+  });
+  metHtml+='</tbody></table>';
+  var met=G('rpt-metals'); if(met)met.innerHTML=Object.keys(metalMap).length?metHtml:'<div class="empty"><div class="etxt">No data</div></div>';
+
+  // ── Daily table ──
+  var grp=G('rpt-group')&&G('rpt-group').value||'day';
+  var dayMap={};
+  sales.forEach(function(s){
+    var key=grp==='day'?s.date:s.date.slice(0,7);
+    if(!dayMap[key])dayMap[key]={sales:0,amt:0,paid:0,goldWt:0,silverWt:0};
+    dayMap[key].sales++; dayMap[key].amt+=s.grand; dayMap[key].paid+=s.paid;
+    (s.items||[]).forEach(function(it){
+      if(it.metal&&it.metal.indexOf('Gold')>=0)dayMap[key].goldWt+=it.wt||0;
+      else if(it.metal&&it.metal.indexOf('Silver')>=0)dayMap[key].silverWt+=it.wt||0;
+    });
+  });
+  var keys=Object.keys(dayMap).sort().reverse();
+  var tblHtml='';
+  if(keys.length){
+    tblHtml='<table class="data-table"><thead><tr><th>Date</th><th class="num">Bills</th><th class="num">Gold (g)</th><th class="num">Silver (g)</th><th class="num">Amount</th><th class="num">Collected</th></tr></thead><tbody>';
+    keys.forEach(function(k){
+      var d=dayMap[k];
+      tblHtml+='<tr><td style="font-weight:600;white-space:nowrap">'+k+'</td><td class="num">'+d.sales+'</td><td class="num">'+d.goldWt.toFixed(3)+'</td><td class="num">'+d.silverWt.toFixed(3)+'</td><td class="num">'+fmt(d.amt)+'</td><td class="num" style="color:var(--grn)">'+fmt(d.paid)+'</td></tr>';
+    });
+    tblHtml+='</tbody></table>';
+  }
+  var tbl=G('rpt-table'); if(tbl)tbl.innerHTML=tblHtml||'<div class="empty"><div class="etxt">No sales in this period</div></div>';
+
+  // ── Refined gold sales ──
+  var rg=G('rpt-refgold');
+  if(rg){
+    var rgf=(DB.refGoldSales||[]).filter(function(x){return x.date>=from&&x.date<=to;});
+    rg.innerHTML=rgf.length?'<table class="data-table"><thead><tr><th>Date</th><th>Metal</th><th>Wt (g)</th><th class="num">Sale</th><th class="num">Cost</th><th class="num">Profit</th></tr></thead><tbody>'+
+      rgf.map(function(r){return '<tr><td>'+r.date+'</td><td>'+r.metal+'</td><td>'+r.wt+'g</td><td class="num">'+fmt(r.saleAmt)+'</td><td class="num" style="color:var(--red)">'+fmt(r.totalCost)+'</td><td class="num" style="color:var(--grn);font-weight:700">'+fmt(r.profit)+'</td></tr>';}).join('')+'</tbody></table>':
+      '<div class="empty"><div class="etxt">No refined gold sales in this period</div></div>';
+  }
+}
+
+// ── REFINED GOLD SALE ──
+function calcRGProfit(){
+  var wt=N('rg-wt'), rate=N('rg-rate');
+  var sale=N('rg-sale');
+  if(!sale&&wt&&rate){sale=wt*rate;var se=G('rg-sale');if(se)se.value=sale.toFixed(2);}
+  var cost=N('rg-cost'), test=N('rg-test'), other=N('rg-other');
+  var totalCost=cost+test+other;
+  var profit=sale-totalCost;
+  var sd=G('rg-sale-d'),cd=G('rg-cost-d'),pd=G('rg-profit');
+  if(sd)sd.textContent=fmt(sale);
+  if(cd)cd.textContent=fmt(totalCost);
+  if(pd){pd.textContent=fmt(profit);pd.style.color=profit>=0?'var(--grn)':'var(--red)';}
+}
+
+function saveRefGold(){
+  var wt=N('rg-wt'),sale=N('rg-sale'),cost=N('rg-cost'),test=N('rg-test')||50,other=N('rg-other')||0;
+  if(!sale){alert('Enter sale amount.');return;}
+  var totalCost=cost+test+other, profit=sale-totalCost;
+  var date=G('rg-date')&&G('rg-date').value||td();
+  var rec={id:uid(),date:date,metal:V('rg-metal'),wt:wt,saleAmt:sale,costPrice:cost,testFee:test,otherCost:other,totalCost:totalCost,profit:profit,mode:V('rg-mode'),note:V('rg-note')};
+  DB.refGoldSales.push(rec);
+  // Add sale to cash flow
+  DB.cashLog.push({type:'in',date:date,amount:sale,desc:'Refined '+rec.metal+' Sale '+(wt?wt.toFixed(3)+'g':''),src:'refgold'});
+  if(cost>0)DB.cashLog.push({type:'out',date:date,amount:cost,desc:'Refined Gold Purchase Cost',src:'refgold'});
+  // Reduce metal reserve
+  if(wt>0){if(rec.metal==='Gold')metalR.gold=Math.max(0,metalR.gold-wt);else metalR.silver=Math.max(0,metalR.silver-wt);updateMFDisp();}
+  // Save to DB
+  if(sbHasConfig()){
+    dbPost('metal_log',{log_type:'out',log_date:date,metal:rec.metal,weight_g:wt,source:'Refined Sale',purpose:'Sold'},null);
+    dbSaveCashEntry('in',date,sale,'Refined '+rec.metal+' Sale','refgold');
+  }
+  renderCashFlow();
+  closeM('m-refgold');
+  renderReports();
+  alert('✓ Refined gold sale recorded!\nSale: '+fmt(sale)+'\nProfit: '+fmt(profit));
+}
+
+// ── LOANS ──
+function saveLoan(){
+  var lender=V('ln-lender').trim();
+  if(!lender){alert('Enter lender name.');return;}
+  var loan={id:uid(),lender:lender,type:V('ln-type'),amt:N('ln-amt'),rate:N('ln-rate'),rateType:V('ln-ratetype'),start:V('ln-start')||td(),due:V('ln-due'),paid:N('ln-paid')||0,notes:V('ln-notes'),status:'active',created:td()};
+  DB.loans.push(loan);
+  // Add to cash in if new loan
+  if(loan.amt>0&&loan.paid===0){
+    DB.cashLog.push({type:'in',date:loan.start,amount:loan.amt,desc:'Loan from '+lender,src:'loan'});
+    if(sbHasConfig())dbSaveCashEntry('in',loan.start,loan.amt,'Loan: '+lender,'loan');
+  }
+  closeM('m-addloan');
+  renderLoans();renderBalance();renderCashFlow();
+  showDbStatus('Loan saved ✓');
+}
+
+function calcLoanInterest(loan){
+  if(!loan.rate)return 0;
+  var outstanding=loan.amt-(loan.paid||0);
+  var r=loan.rate/100;
+  if(loan.rateType==='month')return outstanding*r;
+  if(loan.rateType==='year') return outstanding*r/12;
+  if(loan.rateType==='day')  return outstanding*r*30;
+  return 0;
+}
+
+function calcLoanDaysAgo(loan){
+  var start=new Date(loan.start), now=new Date();
+  return Math.floor((now-start)/(1000*60*60*24));
+}
+
+function calcTotalInterestAccrued(loan){
+  var days=calcLoanDaysAgo(loan);
+  var outstanding=loan.amt-(loan.paid||0);
+  var r=loan.rate/100;
+  if(loan.rateType==='month')return outstanding*r*(days/30);
+  if(loan.rateType==='year') return outstanding*r*(days/365);
+  if(loan.rateType==='day')  return outstanding*r*days;
+  return 0;
+}
+
+function renderLoans(){
+  var active=DB.loans.filter(function(l){return l.status==='active';});
+  var closed=DB.loans.filter(function(l){return l.status!=='active';});
+
+  var totalBorrowed=active.reduce(function(s,l){return s+l.amt;},0);
+  var totalOutstanding=active.reduce(function(s,l){return s+(l.amt-(l.paid||0));},0);
+  var monthlyInterest=active.reduce(function(s,l){return s+calcLoanInterest(l);},0);
+
+  var lb=G('loan-total'),lo=G('loan-outstanding'),li=G('loan-interest');
+  if(lb)lb.innerHTML=fmt(totalBorrowed);
+  if(lo)lo.innerHTML=fmt(totalOutstanding);
+  if(li)li.innerHTML=fmt(monthlyInterest);
+
+  var ll=G('loan-list');
+  if(ll)ll.innerHTML=active.length?active.map(function(l){
+    var outstanding=l.amt-(l.paid||0);
+    var monthInt=calcLoanInterest(l);
+    var accrued=calcTotalInterestAccrued(l);
+    var days=calcLoanDaysAgo(l);
+    return '<div class="card" style="margin-bottom:10px;border-left:4px solid var(--red)">'
+      +'<div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:8px">'
+        +'<div><div style="font-size:15px;font-weight:700">'+l.lender+'</div>'
+        +'<div style="font-size:11px;color:var(--tx3);margin-top:2px"><span class="badge ba">'+l.type+'</span> &nbsp;'+l.rateType==='month'?l.rate+'% /month':l.rate+'% /'+l.rateType+' &nbsp;Started: '+l.start+(l.due?' &nbsp;Due: '+l.due:'')+'</div></div>'
+        +'<button class="btn btnsm" onclick="openEditLoan(\''+l.id+'\')">&#9998; Edit</button>'
+      +'</div>'
+      +'<div class="metrics c4" style="margin-top:10px">'
+        +'<div class="met"><div class="ml">Principal</div><div class="mv r">'+fmt(l.amt)+'</div></div>'
+        +'<div class="met"><div class="ml">Paid Back</div><div class="mv g">'+fmt(l.paid||0)+'</div></div>'
+        +'<div class="met"><div class="ml">Outstanding</div><div class="mv r">'+fmt(outstanding)+'</div></div>'
+        +'<div class="met"><div class="ml">Monthly Int.</div><div class="mv a">'+fmt(monthInt)+'</div></div>'
+      +'</div>'
+      +(accrued>0?'<div class="warnbar" style="margin-top:8px;font-size:12px">Interest accrued over '+days+' days: <strong>'+fmt(accrued)+'</strong></div>':'')+
+    '</div>';
+  }).join(''):'<div class="empty"><div class="etxt">No active loans</div></div>';
+
+  var lc=G('loan-closed');
+  if(lc)lc.innerHTML=closed.length?'<table class="data-table"><thead><tr><th>Lender</th><th>Type</th><th class="num">Amount</th><th class="num">Paid</th></tr></thead><tbody>'+
+    closed.map(function(l){return '<tr><td style="font-weight:600">'+l.lender+'</td><td>'+l.type+'</td><td class="num">'+fmt(l.amt)+'</td><td class="num" style="color:var(--grn)">'+fmt(l.paid||0)+'</td></tr>';}).join('')+'</tbody></table>':
+    '<div class="empty" style="padding:16px"><div class="etxt">No closed loans</div></div>';
+}
+
+var _editLoanId=null;
+function openEditLoan(id){
+  var l=DB.loans.find(function(x){return x.id===id;}); if(!l)return;
+  _editLoanId=id;
+  G('el-lender').value=l.lender||''; G('el-type').value=l.type||'Bank Loan';
+  G('el-amt').value=l.amt||''; G('el-rate').value=l.rate||'';
+  G('el-ratetype').value=l.rateType||'month'; G('el-start').value=l.start||td();
+  G('el-paid').value=l.paid||''; G('el-notes').value=l.notes||'';
+  G('el-status').value=l.status||'active';
+  openM('m-editloan');
+}
+function saveEditLoan(){
+  if(!_editLoanId)return;
+  var l=DB.loans.find(function(x){return x.id===_editLoanId;}); if(!l)return;
+  l.lender=V('el-lender').trim(); l.type=V('el-type');
+  l.amt=N('el-amt'); l.rate=N('el-rate'); l.rateType=V('el-ratetype');
+  l.start=V('el-start')||td(); l.paid=N('el-paid'); l.notes=V('el-notes'); l.status=V('el-status');
+  closeM('m-editloan'); renderLoans(); renderBalance();
+  alert('✓ Loan updated!');
+}
+
+// ── BALANCE SHEET ──
+function renderBalance(){
+  var cashBal=DB.cashOB+DB.cashLog.filter(function(e){return e.type==='in';}).reduce(function(s,e){return s+e.amount;},0)-DB.cashLog.filter(function(e){return e.type==='out';}).reduce(function(s,e){return s+e.amount;},0);
+  var goldVal=metalR.gold*R.k22;
+  var silverVal=metalR.silver*R.sil;
+  var refGoldCost=DB.refGoldSales.reduce(function(s,r){return s+r.costPrice;},0);
+
+  // Receivables = outstanding sale balances
+  var receivables=DB.sales.reduce(function(s,sale){return s+(sale.balance||0);},0);
+  // Customer advances given out
+  var custAdv=Object.values(DB.custs).reduce(function(s,c){return s+(c.ob>0?c.ob:0);},0);
+  custAdv+=DB.payments.filter(function(p){return p.type==='oldgold-adv'||p.type==='old_gold_advance';}).reduce(function(s,p){return s+p.amt;},0);
+
+  var activeLoans=DB.loans.filter(function(l){return l.status==='active';});
+  var totalLiab=activeLoans.reduce(function(s,l){return s+(l.amt-(l.paid||0));},0);
+  var supplierOwed=Object.values(DB.sups).reduce(function(s,sup){return s+(sup.balance||0);},0);
+  var totalLoanInterest=activeLoans.reduce(function(s,l){return s+calcTotalInterestAccrued(l);},0);
+
+  var totalAssets=cashBal+goldVal+silverVal+receivables;
+  var totalLiabilities=totalLiab+supplierOwed+totalLoanInterest;
+  var netWorth=totalAssets-totalLiabilities;
+
+  var assets=[
+    {label:'Cash in Hand',val:cashBal,icon:'💵'},
+    {label:'Gold Reserve ('+metalR.gold.toFixed(3)+'g × ₹'+R.k22+'/g)',val:goldVal,icon:'🪙'},
+    {label:'Silver Reserve ('+metalR.silver.toFixed(3)+'g × ₹'+R.sil+'/g)',val:silverVal,icon:'🥈'},
+    {label:'Outstanding from Customers',val:receivables,icon:'👥'},
+  ];
+  var liabs=[
+    {label:'Loans Outstanding',val:totalLiab,icon:'🏦'},
+    {label:'Supplier Payables',val:supplierOwed,icon:'🏪'},
+    {label:'Accrued Loan Interest',val:totalLoanInterest,icon:'📈'},
+  ];
+
+  var assetHtml=assets.map(function(a){return '<div class="lrow"><div style="flex:1"><span style="font-size:15px">'+a.icon+'</span> '+a.label+'</div><span style="font-weight:700;color:var(--grn)">'+fmt(a.val)+'</span></div>';}).join('');
+  var liabHtml=liabs.map(function(l){return '<div class="lrow"><div style="flex:1"><span style="font-size:15px">'+l.icon+'</span> '+l.label+'</div><span style="font-weight:700;color:var(--red)">'+fmt(l.val)+'</span></div>';}).join('');
+  var netwHtml='<div class="lrow"><div style="flex:1;font-size:15px;font-weight:700">📊 Net Worth (Assets − Liabilities)</div><span style="font-size:22px;font-weight:800;color:'+(netWorth>=0?'var(--grn)':'var(--red)')+'">'+fmt(netWorth)+'</span></div>';
+
+  var ba=G('bs-assets'),bl=G('bs-liabilities'),bn=G('bs-networth');
+  var ta=G('bs-total-assets'),tl=G('bs-total-liab');
+  if(ba)ba.innerHTML=assetHtml;
+  if(bl)bl.innerHTML=liabHtml;
+  if(bn)bn.innerHTML=netwHtml;
+  if(ta)ta.innerHTML=fmt(totalAssets);
+  if(tl)tl.innerHTML=fmt(totalLiabilities);
+}
+
+// ── DASHBOARD ENHANCEMENT ──
+var _origRenderDash = renderDash;
+renderDash = function(){
+  _origRenderDash();
+  // Add today's quick stats to dashboard
+  var today=td();
+  var todaySales=DB.sales.filter(function(s){return s.date===today;});
+  var todayGold=0,todaySilver=0,todayCash=0;
+  todaySales.forEach(function(s){
+    (s.items||[]).forEach(function(it){
+      if(it.metal&&it.metal.indexOf('Gold')>=0)todayGold+=it.wt||0;
+      else if(it.metal&&it.metal.indexOf('Silver')>=0)todaySilver+=it.wt||0;
+    });
+    (s.pays||[]).forEach(function(p){if(p.mode==='Cash')todayCash+=p.amt||0;});
+  });
+  // Update dashboard date subtitle
+  var dd=G('dash-date');
+  if(dd)dd.textContent=new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+' | Today: '+todaySales.length+' bills | Gold: '+todayGold.toFixed(2)+'g | Silver: '+todaySilver.toFixed(2)+'g';
+};
+
+// ── WIRE INTO showPg INITS ──
+var _origShowPg = showPg;
+showPg = function(id, btn, title){
+  _origShowPg(id, btn, title);
+  if(id==='pg-reports'){rptSetDate('today');}
+  if(id==='pg-balance'){renderBalance();}
+  if(id==='pg-loans'){renderLoans();}
+  // Restrict staff
+  if(CURRENT_USER&&CURRENT_USER.role==='staff'&&ROLE_RESTRICT.indexOf(id)>=0){
+    alert('Access restricted for staff.');
+    _origShowPg('pg-dash', null, 'Dashboard');
+  }
+};
+
+// Init date fields for new modals
+var _origGunUnlock2 = glUnlock;
+// Prefill dates on modal open
+var _origOpenM = openM;
+openM = function(id){
+  _origOpenM(id);
+  if(id==='m-refgold'){var rd=G('rg-date');if(rd)rd.value=td();}
+  if(id==='m-addloan'){var ld=G('ln-start');if(ld)ld.value=td();}
+};
+
+
+// ════════════════════════════════════════════════════════════════
+// USERS & ROLES — DB INTEGRATION
+// ════════════════════════════════════════════════════════════════
+
+// Load users from Supabase on init (called after unlock)
+function loadUsersFromDB(){
+  if(!sbHasConfig())return;
+  dbGet('app_users?select=*,roles(*)&is_active=eq.true&order=created_at.asc', function(data, err){
+    if(err){ console.warn('Load users:', err); return; }
+    if(!data||!data.length) return;
+    // Update local USERS array with DB sequences
+    data.forEach(function(u){
+      var local = USERS.find(function(x){ return x.id===u.username; });
+      if(local){
+        local.name = u.display_name;
+        local.role = u.role_name;
+        local.code = u.gun_sequence || local.code;
+        local.dbId = u.id;
+        local.perms = u.roles || {};
+      }
+    });
+    console.log('Users loaded from DB:', data.length);
+  });
+}
+
+// ── Settings tab switch ──
+function settingsTab(tab, btn){
+  document.querySelectorAll('#pg-settings .tab').forEach(function(t){t.classList.remove('active');});
+  if(btn) btn.classList.add('active');
+  var dbTab=G('settings-db-tab'), usersTab=G('settings-users-tab');
+  if(dbTab) dbTab.style.display = tab==='db' ? '' : 'none';
+  if(usersTab) usersTab.style.display = tab==='users' ? '' : 'none';
+  if(tab==='users') renderUsersTab();
+}
+
+// ── Render users list in Settings ──
+function renderUsersTab(){
+  if(sbHasConfig()){
+    dbGet('app_users?select=*&order=created_at.asc', function(data, err){
+      if(!err && data) _renderUsersList(data);
+    });
+    dbGet('roles?select=*&order=role_name.asc', function(data, err){
+      if(!err && data) _renderRolesList(data);
+    });
+  } else {
+    // Fallback: show hardcoded USERS
+    _renderUsersList(USERS.map(function(u){
+      return {id:u.id, username:u.id, display_name:u.name, role_name:u.role,
+              gun_sequence:u.code, is_active:true};
+    }));
+  }
+}
+
+function _renderUsersList(users){
+  var t = G('users-list'); if(!t) return;
+  var roleColors = {admin:'bg', staff:'bb'};
+  t.innerHTML = '<div style="overflow-x:auto"><table class="data-table"><thead><tr>'
+    +'<th>Name</th><th>Username</th><th>Role</th><th>Sequence</th><th>Status</th><th></th>'
+    +'</tr></thead><tbody>'
+    + users.map(function(u){
+      var seq = (u.gun_sequence||[]).join(' › ');
+      var rc = roleColors[u.role_name]||'ba';
+      return '<tr>'
+        +'<td style="font-weight:600">'+u.display_name+'</td>'
+        +'<td style="font-size:12px;color:var(--tx3)">@'+u.username+'</td>'
+        +'<td><span class="badge '+rc+'">'+u.role_name+'</span></td>'
+        +'<td style="font-family:monospace;font-size:12px;letter-spacing:.1em">'+seq+'</td>'
+        +'<td><span class="badge '+(u.is_active?'bg':'br')+'">'+(u.is_active?'Active':'Inactive')+'</span></td>'
+        +'<td><button class="btn btnsm" onclick="openEditUser(\''+u.username+'\',\''+u.display_name+'\',\''+u.role_name+'\','+JSON.stringify(u.gun_sequence||[])+')">&#9998;</button></td>'
+        +'</tr>';
+    }).join('')
+    +'</tbody></table></div>';
+}
+
+function _renderRolesList(roles){
+  var t = G('roles-list'); if(!t) return;
+  var permLabels = {
+    can_view_sales:'View Sales', can_create_sales:'New Sale', can_edit_sales:'Edit Sale',
+    can_view_cashflow:'Cash Flow', can_view_reports:'Reports',
+    can_view_balance:'Balance Sheet', can_view_loans:'Loans',
+    can_view_settings:'Settings', can_manage_users:'Manage Users'
+  };
+  t.innerHTML = roles.map(function(r){
+    var perms = Object.keys(permLabels).filter(function(k){ return r[k]; })
+      .map(function(k){ return '<span class="badge bg" style="font-size:9px;margin:2px">'+permLabels[k]+'</span>'; }).join(' ');
+    return '<div style="margin-bottom:12px">'
+      +'<div style="font-weight:700;margin-bottom:6px">'+r.display_name+' <span class="badge ba" style="font-size:10px">'+r.role_name+'</span></div>'
+      +'<div style="line-height:2">'+perms+'</div>'
+      +'</div>';
+  }).join('<div class="divv"></div>');
+}
+
+// ── Open edit user modal ──
+function openEditUser(username, name, role, seq){
+  G('au-name').value = name;
+  G('au-username').value = username;
+  G('au-role').value = role;
+  G('au-edit-id').value = username;
+  if(seq && seq.length >= 5){
+    ['au-s1','au-s2','au-s3','au-s4','au-s5'].forEach(function(id,i){
+      var el=G(id); if(el) el.value = seq[i]||'R';
+    });
+  }
+  openM('m-adduser');
+}
+
+// ── Save app user (create or update) ──
+function saveAppUser(){
+  var name  = V('au-name').trim();
+  var uname = V('au-username').trim().toLowerCase().replace(/\s+/g,'_');
+  var role  = V('au-role');
+  var seq   = ['au-s1','au-s2','au-s3','au-s4','au-s5'].map(function(id){ return V(id); });
+  var editId= V('au-edit-id');
+
+  if(!name||!uname){ alert('Name and username are required.'); return; }
+
+  // Check sequence uniqueness (excluding current user if editing)
+  var conflict = USERS.find(function(u){
+    return JSON.stringify(u.code)===JSON.stringify(seq) && u.id!==editId;
+  });
+  if(conflict){ alert('This sequence is already used by '+conflict.name+'. Please choose a different sequence.'); return; }
+
+  var payload = {
+    username: uname, display_name: name,
+    role_name: role, gun_sequence: seq,
+    avatar_letter: name[0].toUpperCase(),
+    is_active: true, updated_at: new Date().toISOString()
+  };
+
+  if(editId){
+    // Update existing
+    dbPatch('app_users','username=eq.'+editId, payload, function(ok,err){
+      if(err){ alert('Save failed: '+err); return; }
+      // Update local USERS array
+      var local = USERS.find(function(u){ return u.id===editId; });
+      if(local){ local.name=name; local.role=role; local.code=seq; }
+      else { USERS.push({id:uname, name:name, role:role, code:seq}); }
+      closeM('m-adduser');
+      renderUsersTab();
+      alert('✓ User updated!');
+    });
+  } else {
+    // Insert new
+    dbPost('app_users', payload, function(data,err){
+      if(err){ alert('Save failed: '+err); return; }
+      USERS.push({id:uname, name:name, role:role, code:seq});
+      closeM('m-adduser');
+      renderUsersTab();
+      alert('✓ User added!');
+    });
+  }
+}
+
+// ── Sequence preview in modal ──
+function _updateSeqPreview(){
+  var seq = ['au-s1','au-s2','au-s3','au-s4','au-s5'].map(function(id){ return V(id); });
+  var pv = G('au-preview');
+  if(pv) pv.textContent = 'Sequence: ' + seq.join(' → ');
+}
+
 // ── INIT ──
 ['ex-date','pu-date','cob-date','ce-date','st-date','or-date','cp-date','spy-date','og-date','ch-date'].forEach(function(id){var e=G(id);if(e)e.value=td();});
 var sd=G('s-date');if(sd)sd.value=td();
@@ -3382,5 +4418,104 @@ setLang(LANG);
 <div class="modal-bg" id="m-editsup"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#9998; Edit Supplier</div><div class="g2"><div class="field"><label>Name</label><input type="text" id="es-name"></div><div class="field"><label>Phone</label><input type="tel" id="es-phone"></div></div><div class="g2"><div class="field"><label>Metal</label><select id="es-metal"><option>Gold</option><option>Silver</option><option>Diamond</option><option>Mixed</option></select></div><div class="field"><label>Balance (&#8377;)</label><input type="number" id="es-ob" inputmode="decimal"></div></div><div class="mfoot"><button class="btn" onclick="closeM('m-editsup')">Cancel</button><button class="btn btng" onclick="saveEditSup()">Save</button></div></div></div>
 <div class="modal-bg" id="m-editexp"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#9998; Edit Expense</div><div class="g2"><div class="field"><label>Date</label><input type="date" id="ee-date"></div><div class="field"><label>Amount (&#8377;)</label><input type="number" id="ee-amt" step="0.01" inputmode="decimal"></div></div><div class="g2"><div class="field"><label>Category</label><input type="text" id="ee-cat"></div><div class="field"><label>Mode</label><select id="ee-mode"><option>Cash</option><option>UPI</option><option>Bank Transfer</option></select></div></div><div class="field"><label>Description</label><input type="text" id="ee-desc"></div><div class="mfoot"><button class="btn" onclick="closeM('m-editexp')">Cancel</button><button class="btn btng" onclick="saveEditExpense()">Save</button></div></div></div>
 <div class="modal-bg" id="m-editord"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#9998; Edit Order</div><div class="field"><label>Delivery Date</label><input type="date" id="eo-del"></div><div class="field"><label>Design / Notes</label><textarea id="eo-desc" rows="3" style="resize:none"></textarea></div><div class="mfoot"><button class="btn" onclick="closeM('m-editord')">Cancel</button><button class="btn btng" onclick="saveEditOrder()">Save</button></div></div></div>
+
+<!-- Refined Gold Sale Modal -->
+<div class="modal-bg" id="m-refgold"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#129753; Record Refined Gold Sale</div>
+  <div class="infobar">Profit = Sale Price &minus; Purchase Cost &minus; Testing Fee</div>
+  <div class="g2">
+    <div class="field"><label>Metal</label><select id="rg-metal"><option>Gold</option><option>Silver</option></select></div>
+    <div class="field"><label>Date</label><input type="date" id="rg-date"></div>
+  </div>
+  <div class="g3">
+    <div class="field"><label>Weight Sold (g)</label><input type="number" id="rg-wt" step="0.001" inputmode="decimal" oninput="calcRGProfit()"></div>
+    <div class="field"><label>Sale Rate &#8377;/g</label><input type="number" id="rg-rate" step="0.01" inputmode="decimal" oninput="calcRGProfit()"></div>
+    <div class="field"><label>Sale Amount (&#8377;)</label><input type="number" id="rg-sale" step="0.01" inputmode="decimal" class="igold" oninput="calcRGProfit()"></div>
+  </div>
+  <div class="g3">
+    <div class="field"><label>Cost Price (&#8377;)</label><input type="number" id="rg-cost" step="0.01" inputmode="decimal" oninput="calcRGProfit()"></div>
+    <div class="field"><label>Testing Fee (&#8377;)</label><input type="number" id="rg-test" step="0.01" inputmode="decimal" value="50" oninput="calcRGProfit()"></div>
+    <div class="field"><label>Other Cost (&#8377;)</label><input type="number" id="rg-other" step="0.01" inputmode="decimal" value="0" oninput="calcRGProfit()"></div>
+  </div>
+  <div class="totpanel">
+    <div class="trow"><span class="tlbl">Sale Amount</span><span class="tval" id="rg-sale-d">&#8377;0</span></div>
+    <div class="trow"><span class="tlbl">Total Cost</span><span class="tval" id="rg-cost-d" style="color:var(--red)">&#8377;0</span></div>
+    <div class="trow big"><span class="tlbl">Gross Profit</span><span class="tval" id="rg-profit" style="color:var(--grn)">&#8377;0</span></div>
+  </div>
+  <div class="g2" style="margin-top:12px">
+    <div class="field"><label>Cash Mode</label><select id="rg-mode"><option>Cash</option><option>Bank Transfer</option><option>UPI - GPay</option></select></div>
+    <div class="field"><label>Buyer / Note</label><input type="text" id="rg-note" placeholder="Buyer name, reference..."></div>
+  </div>
+  <div class="mfoot"><button class="btn" onclick="closeM('m-refgold')">Cancel</button><button class="btn btng" onclick="saveRefGold()">&#10003; Record & Add to Cashbox</button></div>
+</div></div>
+
+<!-- Add Loan Modal -->
+<div class="modal-bg" id="m-addloan"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128178; Add Loan</div>
+  <div class="g2">
+    <div class="field"><label>Lender Name *</label><input type="text" id="ln-lender" placeholder="Bank / Person name"></div>
+    <div class="field"><label>Loan Type</label><select id="ln-type"><option>Bank Loan</option><option>Local / Personal</option><option>Gold Loan</option><option>Other</option></select></div>
+  </div>
+  <div class="g3">
+    <div class="field"><label>Principal Amount (&#8377;)</label><input type="number" id="ln-amt" step="0.01" inputmode="decimal"></div>
+    <div class="field"><label>Interest Rate</label><input type="number" id="ln-rate" step="0.01" inputmode="decimal" placeholder="e.g. 2"></div>
+    <div class="field"><label>Rate Type</label><select id="ln-ratetype"><option value="month">% per Month</option><option value="year">% per Year</option><option value="day">% per Day</option></select></div>
+  </div>
+  <div class="g2">
+    <div class="field"><label>Start Date</label><input type="date" id="ln-start"></div>
+    <div class="field"><label>Due Date (optional)</label><input type="date" id="ln-due"></div>
+  </div>
+  <div class="g2">
+    <div class="field"><label>Amount Paid Back (&#8377;)</label><input type="number" id="ln-paid" step="0.01" inputmode="decimal" value="0"></div>
+    <div class="field"><label>Notes</label><input type="text" id="ln-notes" placeholder="Account no, terms..."></div>
+  </div>
+  <div class="mfoot"><button class="btn" onclick="closeM('m-addloan')">Cancel</button><button class="btn btng" onclick="saveLoan()">Save Loan</button></div>
+</div></div>
+
+<!-- Edit Loan Modal -->
+<div class="modal-bg" id="m-editloan"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#9998; Edit Loan</div>
+  <div class="g2">
+    <div class="field"><label>Lender</label><input type="text" id="el-lender"></div>
+    <div class="field"><label>Type</label><select id="el-type"><option>Bank Loan</option><option>Local / Personal</option><option>Gold Loan</option><option>Other</option></select></div>
+  </div>
+  <div class="g3">
+    <div class="field"><label>Principal (&#8377;)</label><input type="number" id="el-amt" step="0.01" inputmode="decimal"></div>
+    <div class="field"><label>Rate</label><input type="number" id="el-rate" step="0.01" inputmode="decimal"></div>
+    <div class="field"><label>Rate Type</label><select id="el-ratetype"><option value="month">% /Month</option><option value="year">% /Year</option><option value="day">% /Day</option></select></div>
+  </div>
+  <div class="g2">
+    <div class="field"><label>Start Date</label><input type="date" id="el-start"></div>
+    <div class="field"><label>Paid Back (&#8377;)</label><input type="number" id="el-paid" step="0.01" inputmode="decimal"></div>
+  </div>
+  <div class="field"><label>Status</label><select id="el-status"><option value="active">Active</option><option value="closed">Closed / Repaid</option></select></div>
+  <div class="field"><label>Notes</label><input type="text" id="el-notes"></div>
+  <div class="mfoot"><button class="btn" onclick="closeM('m-editloan')">Cancel</button><button class="btn btng" onclick="saveEditLoan()">Save</button></div>
+</div></div>
+
+
+<div class="modal-bg" id="m-adduser"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128101; Add / Edit User</div>
+  <div class="g2">
+    <div class="field"><label>Display Name *</label><input type="text" id="au-name" placeholder="e.g. Sabari"></div>
+    <div class="field"><label>Username *</label><input type="text" id="au-username" placeholder="e.g. sabari" style="text-transform:lowercase"></div>
+  </div>
+  <div class="field"><label>Role</label>
+    <select id="au-role">
+      <option value="admin">Admin (full access)</option>
+      <option value="staff">Staff (restricted)</option>
+    </select>
+  </div>
+  <div class="field"><label>Gun-Lock Sequence (5 shots: R = Right, L = Left)</label>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:4px">
+      <select id="au-s1" class="igold" onchange="_updateSeqPreview()" style="font-size:12px"><option>R</option><option>L</option></select>
+      <select id="au-s2" class="igold" onchange="_updateSeqPreview()" style="font-size:12px"><option>R</option><option>L</option></select>
+      <select id="au-s3" class="igold" onchange="_updateSeqPreview()" style="font-size:12px"><option>R</option><option>L</option></select>
+      <select id="au-s4" class="igold" onchange="_updateSeqPreview()" style="font-size:12px"><option>L</option><option>R</option></select>
+      <select id="au-s5" class="igold" onchange="_updateSeqPreview()" style="font-size:12px"><option>L</option><option>R</option></select>
+    </div>
+    <div style="text-align:center;margin-top:6px;font-size:11px;color:var(--tx3)" id="au-preview">Preview: R R R L L</div>
+  </div>
+  <div class="warnbar" style="font-size:11px">&#9432; Each user must have a unique sequence. Make sure no two sequences are the same.</div>
+  <input type="hidden" id="au-edit-id">
+  <div class="mfoot"><button class="btn" onclick="closeM('m-adduser')">Cancel</button><button class="btn btng" onclick="saveAppUser()">Save User</button></div>
+</div></div>
+
 </body>
 </html>
