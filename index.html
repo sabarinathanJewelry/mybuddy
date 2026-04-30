@@ -1810,16 +1810,14 @@ function custLookup(pfx){
     cidEl.value=found.id;cnEl.value=found.name;
     var stmt=getCustStatement(found.id);
     var advHtml='';
-    if(stmt.credit>0){
-      advHtml='<div style="display:flex;gap:6px;margin-top:6px">'
-        +'<div style="flex:1;background:var(--gnbg);border:1.5px solid rgba(29,122,58,0.3);border-radius:8px;padding:7px 10px">'
-          +'<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--grn);margin-bottom:2px">Advance Credit</div>'
-          +'<div style="font-size:15px;font-weight:800;color:var(--grn)">'+fmt(stmt.credit)+'</div>'
-        +'</div>'
-        +'<button class="btn btng" style="flex:1" onclick="applyCustAdvance(\''+found.id+'\')">'
-          +'&#128176; Apply'
-        +'</button>'
-      +'</div>';
+        if(stmt.credit>0||stmt.owed>0){
+      advHtml='<div style="margin-top:6px;border-radius:8px;overflow:hidden">'+
+        (stmt.credit>0?'<div style="background:var(--gnbg);border:1.5px solid rgba(29,122,58,0.3);border-radius:8px;padding:8px 12px;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between">'+
+          '<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--grn)">Available Advance</div><div style="font-size:18px;font-weight:800;color:var(--grn)">'+fmt(stmt.credit)+'</div></div>'+
+          '<button class="btn btng" onclick="applyCustAdvance(\''+found.id+'\')">'+'&#128176; Apply</button>'+
+        '</div>':'')+
+        (stmt.owed>0?'<div style="background:var(--rdbg);border:1.5px solid rgba(192,57,43,0.3);border-radius:8px;padding:6px 12px;font-size:12px;color:var(--red);font-weight:600">&#9888; Outstanding: '+fmt(stmt.owed)+'</div>':'')+
+      '</div>';
     }
     res.innerHTML='<div class="custok"><strong>&#10003; '+found.name+'</strong>'+(found.city?' &middot; '+found.city:'')+'</div>'+advHtml;
   } else {
@@ -1974,7 +1972,7 @@ function saveSale(){
   var bill=nextBill(hg,hs);
   var pays=[],cashR=0,exchItems=[],advanceUsed=0;
   var pc=G('pay-container');if(!pc)return;
-  pc.querySelectorAll('.payrow').forEach(function(pr){var id=pr.id,mode=V(id+'-mode'),amt=N(id+'-amt'),ref=V(id+'-ref')||'';if(amt>0){pays.push({mode:mode,amt:amt,ref:ref,ewt:N(id+'-ewt')||0,eval:N(id+'-eval')||0});}if(mode==='Cash'&&amt>0)cashR+=amt;if(mode==='Customer Advance'&&amt>0)advanceUsed+=amt;if(mode.indexOf('Exchange')>=0&&N(id+'-ewt')>0)exchItems.push({metal:mode.indexOf('Gold')>=0?'Gold':'Silver',wt:N(id+'-ewt'),val:N(id+'-eval'),date:date,src:'Exchange-Sale '+bill});});
+  pc.querySelectorAll('.payrow').forEach(function(pr){var id=pr.id,mode=V(id+'-mode'),amt=N(id+'-amt'),ref=V(id+'-ref')||'';if(amt>0){pays.push({mode:mode,amt:amt,ref:ref,ewt:N(id+'-ewt')||0,eval:N(id+'-eval')||0});}if(mode==='Cash'&&amt>0)cashR+=amt;if(mode==='Customer Advance'&&amt>0){advanceUsed+=amt;if(!cid){var cidEl=G(id+'-cid');if(cidEl&&cidEl.value)cid=cidEl.value;}}if(mode.indexOf('Exchange')>=0&&N(id+'-ewt')>0)exchItems.push({metal:mode.indexOf('Gold')>=0?'Gold':'Silver',wt:N(id+'-ewt'),val:N(id+'-eval'),date:date,src:'Exchange-Sale '+bill});});
   var grand=parseFloat((G('s-total')||{}).value)||0,paid=pays.reduce(function(s,p){return s+p.amt;},0),bal=Math.max(0,grand-paid);
   // Customer required only if there is a balance due
   if(bal>0&&!cname){
@@ -2007,7 +2005,7 @@ function renderSalesList(){
   t.innerHTML='<div class="card" style="overflow-x:auto"><table class="data-table"><thead><tr><th>Bill</th><th>Date</th><th>Customer</th><th>Items</th><th class="num">Total</th><th>Status</th><th></th></tr></thead><tbody>'+f.map(function(s){return '<tr><td><span class="bbadge">'+s.bill+'</span></td><td style="white-space:nowrap;font-size:12px;color:var(--tx3)">'+s.date+'</td><td style="font-weight:600">'+s.customer+'</td><td style="font-size:11px;color:var(--tx3)">'+s.items.map(function(i){return (i.qty>1?i.qty+'x ':'')+i.metal+(i.wt?' '+i.wt+'g':'');}).join(', ')+'</td><td class="num">'+fmt(s.grand)+'</td><td><span class="badge '+(s.balance>0?'br':'bg')+'">'+(s.balance>0?'Due '+fmt(s.balance):'Paid')+'</span></td><td><button class="btn btnsm btnog" onclick="openSaleEdit(\''+s.id+'\')">Edit</button></td></tr>';}).join('')+'</tbody></table></div>';
 }
 function openSaleEdit(sid){var sale=null;DB.sales.forEach(function(s){if(s.id===sid)sale=s;});if(!sale)return;activeSedSale=sale;G('sed-bill').textContent=sale.bill+' &mdash; '+sale.customer;G('sed-items').innerHTML='<table class="data-table"><thead><tr><th>Metal</th><th>Desc</th><th>Qty</th><th>Wt</th><th>VA%</th><th class="num">Total</th></tr></thead><tbody>'+sale.items.map(function(it){return '<tr><td>'+it.metal+'</td><td>'+it.desc+'</td><td>'+(it.qty||1)+'</td><td>'+it.wt+'g</td><td>'+it.va.toFixed(1)+'%</td><td class="num">'+fmt(it.tot)+'</td></tr>';}).join('')+'</tbody></table>';renderSedPays(sale);G('sed-panel').style.display='block';G('sed-panel').scrollIntoView({behavior:'smooth'});}
-function renderSedPays(sale){G('sed-pays').innerHTML=sale.pays.map(function(p,i){return '<div class="payrow" style="margin-bottom:8px"><div class="g2" style="margin-bottom:6px"><div class="field"><label>Mode</label><select id="sedp'+i+'-mode">'+['Cash','UPI - GPay','UPI - Paytm','Bank Transfer / RTGS','Exchange - Old Gold','Exchange - Old Silver','Chit - Weight','Chit - Bonus'].map(function(m){return '<option'+(m===p.mode?' selected':'')+'>'+m+'</option>';}).join('')+'</select></div><div class="field"><label>Amount</label><input type="number" id="sedp'+i+'-amt" value="'+p.amt+'" step="0.01" inputmode="decimal"></div></div><div class="field"><label>Reference</label><input type="text" id="sedp'+i+'-ref" value="'+(p.ref||'')+'"></div></div>';}).join('');}
+function renderSedPays(sale){G('sed-pays').innerHTML=sale.pays.map(function(p,i){return '<div class="payrow" style="margin-bottom:8px"><div class="g2" style="margin-bottom:6px"><div class="field"><label>Mode</label><select id="sedp'+i+'-mode">'+['Cash','UPI - GPay','UPI - Paytm','Bank Transfer / RTGS','Customer Advance','Exchange - Old Gold','Exchange - Old Silver','Chit - Weight','Chit - Bonus'].map(function(m){return '<option'+(m===p.mode?' selected':'')+'>'+m+'</option>';}).join('')+'</select></div><div class="field"><label>Amount</label><input type="number" id="sedp'+i+'-amt" value="'+p.amt+'" step="0.01" inputmode="decimal"></div></div><div class="field"><label>Reference</label><input type="text" id="sedp'+i+'-ref" value="'+(p.ref||'')+'"></div></div>';}).join('');}
 function addSedPay(){if(activeSedSale){activeSedSale.pays.push({mode:'Cash',amt:0,ref:''});renderSedPays(activeSedSale);}}
 function saveSaleEdit(){if(!activeSedSale)return;var newPays=activeSedSale.pays.map(function(p,i){return {mode:V('sedp'+i+'-mode'),amt:N('sedp'+i+'-amt'),ref:V('sedp'+i+'-ref')};});activeSedSale.pays=newPays;var paid=newPays.reduce(function(s,p){return s+p.amt;},0);activeSedSale.paid=paid;activeSedSale.balance=Math.max(0,activeSedSale.grand-paid);if(DB.custs[activeSedSale.cid]){var t=null;DB.custs[activeSedSale.cid].txns.forEach(function(tx){if(tx.bill===activeSedSale.bill)t=tx;});if(t){t.paid=paid;t.balance=activeSedSale.balance;}}renderSalesList();openSaleEdit(activeSedSale.id);renderDash();alert('&#10003; Updated!');}
 
@@ -2075,16 +2073,6 @@ function renderPayments(){var q=(V('pay-search')||'').toLowerCase().trim();var f
 
 }
 
-function fltPays(f,btn){payFlt=f;document.querySelectorAll('#pg-payments .tab').forEach(function(t){t.classList.remove('active');});if(btn)btn.classList.add('active');renderPayments();}
-function payTypeLabel(type){
-  var map={'in':'Received','out':'Refund','oldgold':'Old Gold — Cash Out','oldgold-adv':'Old Gold — Advance','advance':'Order Advance','old_gold_advance':'OG Advance','advance_used':'Advance Used','chit_credit':'Chit Credit'};
-  return map[type]||type.replace(/_/g,' ');
-}
-function payIsIn(type){
-  // GREEN = money received from customer or credit given to customer
-  return type==='in'||type==='oldgold-adv'||type==='advance'||type==='old_gold_advance'||type==='advance_used'||type==='chit_credit';
-}
-
 function saveSupPay(){var supId=V('spy-sup');if(!supId){alert('Select supplier.');return;}var sup=DB.sups[supId];if(!sup)return;var mode=V('spy-mode'),amt=N('spy-amt'),rate=N('spy-rate'),date=V('spy-date')||td(),ref=V('spy-ref');var credit=amt;if((mode.indexOf('Gold')>=0||mode.indexOf('Silver')>=0)&&rate>0)credit=amt*rate;if(!credit){alert('Enter amount.');return;}if(!sup.txns)sup.txns=[];sup.txns.push({type:'settlement',date:date,desc:mode,debit:0,credit:credit,note:ref||(rate?amt+'g @ \u20B9'+rate:'')});sup.balance=Math.max(0,(sup.balance||0)-credit);if(mode==='Cash')DB.cashLog.push({type:'out',date:date,amount:credit,desc:'Supplier: '+sup.name,src:'supplier'});var lastSTxn=sup.txns[sup.txns.length-1];dbSaveSupTxn(supId,lastSTxn);closeM('m-suppay');renderPayments();renderSups();renderCashFlow();alert('&#10003; Recorded!');}
 
 // ── PURCHASE ──
@@ -2104,24 +2092,75 @@ function saveCust(){var name=V('cm-name').trim(),phone=V('cm-phone').trim();if(!
 function renderCusts(){
   var t=G('cust-list');if(!t)return;
   var q=(V('cust-search')||'').toLowerCase().trim();
-  var cl=Object.values(DB.custs).filter(function(c){if(!q)return true;return (c.name||'').toLowerCase().indexOf(q)>=0||(c.phone||'').indexOf(q)>=0;});
+  var cl=Object.values(DB.custs).filter(function(c){
+    if(!q)return true;
+    return (c.name||'').toLowerCase().indexOf(q)>=0||(c.phone||'').indexOf(q)>=0;
+  });
   if(G('ds-cust'))G('ds-cust').textContent=Object.keys(DB.custs).length;
-  t.innerHTML=cl.length?'<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Name</th><th>Phone</th><th>City</th><th class="num">Advance</th><th class="num">Owes</th><th></th></tr></thead><tbody>'+
-    cl.map(function(c){var adv=getCustCredit(c.id);var owed=DB.sales.filter(function(s){return s.cid===c.id&&s.balance>0;}).reduce(function(s,x){return s+x.balance;},0);
-      return '<tr><td style="font-weight:600">'+c.name+'</td><td style="font-size:12px">'+c.phone+'</td><td style="font-size:12px;color:var(--tx3)">'+(c.city||'-')+'</td>'+
-        '<td class="num">'+(adv>0?'<span class="badge bg">'+fmt(adv)+'</span>':'-')+'</td>'+
-        '<td class="num">'+(owed>0?'<span class="badge br">'+fmt(owed)+'</span>':'-')+'</td>'+
-        '<td><div style="display:flex;gap:4px;justify-content:flex-end">'+
-          '<button class="btn btnsm btnog" onclick="openCustLedger(''+c.id+'')">Ledger</button>'+
-          '<button class="btn btnsm" onclick="openEditCust(''+c.id+'')">&#9998; Edit</button>'+
-        '</div></td></tr>';
-    }).join('')+'</tbody></table></div>':'<div class="empty"><div class="etxt">No customers found</div></div>';
+  if(!cl.length){t.innerHTML='<div class="empty"><div class="etxt">No customers found</div></div>';return;}
+  var html='<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Name</th><th>Phone</th><th>City</th><th class="num">Advance</th><th class="num">Owes</th><th></th></tr></thead><tbody>';
+  cl.forEach(function(c){
+    var adv=getCustCredit(c.id);
+    var owed=DB.sales.filter(function(s){return s.cid===c.id&&s.balance>0;}).reduce(function(s,x){return s+x.balance;},0);
+    var tr=document.createElement('tr');
+    tr.innerHTML=
+      '<td style="font-weight:600">'+c.name+'</td>'+
+      '<td style="font-size:12px">'+c.phone+'</td>'+
+      '<td style="font-size:12px;color:var(--tx3)">'+(c.city||'-')+'</td>'+
+      '<td class="num">'+(adv>0?'<span class="badge bg">'+fmt(adv)+'</span>':'-')+'</td>'+
+      '<td class="num">'+(owed>0?'<span class="badge br">'+fmt(owed)+'</span>':'-')+'</td>'+
+      '<td><div style="display:flex;gap:4px;justify-content:flex-end">'+
+        '<button class="btn btnsm btnog" data-cid="'+c.id+'" data-act="ledger">Ledger</button>'+
+        '<button class="btn btnsm" data-cid="'+c.id+'" data-act="edit">\u270e Edit</button>'+
+      '</div></td>';
+    html+=tr.outerHTML;
+  });
+  html+='</tbody></table></div>';
+  t.innerHTML=html;
+  // Attach events after render
+  t.querySelectorAll('button[data-cid]').forEach(function(btn){
+    btn.onclick=function(){
+      var cid=btn.getAttribute('data-cid');
+      var act=btn.getAttribute('data-act');
+      if(act==='ledger')openCustLedger(cid);
+      else openEditCust(cid);
+    };
+  });
 }
 function openCustLedger(id){var c=DB.custs[id];if(!c)return;G('cl-name').textContent=c.name;var tp=c.txns.reduce(function(s,t){return s+(t.amount||0);},0),tpd=c.txns.reduce(function(s,t){return s+(t.paid||0);},0),tb=c.txns.reduce(function(s,t){return s+(t.balance||0);},0);G('cl-total').innerHTML=fmt(tp);G('cl-paid').innerHTML=fmt(tpd);G('cl-bal').innerHTML=fmt(tb);G('cl-table').innerHTML=c.txns.length?'<table class="data-table"><thead><tr><th>Date</th><th>Type</th><th>Bill</th><th class="num">Amount</th><th class="num">Balance</th></tr></thead><tbody>'+c.txns.map(function(t){return '<tr><td style="font-size:12px;color:var(--tx3)">'+t.date+'</td><td><span class="badge bb" style="font-size:9px">'+t.type+'</span></td><td style="font-size:12px">'+(t.bill||'-')+'</td><td class="num">'+fmt(t.amount||0)+'</td><td class="num"><span class="badge '+(t.balance>0?'br':'bg')+'">'+fmt(t.balance||0)+'</span></td></tr>';}).join('')+'</tbody></table>':'<div class="empty"><div class="etxt">No transactions</div></div>';G('cl-panel').style.display='';}
 
 // ── SUPPLIERS ──
 function saveSup(){var name=V('sm-name').trim();if(!name){alert('Name required.');return;}var ob=N('sm-ob'),id=uid();DB.sups[id]={id:id,name:name,phone:V('sm-phone').trim(),metal:V('sm-metal'),balance:ob,txns:ob>0?[{type:'opening',date:td(),bill:'OB',debit:ob,credit:0,note:'Opening'}]:[]};dbSaveSup(DB.sups[id]);closeM('m-sup');renderSups();populateSupSelects();renderDash();}
-function renderSups(){var t=G('sup-list');if(!t)return;var sl=Object.values(DB.sups);var dss=G('ds-sup');if(dss)dss.textContent=sl.length;t.innerHTML=sl.length?'<table class="data-table"><thead><tr><th>Name</th><th>Metal</th><th>Phone</th><th class="num">Balance</th><th></th></tr></thead><tbody>'+sl.map(function(s){return '<tr><td style="font-weight:600">'+s.name+'</td><td style="font-size:12px"><span class="badge bgold">'+s.metal+'</span></td><td style="font-size:12px;color:var(--tx3)">'+(s.phone||'-')+'</td><td class="num"><span class="badge '+(s.balance>0?'br':'bg')+'">'+fmt(s.balance)+'</span></td><td><button class="btn btnsm btnog" onclick="openSupLedger(\''+s.id+'\')">Ledger</button></td></tr>';}).join('')+'</tbody></table>':'<div class="empty"><div class="etxt">No suppliers</div></div>';}
+function renderSups(){
+  var t=G('sup-list');if(!t)return;
+  var sl=Object.values(DB.sups);
+  var dss=G('ds-sup');if(dss)dss.textContent=sl.length;
+  if(!sl.length){t.innerHTML='<div class="empty"><div class="etxt">No suppliers</div></div>';return;}
+  var html='<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Name</th><th>Metal</th><th>Phone</th><th class="num">Balance</th><th></th></tr></thead><tbody>';
+  sl.forEach(function(s){
+    var tr=document.createElement('tr');
+    tr.innerHTML=
+      '<td style="font-weight:600">'+s.name+'</td>'+
+      '<td><span class="badge bgold">'+s.metal+'</span></td>'+
+      '<td style="font-size:12px;color:var(--tx3)">'+(s.phone||'-')+'</td>'+
+      '<td class="num"><span class="badge '+(s.balance>0?'br':'bg')+'">'+fmt(s.balance)+'</span></td>'+
+      '<td><div style="display:flex;gap:4px;justify-content:flex-end">'+
+        '<button class="btn btnsm btnog" data-sid="'+s.id+'" data-act="ledger">Ledger</button>'+
+        '<button class="btn btnsm" data-sid="'+s.id+'" data-act="edit">\u270e Edit</button>'+
+      '</div></td>';
+    html+=tr.outerHTML;
+  });
+  html+='</tbody></table></div>';
+  t.innerHTML=html;
+  t.querySelectorAll('button[data-sid]').forEach(function(btn){
+    btn.onclick=function(){
+      var sid=btn.getAttribute('data-sid');
+      var act=btn.getAttribute('data-act');
+      if(act==='ledger')openSupLedger(sid);
+      else openEditSup(sid);
+    };
+  });
+}
 function openSupLedger(id){var s=DB.sups[id];if(!s)return;activeSup=s;G('sl-name').textContent=s.name;var dr=(s.txns||[]).reduce(function(sum,t){return sum+(t.debit||0);},0),cr=(s.txns||[]).reduce(function(sum,t){return sum+(t.credit||0);},0);G('sl-dr').innerHTML=fmt(dr);G('sl-cr').innerHTML=fmt(cr);G('sl-net').innerHTML=fmt(Math.max(0,dr-cr));G('sl-table').innerHTML=(s.txns||[]).length?'<table class="data-table"><thead><tr><th>Date</th><th>Type</th><th>Debit</th><th>Credit</th></tr></thead><tbody>'+(s.txns||[]).map(function(t){return '<tr><td style="font-size:12px;color:var(--tx3)">'+t.date+'</td><td><span class="badge '+(t.type.indexOf('sold')>=0?'br':t.type==='settlement'?'bg':'ba')+'" style="font-size:9px">'+t.type.replace(/_/g,' ')+'</span></td><td class="num" style="color:var(--red)">'+(t.debit?fmt(t.debit):'-')+'</td><td class="num" style="color:var(--grn)">'+(t.credit?fmt(t.credit):'-')+'</td></tr>';}).join('')+'</tbody></table>':'<div class="empty"><div class="etxt">No transactions</div></div>';G('sl-panel').style.display='';}
 function saveSettle(){if(!activeSup)return;var mode=V('st-mode'),amt=N('st-amt'),rate=N('st-rate'),date=V('st-date')||td(),ref=V('st-ref');var credit=amt;if((mode.indexOf('Gold')>=0||mode.indexOf('Silver')>=0)&&rate>0)credit=amt*rate;if(!credit){alert('Enter amount.');return;}if(!activeSup.txns)activeSup.txns=[];activeSup.txns.push({type:'settlement',date:date,desc:mode,debit:0,credit:credit,note:ref||(rate?amt+'g @ \u20B9'+rate:'')});activeSup.balance=Math.max(0,(activeSup.balance||0)-credit);if(mode==='Cash')DB.cashLog.push({type:'out',date:date,amount:credit,desc:'Settle: '+activeSup.name,src:'supplier'});var lastTxn=activeSup.txns[activeSup.txns.length-1];dbSaveSupTxn(activeSup.id,lastTxn);closeM('m-settle');openSupLedger(activeSup.id);renderSups();renderCashFlow();}
 
@@ -2478,20 +2517,7 @@ function dbLoadAll(){
 }
 
 // ── Rates: plain fetch, no abstraction ──
-function loadRatesFromDB(){
-  if(!sbHasConfig())return;
-  dbGet('board_rates?select=*&order=updated_at.desc&limit=1',function(d,e){
-    if(e){console.warn('Rates load:',e);return;}
-    if(!d||!d.length)return;
-    var r=d[0];
-    R.k22=parseFloat(r.k22)||R.k22;R.k18=parseFloat(r.k18)||R.k18;R.k916=parseFloat(r.k916)||R.k916;
-    R.sil=parseFloat(r.silver)||R.sil;R.dia=parseFloat(r.diamond)||R.dia;R.plat=parseFloat(r.platinum)||R.plat;
-    G('r22t').textContent='₹'+R.k22.toLocaleString('en-IN');
-    G('r18t').textContent='₹'+R.k18.toLocaleString('en-IN');
-    G('rsilt').textContent='₹'+R.sil.toLocaleString('en-IN');
-    console.log('Rates loaded: 22K='+R.k22+' SIL='+R.sil);
-  });
-}
+
 
 
 // ═══════════════════════════════════════════════════════
@@ -2988,25 +3014,31 @@ function applyTranslations(){
   };
   Object.keys(navMap).forEach(function(id){
     var el=G(id); if(!el)return;
-    // Preserve the emoji span + badge, just update the text node
-    var icon=el.querySelector('.ni');
-    var badge=el.querySelector('.nav-badge');
-    var txt=t(navMap[id]);
-    el.innerHTML='';
-    if(icon)el.appendChild(icon);
-    el.appendChild(document.createTextNode(txt));
-    if(badge)el.appendChild(badge);
+    try{
+      var icon=el.querySelector('.ni');
+      var badge=el.querySelector('.nav-badge');
+      var iconClone=icon?icon.cloneNode(true):null;
+      var badgeClone=badge?badge.cloneNode(true):null;
+      var txt=t(navMap[id]);
+      el.innerHTML='';
+      if(iconClone)el.appendChild(iconClone);
+      el.appendChild(document.createTextNode(txt));
+      if(badgeClone)el.appendChild(badgeClone);
+    }catch(e){}
   });
 
   // ── Bottom nav ──
   var bnMap={'bn-dash':'nav_dashboard','bn-sale':'nav_newsale','bn-orders':'nav_orders','bn-payments':'nav_payments','bn-metalflow':'nav_metalflow'};
   Object.keys(bnMap).forEach(function(id){
     var el=G(id); if(!el)return;
-    var svg=el.querySelector('svg');
-    var txt=t(bnMap[id]).split(' ')[0]; // first word only for mobile
-    el.innerHTML='';
-    if(svg)el.appendChild(svg);
-    el.appendChild(document.createTextNode(txt));
+    try{
+      var svg=el.querySelector('svg');
+      var svgClone=svg?svg.cloneNode(true):null;
+      var txt=t(bnMap[id]).split(' ')[0];
+      el.innerHTML='';
+      if(svgClone)el.appendChild(svgClone);
+      el.appendChild(document.createTextNode(txt));
+    }catch(e){}
   });
 
   // ── Page headers ──
@@ -3098,27 +3130,37 @@ function getCustCredit(custId){
   if(!custId)return 0;
   var credit=0;
   var cust=DB.custs[custId];
+  var custName=cust?cust.name:'';
 
-  // Opening balance: ob>0 means customer has credit with us (we owe them)
+  // Opening balance: ob>0 means shop owes customer
   if(cust&&cust.ob>0)credit+=cust.ob;
 
-  // Walk all payment records for this customer
+  // Walk all standalone payment records (match by cid OR by name fallback)
   DB.payments.forEach(function(p){
-    if(p.cid!==custId)return;
+    var byId=p.cid&&p.cid===custId;
+    var byName=(!p.cid||p.cid===''||p.cid===null)&&custName&&p.customer===custName;
+    if(!byId&&!byName)return;
     switch(p.type){
-      // Money/credit received FROM customer — adds to their credit
-      case 'in':          credit+=p.amt; break;
-      case 'advance':     credit+=p.amt; break;
-      case 'oldgold-adv': credit+=p.amt; break;
-      case 'old_gold_advance': credit+=p.amt; break;
-      case 'chit_credit': credit+=p.amt; break;
-      // Money/credit used — deducts from their credit
-      case 'advance_used': credit-=p.amt; break;
-      case 'out':          credit-=p.amt; break; // cash refund given
+      case 'in':case 'advance':case 'oldgold-adv':case 'old_gold_advance':case 'chit_credit':
+        credit+=p.amt; break;
+      // advance_used kept for compatibility but sale-level tracking is primary
+      case 'advance_used': break; // handled via sale pays below — skip to avoid double count
+      case 'out':   credit-=p.amt; break;
+      case 'oldgold': credit-=p.amt; break;
     }
   });
 
-  return Math.max(0, Math.round(credit*100)/100);
+  // Deduct advance amounts used IN SALES (mode='Customer Advance' in sale.pays)
+  // This is the authoritative source — sale payments are always saved correctly
+  DB.sales.forEach(function(s){
+    var isCust=(s.cid===custId)||(s.customer&&s.customer===custName);
+    if(!isCust)return;
+    (s.pays||[]).forEach(function(p){
+      if(p.mode==='Customer Advance'&&p.amt>0)credit-=p.amt;
+    });
+  });
+
+  return Math.max(0,Math.round(credit*100)/100);
 }
 
 // Full customer statement: how much they owe us (debit) vs credit
@@ -3127,7 +3169,8 @@ function getCustStatement(custId){
   var credit=getCustCredit(custId);
   var owed=DB.sales.filter(function(s){return s.cid===custId&&s.balance>0;})
     .reduce(function(sum,s){return sum+s.balance;},0);
-  return{credit:credit, owed:owed, net:credit-owed};
+  var net=Math.max(0,credit-owed); // net available = credit minus what they owe
+  return{credit:credit, owed:owed, net:net};
 }
 
 // Add advance as a payment row in the current sale
@@ -3166,7 +3209,7 @@ function applyCustAdvance(custId){
       '<span style="font-size:12px;font-weight:700;color:var(--grn)">&#128176; Advance Balance (Available: '+fmt(avail)+')</span>'+
       '<button class="btn btnsm btnd" style="padding:3px 9px" onclick="removePay(\''+rid+'\',\'pay-container\')">&#10005;</button>'+
     '</div>'+
-    '<input type="hidden" id="'+rid+'-mode" value="Customer Advance">'+
+    '<input type="hidden" id="'+rid+'-mode" value="Customer Advance">'+'<input type="hidden" id="'+rid+'-cid" value="'+custId+'">'+
     '<div class="g2">'+
       '<div class="field"><label>Apply Amount (₹)</label>'+
         '<input type="number" id="'+rid+'-amt" value="'+applyAmt.toFixed(2)+'" step="0.01" inputmode="decimal" oninput="onPayAmt(\'pay-container\')">'+
@@ -3220,6 +3263,37 @@ function onChType(){
 
 function chCalcVal(){var metal=V('ch-metal'),wt=N('ch-wt');var re2=G('ch-rate');var rate=N('ch-rate')||(metal==='Gold'?R.k22:R.sil);if(re2&&!re2.value)re2.value=rate.toFixed(2);var val=wt*rate;var ve=G('ch-val');if(ve&&!ve._edited)ve.value=val.toFixed(2);}
 
+function saveChitEntry(){
+  var custId=V('ch-cid'),custName=V('ch-cname').trim();
+  if(!custName){alert('Search for the customer first.');return;}
+  var type=V('ch-type'),date=V('ch-date')||td(),ref=V('ch-ref');
+  var amt=0;
+  if(type==='bonus'){
+    amt=N('ch-amt');
+    if(!amt){alert('Enter chit bonus amount.');return;}
+    DB.cashLog.push({type:'in',date:date,amount:amt,desc:'Chit Bonus: '+custName,src:'chit'});
+    dbSaveCashEntry('in',date,amt,'Chit Bonus: '+custName,'chit');
+  } else {
+    var wt=N('ch-wt'),metal=V('ch-metal');
+    amt=N('ch-val')||wt*(metal==='Gold'?R.k22:R.sil);
+    if(!wt){alert('Enter weight.');return;}
+    var omItem={id:uid(),metal:metal,wt:wt,val:amt,date:date,src:'Chit: '+custName,batched:false};
+    DB.oldMetal.push(omItem);dbSaveOldMetal(omItem);
+  }
+  var py={id:uid(),cid:custId,customer:custName,type:'chit_credit',amt:amt,
+    mode:type==='bonus'?'Chit Bonus':'Chit Weight',date:date,
+    note:(type==='bonus'?'Bonus':'Weight '+N('ch-wt').toFixed(3)+'g')+(ref?' - '+ref:'')};
+  DB.payments.unshift(py);
+  dbSavePayment(py);
+  // Clear form
+  var fields=['ch-phone','ch-amt','ch-wt','ch-val','ch-ref'];
+  fields.forEach(function(id){var e=G(id);if(e)e.value='';});
+  G('ch-cid').value='';G('ch-cname').value='';G('ch-cust-res').innerHTML='';
+  var cv=G('ch-val');if(cv)cv._edited=false;
+  var cr=G('ch-rate');if(cr)cr.value='';
+  closeM('m-chit');renderPayments();renderCashFlow();renderDash();
+  alert('\u2713 Chit entry saved!\n'+custName+' credited: '+fmt(amt));
+}
 
 var _editPayIdx=null;
 function editPayment(idx){var q=(V('pay-search')||'').toLowerCase().trim();var f=DB.payments.filter(function(p){var tOk=(payFlt==='all')||(payFlt==='in'&&payIsIn(p.type))||(payFlt==='out'&&!payIsIn(p.type));return tOk&&(!q||(p.customer||'').toLowerCase().indexOf(q)>=0);});var pay=f[idx];if(!pay)return;_editPayIdx=DB.payments.indexOf(pay);G('ep-customer').value=pay.customer||'';G('ep-date').value=pay.date||td();G('ep-amt').value=pay.amt||'';G('ep-mode').value=pay.mode||'';G('ep-note').value=pay.note||'';G('ep-type').value=payTypeLabel(pay.type)||'';openM('m-editpay');}
@@ -3254,32 +3328,50 @@ setLang(LANG);
 </script>
 
 <div class="modal-bg" id="m-chit"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#127914; Chit Entry for Customer</div>
-  <div class="infobar" style="margin-bottom:12px">Record chit bonus received or chit weight (metal) received on behalf of a customer. Adds to their advance credit.</div>
+  <div class="infobar" style="margin-bottom:12px">Record chit bonus received or chit weight received on behalf of a customer. Adds to their advance credit.</div>
   <div class="field"><label>Customer Phone</label>
     <input type="tel" id="ch-phone" maxlength="10" inputmode="numeric" oninput="chCustLookup()">
     <div id="ch-cust-res" style="margin-top:6px"></div>
     <input type="hidden" id="ch-cid"><input type="hidden" id="ch-cname">
   </div>
-  <div class="field"><label>Chit Type</label>
-    <select id="ch-type" onchange="onChType()">
-      <option value="bonus">Chit Bonus (Cash ₹)</option>
-      <option value="weight">Chit Weight (Gold/Silver g)</option>
-    </select>
+  <div class="g2">
+    <div class="field"><label>Chit Type</label>
+      <select id="ch-type" onchange="onChType()">
+        <option value="bonus">Chit Bonus (Cash &#8377;)</option>
+        <option value="weight">Chit Weight (Gold/Silver)</option>
+      </select>
+    </div>
+    <div class="field"><label>Date</label><input type="date" id="ch-date"></div>
   </div>
   <div id="ch-cash-row">
-    <div class="g2">
-      <div class="field"><label>Bonus Amount (₹)</label><input type="number" id="ch-amt" step="0.01" inputmode="decimal"></div>
-      <div class="field"><label>Date</label><input type="date" id="ch-date"></div>
+    <div class="field"><label>Bonus Amount (&#8377;)</label>
+      <input type="number" id="ch-amt" step="0.01" inputmode="decimal" placeholder="e.g. 5000">
     </div>
   </div>
   <div id="ch-wt-row" style="display:none">
-    <div class="g3">
-      <div class="field"><label>Metal</label><select id="ch-metal"><option>Gold</option><option>Silver</option></select></div>
-      <div class="field"><label>Weight (g)</label><input type="number" id="ch-wt" step="0.001" inputmode="decimal" oninput="chCalcVal()"></div>
-      <div class="field"><label>Value (₹)</label><input type="number" id="ch-val" step="0.01" inputmode="decimal" class="igold"></div>
+    <div class="g2" style="margin-bottom:8px">
+      <div class="field"><label>Metal</label>
+        <select id="ch-metal" onchange="chCalcVal()">
+          <option>Gold</option><option>Silver</option>
+        </select>
+      </div>
+      <div class="field"><label>Rate &#8377;/g <span style="color:var(--tx3);font-weight:400">(auto)</span></label>
+        <input type="number" id="ch-rate" step="0.01" inputmode="decimal" oninput="chCalcVal()" placeholder="Auto from board rate">
+      </div>
     </div>
+    <div class="g2">
+      <div class="field"><label>Weight (g)</label>
+        <input type="number" id="ch-wt" step="0.001" inputmode="decimal" placeholder="e.g. 4.500" oninput="chCalcVal()">
+      </div>
+      <div class="field"><label>Value (&#8377;) &mdash; editable</label>
+        <input type="number" id="ch-val" step="0.01" inputmode="decimal" class="igold" oninput="this._edited=true">
+      </div>
+    </div>
+    <div class="warnbar" style="font-size:11px">&#9432; Metal goes to Unbatched Pool &#8594; Metal Flow &#8594; Batch tab</div>
   </div>
-  <div class="field"><label>Chit No / Reference</label><input type="text" id="ch-ref" placeholder="Chit number, group name..."></div>
+  <div class="field"><label>Chit No / Reference</label>
+    <input type="text" id="ch-ref" placeholder="Chit number, group name...">
+  </div>
   <div class="mfoot">
     <button class="btn" onclick="closeM('m-chit')">Cancel</button>
     <button class="btn btng" onclick="saveChitEntry()">&#10003; Save Chit Entry</button>
