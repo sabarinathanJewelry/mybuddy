@@ -961,43 +961,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
 </div>
 
 <!-- ═══ LOGIN SCREEN (after gun game) ═══ -->
-<div class="login-screen" id="login-screen">
-  <div class="login-card">
-    <div class="login-logo">
-      <div class="login-gem">💰</div>
-      <div class="login-title">MyBuddy</div>
-      <div class="login-sub">Select your profile</div>
-    </div>
-    <div class="login-users-label">Who are you?</div>
-    <div class="login-user-btns" id="login-user-btns">
-      <!-- Populated by JS -->
-    </div>
-    <div class="pin-entry" id="pin-entry-area">
-      <div class="pin-user-label-wrap">
-        <div style="font-size:10px;color:var(--tx3);margin-bottom:2px">Enter PIN for</div>
-        <div class="pin-user-label" id="pin-user-label">-</div>
-      </div>
-      <div class="pin-dots" id="pin-dots">
-        <div class="pin-dot"></div><div class="pin-dot"></div>
-        <div class="pin-dot"></div><div class="pin-dot"></div>
-      </div>
-      <div class="pin-pad">
-        <button class="pin-key" onclick="pinPress(1)">1</button>
-        <button class="pin-key" onclick="pinPress(2)">2</button>
-        <button class="pin-key" onclick="pinPress(3)">3</button>
-        <button class="pin-key" onclick="pinPress(4)">4</button>
-        <button class="pin-key" onclick="pinPress(5)">5</button>
-        <button class="pin-key" onclick="pinPress(6)">6</button>
-        <button class="pin-key" onclick="pinPress(7)">7</button>
-        <button class="pin-key" onclick="pinPress(8)">8</button>
-        <button class="pin-key" onclick="pinPress(9)">9</button>
-        <button class="pin-key del" onclick="pinBackspace()">⌫</button>
-        <button class="pin-key zero" onclick="pinPress(0)">0</button>
-      </div>
-      <div id="login-error"></div>
-    </div>
-  </div>
-</div>
+
 
 <div class="app">
 <!-- ── SIDEBAR ── -->
@@ -3015,9 +2979,8 @@ function glUnlock(){
         lock.classList.remove('show');
         lock.style.display='none';
         glLocked=false;
-        // Show login screen — app boots after user selects and enters PIN
-        if(sbHasConfig())initUsersTable();
-        showLoginScreen();
+        // Boot the app directly — gun sequence IS the login
+        bootApp();
       },500);
     }
   },300);
@@ -3556,197 +3519,36 @@ async function sha256(str){
 }
 
 // ── Login after gun game ──
-function showLoginScreen(){
-  var ls=G('login-screen');
-  if(ls)ls.classList.add('show');
-  // Populate user buttons
-  var ub=G('login-user-btns');
-  if(!ub)return;
-  // Load from Supabase or use defaults
-  loadUsersForLogin();
-}
-
-var _loginUsers = []; // loaded users list
-
-function loadUsersForLogin(){
-  if(sbHasConfig()){
-    dbGet('shop_users?select=*&active=eq.true&order=full_name.asc', function(d,e){
-      if(e||!d||!d.length){
-        _loginUsers=DEFAULT_USERS.map(function(u){return{username:u.username,fullName:u.fullName,role:u.role,pin_hash:null};});
-      } else {
-        _loginUsers=d.map(function(r){return{id:r.id,username:r.username,fullName:r.full_name,role:r.role,pin_hash:r.pin_hash};});
-      }
-      renderLoginUsers();
-    });
-  } else {
-    _loginUsers=DEFAULT_USERS.map(function(u){return{username:u.username,fullName:u.fullName,role:u.role,pin_hash:null};});
-    renderLoginUsers();
-  }
-}
-
-var _selectedUser = null;
-
-function renderLoginUsers(){
-  var ub=G('login-user-btns'); if(!ub)return;
-  ub.innerHTML=_loginUsers.map(function(u){
-    var initials=u.fullName.split(' ').map(function(w){return w[0];}).join('').toUpperCase().slice(0,2);
-    var color=u.role==='admin'?'var(--gold)':'var(--blu)';
-    return '<button class="login-user-btn" onclick="selectLoginUser(\''+u.username+'\')" data-user="'+u.username+'">'+
-      '<div class="login-avatar" style="background:'+color+'">'+initials+'</div>'+
-      '<div class="login-uname">'+u.fullName+'</div>'+
-      '<div class="login-urole" style="color:'+(u.role==='admin'?'var(--gold-light)':'var(--tx3)')+'">'+u.role+'</div>'+
-    '</button>';
-  }).join('');
-}
-
-function selectLoginUser(username){
-  _selectedUser=_loginUsers.find(function(u){return u.username===username;});
-  if(!_selectedUser)return;
-  // Highlight selected
-  document.querySelectorAll('.login-user-btn').forEach(function(b){
-    b.classList.toggle('selected', b.dataset.user===username);
-  });
-  // Show PIN entry
-  var pd=G('pin-entry-area');
-  if(pd){pd.style.display='block';}
-  var lbl=G('pin-user-label');
-  if(lbl)lbl.textContent=_selectedUser.fullName;
-  clearPin();
-  G('login-error').textContent='';
-}
-
-var _pinVal = '';
-function pinPress(d){
-  if(_pinVal.length>=4)return;
-  _pinVal+=d.toString();
-  renderPinDots();
-  if(_pinVal.length===4)setTimeout(submitPin,200);
-}
-function pinBackspace(){_pinVal=_pinVal.slice(0,-1);renderPinDots();}
-function clearPin(){_pinVal='';renderPinDots();}
-function renderPinDots(){
-  var dots=G('pin-dots');
-  if(!dots)return;
-  dots.innerHTML='';
-  for(var i=0;i<4;i++){
-    var d=document.createElement('div');
-    d.className='pin-dot'+(i<_pinVal.length?' filled':'');
-    dots.appendChild(d);
-  }
-}
-
-async function submitPin(){
-  if(!_selectedUser)return;
-  var entered=_pinVal;
-  var err=G('login-error');
-  // Try Supabase lookup first
-  if(sbHasConfig()&&_selectedUser.pin_hash){
-    var hashed=await sha256(entered);
-    if(hashed===_selectedUser.pin_hash){
-      doAppLogin(_selectedUser);
-    } else {
-      if(err)err.textContent='Wrong PIN. Try again.';
-      clearPin();
-    }
-  } else {
-    // Fallback: match against defaults
-    var def=DEFAULT_USERS.find(function(u){return u.username===_selectedUser.username;});
-    if(def&&entered===def.pin){
-      doAppLogin(_selectedUser);
-    } else if(entered==='1234'&&_selectedUser.role==='admin'){
-      doAppLogin(_selectedUser);
-    } else if(entered==='0000'&&_selectedUser.role==='staff'){
-      doAppLogin(_selectedUser);
-    } else {
-      if(err)err.textContent='Wrong PIN. Try again.';
-      clearPin();
-    }
-  }
-}
-
-function doAppLogin(user){
-  CURRENT_USER=user;
-  // Hide login screen
-  var ls=G('login-screen');
-  if(ls){ls.style.opacity='0';ls.style.transform='scale(1.05)';setTimeout(function(){ls.classList.remove('show');ls.style.cssText='';},400);}
-  // Update sidebar user info
-  var un=G('user-name');if(un)un.textContent=user.fullName;
-  var ur=G('user-role');if(ur)ur.textContent=user.role==='admin'?'Admin':'Staff';
-  var ua=G('user-avatar');if(ua){ua.textContent=user.fullName.split(' ').map(function(w){return w[0];}).join('').slice(0,2).toUpperCase();ua.style.background=user.role==='admin'?'linear-gradient(135deg,var(--gold-light),var(--gold-dark))':'var(--blu)';}
-  // Apply role restrictions
-  applyRoleRestrictions();
-  // Boot app
+function bootApp(){
+  // Boot the real app — user is already identified from gun sequence
   G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');
   G('r18t').textContent='\u20B9'+R.k18.toLocaleString('en-IN');
   G('rsilt').textContent='\u20B9'+R.sil.toLocaleString('en-IN');
-  if(sbHasConfig()){dbLoadAll();loadRatesFromDB();}
+  // Show user in sidebar
+  if(CURRENT_USER){
+    var un=G('user-name'),ua=G('user-avatar'),ur=G('user-role');
+    if(un)un.textContent=CURRENT_USER.name;
+    if(ua)ua.textContent=CURRENT_USER.name[0].toUpperCase();
+    if(ur)ur.textContent=CURRENT_USER.role==='admin'?'Admin':'Staff';
+    // Hide restricted nav items for staff
+    if(CURRENT_USER.role==='staff'){
+      ['ni-balance','ni-loans','ni-cashflow','ni-reports'].forEach(function(id){
+        var el=G(id);if(el)el.style.display='none';
+      });
+    }
+    // Show status dot
+    var dot=G('db-dot'),st=G('db-status');
+    if(dot)dot.style.background='var(--grn)';
+    if(st)st.textContent=sbHasConfig()?'Supabase':'Local';
+  }
+  if(sbHasConfig()){
+    dbLoadAll();
+    loadRatesFromDB();
+    setTimeout(loadUsersFromDB,2000);
+  }
   renderDash();
   setTimeout(function(){initSaleForm();},100);
   setTimeout(function(){applyTranslations();},200);
-  // Log login time
-  if(sbHasConfig()&&user.id){dbPatch('shop_users','id=eq.'+user.id,{last_login:new Date().toISOString()},null);}
-}
-
-function applyRoleRestrictions(){
-  if(isAdmin()){
-    // Show everything
-    document.querySelectorAll('.nav-item,.bni').forEach(function(el){el.style.display='';});
-    document.querySelectorAll('.admin-only').forEach(function(el){el.style.display='';});
-    document.querySelectorAll('.staff-hidden').forEach(function(el){el.style.display='';});
-    return;
-  }
-  // Staff: hide restricted nav
-  STAFF_HIDDEN_NAV.forEach(function(id){var e=G(id);if(e)e.style.display='none';});
-  // Hide admin-only UI elements
-  document.querySelectorAll('.admin-only').forEach(function(el){el.style.display='none';});
-  // Hide rates edit button
-  var editRates=document.querySelectorAll('[onclick*="m-rates"]');
-  editRates.forEach(function(e){if(e.textContent&&e.textContent.indexOf('Edit')>=0)e.style.display='none';});
-}
-
-// Guard function — call before any admin action
-function requireAdmin(action){
-  if(isAdmin())return true;
-  alert('This action requires admin access.\nPlease ask an admin to perform this.');
-  return false;
-}
-
-// ── USER MANAGEMENT (Settings page) ──
-function renderUsersSettings(){
-  var t=G('users-table');if(!t)return;
-  t.innerHTML=_loginUsers.map(function(u){
-    return '<tr>'+
-      '<td style="font-weight:600">'+u.fullName+'</td>'+
-      '<td style="font-size:12px;color:var(--tx3)">'+u.username+'</td>'+
-      '<td><span class="badge '+(u.role==='admin'?'bgold':'bb')+'">'+u.role+'</span></td>'+
-      '<td><button class="btn btnsm btnog" onclick="openChangePIN(\''+u.username+'\')">Change PIN</button></td>'+
-    '</tr>';
-  }).join('');
-}
-
-var _changePinUser = null;
-function openChangePIN(username){
-  if(!requireAdmin())return;
-  _changePinUser=username;
-  var u=_loginUsers.find(function(x){return x.username===username;});
-  var el=G('cp-pin-user');if(el)el.textContent=u?u.fullName:username;
-  G('cp-pin-val').value='';
-  openM('m-change-pin');
-}
-async function saveNewPIN(){
-  var pin=V('cp-pin-val').trim();
-  if(pin.length<4){alert('PIN must be at least 4 digits.');return;}
-  if(!sbHasConfig()){alert('Connect Supabase to save PIN changes.');return;}
-  var hashed=await sha256(pin);
-  var user=_loginUsers.find(function(u){return u.username===_changePinUser;});
-  if(!user){alert('User not found.');return;}
-  dbPatch('shop_users','username=eq.'+_changePinUser,{pin_hash:hashed},function(ok,e){
-    if(e){alert('Error: '+e);}else{
-      user.pin_hash=hashed;
-      closeM('m-change-pin');
-      alert('\u2713 PIN changed for '+user.fullName);
-    }
-  });
 }
 
 // ── INIT SUPABASE USERS TABLE ──
@@ -3803,35 +3605,6 @@ function findUserByCode(seq){
   })||null;
 }
 
-// Override glUnlock to set user
-var _origGlUnlock = glUnlock;
-glUnlock = function(){
-  var user = findUserByCode(GUN_CODE===glSeq?GUN_CODE:glSeq.slice(-5));
-  // Try last 5 shots as sequence
-  var seq5 = glSeq.slice(-5);
-  user = USERS.find(function(u){
-    return JSON.stringify(u.code)===JSON.stringify(seq5);
-  })||USERS.find(function(u){
-    return JSON.stringify(u.code)===JSON.stringify(glSeq);
-  });
-  if(user){
-    CURRENT_USER = user;
-    GUN_CODE = user.code; // ensure the check passes
-    // Update UI
-    var un=G('user-name'), ua=G('user-avatar'), ur=G('user-role');
-    if(un)un.textContent=user.name;
-    if(ua)ua.textContent=user.name[0];
-    if(ur)ur.textContent=user.role==='admin'?'Admin':'Staff';
-    // Hide restricted pages for staff
-    if(user.role==='staff'){
-      ROLE_RESTRICT.forEach(function(pgId){
-        var ni=G('ni-'+pgId.replace('pg-',''));
-        if(ni)ni.style.display='none';
-      });
-    }
-  }
-  _origGlUnlock();
-};
 
 // ── REPORTS ──
 function rptSetDate(mode){
@@ -4178,7 +3951,6 @@ showPg = function(id, btn, title){
 };
 
 // Init date fields for new modals
-var _origGunUnlock2 = glUnlock;
 // Prefill dates on modal open
 var _origOpenM = openM;
 openM = function(id){
