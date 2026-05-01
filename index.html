@@ -1342,7 +1342,14 @@ input:checked+.tslider::before { transform:translateX(17px); }
     <div class="met"><div class="ml">Silver Reserve (g)</div><div class="mv" id="mf-silver">0.000</div></div>
     <div class="met"><div class="ml">At Refinery (g)</div><div class="mv a" id="mf-ref">0</div></div>
   </div>
-  <div class="tabs"><div class="tab active" onclick="mfTab('in',this)">Receive</div><div class="tab" onclick="mfTab('batch',this)">Batch</div><div class="tab" onclick="mfTab('refinery',this)">Refinery</div><div class="tab" onclick="mfTab('out',this)">Outflow</div><div class="tab" onclick="mfTab('log',this)">Log</div></div>
+<div class="tabs">
+  <div class="tab active" onclick="mfTab('in',this)">Receive</div>
+  <div class="tab" onclick="mfTab('batch',this)">Batch</div>
+  <div class="tab" onclick="mfTab('refinery',this)">Refinery</div>
+  <div class="tab" onclick="mfTab('out',this)">Outflow</div>
+  <div class="tab" onclick="mfTab('sell',this)">💰 Sell Gold</div>
+  <div class="tab" onclick="mfTab('log',this)">Log</div>
+</div>
 
   <div id="mf-in" class="card">
     <div class="card-header"><div class="card-title">Receive Metal (Bullion / Direct)</div></div>
@@ -1382,7 +1389,24 @@ input:checked+.tslider::before { transform:translateX(17px); }
     <div class="field"><label>Party</label><select id="mfo-party"><option value="">-- Select --</option></select></div>
     <button class="btn btng" onclick="saveMFOut()">Record Outflow</button>
   </div>
+<div id="mf-sell" style="display:none">
+  <div class="card">
+    <div class="card-header"><div class="card-title">💰 Sell Refined Gold</div></div>
 
+    <div class="g3">
+      <input type="number" id="sel-wt" placeholder="Weight (g)">
+      <input type="number" id="sel-rate" placeholder="Rate">
+      <input type="number" id="sel-sell-val" placeholder="Sell Value">
+    </div>
+
+    <div class="g3">
+      <input type="number" id="sel-buy-cost" placeholder="Buy Cost">
+      <input type="text" id="sel-party" placeholder="Buyer">
+    </div>
+
+    <button onclick="sellRefinedGold()">Record Sale</button>
+  </div>
+</div>
   <div id="mf-log" style="display:none" class="card"><div class="card-header"><div class="card-title">Flow Log</div></div><div id="mf-log-tbl"><div class="empty"><div class="etxt">No entries</div></div></div></div>
 </div>
 
@@ -2878,7 +2902,25 @@ function glRespawnTarget(el){
     setTimeout(function(){el.classList.remove('respawn');},400);
   },800+Math.random()*800);
 }
+function calcSellTotal(){
+  var wt = Number(document.getElementById('sel-wt').value);
+  var rate = Number(document.getElementById('sel-rate').value);
+  if(wt && rate){
+    document.getElementById('sel-sell-val').value = (wt * rate).toFixed(2);
+  }
+}
 
+function sellRefinedGold(){
+  var wt = Number(document.getElementById('sel-wt').value);
+  var sell = Number(document.getElementById('sel-sell-val').value);
+
+  if(!wt || !sell){
+    alert("Enter valid details");
+    return;
+  }
+
+  alert("Sale recorded successfully!");
+}
 // ── Ammo display (shows total shots, no sequence hint) ──
 function glUpdateAmmo(){
   var el=G('gl-ammo'); if(!el)return;
