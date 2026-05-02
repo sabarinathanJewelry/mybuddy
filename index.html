@@ -629,31 +629,6 @@ input:checked+.tslider::before { transform:translateX(17px); }
 /* ═══════════════════════════════════════
    AUTH SCREEN
 ═══════════════════════════════════════ */
-.auth-screen {
-  display:none;
-  position:fixed; inset:0;
-  background:var(--sidebar-bg);
-  z-index:2000;
-  align-items:center; justify-content:center;
-  flex-direction:column;
-  gap:24px;
-}
-.auth-screen.show { display:flex; }
-.auth-card {
-  background:#fff; border-radius:20px; padding:36px;
-  width:100%; max-width:380px;
-  box-shadow:0 20px 60px rgba(0,0,0,0.3);
-}
-.auth-logo { text-align:center; margin-bottom:28px; }
-.auth-gem {
-  width:56px; height:56px;
-  background:linear-gradient(135deg,var(--gold-light),var(--gold-dark));
-  border-radius:16px; margin:0 auto 12px;
-  display:flex; align-items:center; justify-content:center;
-  font-size:26px;
-}
-.auth-title { font-family:'DM Serif Display',serif; font-size:24px; text-align:center; }
-.auth-sub { font-size:13px; color:var(--tx3); text-align:center; margin-top:4px; }
 
 /* ═══════════════════════════════════════
    LOADING OVERLAY
@@ -703,53 +678,111 @@ input:checked+.tslider::before { transform:translateX(17px); }
    RESPONSIVE: MOBILE (<768px)
 ═══════════════════════════════════════ */
 @media (max-width:767px) {
-  .sidebar {
-    position: fixed;
-    left: 0; top: 0; bottom: 0;
-    transform: translateX(-100%);
-    z-index: 200;
-    bottom: 60px;
-  }
-  .sidebar.open { transform:translateX(0); }
-  .topbar { padding:0 14px; }
-  .content {
-    padding: 12px 12px;
-    padding-bottom: 70px;
-  }
-  .stat-grid { grid-template-columns:repeat(2,1fr); gap:8px; }
-  .stat-val { font-size:18px; }
-  .card { padding:14px; }
-  .g4 { grid-template-columns:1fr 1fr; }
-  .g5 { grid-template-columns:1fr 1fr; }
-  .dash-grid { grid-template-columns:1fr; }
-  .dash-side { display:none; }
-  .msheet {
-    border-radius:22px 22px 0 0;
-    padding:0 16px 32px;
-    max-width:100%;
-    position:fixed; bottom:0; left:0; right:0;
-    border-radius:22px 22px 0 0;
-    max-height:92vh;
-  }
-  .modal-bg { align-items:flex-end; padding:0; }
-  .mhandle { display:block; width:40px; height:4px; background:var(--bdr); border-radius:2px; margin:14px auto 16px; }
-  .mtitle { font-size:17px; }
-  .botnav {
-    display:flex;
-    position:fixed; bottom:0; left:0; right:0;
-    background:var(--card); border-top:1px solid var(--bdr);
-    z-index:50; padding-bottom:env(safe-area-inset-bottom);
-  }
-  .bni {
-    flex:1; display:flex; flex-direction:column; align-items:center;
-    padding:7px 2px 9px; cursor:pointer; border:none; background:transparent;
-    font-family:inherit; color:var(--tx3); font-size:9px; gap:3px; font-weight:500;
-  }
-  .bni.active { color:var(--gold-dark); }
-  .bni svg { width:21px; height:21px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
-  .bni.active svg { stroke:var(--gold-dark); }
-  .topbar-menu-btn { display:flex; }
-  .topbar-actions .topbar-btn span { display:none; }
+  /* ── Layout ── */
+  .sidebar{position:fixed;left:0;top:0;bottom:60px;transform:translateX(-100%);z-index:200;}
+  .sidebar.open{transform:translateX(0);}
+  .topbar{padding:0 10px;gap:6px;}
+  .topbar-menu-btn{display:flex;}
+  .topbar-title{font-size:14px;}
+  .topbar-actions .topbar-btn span{display:none;}
+  .topbar-btn{padding:0 10px;height:30px;font-size:11px;}
+  .content{padding:10px 10px 74px;}
+
+  /* ── All grids → single column ── */
+  .g2,.g3,.g4,.g5{grid-template-columns:1fr !important;gap:8px;}
+
+  /* ── Stats ── */
+  .stat-grid{grid-template-columns:1fr 1fr;gap:8px;}
+  .stat-val{font-size:18px;}
+  .stat-card{padding:12px;}
+
+  /* ── Cards ── */
+  .card{padding:12px;}
+  .card-title{font-size:13px;}
+  .card-sub{font-size:11px;}
+  .card-header{flex-wrap:wrap;gap:6px;margin-bottom:10px;}
+
+  /* ── Metrics ── */
+  .metrics.c3,.metrics.c4{grid-template-columns:1fr 1fr !important;gap:8px;}
+  .met{padding:10px 11px;}
+  .mv{font-size:15px;}
+  .ml{font-size:9px;}
+
+  /* ── Dashboard ── */
+  .dash-grid{grid-template-columns:1fr;}
+  .dash-side{display:none;}
+  .page-header h1{font-size:18px;}
+  .page-header p{font-size:11px;}
+
+  /* ── Tables ── */
+  .data-table{font-size:11px;min-width:440px;}
+  .data-table th{padding:6px 7px;font-size:9px;}
+  .data-table td{padding:7px;}
+
+  /* ── Forms — 16px prevents iOS zoom ── */
+  input,select,textarea{font-size:16px !important;padding:10px 11px;}
+  label{font-size:10px;}
+  .field{margin-bottom:10px;}
+  .btn{font-size:12px;padding:8px 12px;}
+  .btnsm{font-size:11px;padding:5px 9px;}
+
+  /* ── Modals as bottom sheets ── */
+  .modal-bg{align-items:flex-end;padding:0;}
+  .msheet{border-radius:22px 22px 0 0;padding:0 14px 32px;max-width:100%;position:fixed;bottom:0;left:0;right:0;max-height:90vh;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  .mhandle{display:block;width:40px;height:4px;background:var(--bdr);border-radius:2px;margin:14px auto 14px;}
+  .mtitle{font-size:16px;margin-bottom:12px;}
+  .mfoot{gap:8px;margin-top:14px;}
+
+  /* ── Line items (sale) ── */
+  .li-box{padding:10px;}
+  .ittot{padding:8px 10px;}
+
+  /* ── Total panel ── */
+  .totpanel{padding:10px 12px;}
+  .trow.big .tval{font-size:17px;}
+
+  /* ── Tabs ── */
+  .tabs{gap:4px;flex-wrap:wrap;}
+  .tab{padding:5px 10px;font-size:11px;}
+
+  /* ── Payment rows ── */
+  .payrow{padding:10px 11px;}
+
+  /* ── Rate chips ── */
+  .rate-chip{padding:2px 6px;font-size:10px;}
+  .rv{font-size:11px;}
+
+  /* ── Bottom nav ── */
+  .botnav{display:flex;position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--bdr);z-index:50;padding-bottom:env(safe-area-inset-bottom);}
+  .bni{flex:1;display:flex;flex-direction:column;align-items:center;padding:7px 2px 9px;cursor:pointer;border:none;background:transparent;font-family:inherit;color:var(--tx3);font-size:9px;gap:3px;font-weight:500;-webkit-tap-highlight-color:transparent;}
+  .bni.active{color:var(--gold-dark);}
+  .bni svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+  .bni.active svg{stroke:var(--gold-dark);}
+
+  /* ── Hide scrollbars on mobile ── */
+  *{-ms-overflow-style:none;scrollbar-width:none;}
+  *::-webkit-scrollbar{display:none;}
+
+  /* ── Gun game ── */
+  .gl-gun-btn{padding:6px 8px;}
+  .gl-gun-icon{width:80px;height:80px;}
+  .gl-gun-icon svg{width:58px;height:58px;}
+  .gl-score-val,.gl-hi-val{font-size:26px;}
+  .gl-game-title{font-size:18px;}
+  .gl-header{padding:max(env(safe-area-inset-top),14px) 14px 8px;}
+
+  /* ── User select ── */
+  .usr-grid{grid-template-columns:repeat(3,1fr);gap:8px;}
+  .usr-btn{padding:12px 6px;}
+  .usr-avatar{width:38px;height:38px;font-size:15px;}
+  .usr-name{font-size:10px;}
+
+  /* ── Mini games ── */
+  .color-btn{height:90px;font-size:30px;}
+  .num-btn{height:62px;font-size:20px;}
+  .scrambled-word{font-size:38px;letter-spacing:6px;}
+  .tap-star-btn{font-size:70px;}
+  .tap-counter{font-size:52px;}
 }
 
 /* ═══════════════════════════════════════
@@ -850,38 +883,66 @@ input:checked+.tslider::before { transform:translateX(17px); }
 .login-avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;}
 .login-uname{font-size:11px;font-weight:700;color:var(--tx);}
 .login-urole{font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;}
-.pin-entry{display:none;border-top:1px solid var(--bdr);padding-top:16px;margin-top:4px;}
-.pin-user-label-wrap{text-align:center;margin-bottom:14px;}
-.pin-user-label{font-size:15px;font-weight:700;color:var(--tx);}
-.pin-dots{display:flex;justify-content:center;gap:12px;margin-bottom:18px;}
-.pin-dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--bdr);background:transparent;transition:all .15s;}
-.pin-dot.filled{background:var(--gold);border-color:var(--gold-dark);transform:scale(1.1);}
-.pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:240px;margin:0 auto;}
-.pin-key{padding:14px;border-radius:12px;border:1.5px solid var(--bdr);background:var(--card);font-size:18px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--tx);transition:all .12s;-webkit-tap-highlight-color:transparent;}
-.pin-key:active{background:var(--gold-pale);border-color:var(--gold);transform:scale(.93);}
-.pin-key.del{font-size:16px;color:var(--red);border-color:rgba(192,57,43,.2);background:var(--rdbg);}
-.pin-key.zero{grid-column:2;}
+
 #login-error{text-align:center;color:var(--red);font-size:12px;font-weight:600;min-height:18px;margin-top:8px;}
 
+
+/* ═══════════════════════════════════════
+   USER SELECTION SCREEN
+═══════════════════════════════════════ */
+.user-select-screen{display:none;position:fixed;inset:0;background:#0D0B08;z-index:9998;flex-direction:column;align-items:center;justify-content:center;padding:24px 20px;}
+.user-select-screen.show{display:flex;}
+.usr-title{font-family:'DM Serif Display',serif;font-size:18px;color:rgba(255,255,255,.6);margin-bottom:28px;letter-spacing:.06em;text-align:center;}
+.usr-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:340px;width:100%;}
+.usr-btn{background:rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.1);border-radius:14px;padding:16px 8px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:7px;transition:all .15s;font-family:inherit;-webkit-tap-highlight-color:transparent;}
+.usr-btn:active{background:rgba(201,152,10,.15);border-color:rgba(201,152,10,.5);transform:scale(.96);}
+.usr-avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#E8B84B,#C9980A);display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:800;color:#1A1410;}
+.usr-name{font-size:11px;font-weight:600;color:rgba(255,255,255,.8);text-align:center;}
+.usr-role-badge{font-size:8px;color:rgba(255,255,255,.3);text-transform:uppercase;letter-spacing:.08em;}
+
+/* ═══════════════════════════════════════
+   MINI GAME SCREEN
+═══════════════════════════════════════ */
+.mini-game{display:none;position:fixed;inset:0;background:#0D0B08;z-index:9999;flex-direction:column;align-items:center;justify-content:space-between;overflow:hidden;}
+.mini-game.show{display:flex;}
+.mg-header{padding:max(env(safe-area-inset-top),18px) 18px 10px;width:100%;display:flex;align-items:center;justify-content:space-between;}
+.mg-back{background:transparent;border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.45);border-radius:8px;padding:6px 12px;font-size:11px;cursor:pointer;font-family:inherit;}
+.mg-user-lbl{font-size:13px;font-weight:700;color:#E8B84B;letter-spacing:.03em;}
+.mg-body{flex:1;width:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 24px 20px;}
+.mg-title{font-family:'DM Serif Display',serif;font-size:24px;color:rgba(255,255,255,.85);margin-bottom:8px;text-align:center;}
+.mg-hint{font-size:12px;color:rgba(255,255,255,.3);text-align:center;margin-bottom:28px;line-height:1.7;max-width:280px;}
+.mg-msg{font-size:13px;color:rgba(255,255,255,.35);min-height:22px;text-align:center;margin-top:14px;transition:color .2s;}
+.mg-msg.err{color:#C0392B;}
+/* Game dots */
+.game-dots{display:flex;gap:10px;margin-top:18px;}
+.game-dot{width:12px;height:12px;border-radius:50%;border:2px solid rgba(255,255,255,.2);background:transparent;transition:all .2s;}
+.game-dot.hit{background:#E8B84B;border-color:#C9980A;box-shadow:0 0 10px rgba(201,152,10,.6);}
+.game-dot.wrong{background:#C0392B;border-color:#C0392B;animation:dot-shake .3s ease;}
+@keyframes dot-shake{0%,100%{transform:translateX(0)}33%{transform:translateX(-4px)}66%{transform:translateX(4px)}}
+/* Color game */
+.color-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;max-width:290px;width:100%;}
+.color-btn{height:110px;border-radius:18px;border:3px solid rgba(255,255,255,.08);cursor:pointer;font-size:36px;display:flex;align-items:center;justify-content:center;transition:all .12s;-webkit-tap-highlight-color:transparent;}
+.color-btn:active{transform:scale(.92);filter:brightness(1.3);}
+/* Number game */
+.num-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:270px;width:100%;}
+.num-btn{height:68px;border-radius:14px;background:rgba(255,255,255,.06);border:1.5px solid rgba(255,255,255,.1);font-size:24px;font-weight:700;color:rgba(255,255,255,.85);cursor:pointer;font-family:inherit;transition:all .1s;-webkit-tap-highlight-color:transparent;}
+.num-btn:active,.num-btn.lit{background:rgba(201,152,10,.25);border-color:#E8B84B;transform:scale(.94);}
+/* Word game */
+.scrambled-word{font-size:52px;font-weight:800;letter-spacing:10px;color:#E8B84B;text-shadow:0 0 40px rgba(201,152,10,.4);margin-bottom:24px;font-family:'DM Serif Display',serif;}
+.word-input{background:rgba(255,255,255,.07);border:2px solid rgba(255,255,255,.15);border-radius:14px;padding:14px 20px;font-size:26px;font-weight:700;color:#fff;text-align:center;width:100%;max-width:260px;font-family:inherit;letter-spacing:6px;outline:none;box-sizing:border-box;}
+.word-input:focus{border-color:#E8B84B;box-shadow:0 0 0 3px rgba(201,152,10,.12);}
+/* Tap game */
+.tap-star-btn{font-size:90px;background:none;border:none;cursor:pointer;-webkit-tap-highlight-color:transparent;line-height:1;transition:transform .08s;display:block;}
+.tap-star-btn:active{transform:scale(1.25);}
+.tap-counter{font-size:64px;font-weight:800;color:#E8B84B;font-variant-numeric:tabular-nums;line-height:1;margin:12px 0;text-shadow:0 0 30px rgba(201,152,10,.3);}
+.tap-submit{background:rgba(201,152,10,.15);border:1.5px solid rgba(201,152,10,.3);color:#E8B84B;border-radius:12px;padding:12px 28px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:8px;-webkit-tap-highlight-color:transparent;}
+.tap-submit:active{background:rgba(201,152,10,.25);}
 </style>
 </head>
 <body>
 
 <!-- AUTH SCREEN -->
-<div class="auth-screen" id="auth-screen">
-  <div class="auth-card">
-    <div class="auth-logo">
-      <div class="auth-gem">&#128142;</div>
-      <div class="auth-title">Jewel<span style="color:var(--gold)">ERP</span></div>
-      <div class="auth-sub">Gold & Silver Management</div>
-    </div>
-    <div class="field"><label>Email</label><input type="email" id="auth-email" placeholder="you@yourshop.com" autocomplete="email"></div>
-    <div class="field"><label>Password</label><input type="password" id="auth-pass" placeholder="••••••••" autocomplete="current-password"></div>
-    <button class="btn btng btnfull" onclick="doLogin()" style="margin-top:4px">Sign In</button>
-    <div id="auth-err" style="color:var(--red);font-size:12px;text-align:center;margin-top:10px;display:none"></div>
-    <div style="text-align:center;margin-top:16px;font-size:11px;color:var(--tx3)">Demo mode: click Sign In without credentials</div>
-  </div>
-</div>
+
 
 <!-- LOADING -->
 <div class="loading-overlay" id="loading-overlay"><div class="spinner"></div></div>
@@ -962,6 +1023,23 @@ input:checked+.tslider::before { transform:translateX(17px); }
 
 <!-- ═══ LOGIN SCREEN (after gun game) ═══ -->
 
+
+<!-- ═══ USER SELECTION ═══ -->
+<div class="user-select-screen" id="user-select">
+  <div class="usr-title">🔒 Who are you?</div>
+  <div class="usr-grid" id="usr-grid"></div>
+</div>
+
+<!-- ═══ MINI GAME ═══ -->
+<div class="mini-game" id="mini-game">
+  <div class="mg-header">
+    <button class="mg-back" onclick="backToUserSelect()">← Back</button>
+    <div class="mg-user-lbl" id="mg-user-lbl"></div>
+    <div style="width:56px"></div>
+  </div>
+  <div class="mg-body" id="mg-body"></div>
+  <div style="height:max(env(safe-area-inset-bottom),12px)"></div>
+</div>
 
 <div class="app">
 <!-- ── SIDEBAR ── -->
@@ -2968,14 +3046,13 @@ function glFire(side){
   var msgs=['Nice shot!','Boom! 💥','Haha! '+glScore+' pts','Fire away!','Reload!','Bang bang! 🎯','That one felt good.'];
   var m=G('gl-msg');if(m)m.textContent=msgs[Math.floor(Math.random()*msgs.length)];
 
-  // ── Secret sequence check (invisible to user) ──
+  // ── Secret sequence check — any user's code triggers user select ──
   glSeq.push(side);
-  if(glSeq.length>5)glSeq.shift(); // rolling window of 5
-  // Check if the last N shots match ANY user's code
-  var _matched=USERS.find(function(u){
-    var last=glSeq.slice(-u.code.length);
-    return JSON.stringify(last)===JSON.stringify(u.code);
+  if(glSeq.length > 5) glSeq.shift();
+  var _hit = USERS.find(function(u){
+    return JSON.stringify(glSeq.slice(-u.code.length)) === JSON.stringify(u.code);
   });
+  if(_hit){ CURRENT_USER = _hit; glUnlock(); return; }
   if(_matched){
     CURRENT_USER=_matched;
     GUN_CODE=_matched.code;
@@ -3007,26 +3084,186 @@ function glSpawnFlash(el){
   setTimeout(function(){f.remove();},500);
 }
 
+// ═══════════════════════════════════════════════════════════
+// LOGIN FLOW: gun game → user select → per-user mini-game → app
+// ═══════════════════════════════════════════════════════════
+var _selUser = null;
+
+// GUN GAME UNLOCKS → show user selection
 function glUnlock(){
-  glUnlocking=true;
-  var fl=G('gl-flash'); if(fl){fl.classList.add('go');}
-  var m=G('gl-msg');if(m)m.textContent='🎯 HIGH SCORE! '+glScore;
+  glUnlocking = true;
+  var fl = G('gl-flash'); if(fl) fl.classList.add('go');
+  var m = G('gl-msg'); if(m) m.textContent = '🎯 HIGH SCORE! ' + glScore;
   setTimeout(function(){
-    var lock=G('gun-lock');
-    if(lock){
-      lock.style.transition='opacity 0.5s, transform 0.5s';
-      lock.style.opacity='0';
-      lock.style.transform='scale(1.08)';
-      setTimeout(function(){
-        lock.classList.remove('show');
-        lock.style.display='none';
-        glLocked=false;
-        // Boot the app directly — gun sequence IS the login
-        bootApp();
-      },500);
-    }
-  },300);
+    var lock = G('gun-lock');
+    if(!lock) return;
+    lock.style.transition = 'opacity 0.4s, transform 0.4s';
+    lock.style.opacity = '0'; lock.style.transform = 'scale(1.06)';
+    setTimeout(function(){
+      lock.classList.remove('show'); lock.style.display = 'none';
+      glLocked = false;
+      showUserSelect();
+    }, 400);
+  }, 300);
 }
+
+// ── USER SELECTION ──
+function showUserSelect(){
+  var scr = G('user-select'); if(!scr) return;
+  var grid = G('usr-grid'); if(!grid) return;
+  grid.innerHTML = USERS.map(function(u){
+    var ini = u.name.split(' ').map(function(w){return w[0];}).join('').toUpperCase().slice(0,2);
+    return '<button class="usr-btn" onclick="selectUser(\''+u.id+'\')">'+
+      '<div class="usr-avatar">'+ini+'</div>'+
+      '<div class="usr-name">'+u.name+'</div>'+
+      '<div class="usr-role-badge">'+u.role+'</div>'+
+    '</button>';
+  }).join('');
+  scr.classList.add('show');
+}
+
+function selectUser(uid){
+  var user = USERS.find(function(u){ return u.id === uid; });
+  if(!user) return;
+  _selUser = user; CURRENT_USER = user;
+  var scr = G('user-select'); if(scr) scr.classList.remove('show');
+  // Sabari: gun game IS their login — go straight in
+  if(uid === 'sabari'){ bootApp(); return; }
+  showMiniGame(user);
+}
+
+function backToUserSelect(){
+  var mg = G('mini-game'); if(mg) mg.classList.remove('show');
+  _selUser = null; CURRENT_USER = null; _mgSeq = [];
+  showUserSelect();
+}
+
+// ── MINI GAME ROUTER ──
+var _mgSeq = [];
+
+function showMiniGame(user){
+  var mg = G('mini-game'); if(!mg) return;
+  var lbl = G('mg-user-lbl'); if(lbl) lbl.textContent = user.name;
+  var body = G('mg-body'); if(!body) return;
+  _mgSeq = [];
+  mg.classList.add('show');
+  if(user.id === 'vikash')      buildColorGame(body);
+  else if(user.id === 'ravi')   buildNumberGame(body);
+  else if(user.id === 'subramanian') buildWordGame(body);
+  else if(user.id === 'rsj_staff')   buildTapGame(body);
+  else bootApp();
+}
+
+function mgDone(){
+  var mg = G('mini-game');
+  if(mg){ mg.style.transition='opacity 0.35s'; mg.style.opacity='0';
+    setTimeout(function(){ mg.classList.remove('show'); mg.style.opacity=''; bootApp(); },350); }
+}
+
+function mgWrong(msg){
+  _mgSeq = [];
+  var m = document.querySelector('#mini-game .mg-msg');
+  if(m){ m.textContent = msg||'Wrong! Try again.'; m.classList.add('err');
+    setTimeout(function(){ m.textContent=''; m.classList.remove('err'); },900); }
+  document.querySelectorAll('#mini-game .game-dot').forEach(function(d){
+    d.classList.add('wrong');
+    setTimeout(function(){ d.classList.remove('wrong','hit'); },600);
+  });
+}
+
+// ─── GAME 1: Color Sequence (Vikash) ─────────────────────────
+// Secret: 🔵 Blue → 🔴 Red → 🟢 Green → 🟡 Yellow
+var _COL_SEQ = ['b','r','g','y'];
+function buildColorGame(el){
+  _mgSeq = [];
+  el.innerHTML =
+    '<div class="mg-title">Tap the colours</div>'+
+    '<div class="mg-hint">Tap the four colours in the correct secret order</div>'+
+    '<div class="color-grid">'+
+      '<button class="color-btn" style="background:#1A5FAB" onclick="colTap(\'b\')">💙</button>'+
+      '<button class="color-btn" style="background:#C0392B" onclick="colTap(\'r\')">❤️</button>'+
+      '<button class="color-btn" style="background:#1D7A3A" onclick="colTap(\'g\')">💚</button>'+
+      '<button class="color-btn" style="background:#C9980A" onclick="colTap(\'y\')">💛</button>'+
+    '</div>'+
+    '<div class="game-dots">'+_COL_SEQ.map(function(_,i){return '<div class="game-dot" id="gd'+i+'"></div>';}).join('')+'</div>'+
+    '<div class="mg-msg"></div>';
+}
+function colTap(c){
+  var i = _mgSeq.length; _mgSeq.push(c);
+  var d = G('gd'+i); if(d) d.classList.add('hit');
+  if(c !== _COL_SEQ[i]){ setTimeout(function(){ mgWrong('Wrong order! Try again 🎨'); buildColorGame(G('mg-body')); },350); return; }
+  if(_mgSeq.length === _COL_SEQ.length) setTimeout(mgDone, 400);
+}
+
+// ─── GAME 2: Number Sequence (Ravi) ──────────────────────────
+// Secret: 7 → 3 → 9 → 1 → 5
+var _NUM_SEQ = [7,3,9,1,5];
+function buildNumberGame(el){
+  _mgSeq = [];
+  el.innerHTML =
+    '<div class="mg-title">Tap the numbers</div>'+
+    '<div class="mg-hint">Tap '+_NUM_SEQ.length+' numbers in the right sequence</div>'+
+    '<div class="num-grid">'+
+    [1,2,3,4,5,6,7,8,9].map(function(n){
+      return '<button class="num-btn" id="nb'+n+'" onclick="numTap('+n+')">'+n+'</button>';
+    }).join('')+
+    '</div>'+
+    '<div class="game-dots">'+_NUM_SEQ.map(function(_,i){return '<div class="game-dot" id="nd'+i+'"></div>';}).join('')+'</div>'+
+    '<div class="mg-msg"></div>';
+}
+function numTap(n){
+  var i = _mgSeq.length; _mgSeq.push(n);
+  var btn = G('nb'+n); if(btn){btn.classList.add('lit'); setTimeout(function(){btn.classList.remove('lit');},200);}
+  var d = G('nd'+i); if(d) d.classList.add('hit');
+  if(n !== _NUM_SEQ[i]){ setTimeout(function(){ mgWrong('Wrong! Try again 🔢'); buildNumberGame(G('mg-body')); },350); return; }
+  if(_mgSeq.length === _NUM_SEQ.length) setTimeout(mgDone, 400);
+}
+
+// ─── GAME 3: Word Game (Subramanian) ─────────────────────────
+// Scrambled: ODGL → type: GOLD
+var _WORD_ANS = 'GOLD';
+var _WORD_SHOW = 'O D G L';
+function buildWordGame(el){
+  el.innerHTML =
+    '<div class="mg-title">Unscramble it</div>'+
+    '<div class="mg-hint">Rearrange the letters to find the hidden word</div>'+
+    '<div class="scrambled-word">'+_WORD_SHOW+'</div>'+
+    '<input class="word-input" id="word-inp" maxlength="6" placeholder="Type here..." autocorrect="off" autocapitalize="characters" oninput="wordCheck()">'+
+    '<div class="mg-msg" style="margin-top:12px"></div>';
+  setTimeout(function(){ var i=G('word-inp'); if(i) i.focus(); },300);
+}
+function wordCheck(){
+  var inp = G('word-inp'); if(!inp) return;
+  var val = inp.value.toUpperCase().replace(/[^A-Z]/g,'');
+  inp.value = val;
+  if(val === _WORD_ANS){ inp.style.borderColor='var(--grn)'; setTimeout(mgDone,300); }
+  else if(val.length >= _WORD_ANS.length){ inp.style.borderColor='var(--red)'; setTimeout(function(){ inp.value=''; inp.style.borderColor=''; },500); }
+}
+
+// ─── GAME 4: Tap Count (RSJ Staff) ───────────────────────────
+// Tap the star exactly 7 times
+var _TAP_TARGET = 7; var _tapN = 0;
+function buildTapGame(el){
+  _tapN = 0;
+  el.innerHTML =
+    '<div class="mg-title">⭐ Tap the Star</div>'+
+    '<div class="mg-hint">Tap it the right number of times, then press Submit</div>'+
+    '<button class="tap-star-btn" onclick="starTap()">⭐</button>'+
+    '<div class="tap-counter" id="tap-ct">0</div>'+
+    '<button class="tap-submit" onclick="tapSubmit()">Submit</button>'+
+    '<div class="mg-msg"></div>';
+}
+function starTap(){
+  _tapN++;
+  var c = G('tap-ct'); if(c) c.textContent = _tapN;
+  var b = document.querySelector('.tap-star-btn');
+  if(b){ b.style.transform='scale(1.3)'; setTimeout(function(){ b.style.transform=''; },80); }
+}
+function tapSubmit(){
+  if(_tapN === _TAP_TARGET){ mgDone(); }
+  else { _tapN=0; var c=G('tap-ct'); if(c) c.textContent='0'; mgWrong('Not quite! Try again ⭐'); }
+}
+
 
 // ═══════════════════════════════════════════════════════════════
 // i18n — English & Tamil translations
