@@ -864,19 +864,6 @@ input:checked+.tslider::before { transform:translateX(17px); }
 .pin-key.zero{grid-column:2;}
 #login-error{text-align:center;color:var(--red);font-size:12px;font-weight:600;min-height:18px;margin-top:8px;}
 
-
-/* ── Working Date (global entry date) ── */
-.working-date-wrap{display:flex;align-items:center;gap:4px;background:rgba(201,152,10,.12);border:1.5px solid rgba(201,152,10,.35);border-radius:8px;padding:3px 6px 3px 8px;margin-left:6px;}
-.working-date-wrap.today{background:rgba(255,255,255,.06);border-color:var(--bdr);}
-.wd-label{font-size:13px;line-height:1;flex-shrink:0;}
-.wd-input{background:transparent;border:none;outline:none;font-family:inherit;font-size:12px;font-weight:600;color:var(--gold-light);width:120px;padding:0;cursor:pointer;}
-.working-date-wrap.today .wd-input{color:var(--tx2);}
-.wd-clear{background:transparent;border:none;color:rgba(255,255,255,.3);font-size:11px;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0;}
-.wd-clear:hover{color:var(--red);}
-@media (max-width:767px){
-  .wd-input{width:105px;font-size:11px;}
-  .working-date-wrap{padding:2px 4px 2px 7px;margin-left:4px;}
-}
 </style>
 </head>
 <body>
@@ -1043,11 +1030,6 @@ input:checked+.tslider::before { transform:translateX(17px); }
     <div class="topbar-title" id="topbar-title">Dashboard</div>
     <div class="topbar-actions" id="topbar-actions">
       <button class="btn topbar-btn" id="topbar-primary-btn" onclick="topbarAction()" style="display:none"><span>+ New Sale</span></button>
-    </div>
-    <div class="working-date-wrap" id="working-date-wrap" title="Working Date — all entries use this date">
-      <span class="wd-label">&#128197;</span>
-      <input type="date" id="working-date" onchange="onWorkingDateChange()" oninput="onWorkingDateChange()" class="wd-input">
-      <button class="wd-clear" onclick="clearWorkingDate()" title="Reset to today">&#10006;</button>
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin-left:4px">
       <button onclick="setLang(LANG==='en'?'ta':'en')" id="topbar-lang-btn" style="padding:4px 9px;border-radius:7px;border:1.5px solid var(--bdr);background:var(--card);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--tx2);display:none">EN</button>
@@ -1799,11 +1781,32 @@ input:checked+.tslider::before { transform:translateX(17px); }
 
 // ── CONFIG ──
 var CFG = {
-  supabaseUrl: localStorage.getItem('erp_supabase_url') || 'https://xnrrdmckxfdpeeemuphh.supabase.co',
-  supabaseKey: localStorage.getItem('erp_supabase_key') || 'sb_publishable_cLduMsrh35viwkbWBiZwHw_3oUtGsZP',
+  // Credentials loaded via /api/config (Vercel env vars) — NOT hardcoded here
+  supabaseUrl: localStorage.getItem('erp_supabase_url') || '',
+  supabaseKey: localStorage.getItem('erp_supabase_key') || '',
   useSupabase: true,
   currentUser: null
 };
+
+// Load config from Vercel environment (called once on boot)
+function loadEnvConfig(cb){
+  fetch('/api/config')
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(d){
+      if(d&&d.supabaseUrl){
+        CFG.supabaseUrl=d.supabaseUrl;
+        CFG.supabaseKey=d.supabaseKey;
+        // Cache for offline use (no actual credentials stored — fetched fresh each session)
+        localStorage.setItem('erp_supabase_url',d.supabaseUrl);
+        localStorage.setItem('erp_supabase_key',d.supabaseKey);
+      }
+      if(cb)cb();
+    })
+    .catch(function(){
+      // Fallback to localStorage cache if /api/config unreachable
+      if(cb)cb();
+    });
+}
 
 // ── STATE ──
 var R = {k22:7450, k18:6090, k916:7310, sil:92, dia:35000, plat:3200};
@@ -1822,50 +1825,7 @@ function G(id){return document.getElementById(id);}
 function V(id){var e=G(id);return e?e.value:'';}
 function N(id){return parseFloat(V(id))||0;}
 function fmt(n){return '\u20B9'+(+n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
-function td(){
-  // Use the global working date if set, else today
-  var wd=G('working-date');
-  if(wd&&wd.value)return wd.value;
-  return new Date().toISOString().split('T')[0];
-}
-
-function onWorkingDateChange(){
-  var wd=G('working-date'),wrap=G('working-date-wrap');
-  var today=new Date().toISOString().split('T')[0];
-  if(!wd)return;
-  // Style: gold border if not today, subtle if today
-  if(wrap){
-    if(!wd.value||wd.value===today) wrap.classList.add('today');
-    else wrap.classList.remove('today');
-  }
-  // Re-prefill all visible date fields with new working date
-  var d=wd.value||today;
-  document.querySelectorAll('input[type="date"]').forEach(function(el){
-    // Only update fields that are on currently visible forms / modals
-    // Don't overwrite delivery dates, followup dates, or closed modal fields
-    var skip=['mlt-delivery','ld-followup','fu-next-date','or-delivery',
-               'ln-due','ln-start','el-start','rpt-from','rpt-to'];
-    if(skip.indexOf(el.id)>=0) return;
-    // Update if empty OR if it was previously set to a date value (active form field)
-    if(el.id&&el.closest('.modal-bg')&&el.closest('.modal-bg').style.display!=='none'){
-      if(el.value) el.value=d; // update open modals
-    } else if(!el.closest('.modal-bg')){
-      // Page-level date fields: always update
-      el.value=d;
-    }
-  });
-}
-
-function clearWorkingDate(){
-  var wd=G('working-date');
-  if(wd) wd.value='';
-  onWorkingDateChange();
-  // Re-prefill all date fields with today
-  var today=new Date().toISOString().split('T')[0];
-  document.querySelectorAll('input[type="date"]:not([id*="delivery"]):not([id*="followup"]):not([id*="from"]):not([id*="to"]):not([id*="due"])').forEach(function(el){
-    if(!el.closest('.modal-bg')) el.value=today;
-  });
-}
+function td(){return new Date().toISOString().split('T')[0];}
 function uid(){
   if(typeof crypto!=='undefined'&&crypto.randomUUID)return crypto.randomUUID();
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){
@@ -1912,6 +1872,11 @@ function dbGet(path, cb){
 // WRITE (INSERT) — POST with JSON body
 function dbPost(table, data, cb){
   if(!sbHasConfig()){if(cb)cb(null,'Not configured');return;}
+  // Inject audit fields
+  if(CURRENT_USER&&data&&typeof data==='object'){
+    if(!data.created_by) data.created_by=CURRENT_USER.name;
+    if(!data.updated_by) data.updated_by=CURRENT_USER.name;
+  }
   fetch(sbUrl()+'/rest/v1/'+table,{
     method:'POST',
     headers:{'apikey':sbKey(),'Authorization':'Bearer '+sbKey(),'Content-Type':'application/json','Prefer':'return=representation'},
@@ -1938,6 +1903,10 @@ function dbUpsert(table, data, cb){
 // UPDATE — PATCH with filter in URL
 function dbPatch(table, filter, data, cb){
   if(!sbHasConfig()){if(cb)cb(null,'Not configured');return;}
+  if(CURRENT_USER&&data&&typeof data==='object'){
+    data.updated_by=CURRENT_USER.name;
+    data.updated_at=new Date().toISOString();
+  }
   fetch(sbUrl()+'/rest/v1/'+table+'?'+filter,{
     method:'PATCH',
     headers:{'apikey':sbKey(),'Authorization':'Bearer '+sbKey(),'Content-Type':'application/json','Prefer':'return=minimal'},
@@ -2067,15 +2036,6 @@ function topbarAction(){var pg=document.querySelector('.page.active');if(pg&&pag
 
 // ── MODAL ──
 function openM(id){
-  // Set today's dates in modals when they open (uses td() = working date)
-  setTimeout(function(){
-    var modal=G(id);if(!modal)return;
-    var skip=['mlt-delivery','ld-followup','fu-next-date','or-delivery','ln-due','ln-start','rpt-from','rpt-to'];
-    modal.querySelectorAll('input[type="date"]').forEach(function(el){
-      if(skip.indexOf(el.id)>=0)return;
-      if(!el.value)el.value=td(); // only set if empty
-    });
-  },0);
   var e=G(id);if(!e)return;e.classList.add('open');
   if(id==='m-rates'){G('mr-22k').value=R.k22;G('mr-18k').value=R.k18;G('mr-916').value=R.k916;G('mr-sil').value=R.sil;G('mr-dia').value=R.dia;G('mr-plat').value=R.plat;G('mr-date').value=td();}
   if(id==='m-payment'){var rr=G('cp-og-rate');if(rr){rr.value=R.k22.toFixed(2);rr._edited=false;}var ov=G('cp-og-val');if(ov)ov._edited=false;}
@@ -2379,12 +2339,12 @@ function savePayment(){
 }
 function fltPays(f,btn){payFlt=f;document.querySelectorAll('#pg-payments .tab').forEach(function(t){t.classList.remove('active');});if(btn)btn.classList.add('active');renderPayments();}
 function payTypeLabel(type){
-  var map={'in':'Received','out':'Refund','oldgold':'Old Gold — Cash Out','oldgold-adv':'Old Gold — Advance','advance':'Order Advance','old_gold_advance':'OG Advance','advance_used':'Advance Used','chit_credit':'Chit Credit'};
+  var map={'in':'Received','out':'Refund','oldgold':'Old Gold — Cash Out','oldgold-adv':'Old Gold — Advance','advance':'Order Advance','old_gold_advance':'OG Advance','advance_used':'Advance Used','chit_credit':'Chit Credit','chit_bonus':'Chit Bonus','chit_metal':'Chit Metal (Liability)'};
   return map[type]||type.replace(/_/g,' ');
 }
 function payIsIn(type){
   // GREEN = money received from customer or credit given to customer
-  return type==='in'||type==='oldgold-adv'||type==='advance'||type==='old_gold_advance'||type==='advance_used'||type==='chit_credit';
+  return type==='in'||type==='oldgold-adv'||type==='advance'||type==='old_gold_advance'||type==='advance_used'||type==='chit_credit'||type==='chit_bonus'||type==='chit_metal';
 }
 function renderPayments(){var q=(V('pay-search')||'').toLowerCase().trim();var f=DB.payments.filter(function(p){var tOk=(payFlt==='all')||(payFlt==='in'&&payIsIn(p.type))||(payFlt==='out'&&!payIsIn(p.type));return tOk&&(!q||(p.customer||'').toLowerCase().indexOf(q)>=0);});var t=G('pay-list');if(!t)return;t.innerHTML=f.length?'<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Customer</th><th>Date</th><th>Details</th><th>Type</th><th class="num">Amount</th><th></th></tr></thead><tbody>'+f.map(function(p,i){var isIn=payIsIn(p.type);var det=(p.mode||'')+(p.ogWt?' · '+(parseFloat(p.ogWt)||0).toFixed(3)+'g '+(p.ogMetal||''):'');return '<tr><td style="font-weight:600">'+p.customer+'</td><td style="font-size:12px;color:var(--tx3);white-space:nowrap">'+p.date+'</td><td style="font-size:12px">'+det+(p.note?'<br><span style="font-size:10px;color:var(--tx3)">'+p.note+'</span>':'')+'</td><td><span class="badge '+(isIn?'bg':'br')+'">'+payTypeLabel(p.type)+'</span></td><td class="num" style="color:'+(isIn?'var(--grn)':'var(--red)')+';font-weight:700">'+(isIn?'+':'-')+fmt(p.amt)+'</td><td><button class="btn btnsm" onclick="editPayment('+i+')">Edit</button></td></tr>';}).join('')+'</tbody></table></div>':'<div class="empty"><div class="etxt">No payments yet</div></div>';
 
@@ -3499,12 +3459,14 @@ function getCustCredit(custId){
 
 // Full customer statement: how much they owe us (debit) vs credit
 function getCustStatement(custId){
-  var cust=DB.custs[custId]; if(!cust)return{credit:0,owed:0,net:0};
+  var cust=DB.custs[custId]; if(!cust)return{credit:0,owed:0,net:0,metalLiability:0};
   var credit=getCustCredit(custId);
   var owed=DB.sales.filter(function(s){return s.cid===custId&&s.balance>0;})
     .reduce(function(sum,s){return sum+s.balance;},0);
-  var net=Math.max(0,credit-owed); // net available = credit minus what they owe
-  return{credit:credit, owed:owed, net:net};
+  var metalLiability=DB.payments.filter(function(p){
+    return (p.cid===custId)&&p.type==='chit_metal';
+  }).reduce(function(s,p){return s+p.amt;},0);
+  return{credit:credit,owed:owed,net:credit,metalLiability:metalLiability};
 }
 
 // Add advance as a payment row in the current sale
@@ -3609,14 +3571,20 @@ function saveChitEntry(){
     dbSaveCashEntry('in',date,amt,'Chit Bonus: '+custName,'chit');
   } else {
     var wt=N('ch-wt'),metal=V('ch-metal');
-    amt=N('ch-val')||wt*(metal==='Gold'?R.k22:R.sil);
+    var rate=N('ch-rate')||( metal==='Gold'?R.k22:R.sil );
+    amt=N('ch-val')||wt*rate;
     if(!wt){alert('Enter weight.');return;}
-    var omItem={id:uid(),metal:metal,wt:wt,val:amt,date:date,src:'Chit: '+custName,batched:false};
-    DB.oldMetal.push(omItem);dbSaveOldMetal(omItem);
+    // Chit weight stays as CUSTOMER LIABILITY — we owe them this metal.
+    // It is NOT added to our batch pool. It closes when they buy from us.
+    // Stored as chit_metal_liability in customer payments.
+    notes='Chit Metal: '+wt.toFixed(3)+'g '+metal+' @ ₹'+rate.toFixed(0)+'/g'+(ref?' — '+ref:'');
   }
-  var py={id:uid(),cid:custId,customer:custName,type:'chit_credit',amt:amt,
-    mode:type==='bonus'?'Chit Bonus':'Chit Weight',date:date,
-    note:(type==='bonus'?'Bonus':'Weight '+N('ch-wt').toFixed(3)+'g')+(ref?' - '+ref:'')};
+  var py={id:uid(),cid:custId,customer:custName,
+    type:type==='bonus'?'chit_bonus':'chit_metal',
+    amt:amt,
+    mode:type==='bonus'?'Chit Bonus':'Chit Metal (Liability)',
+    date:date,
+    note:notes||(type==='bonus'?'Chit Bonus'+(ref?' — '+ref:''):'Chit Metal: '+N('ch-wt').toFixed(3)+'g '+V('ch-metal')+(ref?' — '+ref:''))};
   DB.payments.unshift(py);
   dbSavePayment(py);
   // Clear form
@@ -3679,6 +3647,21 @@ async function sha256(str){
 
 // ── Login after gun game ──
 function bootApp(){
+  // First load credentials from Vercel env, then start app
+  loadEnvConfig(function(){
+    _bootAppCore();
+  });
+}
+function _bootAppCore(){
+  // Log this login session
+  if(CURRENT_USER&&sbHasConfig()){
+    dbPost('user_sessions',{
+      id:uid(),
+      username:CURRENT_USER.id,
+      login_at:new Date().toISOString(),
+      device_hint:navigator.userAgent.slice(0,100)
+    },null);
+  }
   // Boot the real app — user is already identified from gun sequence
   G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');
   G('r18t').textContent='\u20B9'+R.k18.toLocaleString('en-IN');
@@ -4156,19 +4139,21 @@ function settingsTab(tab, btn){
 
 // ── Render users list in Settings ──
 function renderUsersTab(){
+  // Show immediately from USERS array (no loading state)
+  var localUsers = USERS.map(function(u){
+    return {id:u.dbId||u.id, username:u.id, display_name:u.name,
+            role_name:u.role, gun_sequence:u.code, is_active:true};
+  });
+  _renderUsersList(localUsers);
+
+  // Then refresh from DB in background if available
   if(sbHasConfig()){
     dbGet('app_users?select=*&order=created_at.asc', function(data, err){
-      if(!err && data) _renderUsersList(data);
+      if(!err && data && data.length) _renderUsersList(data);
     });
     dbGet('roles?select=*&order=role_name.asc', function(data, err){
-      if(!err && data) _renderRolesList(data);
+      if(!err && data && data.length) _renderRolesList(data);
     });
-  } else {
-    // Fallback: show hardcoded USERS
-    _renderUsersList(USERS.map(function(u){
-      return {id:u.id, username:u.id, display_name:u.name, role_name:u.role,
-              gun_sequence:u.code, is_active:true};
-    }));
   }
 }
 
@@ -4632,11 +4617,6 @@ function extractProductFromMessage(msg){
 // ── INIT ──
 ['ex-date','pu-date','cob-date','ce-date','st-date','or-date','cp-date','spy-date','og-date','ch-date'].forEach(function(id){var e=G(id);if(e)e.value=td();});
 var sd=G('s-date');if(sd)sd.value=td();
-// Initialize working date to today
-var wdEl=G('working-date');
-if(wdEl){wdEl.value=new Date().toISOString().split('T')[0];}
-var wdWrap=G('working-date-wrap');
-if(wdWrap)wdWrap.classList.add('today');
 var dd=G('dash-date');if(dd)dd.textContent=new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');
 G('r18t').textContent='\u20B9'+R.k18.toLocaleString('en-IN');
