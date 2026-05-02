@@ -1657,9 +1657,13 @@ input:checked+.tslider::before { transform:translateX(17px); }
   <div class="g2" style="align-items:start;gap:16px">
     <div class="card">
       <div class="card-header"><div class="card-title">&#9889; Supabase Connection</div></div>
-      <div class="infobar">Connect to Supabase to sync data across all devices and partners in real-time.</div>
-      <div class="field"><label>Supabase Project URL</label><input type="url" id="cfg-url" placeholder="https://xxxx.supabase.co" value="https://xnrrdmckxfdpeeemuphh.supabase.co"></div>
-      <div class="field"><label>Supabase Anon Key</label><input type="text" id="cfg-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." value="sb_publishable_cLduMsrh35viwkbWBiZwHw_3oUtGsZP"></div>
+      <div id="cfg-vercel-status" style="margin-bottom:12px"></div>
+      <div class="field"><label>Supabase Project URL</label>
+        <input type="url" id="cfg-url" placeholder="https://xxxx.supabase.co">
+      </div>
+      <div class="field"><label>Supabase Anon Key</label>
+        <input type="text" id="cfg-key" placeholder="sb_publishable_...">
+      </div>
       <div style="display:flex;gap:8px">
         <button class="btn btng" onclick="saveSupabaseConfig()">&#10003; Save &amp; Connect</button>
         <button class="btn" onclick="testConnection()">Test Connection</button>
@@ -1781,30 +1785,41 @@ input:checked+.tslider::before { transform:translateX(17px); }
 
 // ── CONFIG ──
 var CFG = {
-  // Credentials loaded via /api/config (Vercel env vars) — NOT hardcoded here
+  // Credentials come from /api/config (Vercel env vars) — never hardcoded here
   supabaseUrl: localStorage.getItem('erp_supabase_url') || '',
   supabaseKey: localStorage.getItem('erp_supabase_key') || '',
   useSupabase: true,
   currentUser: null
 };
 
-// Load config from Vercel environment (called once on boot)
+// Fetch credentials from Vercel environment variables server-side
 function loadEnvConfig(cb){
+  // Pre-fill from localStorage cache immediately
+  var cachedUrl = localStorage.getItem('erp_supabase_url');
+  var cachedKey = localStorage.getItem('erp_supabase_key');
+  if(cachedUrl){ CFG.supabaseUrl=cachedUrl; CFG.supabaseKey=cachedKey||''; }
+
+  // Then fetch fresh from Vercel /api/config
   fetch('/api/config')
-    .then(function(r){return r.ok?r.json():null;})
+    .then(function(r){ return r.ok ? r.json() : null; })
     .then(function(d){
-      if(d&&d.supabaseUrl){
-        CFG.supabaseUrl=d.supabaseUrl;
-        CFG.supabaseKey=d.supabaseKey;
-        // Cache for offline use (no actual credentials stored — fetched fresh each session)
-        localStorage.setItem('erp_supabase_url',d.supabaseUrl);
-        localStorage.setItem('erp_supabase_key',d.supabaseKey);
+      if(d && d.supabaseUrl){
+        CFG.supabaseUrl = d.supabaseUrl;
+        CFG.supabaseKey = d.supabaseKey || '';
+        localStorage.setItem('erp_supabase_url', d.supabaseUrl);
+        localStorage.setItem('erp_supabase_key', d.supabaseKey || '');
+        // Update settings inputs if visible
+        var ui = G('cfg-url'); if(ui) ui.value = d.supabaseUrl;
+        var ki = G('cfg-key'); if(ki) ki.value = '';  // never show key in UI
+        // Show Vercel status badge
+        var vs = G('cfg-vercel-status');
+        if(vs) vs.innerHTML = '<div style="display:flex;align-items:center;gap:8px;background:var(--gnbg);border:1.5px solid rgba(29,122,58,.25);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--grn)"><span style="font-size:16px">&#10003;</span><div><strong>Connected via Vercel Environment Variables</strong><br><span style="color:var(--tx3);font-size:11px">Credentials loaded from SUPABASE_URL and SUPABASE_KEY env vars. Secure — not stored in HTML.</span></div></div>';
       }
-      if(cb)cb();
+      if(cb) cb();
     })
-    .catch(function(){
-      // Fallback to localStorage cache if /api/config unreachable
-      if(cb)cb();
+    .catch(function(err){
+      console.warn('/api/config not available — using cached/manual credentials:', err.message);
+      if(cb) cb();
     });
 }
 
@@ -1872,11 +1887,6 @@ function dbGet(path, cb){
 // WRITE (INSERT) — POST with JSON body
 function dbPost(table, data, cb){
   if(!sbHasConfig()){if(cb)cb(null,'Not configured');return;}
-  // Inject audit fields
-  if(CURRENT_USER&&data&&typeof data==='object'){
-    if(!data.created_by) data.created_by=CURRENT_USER.name;
-    if(!data.updated_by) data.updated_by=CURRENT_USER.name;
-  }
   fetch(sbUrl()+'/rest/v1/'+table,{
     method:'POST',
     headers:{'apikey':sbKey(),'Authorization':'Bearer '+sbKey(),'Content-Type':'application/json','Prefer':'return=representation'},
@@ -1903,10 +1913,6 @@ function dbUpsert(table, data, cb){
 // UPDATE — PATCH with filter in URL
 function dbPatch(table, filter, data, cb){
   if(!sbHasConfig()){if(cb)cb(null,'Not configured');return;}
-  if(CURRENT_USER&&data&&typeof data==='object'){
-    data.updated_by=CURRENT_USER.name;
-    data.updated_at=new Date().toISOString();
-  }
   fetch(sbUrl()+'/rest/v1/'+table+'?'+filter,{
     method:'PATCH',
     headers:{'apikey':sbKey(),'Authorization':'Bearer '+sbKey(),'Content-Type':'application/json','Prefer':'return=minimal'},
@@ -2339,12 +2345,12 @@ function savePayment(){
 }
 function fltPays(f,btn){payFlt=f;document.querySelectorAll('#pg-payments .tab').forEach(function(t){t.classList.remove('active');});if(btn)btn.classList.add('active');renderPayments();}
 function payTypeLabel(type){
-  var map={'in':'Received','out':'Refund','oldgold':'Old Gold — Cash Out','oldgold-adv':'Old Gold — Advance','advance':'Order Advance','old_gold_advance':'OG Advance','advance_used':'Advance Used','chit_credit':'Chit Credit','chit_bonus':'Chit Bonus','chit_metal':'Chit Metal (Liability)'};
+  var map={'in':'Received','out':'Refund','oldgold':'Old Gold — Cash Out','oldgold-adv':'Old Gold — Advance','advance':'Order Advance','old_gold_advance':'OG Advance','advance_used':'Advance Used','chit_credit':'Chit Credit'};
   return map[type]||type.replace(/_/g,' ');
 }
 function payIsIn(type){
   // GREEN = money received from customer or credit given to customer
-  return type==='in'||type==='oldgold-adv'||type==='advance'||type==='old_gold_advance'||type==='advance_used'||type==='chit_credit'||type==='chit_bonus'||type==='chit_metal';
+  return type==='in'||type==='oldgold-adv'||type==='advance'||type==='old_gold_advance'||type==='advance_used'||type==='chit_credit';
 }
 function renderPayments(){var q=(V('pay-search')||'').toLowerCase().trim();var f=DB.payments.filter(function(p){var tOk=(payFlt==='all')||(payFlt==='in'&&payIsIn(p.type))||(payFlt==='out'&&!payIsIn(p.type));return tOk&&(!q||(p.customer||'').toLowerCase().indexOf(q)>=0);});var t=G('pay-list');if(!t)return;t.innerHTML=f.length?'<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Customer</th><th>Date</th><th>Details</th><th>Type</th><th class="num">Amount</th><th></th></tr></thead><tbody>'+f.map(function(p,i){var isIn=payIsIn(p.type);var det=(p.mode||'')+(p.ogWt?' · '+(parseFloat(p.ogWt)||0).toFixed(3)+'g '+(p.ogMetal||''):'');return '<tr><td style="font-weight:600">'+p.customer+'</td><td style="font-size:12px;color:var(--tx3);white-space:nowrap">'+p.date+'</td><td style="font-size:12px">'+det+(p.note?'<br><span style="font-size:10px;color:var(--tx3)">'+p.note+'</span>':'')+'</td><td><span class="badge '+(isIn?'bg':'br')+'">'+payTypeLabel(p.type)+'</span></td><td class="num" style="color:'+(isIn?'var(--grn)':'var(--red)')+';font-weight:700">'+(isIn?'+':'-')+fmt(p.amt)+'</td><td><button class="btn btnsm" onclick="editPayment('+i+')">Edit</button></td></tr>';}).join('')+'</tbody></table></div>':'<div class="empty"><div class="etxt">No payments yet</div></div>';
 
@@ -2534,12 +2540,46 @@ function renderDash(){
 
 // ── SETTINGS ──
 function renderSettings(){
-  // Load fresh user data if on users tab
-  if(G('settings-users-tab')&&G('settings-users-tab').style.display!=='none')renderUsersTab();
-  var ui=G('cfg-url');if(ui)ui.value=sbUrl();
-  var ki=G('cfg-key');if(ki)ki.value=sbKey();
+  if(G('settings-users-tab')&&G('settings-users-tab').style.display!=='none') renderUsersTab();
+
+  // Populate URL field (never show key)
+  var ui=G('cfg-url'); if(ui) ui.value=sbUrl();
+  var ki=G('cfg-key'); if(ki) ki.value='';  // key hidden for security
+
+  // Show connection source status
+  var vs=G('cfg-vercel-status');
+  fetch('/api/config')
+    .then(function(r){return r.ok?r.json():null;})
+    .then(function(d){
+      if(!vs)return;
+      if(d&&d.supabaseUrl){
+        var proj=d.supabaseUrl.replace('https://','').split('.')[0];
+        vs.innerHTML='<div style="display:flex;align-items:center;gap:10px;background:var(--gnbg);border:1.5px solid rgba(29,122,58,.25);border-radius:10px;padding:10px 14px;">'
+          +'<span style="font-size:22px">&#10003;</span>'
+          +'<div><div style="font-weight:700;color:var(--grn);font-size:13px">Connected via Vercel Environment Variables</div>'
+          +'<div style="font-size:11px;color:var(--tx3);margin-top:2px">Project: <strong>'+proj+'</strong> &nbsp;&middot;&nbsp; Key: <strong>&#128274; secure</strong> &nbsp;&middot;&nbsp; Set in Vercel &rarr; Settings &rarr; Environment Variables</div></div></div>';
+        // Also fill URL field from Vercel (but keep key hidden)
+        if(ui) ui.value=d.supabaseUrl;
+      } else if(sbUrl()){
+        vs.innerHTML='<div style="background:rgba(201,152,10,.08);border:1.5px solid rgba(201,152,10,.3);border-radius:10px;padding:10px 14px;font-size:12px;color:var(--gold-dark)">'
+          +'&#9888; Using manually saved credentials. For production, set <code>SUPABASE_URL</code> and <code>SUPABASE_KEY</code> in Vercel env vars instead.</div>';
+      } else {
+        vs.innerHTML='<div style="background:var(--rdbg);border:1.5px solid rgba(192,57,43,.2);border-radius:10px;padding:10px 14px;font-size:12px;color:var(--red)">'
+          +'&#9888; Not connected. Set Vercel env vars or enter credentials below.</div>';
+      }
+    })
+    .catch(function(){
+      if(!vs)return;
+      if(sbUrl()){
+        vs.innerHTML='<div style="background:rgba(201,152,10,.08);border:1.5px solid rgba(201,152,10,.3);border-radius:10px;padding:10px 14px;font-size:12px;color:var(--gold-dark)">'
+          +'&#9432; Using cached credentials (running locally or /api/config unreachable).</div>';
+      }
+    });
+
   var total=DB.sales.length+Object.keys(DB.custs).length+Object.keys(DB.sups).length+DB.payments.length;
   var dr=G('db-records');if(dr)dr.textContent=total+' total records';
+  var dm=G('db-mode');if(dm)dm.textContent=sbHasConfig()?'Supabase':'Local (In-Memory)';
+  var dc=G('db-conn');if(dc)dc.textContent=sbHasConfig()?'Connected':'Not connected';
 }
 
 
@@ -3459,14 +3499,12 @@ function getCustCredit(custId){
 
 // Full customer statement: how much they owe us (debit) vs credit
 function getCustStatement(custId){
-  var cust=DB.custs[custId]; if(!cust)return{credit:0,owed:0,net:0,metalLiability:0};
+  var cust=DB.custs[custId]; if(!cust)return{credit:0,owed:0,net:0};
   var credit=getCustCredit(custId);
   var owed=DB.sales.filter(function(s){return s.cid===custId&&s.balance>0;})
     .reduce(function(sum,s){return sum+s.balance;},0);
-  var metalLiability=DB.payments.filter(function(p){
-    return (p.cid===custId)&&p.type==='chit_metal';
-  }).reduce(function(s,p){return s+p.amt;},0);
-  return{credit:credit,owed:owed,net:credit,metalLiability:metalLiability};
+  var net=Math.max(0,credit-owed); // net available = credit minus what they owe
+  return{credit:credit, owed:owed, net:net};
 }
 
 // Add advance as a payment row in the current sale
@@ -3571,20 +3609,14 @@ function saveChitEntry(){
     dbSaveCashEntry('in',date,amt,'Chit Bonus: '+custName,'chit');
   } else {
     var wt=N('ch-wt'),metal=V('ch-metal');
-    var rate=N('ch-rate')||( metal==='Gold'?R.k22:R.sil );
-    amt=N('ch-val')||wt*rate;
+    amt=N('ch-val')||wt*(metal==='Gold'?R.k22:R.sil);
     if(!wt){alert('Enter weight.');return;}
-    // Chit weight stays as CUSTOMER LIABILITY — we owe them this metal.
-    // It is NOT added to our batch pool. It closes when they buy from us.
-    // Stored as chit_metal_liability in customer payments.
-    notes='Chit Metal: '+wt.toFixed(3)+'g '+metal+' @ ₹'+rate.toFixed(0)+'/g'+(ref?' — '+ref:'');
+    var omItem={id:uid(),metal:metal,wt:wt,val:amt,date:date,src:'Chit: '+custName,batched:false};
+    DB.oldMetal.push(omItem);dbSaveOldMetal(omItem);
   }
-  var py={id:uid(),cid:custId,customer:custName,
-    type:type==='bonus'?'chit_bonus':'chit_metal',
-    amt:amt,
-    mode:type==='bonus'?'Chit Bonus':'Chit Metal (Liability)',
-    date:date,
-    note:notes||(type==='bonus'?'Chit Bonus'+(ref?' — '+ref:''):'Chit Metal: '+N('ch-wt').toFixed(3)+'g '+V('ch-metal')+(ref?' — '+ref:''))};
+  var py={id:uid(),cid:custId,customer:custName,type:'chit_credit',amt:amt,
+    mode:type==='bonus'?'Chit Bonus':'Chit Weight',date:date,
+    note:(type==='bonus'?'Bonus':'Weight '+N('ch-wt').toFixed(3)+'g')+(ref?' - '+ref:'')};
   DB.payments.unshift(py);
   dbSavePayment(py);
   // Clear form
@@ -3647,22 +3679,10 @@ async function sha256(str){
 
 // ── Login after gun game ──
 function bootApp(){
-  // First load credentials from Vercel env, then start app
-  loadEnvConfig(function(){
-    _bootAppCore();
-  });
+  // Load credentials from Vercel env vars, then start app
+  loadEnvConfig(function(){ _bootAppCore(); });
 }
 function _bootAppCore(){
-  // Log this login session
-  if(CURRENT_USER&&sbHasConfig()){
-    dbPost('user_sessions',{
-      id:uid(),
-      username:CURRENT_USER.id,
-      login_at:new Date().toISOString(),
-      device_hint:navigator.userAgent.slice(0,100)
-    },null);
-  }
-  // Boot the real app — user is already identified from gun sequence
   G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');
   G('r18t').textContent='\u20B9'+R.k18.toLocaleString('en-IN');
   G('rsilt').textContent='\u20B9'+R.sil.toLocaleString('en-IN');
@@ -4139,14 +4159,14 @@ function settingsTab(tab, btn){
 
 // ── Render users list in Settings ──
 function renderUsersTab(){
-  // Show immediately from USERS array (no loading state)
+  // Show immediately from local USERS array — no loading state
   var localUsers = USERS.map(function(u){
-    return {id:u.dbId||u.id, username:u.id, display_name:u.name,
-            role_name:u.role, gun_sequence:u.code, is_active:true};
+    return {username:u.id, display_name:u.name, role_name:u.role,
+            gun_sequence:u.code, is_active:true};
   });
   _renderUsersList(localUsers);
 
-  // Then refresh from DB in background if available
+  // Refresh from DB in background
   if(sbHasConfig()){
     dbGet('app_users?select=*&order=created_at.asc', function(data, err){
       if(!err && data && data.length) _renderUsersList(data);

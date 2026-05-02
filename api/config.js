@@ -30,4 +30,3 @@ export default function handler(req, res) {
     supabaseUrl,
     supabaseKey
   });
-}
