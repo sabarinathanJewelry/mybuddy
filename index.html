@@ -1002,6 +1002,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
     <button class="nav-item" id="ni-balance" onclick="showPg('pg-balance',this,'Balance Sheet')"><span class="ni">&#9878;</span>Balance Sheet</button>
     <button class="nav-item" id="ni-loans" onclick="showPg('pg-loans',this,'Loans')"><span class="ni">&#127981;</span>Loans</button>
     <div class="nav-section-label">People</div>
+    <button class="nav-item" id="ni-leads" onclick="showPg('pg-leads',this,'Leads')"><span class="ni">&#128241;</span>WhatsApp Leads</button>
     <button class="nav-item" id="ni-customers" onclick="showPg('pg-customers',this,'Customers')"><span class="ni">&#128101;</span>Customers</button>
     <button class="nav-item" id="ni-suppliers" onclick="showPg('pg-suppliers',this,'Suppliers')"><span class="ni">&#127970;</span>Suppliers</button>
   </div>
@@ -1392,83 +1393,20 @@ input:checked+.tslider::before { transform:translateX(17px); }
   </div>
 <div id="mf-sell" style="display:none">
   <div class="card">
-    <div class="card-header">
-      <div>
-        <div class="card-title">💰 Sell Refined Metal</div>
-        <div class="card-sub">Profit = Sale Amount − Purchase Cost − Testing Fee</div>
-      </div>
+    <div class="card-header"><div class="card-title">💰 Sell Refined Gold</div></div>
+
+    <div class="g3">
+      <input type="number" id="sel-wt" placeholder="Weight (g)">
+      <input type="number" id="sel-rate" placeholder="Rate">
+      <input type="number" id="sel-sell-val" placeholder="Sell Value">
     </div>
 
-    <div class="g3" style="margin-bottom:10px">
-      <div class="field">
-        <label>Metal</label>
-        <select id="sel-metal" onchange="calcSellProfit()">
-          <option value="Gold">Gold</option>
-          <option value="Silver">Silver</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Date</label>
-        <input type="date" id="sel-date">
-      </div>
-      <div class="field">
-        <label>Weight (g)</label>
-        <input type="number" id="sel-wt" step="0.001" inputmode="decimal" placeholder="0.000" oninput="calcSellProfit()">
-      </div>
+    <div class="g3">
+      <input type="number" id="sel-buy-cost" placeholder="Buy Cost">
+      <input type="text" id="sel-party" placeholder="Buyer">
     </div>
 
-    <div class="g3" style="margin-bottom:10px">
-      <div class="field">
-        <label>Sale Rate &#8377;/g</label>
-        <input type="number" id="sel-rate" step="0.01" inputmode="decimal" placeholder="Auto" oninput="calcSellProfit()">
-      </div>
-      <div class="field">
-        <label>Sale Amount (&#8377;)</label>
-        <input type="number" id="sel-sell-val" step="0.01" inputmode="decimal" class="igold" placeholder="Auto-calculated" oninput="this._manual=true;calcSellProfit()">
-      </div>
-      <div class="field">
-        <label>Payment Mode</label>
-        <select id="sel-mode">
-          <option>Cash</option>
-          <option>Bank Transfer</option>
-          <option>UPI - GPay</option>
-          <option>UPI - Paytm</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="g3" style="margin-bottom:12px">
-      <div class="field">
-        <label>Purchase Cost (&#8377;)</label>
-        <input type="number" id="sel-buy-cost" step="0.01" inputmode="decimal" placeholder="Amount paid to customer" oninput="calcSellProfit()">
-      </div>
-      <div class="field">
-        <label>Testing Fee (&#8377;)</label>
-        <input type="number" id="sel-test-fee" step="0.01" inputmode="decimal" value="50" oninput="calcSellProfit()">
-      </div>
-      <div class="field">
-        <label>Buyer / Note</label>
-        <input type="text" id="sel-party" placeholder="Buyer name, reference...">
-      </div>
-    </div>
-
-    <div class="totpanel" style="margin-bottom:14px">
-      <div class="trow">
-        <span class="tlbl">Sale Amount</span>
-        <span class="tval" id="sel-sale-disp">&#8377;0</span>
-      </div>
-      <div class="trow">
-        <span class="tlbl">Total Cost (Purchase + Testing)</span>
-        <span class="tval" id="sel-cost-disp" style="color:var(--red)">&#8377;0</span>
-      </div>
-      <div class="trow big">
-        <span class="tlbl">Gross Profit</span>
-        <span class="tval" id="sel-profit-disp" style="color:var(--grn)">&#8377;0</span>
-      </div>
-    </div>
-
-    <button class="btn btng btnfull" onclick="sellRefinedGold()">&#10003; Record Sale &amp; Save to Supabase</button>
-    <div id="sel-history" style="margin-top:14px"></div>
+    <button onclick="sellRefinedGold()">Record Sale</button>
   </div>
 </div>
   <div id="mf-log" style="display:none" class="card"><div class="card-header"><div class="card-title">Flow Log</div></div><div id="mf-log-tbl"><div class="empty"><div class="etxt">No entries</div></div></div></div>
@@ -1652,6 +1590,51 @@ input:checked+.tslider::before { transform:translateX(17px); }
 </div>
 
 <!-- SETTINGS -->
+
+<!-- ════ WHATSAPP LEADS CRM ════ -->
+<div class="page" id="pg-leads">
+  <div class="page-header">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div>
+        <h1>&#128241; WhatsApp Leads</h1>
+        <p>Track enquiries, follow-ups and conversions from WhatsApp Business</p>
+      </div>
+      <button class="btn btng" onclick="openM('m-addlead')">+ New Lead</button>
+    </div>
+  </div>
+
+  <!-- Summary metrics -->
+  <div class="metrics c4" style="margin-bottom:16px" id="leads-metrics">
+    <div class="met"><div class="ml">Total Leads</div><div class="mv" id="lm-total">0</div></div>
+    <div class="met"><div class="ml">&#128308; Hot</div><div class="mv r" id="lm-hot">0</div></div>
+    <div class="met"><div class="ml">&#128992; Warm</div><div class="mv a" id="lm-warm">0</div></div>
+    <div class="met"><div class="ml">&#128309; Converted</div><div class="mv g" id="lm-converted">0</div></div>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="card" style="margin-bottom:12px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <div style="flex:1;min-width:160px">
+        <input type="text" id="lead-search" placeholder="&#128269; Search name, phone, product..." oninput="renderLeads()" style="font-size:13px">
+      </div>
+      <div class="tabs" style="margin-bottom:0;gap:4px">
+        <div class="tab active" onclick="leadFilter('all',this)">All</div>
+        <div class="tab" onclick="leadFilter('hot',this)">&#128308; Hot</div>
+        <div class="tab" onclick="leadFilter('warm',this)">&#128992; Warm</div>
+        <div class="tab" onclick="leadFilter('cold',this)">&#128311; Cold</div>
+        <div class="tab" onclick="leadFilter('followup',this)">&#9203; Follow-up</div>
+        <div class="tab" onclick="leadFilter('converted',this)">&#10003; Converted</div>
+      </div>
+      <select id="lead-staff-filter" onchange="renderLeads()" style="font-size:12px;width:140px">
+        <option value="">All Staff</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Leads list -->
+  <div id="leads-list"></div>
+</div>
+
 <div class="page" id="pg-settings">
   <div class="page-header"><h1>Settings</h1><p>Database, users and configuration</p></div>
   <div class="card admin-only" style="margin-bottom:16px">
@@ -2438,7 +2421,7 @@ function renderSuspense(){
 }
 
 // ── METAL FLOW ──
-function mfTab(tab,btn){['in','batch','refinery','out','log'].forEach(function(t){var e=G('mf-'+t);if(e)e.style.display='none';});var te=G('mf-'+tab);if(te)te.style.display='block';document.querySelectorAll('#pg-metalflow .tab').forEach(function(b){b.classList.remove('active');});if(btn)btn.classList.add('active');if(tab==='batch')loadUnbatched();if(tab==='refinery')loadPendingBatches();if(tab==='log')renderMFLog();if(tab==='out'){var _sd=G('sel-date');if(_sd&&!_sd.value)_sd.value=td();renderMFSellHistory();}if(tab==='out'){var sd=G('sel-date');if(sd&&!sd.value)sd.value=td();renderMFSellHistory();}}
+function mfTab(tab,btn){['in','batch','refinery','out','log'].forEach(function(t){var e=G('mf-'+t);if(e)e.style.display='none';});var te=G('mf-'+tab);if(te)te.style.display='block';document.querySelectorAll('#pg-metalflow .tab').forEach(function(b){b.classList.remove('active');});if(btn)btn.classList.add('active');if(tab==='batch')loadUnbatched();if(tab==='refinery')loadPendingBatches();if(tab==='log')renderMFLog();}
 function saveMFIn(){var metal=V('mfi-metal'),gross=N('mfi-gross'),pure=N('mfi-pure')||gross;if(!gross){alert('Enter weight.');return;}if(metal==='Gold')metalR.gold+=pure;else metalR.silver+=pure;var mfEntry={type:'in',date:td(),metal:metal,src:V('mfi-src'),gross:gross,pure:pure,rate:N('mfi-rate')};DB.metalLog.unshift(mfEntry);dbSaveMetalLog(mfEntry);updateMFDisp();renderMFLog();alert('&#10003; Added: '+pure.toFixed(3)+'g '+metal);}
 function loadUnbatched(){
   var metal=V('bat-metal')||'Gold';
@@ -2974,126 +2957,16 @@ function calcSellTotal(){
   }
 }
 
-function calcSellProfit(){
-  var wt=N('sel-wt'),rate=N('sel-rate');
-  var sellEl=G('sel-sell-val');
-  if(sellEl&&!sellEl._manual&&wt>0&&rate>0)sellEl.value=(wt*rate).toFixed(2);
-  var sale=N('sel-sell-val'),cost=N('sel-buy-cost'),test=N('sel-test-fee')||0;
-  var totalCost=cost+test,profit=sale-totalCost;
-  var sd=G('sel-sale-disp'),cd=G('sel-cost-disp'),pd=G('sel-profit-disp');
-  if(sd)sd.textContent=fmt(sale);
-  if(cd)cd.textContent=fmt(totalCost);
-  if(pd){pd.textContent=fmt(profit);pd.style.color=profit>=0?'var(--grn)':'var(--red)';}
-}
-
 function sellRefinedGold(){
-  var metal=V('sel-metal')||'Gold';
-  var date=V('sel-date')||td();
-  var wt=N('sel-wt'),rate=N('sel-rate'),sell=N('sel-sell-val');
-  var cost=N('sel-buy-cost'),test=N('sel-test-fee')||0;
-  var mode=V('sel-mode')||'Cash',party=V('sel-party')||'';
+  var wt = Number(document.getElementById('sel-wt').value);
+  var sell = Number(document.getElementById('sel-sell-val').value);
 
-  if(!wt){alert('Enter the weight sold.');return;}
-  if(!sell&&!rate){alert('Enter sale amount or rate per gram.');return;}
-
-  // Auto-calc if missing
-  if(!sell&&rate&&wt)sell=wt*rate;
-  if(!rate&&wt)rate=sell/wt;
-
-  var totalCost=cost+test,profit=sell-totalCost;
-
-  // ── Save to refined_gold_sales table (primary) ──
-  var record={
-    id:uid(),
-    sale_date:date,
-    metal:metal,
-    weight_g:wt,
-    rate_per_g:Math.round(rate*100)/100,
-    sell_value:sell,
-    buy_cost:cost,
-    profit:profit,
-    party:party
-  };
-
-  if(sbHasConfig()){
-    dbPost('refined_gold_sales',record,function(data,err){
-      if(err)console.error('refined_gold_sales save error:',err);
-      else console.log('refined_gold_sales saved');
-    });
-    // Cash in from sale
-    dbSaveCashEntry('in',date,sell,'Refined '+metal+' Sale '+wt.toFixed(3)+'g'+(party?' — '+party:''),'refgold');
-    // Cash out for purchase cost
-    if(cost>0)dbSaveCashEntry('out',date,cost,'Old '+metal+' Purchase Cost','refgold');
-    // Metal log outflow
-    dbPost('metal_log',{
-      log_type:'out',log_date:date,metal:metal,weight_g:wt,
-      source:'Refined Sale'+(party?' — '+party:''),purpose:'Sold'
-    },null);
+  if(!wt || !sell){
+    alert("Enter valid details");
+    return;
   }
 
-  // ── Local state update ──
-  if(metal==='Gold')metalR.gold=Math.max(0,(metalR.gold||0)-wt);
-  else metalR.silver=Math.max(0,(metalR.silver||0)-wt);
-
-  DB.cashLog.push({type:'in',date:date,amount:sell,
-    desc:'Refined '+metal+' Sale '+wt.toFixed(3)+'g @ ₹'+Math.round(rate)+'/g'+(party?' — '+party:''),
-    src:'refgold'});
-  if(cost>0)DB.cashLog.push({type:'out',date:date,amount:cost,
-    desc:'Old '+metal+' Purchase Cost',src:'refgold'});
-
-  // ── Update displays ──
-  updateMFDisp();
-  renderCashFlow();
-
-  // Store in local metal log for history display
-  if(!DB.refGoldSales)DB.refGoldSales=[];
-  DB.refGoldSales.unshift(record);
-  renderMFSellHistory();
-
-  // ── Clear form ──
-  ['sel-wt','sel-rate','sel-sell-val','sel-buy-cost','sel-party'].forEach(function(id){
-    var e=G(id);if(e){e.value='';if(e._manual)e._manual=false;}
-  });
-  var tf=G('sel-test-fee');if(tf)tf.value='50';
-  calcSellProfit();
-  var sd=G('sel-date');if(sd)sd.value=td();
-
-  alert('Sale Saved! '+metal+' '+wt.toFixed(3)+'g | Sale: '+fmt(sell)+' | '+(profit>=0?'Profit: '+fmt(profit):'Loss: '+fmt(Math.abs(profit))));
-}
-
-function renderMFSellHistory(){
-  var hist=G('sel-history');if(!hist)return;
-  // Load from Supabase first if available
-  if(sbHasConfig()){
-    dbGet('refined_gold_sales?select=*&order=sale_date.desc&limit=8',function(data,err){
-      if(!err&&data&&data.length)_showSellHistory(data);
-      else _showSellHistory(DB.refGoldSales||[]);
-    });
-  } else {
-    _showSellHistory(DB.refGoldSales||[]);
-  }
-}
-
-function _showSellHistory(rows){
-  var hist=G('sel-history');if(!hist)return;
-  if(!rows||!rows.length){hist.innerHTML='';return;}
-  hist.innerHTML=
-    '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--tx3);margin-bottom:8px">Recent Sales</div>'+
-    '<div style="overflow-x:auto"><table class="data-table"><thead><tr>'+
-    '<th>Date</th><th>Metal</th><th class="num">Weight</th><th class="num">Rate</th><th class="num">Sale</th><th class="num">Cost</th><th class="num">Profit</th>'+
-    '</tr></thead><tbody>'+
-    rows.map(function(r){
-      var p=r.profit||(r.sell_value-(r.buy_cost||0));
-      return '<tr>'+
-        '<td style="font-size:11px;color:var(--tx3);white-space:nowrap">'+(r.sale_date||r.date||'')+'</td>'+
-        '<td><span class="badge bgold" style="font-size:9px">'+(r.metal||'Gold')+'</span></td>'+
-        '<td class="num">'+parseFloat(r.weight_g||0).toFixed(3)+'g</td>'+
-        '<td class="num" style="font-size:11px">₹'+Math.round(r.rate_per_g||0).toLocaleString('en-IN')+'</td>'+
-        '<td class="num">'+fmt(r.sell_value||0)+'</td>'+
-        '<td class="num" style="color:var(--red)">'+fmt(r.buy_cost||0)+'</td>'+
-        '<td class="num" style="font-weight:700;color:'+(p>=0?'var(--grn)':'var(--red)')+'">'+fmt(p)+'</td>'+
-      '</tr>';
-    }).join('')+'</tbody></table></div>';
+  alert("Sale recorded successfully!");
 }
 // ── Ammo display (shows total shots, no sequence hint) ──
 function glUpdateAmmo(){
@@ -4336,8 +4209,358 @@ function _updateSeqPreview(){
   if(pv) pv.textContent = 'Sequence: ' + seq.join(' → ');
 }
 
+
+// ═══════════════════════════════════════════════════════════════
+// WHATSAPP LEADS CRM
+// ═══════════════════════════════════════════════════════════════
+
+DB.leads = DB.leads || [];
+var _leadFilter = 'all';
+var _leadStaffFilter = '';
+
+// ── STATUS CONFIG ──
+var LEAD_STATUS = {
+  new:       {label:'New',       color:'ba', icon:'🔔'},
+  hot:       {label:'Hot',       color:'br', icon:'🔴'},
+  warm:      {label:'Warm',      color:'ba', icon:'🟠'},
+  cold:      {label:'Cold',      color:'bb', icon:'🔵'},
+  followup:  {label:'Follow-Up', color:'ba', icon:'⏰'},
+  converted: {label:'Converted', color:'bg', icon:'✅'},
+  lost:      {label:'Lost',      color:'br', icon:'❌'},
+};
+
+// ── PAGE INIT ──
+function initLeadsPage(){
+  var d=G('ld-date');if(d)d.value=td();
+  populateLeadStaffFilter();
+  if(sbHasConfig()){
+    dbGet('leads?select=*&order=created_at.desc&limit=200',function(data,err){
+      if(!err&&data){
+        DB.leads=data;
+        renderLeads();
+        renderLeadsMetrics();
+      }
+    });
+  } else {
+    renderLeads();
+    renderLeadsMetrics();
+  }
+}
+
+function populateLeadStaffFilter(){
+  var sel=G('lead-staff-filter');if(!sel)return;
+  var staff=['Sabari','Vikash','Ravi','Subramanian','RSJ Staff'];
+  sel.innerHTML='<option value="">All Staff</option>'+
+    staff.map(function(s){return '<option value="'+s+'">'+s+'</option>';}).join('');
+}
+
+// ── FILTER ──
+function leadFilter(f,btn){
+  _leadFilter=f;
+  document.querySelectorAll('#pg-leads .tab').forEach(function(t){t.classList.remove('active');});
+  if(btn)btn.classList.add('active');
+  renderLeads();
+}
+
+// ── RENDER LEADS ──
+function renderLeads(){
+  var q=(V('lead-search')||'').toLowerCase().trim();
+  var staffF=V('lead-staff-filter')||'';
+  var el=G('leads-list');if(!el)return;
+
+  var filtered=(DB.leads||[]).filter(function(l){
+    if(_leadFilter!=='all'&&l.status!==_leadFilter)return false;
+    if(staffF&&l.assigned_to!==staffF)return false;
+    if(q){
+      var hay=((l.name||'')+(l.phone||'')+(l.product||'')+(l.location||'')).toLowerCase();
+      if(hay.indexOf(q)<0)return false;
+    }
+    // Follow-up due filter
+    if(_leadFilter==='followup'){
+      return l.status==='followup'||(l.followup_date&&l.followup_date<=td());
+    }
+    return true;
+  });
+
+  renderLeadsMetrics();
+
+  if(!filtered.length){
+    el.innerHTML='<div class="empty"><div class="eico">&#128241;</div><div class="etxt">No leads found</div></div>';
+    return;
+  }
+
+  el.innerHTML=filtered.map(function(l){
+    var st=LEAD_STATUS[l.status]||LEAD_STATUS['new'];
+    var isOverdue=l.followup_date&&l.followup_date<td()&&l.status!=='converted'&&l.status!=='lost';
+    var fuCount=(l.followups||[]).length;
+
+    return '<div class="card" style="margin-bottom:10px;border-left:4px solid var(--'+(
+      l.status==='hot'?'red':l.status==='converted'?'grn':l.status==='warm'?'amb':'bdr'
+    )+')">'+
+      '<div style="display:flex;align-items:start;justify-content:space-between;gap:10px;flex-wrap:wrap">'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">'+
+            '<span style="font-size:15px;font-weight:700">'+l.name+'</span>'+
+            '<span class="badge '+st.color+'" style="font-size:10px">'+st.icon+' '+st.label+'</span>'+
+            (l.source==='whatsapp'||l.source==='whatsapp_auto'?'<span class="badge bg" style="font-size:9px;background:rgba(37,211,102,.15);color:#25D366;border-color:rgba(37,211,102,.3)">&#128241; WA</span>':'')+
+            (isOverdue?'<span class="badge br" style="font-size:9px">&#9203; Overdue Follow-Up</span>':'')+
+          '</div>'+
+          '<div style="font-size:12px;color:var(--tx3);display:flex;gap:12px;flex-wrap:wrap">'+
+            (l.phone?'<span>&#128222; '+l.phone+'</span>':'')+
+            (l.location?'<span>&#128205; '+l.location+'</span>':'')+
+            (l.date?'<span>&#128197; '+l.date+'</span>':'')+
+          '</div>'+
+          (l.product?'<div style="margin-top:6px;font-size:13px"><span style="color:var(--tx3)">Interested in: </span><strong>'+l.product+'</strong>'+(l.budget?' &nbsp;&nbsp;<span style="color:var(--gold-dark);font-weight:700">~'+fmt(l.budget)+'</span>':'')+'</div>':'')+
+          (l.assigned_to?'<div style="margin-top:4px;font-size:11px;color:var(--tx3)">&#128100; Assigned to <strong>'+l.assigned_to+'</strong>'+(fuCount>0?' &nbsp;&nbsp;&#128172; '+fuCount+' follow-up'+(fuCount>1?'s':''):'')+'</div>':'')+
+          (l.notes?'<div style="margin-top:6px;font-size:11px;color:var(--tx3);font-style:italic;border-left:2px solid var(--bdr);padding-left:8px">'+l.notes.slice(0,120)+(l.notes.length>120?'...':'')+'</div>':'')+
+          (l.followup_date&&l.status!=='converted'?'<div style="margin-top:4px;font-size:11px;color:'+(isOverdue?'var(--red)':'var(--amb)')+'">&#8987; Follow-up: '+l.followup_date+'</div>':'')+
+        '</div>'+
+        '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">'+
+          '<button class="btn btnsm btnog" onclick="openFollowUp(\''+l.id+'\')">&#9203; Follow-Up</button>'+
+          '<button class="btn btnsm" onclick="editLead(\''+l.id+'\')">&#9998; Edit</button>'+
+          (l.status!=='converted'?'<button class="btn btnsm btng" onclick="convertLead(\''+l.id+'\')">&#10003; Convert</button>':'')+
+          '<button class="btn btnsm" onclick="openWA(\''+l.phone+'\')">&#128241; WhatsApp</button>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+
+function renderLeadsMetrics(){
+  var leads=DB.leads||[];
+  var hot=leads.filter(function(l){return l.status==='hot';}).length;
+  var warm=leads.filter(function(l){return l.status==='warm';}).length;
+  var conv=leads.filter(function(l){return l.status==='converted';}).length;
+  var tot=leads.filter(function(l){return l.status!=='lost';}).length;
+  var set=function(id,v){var e=G(id);if(e)e.textContent=v;};
+  set('lm-total',tot); set('lm-hot',hot); set('lm-warm',warm); set('lm-converted',conv);
+}
+
+// ── SAVE LEAD ──
+function saveLead(){
+  var name=V('ld-name').trim(), phone=V('ld-phone').trim();
+  if(!name){alert('Enter customer name.');return;}
+  var editId=V('ld-edit-id');
+  var isEdit=!!editId;
+  var lead={
+    id:editId||uid(),
+    name:name, phone:phone,
+    location:V('ld-location').trim(),
+    source:V('ld-source'),
+    product:V('ld-product').trim(),
+    budget:N('ld-budget')||null,
+    status:V('ld-status'),
+    assigned_to:V('ld-assigned'),
+    date:V('ld-date')||td(),
+    followup_date:V('ld-followup')||null,
+    notes:V('ld-notes').trim(),
+    followups:isEdit?(DB.leads.find(function(l){return l.id===editId;})||{}).followups||[]:[],
+    created_at:isEdit?undefined:new Date().toISOString(),
+    updated_at:new Date().toISOString()
+  };
+
+  if(sbHasConfig()){
+    if(isEdit){
+      dbPatch('leads','id=eq.'+editId,{
+        name:lead.name,phone:lead.phone,location:lead.location,
+        source:lead.source,product:lead.product,budget:lead.budget,
+        status:lead.status,assigned_to:lead.assigned_to,
+        followup_date:lead.followup_date,notes:lead.notes,
+        updated_at:lead.updated_at
+      },function(d,err){ if(err)console.error(err); });
+    } else {
+      dbPost('leads',{
+        id:lead.id,name:lead.name,phone:lead.phone,location:lead.location,
+        source:lead.source,product:lead.product,budget:lead.budget,
+        status:lead.status,assigned_to:lead.assigned_to,
+        date:lead.date,followup_date:lead.followup_date,notes:lead.notes
+      },function(d,err){ if(err)console.error(err); });
+    }
+  }
+
+  // Local
+  if(isEdit){
+    var i=DB.leads.findIndex(function(l){return l.id===editId;});
+    if(i>=0)DB.leads[i]=Object.assign(DB.leads[i],lead);
+  } else {
+    DB.leads.unshift(lead);
+  }
+
+  closeM('m-addlead');
+  renderLeads();
+  clearLeadForm();
+}
+
+function clearLeadForm(){
+  ['ld-name','ld-phone','ld-location','ld-product','ld-notes','ld-edit-id'].forEach(function(id){
+    var e=G(id);if(e)e.value='';
+  });
+  var ds=G('ld-status');if(ds)ds.value='new';
+  var da=G('ld-assigned');if(da)da.value='';
+  var df=G('ld-followup');if(df)df.value='';
+  var dd=G('ld-date');if(dd)dd.value=td();
+  var nb=G('ld-budget');if(nb)nb.value='';
+  var mt=G('lead-modal-title');if(mt)mt.textContent='📱 New Lead';
+}
+
+function editLead(id){
+  var l=DB.leads.find(function(x){return x.id===id;});
+  if(!l)return;
+  G('ld-edit-id').value=l.id;
+  G('ld-name').value=l.name||'';
+  G('ld-phone').value=l.phone||'';
+  G('ld-location').value=l.location||'';
+  G('ld-source').value=l.source||'whatsapp';
+  G('ld-product').value=l.product||'';
+  G('ld-budget').value=l.budget||'';
+  G('ld-status').value=l.status||'new';
+  G('ld-assigned').value=l.assigned_to||'';
+  G('ld-date').value=l.date||td();
+  G('ld-followup').value=l.followup_date||'';
+  G('ld-notes').value=l.notes||'';
+  var mt=G('lead-modal-title');if(mt)mt.textContent='✏️ Edit Lead — '+l.name;
+  openM('m-addlead');
+}
+
+// ── FOLLOW-UP ──
+function openFollowUp(id){
+  var l=DB.leads.find(function(x){return x.id===id;});
+  if(!l)return;
+  G('fu-lead-id').value=id;
+  var info=G('fu-lead-info');
+  if(info)info.innerHTML='<strong>'+l.name+'</strong>'+(l.phone?' &middot; '+l.phone:'')+
+    (l.product?'<br><span style="color:var(--tx3)">'+l.product+'</span>':'')+
+    '<br><span class="badge '+((LEAD_STATUS[l.status]||{}).color||'ba')+'" style="font-size:10px;margin-top:4px">'+((LEAD_STATUS[l.status]||{}).icon||'')+' '+(l.status||'')+'</span>';
+  var fd=G('fu-date');if(fd)fd.value=td();
+  var fn2=G('fu-next-date');if(fn2)fn2.value='';
+  var fm=G('fu-method');if(fm)fm.value='whatsapp';
+  var fo=G('fu-notes');if(fo)fo.value='';
+  var fs=G('fu-new-status');if(fs)fs.value='';
+  openM('m-followup');
+}
+
+function saveFollowUp(){
+  var id=V('fu-lead-id');
+  var l=DB.leads.find(function(x){return x.id===id;});
+  if(!l)return;
+
+  var fu={
+    date:V('fu-date')||td(),
+    method:V('fu-method'),
+    notes:V('fu-notes').trim(),
+    by:CURRENT_USER?CURRENT_USER.name:''
+  };
+
+  var newStatus=V('fu-new-status');
+  var nextDate=V('fu-next-date');
+
+  // Update lead
+  l.followups=l.followups||[];
+  l.followups.unshift(fu);
+  if(newStatus)l.status=newStatus;
+  if(nextDate)l.followup_date=nextDate;
+  l.updated_at=new Date().toISOString();
+
+  if(sbHasConfig()){
+    // Save follow-up record
+    dbPost('lead_followups',{
+      id:uid(),lead_id:id,fu_date:fu.date,
+      method:fu.method,notes:fu.notes,by_staff:fu.by,
+      new_status:newStatus||null
+    },null);
+    // Update lead status
+    dbPatch('leads','id=eq.'+id,{
+      status:l.status,
+      followup_date:nextDate||null,
+      updated_at:l.updated_at
+    },null);
+  }
+
+  closeM('m-followup');
+  renderLeads();
+  if(newStatus==='converted'){
+    // Prompt to create customer
+    if(confirm('\u2713 Marked as Converted!\n\nWould you like to register '+l.name+' as a Customer now?')){
+      convertLead(id, true);
+    }
+  }
+}
+
+// ── CONVERT TO CUSTOMER ──
+function convertLead(id, skipConfirm){
+  var l=DB.leads.find(function(x){return x.id===id;});
+  if(!l)return;
+  if(!skipConfirm&&!confirm('Convert '+l.name+' to a Customer account?'))return;
+
+  // Pre-fill new customer modal with lead data
+  var nc=G('nc-name');if(nc)nc.value=l.name;
+  var np=G('nc-phone');if(np)np.value=l.phone||'';
+  var nci=G('nc-city');if(nci)nci.value=l.location||'';
+
+  // Mark lead as converted
+  l.status='converted'; l.updated_at=new Date().toISOString();
+  if(sbHasConfig())dbPatch('leads','id=eq.'+id,{status:'converted',updated_at:l.updated_at},null);
+
+  renderLeads();
+  openM('m-newcust');
+}
+
+// ── OPEN WHATSAPP ──
+function openWA(phone){
+  if(!phone){alert('No phone number for this lead.');return;}
+  var clean=phone.replace(/\D/g,'');
+  if(clean.length===10)clean='91'+clean;
+  window.open('https://wa.me/'+clean,'_blank');
+}
+
+// ── PAGE SWITCH HOOK ──
+var _origShowPgLeads=showPg;
+showPg=function(id,btn,title){
+  _origShowPgLeads(id,btn,title);
+  if(id==='pg-leads')initLeadsPage();
+};
+
+// ── WEBHOOK RECEIVER (called by Netlify function via Supabase realtime or polling) ──
+// This function is called with parsed WhatsApp webhook data
+function ingestWhatsAppLead(waMsg){
+  // waMsg = {name, phone, message, timestamp}
+  var lead={
+    id:uid(),
+    name:waMsg.name||waMsg.phone,
+    phone:waMsg.phone,
+    location:'',
+    source:'whatsapp_auto',
+    product:extractProductFromMessage(waMsg.message||''),
+    budget:null,
+    status:'new',
+    assigned_to:'',
+    date:waMsg.timestamp||td(),
+    notes:waMsg.message||'',
+    followups:[]
+  };
+  if(sbHasConfig()){
+    dbPost('leads',{
+      id:lead.id,name:lead.name,phone:lead.phone,
+      source:'whatsapp_auto',product:lead.product,
+      status:'new',date:lead.date,notes:lead.notes
+    },function(d,err){
+      if(!err){ DB.leads.unshift(lead); renderLeads(); renderLeadsMetrics(); }
+    });
+  }
+}
+
+function extractProductFromMessage(msg){
+  // Simple keyword extraction for common jewellery terms
+  var keywords=['necklace','chain','ring','bangle','bracelet','earring','anklet',
+                'pendant','mangalsutra','gold','silver','diamond','thali',
+                'நெக்லஸ்','வளையல்','மோதிரம்','காதணி'];
+  msg=msg.toLowerCase();
+  var found=keywords.filter(function(k){return msg.indexOf(k)>=0;});
+  return found.length?found.join(', '):'';
+}
+
 // ── INIT ──
-['ex-date','pu-date','cob-date','ce-date','st-date','or-date','cp-date','spy-date','og-date','ch-date','sel-date'].forEach(function(id){var e=G(id);if(e)e.value=td();});
+['ex-date','pu-date','cob-date','ce-date','st-date','or-date','cp-date','spy-date','og-date','ch-date'].forEach(function(id){var e=G(id);if(e)e.value=td();});
 var sd=G('s-date');if(sd)sd.value=td();
 var dd=G('dash-date');if(dd)dd.textContent=new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');
@@ -4503,6 +4726,127 @@ setLang(LANG);
   <div class="warnbar" style="font-size:11px">&#9432; Each user must have a unique sequence. Make sure no two sequences are the same.</div>
   <input type="hidden" id="au-edit-id">
   <div class="mfoot"><button class="btn" onclick="closeM('m-adduser')">Cancel</button><button class="btn btng" onclick="saveAppUser()">Save User</button></div>
+</div></div>
+
+
+<!-- Add / Edit Lead Modal -->
+<div class="modal-bg" id="m-addlead"><div class="msheet">
+  <div class="mhandle"></div>
+  <div class="mtitle" id="lead-modal-title">&#128241; New Lead</div>
+
+  <div class="g2" style="margin-bottom:2px">
+    <div class="field"><label>Customer Name *</label>
+      <input type="text" id="ld-name" placeholder="From WhatsApp">
+    </div>
+    <div class="field"><label>Phone *</label>
+      <input type="tel" id="ld-phone" maxlength="15" inputmode="tel" placeholder="+91 XXXXX XXXXX">
+    </div>
+  </div>
+  <div class="g2">
+    <div class="field"><label>Location / City</label>
+      <input type="text" id="ld-location" placeholder="e.g. Madurai, Chennai...">
+    </div>
+    <div class="field"><label>Source</label>
+      <select id="ld-source">
+        <option value="whatsapp">WhatsApp</option>
+        <option value="whatsapp_auto">WhatsApp (Auto)</option>
+        <option value="call">Phone Call</option>
+        <option value="walkin">Walk-In</option>
+        <option value="referral">Referral</option>
+        <option value="instagram">Instagram</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+  </div>
+  <div class="field"><label>Product Interested In</label>
+    <input type="text" id="ld-product" placeholder="e.g. 22K Gold Necklace, Diamond Ring, Silver Bangles...">
+  </div>
+  <div class="g3">
+    <div class="field"><label>Budget (&#8377;)</label>
+      <input type="number" id="ld-budget" step="100" inputmode="decimal" placeholder="Approx budget">
+    </div>
+    <div class="field"><label>Lead Status</label>
+      <select id="ld-status">
+        <option value="new">&#128226; New</option>
+        <option value="hot">&#128308; Hot — Ready to Buy</option>
+        <option value="warm">&#128992; Warm — Interested</option>
+        <option value="cold">&#128311; Cold — Just Browsing</option>
+        <option value="followup">&#9203; Needs Follow-Up</option>
+        <option value="converted">&#10003; Converted to Sale</option>
+        <option value="lost">&#10007; Lost</option>
+      </select>
+    </div>
+    <div class="field"><label>Assigned To</label>
+      <select id="ld-assigned">
+        <option value="">Unassigned</option>
+        <option value="Sabari">Sabari</option>
+        <option value="Vikash">Vikash</option>
+        <option value="Ravi">Ravi</option>
+        <option value="Subramanian">Subramanian</option>
+        <option value="RSJ Staff">RSJ Staff</option>
+      </select>
+    </div>
+  </div>
+  <div class="g2">
+    <div class="field"><label>Date Received</label>
+      <input type="date" id="ld-date">
+    </div>
+    <div class="field"><label>Follow-Up Date</label>
+      <input type="date" id="ld-followup">
+    </div>
+  </div>
+  <div class="field"><label>Notes / Message Preview</label>
+    <textarea id="ld-notes" rows="2" placeholder="What did the customer say? Copy their WhatsApp message here..." style="resize:none"></textarea>
+  </div>
+  <input type="hidden" id="ld-edit-id">
+  <div class="mfoot">
+    <button class="btn" onclick="closeM('m-addlead')">Cancel</button>
+    <button class="btn btng" onclick="saveLead()">Save Lead</button>
+  </div>
+</div></div>
+
+<!-- Follow-up Log Modal -->
+<div class="modal-bg" id="m-followup"><div class="msheet">
+  <div class="mhandle"></div>
+  <div class="mtitle">&#9203; Log Follow-Up</div>
+  <input type="hidden" id="fu-lead-id">
+  <div style="background:var(--bg);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:13px" id="fu-lead-info"></div>
+  <div class="g2">
+    <div class="field"><label>Follow-Up Date</label>
+      <input type="date" id="fu-date">
+    </div>
+    <div class="field"><label>Method</label>
+      <select id="fu-method">
+        <option value="whatsapp">WhatsApp Message</option>
+        <option value="call">Phone Call</option>
+        <option value="visit">Shop Visit</option>
+        <option value="whatsapp_call">WhatsApp Call</option>
+      </select>
+    </div>
+  </div>
+  <div class="field"><label>Outcome / Notes</label>
+    <textarea id="fu-notes" rows="2" placeholder="What was discussed? Customer response..." style="resize:none"></textarea>
+  </div>
+  <div class="g2">
+    <div class="field"><label>New Lead Status</label>
+      <select id="fu-new-status">
+        <option value="">No change</option>
+        <option value="hot">&#128308; Hot</option>
+        <option value="warm">&#128992; Warm</option>
+        <option value="cold">&#128311; Cold</option>
+        <option value="followup">&#9203; Schedule Another Follow-Up</option>
+        <option value="converted">&#10003; Converted!</option>
+        <option value="lost">&#10007; Lost</option>
+      </select>
+    </div>
+    <div class="field"><label>Next Follow-Up Date</label>
+      <input type="date" id="fu-next-date">
+    </div>
+  </div>
+  <div class="mfoot">
+    <button class="btn" onclick="closeM('m-followup')">Cancel</button>
+    <button class="btn btng" onclick="saveFollowUp()">&#10003; Log &amp; Update</button>
+  </div>
 </div></div>
 
 </body>
