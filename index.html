@@ -2491,8 +2491,10 @@ function mfTab(tab,btn){['in','batch','refinery','out','log'].forEach(function(t
 function saveMFIn(){var metal=V('mfi-metal'),gross=N('mfi-gross'),pure=N('mfi-pure')||gross;if(!gross){alert('Enter weight.');return;}if(metal==='Gold')metalR.gold+=pure;else metalR.silver+=pure;var mfEntry={type:'in',date:td(),metal:metal,src:V('mfi-src'),gross:gross,pure:pure,rate:N('mfi-rate')};DB.metalLog.unshift(mfEntry);dbSaveMetalLog(mfEntry);updateMFDisp();renderMFLog();alert('&#10003; Added: '+pure.toFixed(3)+'g '+metal);}
 function loadUnbatched(){
   var metal=V('bat-metal')||'Gold';
-  var allGold=DB.oldMetal.filter(function(i){return i.metal==='Gold'&&!i.batched;});
-  var allSilver=DB.oldMetal.filter(function(i){return i.metal==='Silver'&&!i.batched;});
+  // Exclude Chit Metal entries — they are liabilities, not physical gold
+  function isChitMetal(i){ return i.src && i.src.indexOf('Chit:')===0; }
+  var allGold=DB.oldMetal.filter(function(i){return i.metal==='Gold'&&!i.batched&&!isChitMetal(i);});
+  var allSilver=DB.oldMetal.filter(function(i){return i.metal==='Silver'&&!i.batched&&!isChitMetal(i);});
   // Update selector labels with counts
   var sel=G('bat-metal');
   if(sel){
@@ -2815,7 +2817,12 @@ function dbLoadAll(){
   dbGet('old_metal_items?select=*&is_batched=eq.false&order=item_date.desc',function(d,e){
     if(e){console.error('Load oldmetal:',e);return;}
     DB.oldMetal=[];
-    (d||[]).forEach(function(r){DB.oldMetal.push({id:r.id,_dbId:r.id,metal:r.metal,wt:parseFloat(r.weight_g)||0,val:parseFloat(r.value_inr)||0,date:r.item_date,src:r.source||'',batched:false});});
+    (d||[]).forEach(function(r){
+      // Skip old chit_metal entries that were incorrectly saved to old_metal_items
+      var src=r.source||'';
+      if(src.indexOf('Chit:')===0) return;
+      DB.oldMetal.push({id:r.id,_dbId:r.id,metal:r.metal,wt:parseFloat(r.weight_g)||0,val:parseFloat(r.value_inr)||0,date:r.item_date,src:src,batched:false});
+    });
     console.log('OldMetal loaded:',d.length);
   });
 
@@ -4132,41 +4139,87 @@ function saveEditLoan(){
 
 // ── BALANCE SHEET ──
 function renderBalance(){
-  var cashBal=DB.cashOB+DB.cashLog.filter(function(e){return e.type==='in';}).reduce(function(s,e){return s+e.amount;},0)-DB.cashLog.filter(function(e){return e.type==='out';}).reduce(function(s,e){return s+e.amount;},0);
+  var cashBal=DB.cashOB
+    +DB.cashLog.filter(function(e){return e.type==='in';}).reduce(function(s,e){return s+e.amount;},0)
+    -DB.cashLog.filter(function(e){return e.type==='out';}).reduce(function(s,e){return s+e.amount;},0);
   var goldVal=metalR.gold*R.k22;
   var silverVal=metalR.silver*R.sil;
-  var refGoldCost=DB.refGoldSales.reduce(function(s,r){return s+r.costPrice;},0);
 
   // Receivables = outstanding sale balances
   var receivables=DB.sales.reduce(function(s,sale){return s+(sale.balance||0);},0);
-  // Customer advances given out
-  var custAdv=Object.values(DB.custs).reduce(function(s,c){return s+(c.ob>0?c.ob:0);},0);
-  custAdv+=DB.payments.filter(function(p){return p.type==='oldgold-adv'||p.type==='old_gold_advance';}).reduce(function(s,p){return s+p.amt;},0);
 
   var activeLoans=DB.loans.filter(function(l){return l.status==='active';});
-  var totalLiab=activeLoans.reduce(function(s,l){return s+(l.amt-(l.paid||0));},0);
-  var supplierOwed=Object.values(DB.sups).reduce(function(s,sup){return s+(sup.balance||0);},0);
+  var totalLoanAmt=activeLoans.reduce(function(s,l){return s+(l.amt-(l.paid||0));},0);
   var totalLoanInterest=activeLoans.reduce(function(s,l){return s+calcTotalInterestAccrued(l);},0);
 
+  // ── Supplier balances: split by metal type ──
+  // sup.balance = value in ₹ we owe (from purchases debit minus settlements credit)
+  // Show: gold suppliers as grams (val / R.k22), silver as grams (val / R.sil), cash as ₹
+  var supGoldGrams=0, supSilverGrams=0, supCashOwed=0;
+  Object.values(DB.sups).forEach(function(sup){
+    var bal=sup.balance||0;
+    if(bal<=0)return;
+    var metal=(sup.metal||'Gold').toLowerCase();
+    if(metal.indexOf('gold')>=0||metal.indexOf('diamond')>=0){
+      // Convert ₹ balance → grams at current 22K rate
+      supGoldGrams+=bal/R.k22;
+    } else if(metal.indexOf('silver')>=0){
+      supSilverGrams+=bal/R.sil;
+    } else {
+      supCashOwed+=bal;
+    }
+  });
+  var supGoldVal=supGoldGrams*R.k22;
+  var supSilverVal=supSilverGrams*R.sil;
+  var totalSupLiab=supGoldVal+supSilverVal+supCashOwed;
+
   var totalAssets=cashBal+goldVal+silverVal+receivables;
-  var totalLiabilities=totalLiab+supplierOwed+totalLoanInterest;
+  var totalLiabilities=totalLoanAmt+totalSupLiab+totalLoanInterest;
   var netWorth=totalAssets-totalLiabilities;
 
   var assets=[
-    {label:'Cash in Hand',val:cashBal,icon:'💵'},
-    {label:'Gold Reserve ('+metalR.gold.toFixed(3)+'g × ₹'+R.k22+'/g)',val:goldVal,icon:'🪙'},
-    {label:'Silver Reserve ('+metalR.silver.toFixed(3)+'g × ₹'+R.sil+'/g)',val:silverVal,icon:'🥈'},
-    {label:'Outstanding from Customers',val:receivables,icon:'👥'},
-  ];
-  var liabs=[
-    {label:'Loans Outstanding',val:totalLiab,icon:'🏦'},
-    {label:'Supplier Payables',val:supplierOwed,icon:'🏪'},
-    {label:'Accrued Loan Interest',val:totalLoanInterest,icon:'📈'},
+    {label:'Cash in Hand',val:cashBal,icon:'&#128181;',color:'var(--grn)'},
+    {label:'Gold Reserve ('+metalR.gold.toFixed(3)+'g &times; &#8377;'+R.k22.toLocaleString('en-IN')+'/g)',val:goldVal,icon:'&#129680;',color:'var(--grn)'},
+    {label:'Silver Reserve ('+metalR.silver.toFixed(3)+'g &times; &#8377;'+R.sil+'/g)',val:silverVal,icon:'&#129680;',color:'var(--grn)'},
+    {label:'Outstanding from Customers (Sales Due)',val:receivables,icon:'&#128101;',color:'var(--grn)'},
   ];
 
-  var assetHtml=assets.map(function(a){return '<div class="lrow"><div style="flex:1"><span style="font-size:15px">'+a.icon+'</span> '+a.label+'</div><span style="font-weight:700;color:var(--grn)">'+fmt(a.val)+'</span></div>';}).join('');
-  var liabHtml=liabs.map(function(l){return '<div class="lrow"><div style="flex:1"><span style="font-size:15px">'+l.icon+'</span> '+l.label+'</div><span style="font-weight:700;color:var(--red)">'+fmt(l.val)+'</span></div>';}).join('');
-  var netwHtml='<div class="lrow"><div style="flex:1;font-size:15px;font-weight:700">📊 Net Worth (Assets − Liabilities)</div><span style="font-size:22px;font-weight:800;color:'+(netWorth>=0?'var(--grn)':'var(--red)')+'">'+fmt(netWorth)+'</span></div>';
+  // Build liabilities with metal detail
+  var liabHtml='';
+  if(totalLoanAmt>0){
+    liabHtml+='<div class="lrow"><div style="flex:1"><span style="font-size:15px">&#127982;</span> Loans Outstanding</div>'
+      +'<span style="font-weight:700;color:var(--red)">'+fmt(totalLoanAmt)+'</span></div>';
+  }
+  // Supplier payables broken by metal
+  if(supGoldGrams>0){
+    liabHtml+='<div class="lrow"><div style="flex:1"><span style="font-size:15px">&#129760;</span> Supplier Payable — Gold'
+      +'<br><span style="font-size:11px;color:var(--tx3)">'+supGoldGrams.toFixed(3)+'g &times; &#8377;'+R.k22.toLocaleString('en-IN')+'/g</span></div>'
+      +'<span style="font-weight:700;color:var(--red)">'+fmt(supGoldVal)+'</span></div>';
+  }
+  if(supSilverGrams>0){
+    liabHtml+='<div class="lrow"><div style="flex:1"><span style="font-size:15px">&#129760;</span> Supplier Payable — Silver'
+      +'<br><span style="font-size:11px;color:var(--tx3)">'+supSilverGrams.toFixed(3)+'g &times; &#8377;'+R.sil+'/g</span></div>'
+      +'<span style="font-weight:700;color:var(--red)">'+fmt(supSilverVal)+'</span></div>';
+  }
+  if(supCashOwed>0){
+    liabHtml+='<div class="lrow"><div style="flex:1"><span style="font-size:15px">&#127970;</span> Supplier Payable — Cash</div>'
+      +'<span style="font-weight:700;color:var(--red)">'+fmt(supCashOwed)+'</span></div>';
+  }
+  if(supGoldGrams===0&&supSilverGrams===0&&supCashOwed===0){
+    liabHtml+='<div class="lrow"><div style="flex:1"><span style="font-size:15px">&#127970;</span> Supplier Payables</div>'
+      +'<span style="font-weight:700;color:var(--tx3)">&#8377;0</span></div>';
+  }
+  if(totalLoanInterest>0){
+    liabHtml+='<div class="lrow"><div style="flex:1"><span style="font-size:15px">&#128202;</span> Accrued Loan Interest</div>'
+      +'<span style="font-weight:700;color:var(--red)">'+fmt(totalLoanInterest)+'</span></div>';
+  }
+
+  var assetHtml=assets.map(function(a){
+    return '<div class="lrow"><div style="flex:1"><span style="font-size:15px">'+a.icon+'</span> '+a.label+'</div>'
+      +'<span style="font-weight:700;color:'+(a.color||'var(--grn)')+'">'+fmt(a.val)+'</span></div>';
+  }).join('');
+  var netwHtml='<div class="lrow"><div style="flex:1;font-size:14px;font-weight:700">&#128202; Net Worth (Assets &minus; Liabilities)</div>'
+    +'<span style="font-size:20px;font-weight:800;color:'+(netWorth>=0?'var(--grn)':'var(--red)')+'">'+fmt(netWorth)+'</span></div>';
 
   var ba=G('bs-assets'),bl=G('bs-liabilities'),bn=G('bs-networth');
   var ta=G('bs-total-assets'),tl=G('bs-total-liab');
