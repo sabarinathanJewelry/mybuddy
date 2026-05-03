@@ -704,53 +704,111 @@ input:checked+.tslider::before { transform:translateX(17px); }
    RESPONSIVE: MOBILE (<768px)
 ═══════════════════════════════════════ */
 @media (max-width:767px) {
-  .sidebar {
-    position: fixed;
-    left: 0; top: 0; bottom: 0;
-    transform: translateX(-100%);
-    z-index: 200;
-    bottom: 60px;
-  }
-  .sidebar.open { transform:translateX(0); }
-  .topbar { padding:0 14px; }
-  .content {
-    padding: 12px 12px;
-    padding-bottom: 70px;
-  }
-  .stat-grid { grid-template-columns:repeat(2,1fr); gap:8px; }
-  .stat-val { font-size:18px; }
-  .card { padding:14px; }
-  .g4 { grid-template-columns:1fr 1fr; }
-  .g5 { grid-template-columns:1fr 1fr; }
-  .dash-grid { grid-template-columns:1fr; }
-  .dash-side { display:none; }
-  .msheet {
-    border-radius:22px 22px 0 0;
-    padding:0 16px 32px;
-    max-width:100%;
-    position:fixed; bottom:0; left:0; right:0;
-    border-radius:22px 22px 0 0;
-    max-height:92vh;
-  }
-  .modal-bg { align-items:flex-end; padding:0; }
-  .mhandle { display:block; width:40px; height:4px; background:var(--bdr); border-radius:2px; margin:14px auto 16px; }
-  .mtitle { font-size:17px; }
-  .botnav {
-    display:flex;
-    position:fixed; bottom:0; left:0; right:0;
-    background:var(--card); border-top:1px solid var(--bdr);
-    z-index:50; padding-bottom:env(safe-area-inset-bottom);
-  }
-  .bni {
-    flex:1; display:flex; flex-direction:column; align-items:center;
-    padding:7px 2px 9px; cursor:pointer; border:none; background:transparent;
-    font-family:inherit; color:var(--tx3); font-size:9px; gap:3px; font-weight:500;
-  }
-  .bni.active { color:var(--gold-dark); }
-  .bni svg { width:21px; height:21px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
-  .bni.active svg { stroke:var(--gold-dark); }
-  .topbar-menu-btn { display:flex; }
-  .topbar-actions .topbar-btn span { display:none; }
+  /* ── Layout ── */
+  .sidebar{position:fixed;left:0;top:0;bottom:60px;transform:translateX(-100%);z-index:200;}
+  .sidebar.open{transform:translateX(0);}
+  .topbar{padding:0 8px;gap:4px;}
+  .topbar-menu-btn{display:flex;}
+  .topbar-title{font-size:13px;}
+  .topbar-actions .topbar-btn span{display:none;}
+  .topbar-btn{padding:0 8px;height:28px;font-size:11px;}
+  .content{padding:10px 10px 74px;}
+
+  /* ── Working Date widget ── */
+  .working-date-wrap{margin-left:4px;padding:2px 5px 2px 7px;}
+  .wd-input{width:100px;font-size:11px;}
+
+  /* ── All grids → single column ── */
+  .g2,.g3,.g4,.g5{grid-template-columns:1fr !important;gap:8px;}
+
+  /* ── Stats ── */
+  .stat-grid{grid-template-columns:1fr 1fr;gap:8px;}
+  .stat-val{font-size:17px;}
+  .stat-card{padding:12px;}
+
+  /* ── Cards ── */
+  .card{padding:12px;margin-bottom:10px;}
+  .card-title{font-size:13px;}
+  .card-sub{font-size:11px;}
+  .card-header{flex-wrap:wrap;gap:6px;margin-bottom:10px;}
+
+  /* ── Metrics ── */
+  .metrics.c3,.metrics.c4{grid-template-columns:1fr 1fr !important;gap:8px;}
+  .met{padding:10px 11px;}
+  .mv{font-size:15px;}
+  .ml{font-size:9px;}
+
+  /* ── Page headers ── */
+  .page-header h1{font-size:18px;}
+  .page-header p{font-size:11px;}
+
+  /* ── Forms: 16px prevents iOS zoom ── */
+  input,select,textarea{font-size:16px !important;padding:10px 11px;}
+  label{font-size:10px;}
+  .field{margin-bottom:10px;}
+  .btn{font-size:12px;padding:8px 12px;}
+  .btnsm{font-size:11px;padding:5px 9px;}
+  .btnfull{width:100%;}
+
+  /* ── Tables ── */
+  .data-table{font-size:11px;min-width:420px;}
+  .data-table th{padding:6px 7px;font-size:9px;}
+  .data-table td{padding:7px;}
+  div[style*="overflow-x:auto"]{-webkit-overflow-scrolling:touch;}
+
+  /* ── Modals as bottom sheets ── */
+  .modal-bg{align-items:flex-end;padding:0;}
+  .msheet{border-radius:22px 22px 0 0;padding:0 14px 32px;max-width:100%;
+          position:fixed;bottom:0;left:0;right:0;max-height:88vh;overflow-y:auto;
+          -webkit-overflow-scrolling:touch;}
+  .mhandle{display:block;width:40px;height:4px;background:var(--bdr);border-radius:2px;margin:14px auto 14px;}
+  .mtitle{font-size:16px;margin-bottom:12px;}
+  .mfoot{gap:8px;margin-top:14px;}
+
+  /* ── Sale page specific ── */
+  #pg-sale .g2{grid-template-columns:1fr !important;}
+  .li-box{padding:10px;}
+  .lihead{margin-bottom:8px;}
+  .ittotinp{font-size:16px;width:100%;box-sizing:border-box;}
+  .payrow{padding:10px;}
+
+  /* ── Totals ── */
+  .totpanel{padding:10px 12px;}
+  .trow.big .tval{font-size:16px;}
+
+  /* ── Tabs wrap ── */
+  .tabs{gap:4px;flex-wrap:wrap;}
+  .tab{padding:5px 10px;font-size:11px;}
+
+  /* ── Reports ── */
+  #pg-reports .page-header > div{flex-direction:column;align-items:flex-start;}
+  #pg-reports .page-header > div > div:last-child{display:grid;grid-template-columns:1fr 1fr;gap:4px;width:100%;}
+  #pg-reports .g2{grid-template-columns:1fr !important;}
+  #pg-reports .g3{grid-template-columns:1fr 1fr !important;}
+  .metrics.c4{grid-template-columns:1fr 1fr !important;}
+
+  /* ── Dashboard ── */
+  .dash-grid{grid-template-columns:1fr;}
+  .dash-side{display:none;}
+
+  /* ── Rates/sidebar ── */
+  .rate-chip{padding:2px 6px;font-size:10px;}
+
+  /* ── Bottom nav ── */
+  .botnav{display:flex;position:fixed;bottom:0;left:0;right:0;
+          background:var(--card);border-top:1px solid var(--bdr);
+          z-index:50;padding-bottom:env(safe-area-inset-bottom);}
+  .bni{flex:1;display:flex;flex-direction:column;align-items:center;
+       padding:7px 2px 9px;cursor:pointer;border:none;background:transparent;
+       font-family:inherit;color:var(--tx3);font-size:9px;gap:3px;font-weight:500;
+       -webkit-tap-highlight-color:transparent;}
+  .bni.active{color:var(--gold-dark);}
+  .bni svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+  .bni.active svg{stroke:var(--gold-dark);}
+
+  /* ── Hide scrollbars ── */
+  *{-ms-overflow-style:none;scrollbar-width:none;}
+  *::-webkit-scrollbar{display:none;}
 }
 
 /* ═══════════════════════════════════════
@@ -864,6 +922,25 @@ input:checked+.tslider::before { transform:translateX(17px); }
 .pin-key.zero{grid-column:2;}
 #login-error{text-align:center;color:var(--red);font-size:12px;font-weight:600;min-height:18px;margin-top:8px;}
 
+
+/* ── Working Date (global entry date) ── */
+.working-date-wrap{display:flex;align-items:center;gap:4px;background:rgba(201,152,10,.12);
+  border:1.5px solid rgba(201,152,10,.35);border-radius:8px;padding:3px 6px 3px 8px;margin-left:6px;flex-shrink:0;}
+.working-date-wrap.is-today{background:rgba(255,255,255,.06);border-color:var(--bdr);}
+.wd-label{font-size:13px;line-height:1;flex-shrink:0;}
+.wd-input{background:transparent;border:none;outline:none;font-family:inherit;font-size:12px;
+  font-weight:600;color:var(--gold-light);width:118px;padding:0;cursor:pointer;}
+.working-date-wrap.is-today .wd-input{color:var(--tx2);}
+.wd-clear{background:transparent;border:none;color:rgba(255,255,255,.3);font-size:11px;
+  cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0;}
+.wd-clear:hover{color:var(--red);}
+
+.rpt-date-btns{display:flex;gap:5px;flex-wrap:wrap;}
+.rpt-date-btns .btn{flex:1;min-width:60px;text-align:center;}
+@media(max-width:767px){
+  .rpt-date-btns{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;}
+  .rpt-date-btns .btn{font-size:11px;padding:7px 4px;}
+}
 </style>
 </head>
 <body>
@@ -1030,6 +1107,11 @@ input:checked+.tslider::before { transform:translateX(17px); }
     <div class="topbar-title" id="topbar-title">Dashboard</div>
     <div class="topbar-actions" id="topbar-actions">
       <button class="btn topbar-btn" id="topbar-primary-btn" onclick="topbarAction()" style="display:none"><span>+ New Sale</span></button>
+    </div>
+    <div class="working-date-wrap" id="working-date-wrap" title="Working Date — all entries use this date">
+      <span class="wd-label">&#128197;</span>
+      <input type="date" id="working-date" class="wd-input" onchange="onWorkingDateChange()">
+      <button class="wd-clear" onclick="clearWorkingDate()" title="Reset to today">&#10006;</button>
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin-left:4px">
       <button onclick="setLang(LANG==='en'?'ta':'en')" id="topbar-lang-btn" style="padding:4px 9px;border-radius:7px;border:1.5px solid var(--bdr);background:var(--card);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--tx2);display:none">EN</button>
@@ -1470,7 +1552,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
   <div id="settings-users-tab" style="display:none">
     <div class="card" style="margin-bottom:14px">
       <div class="card-header"><div><div class="card-title">App Users</div><div class="card-sub">Each user has their own gun-lock sequence</div></div><button class="btn btnsm btnog" onclick="openM('m-adduser')">+ Add User</button></div>
-      <div id="users-list"><div class="empty"><div class="etxt">Loading users...</div></div></div>
+      <div id="users-list"></div>
     </div>
     <div class="card"><div class="card-header"><div class="card-title">Roles & Permissions</div></div><div id="roles-list"></div></div>
   </div>
@@ -1480,13 +1562,13 @@ input:checked+.tslider::before { transform:translateX(17px); }
   <div class="page-header">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
       <div><h1>Reports</h1><p>Sales analytics by date, payment mode and metal</p></div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <div class="rpt-date-btns">
         <button class="btn btnsm btnog" onclick="rptSetDate('today')">Today</button>
-        <button class="btn btnsm btnog" onclick="rptSetDate('week')">This Week</button>
-        <button class="btn btnsm btnog" onclick="rptSetDate('month')">This Month</button>
+        <button class="btn btnsm btnog" onclick="rptSetDate('week')">Week</button>
+        <button class="btn btnsm btnog" onclick="rptSetDate('month')">Month</button>
         <button class="btn btnsm btnog" onclick="rptSetDate('fin')">This FY</button>
         <button class="btn btnsm btnog" onclick="rptSetDate('lastfin')">Last FY</button>
-        <button class="btn btnsm btnog" onclick="rptSetDate('year')">This Year</button>
+        <button class="btn btnsm btnog" onclick="rptSetDate('year')">Year</button>
       </div>
     </div>
     <div class="g3" style="margin-top:12px">
@@ -1656,13 +1738,15 @@ input:checked+.tslider::before { transform:translateX(17px); }
   </div>
   <div class="g2" style="align-items:start;gap:16px">
     <div class="card">
-      <div class="card-header">
-        <div><div class="card-title">&#9889; Supabase Connection</div>
-        <div class="card-sub">Credentials loaded from Vercel environment variables</div></div>
-        <button class="btn btnsm" onclick="testConnection()">Test</button>
+      <div class="card-header"><div class="card-title">&#9889; Supabase Connection</div></div>
+      <div class="infobar">Connect to Supabase to sync data across all devices and partners in real-time.</div>
+      <div class="field"><label>Supabase Project URL</label><input type="url" id="cfg-url" placeholder="https://xxxx.supabase.co" value="https://xnrrdmckxfdpeeemuphh.supabase.co"></div>
+      <div class="field"><label>Supabase Anon Key</label><input type="text" id="cfg-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." value="sb_publishable_cLduMsrh35viwkbWBiZwHw_3oUtGsZP"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btng" onclick="saveSupabaseConfig()">&#10003; Save &amp; Connect</button>
+        <button class="btn" onclick="testConnection()">Test Connection</button>
       </div>
-      <div id="cfg-vercel-status"></div>
-      <div id="cfg-status" style="margin-top:8px;font-size:12px"></div>
+      <div id="cfg-status" style="margin-top:10px;font-size:12px"></div>
     </div>
     <div class="card">
       <div class="card-header"><div class="card-title">&#128202; Database Status</div></div>
@@ -1779,8 +1863,8 @@ input:checked+.tslider::before { transform:translateX(17px); }
 
 // ── CONFIG ──
 var CFG = {
-  supabaseUrl: localStorage.getItem('erp_supabase_url') || '',
-  supabaseKey: localStorage.getItem('erp_supabase_key') || '',
+  supabaseUrl: localStorage.getItem('erp_supabase_url') || 'https://xnrrdmckxfdpeeemuphh.supabase.co',
+  supabaseKey: localStorage.getItem('erp_supabase_key') || 'sb_publishable_cLduMsrh35viwkbWBiZwHw_3oUtGsZP',
   useSupabase: true,
   currentUser: null
 };
@@ -1831,21 +1915,6 @@ function doLogin(){
 function showAuth(){var e=G('auth-screen');if(e)e.classList.add('show');}
 
 // ── SUPABASE: 3 simple fetch functions, nothing else ──
-
-function loadEnvConfig(cb){
-  var cached=localStorage.getItem('erp_supabase_url');
-  if(cached){CFG.supabaseUrl=cached;CFG.supabaseKey=localStorage.getItem('erp_supabase_key')||'';}
-  fetch('/api/config')
-    .then(function(r){return r.ok?r.json():null;})
-    .then(function(d){
-      if(d&&d.supabaseUrl){
-        CFG.supabaseUrl=d.supabaseUrl;CFG.supabaseKey=d.supabaseKey||'';
-        localStorage.setItem('erp_supabase_url',d.supabaseUrl);
-        localStorage.setItem('erp_supabase_key',d.supabaseKey||'');
-      }
-      if(cb)cb();
-    }).catch(function(){if(cb)cb();});
-}
 function sbUrl(){return localStorage.getItem('erp_supabase_url')||CFG.supabaseUrl||'';}
 function sbKey(){return localStorage.getItem('erp_supabase_key')||CFG.supabaseKey||'';}
 function sbHasConfig(){return !!(sbUrl()&&sbKey());}
@@ -2519,23 +2588,8 @@ function renderDash(){
 function renderSettings(){
   // Load fresh user data if on users tab
   if(G('settings-users-tab')&&G('settings-users-tab').style.display!=='none')renderUsersTab();
-  // Show Vercel connection status
-  var vs=G('cfg-vercel-status');
-  fetch('/api/config').then(function(r){return r.ok?r.json():null;}).then(function(d){
-    if(!vs)return;
-    if(d&&d.supabaseUrl){
-      var proj=d.supabaseUrl.replace('https://','').split('.')[0];
-      vs.innerHTML='<div style="display:flex;gap:10px;align-items:center;background:var(--gnbg);border:1.5px solid rgba(29,122,58,.25);border-radius:10px;padding:10px 14px;margin-bottom:8px">'+
-        '<span style="font-size:20px">&#10003;</span>'+
-        '<div><div style="font-weight:700;color:var(--grn);font-size:13px">Connected via Vercel Environment Variables</div>'+
-        '<div style="font-size:11px;color:var(--tx3);margin-top:2px">Project: <strong>'+proj+'</strong> &nbsp;&bull;&nbsp; Key: <strong>&#128274; secure (hidden)</strong></div></div></div>';
-    } else {
-      vs.innerHTML='<div style="background:var(--rdbg);border:1.5px solid rgba(192,57,43,.2);border-radius:10px;padding:10px 14px;margin-bottom:8px;font-size:12px;color:var(--red)">'+
-        '&#9888; Vercel env vars not found. Set SUPABASE_URL and SUPABASE_KEY in Vercel &rarr; Settings &rarr; Environment Variables.</div>';
-    }
-  }).catch(function(){
-    if(vs&&sbUrl())vs.innerHTML='<div style="background:rgba(201,152,10,.08);border:1.5px solid rgba(201,152,10,.3);border-radius:10px;padding:10px 14px;margin-bottom:8px;font-size:12px;color:var(--gold-dark)">&#9432; Using cached credentials.</div>';
-  });
+  var ui=G('cfg-url');if(ui)ui.value=sbUrl();
+  var ki=G('cfg-key');if(ki)ki.value=sbKey();
   var total=DB.sales.length+Object.keys(DB.custs).length+Object.keys(DB.sups).length+DB.payments.length;
   var dr=G('db-records');if(dr)dr.textContent=total+' total records';
 }
@@ -3636,8 +3690,8 @@ async function sha256(str){
 }
 
 // ── Login after gun game ──
-function bootApp(){loadEnvConfig(function(){_bootApp();});}
-function _bootApp(){
+function bootApp(){
+  // Boot the real app — user is already identified from gun sequence
   G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');
   G('r18t').textContent='\u20B9'+R.k18.toLocaleString('en-IN');
   G('rsilt').textContent='\u20B9'+R.sil.toLocaleString('en-IN');
@@ -3666,6 +3720,11 @@ function _bootApp(){
   renderDash();
   setTimeout(function(){initSaleForm();},100);
   setTimeout(function(){applyTranslations();},200);
+  // Init working date widget to today
+  var wdEl=G('working-date');
+  if(wdEl){ wdEl.value=new Date().toISOString().split('T')[0]; }
+  var wdWrap=G('working-date-wrap');
+  if(wdWrap) wdWrap.classList.add('is-today');
 }
 
 // ── INIT SUPABASE USERS TABLE ──
@@ -4114,20 +4173,39 @@ function settingsTab(tab, btn){
 
 // ── Render users list in Settings ──
 function renderUsersTab(){
+  // Always show immediately from local USERS — never show loading state
+  var local = USERS.map(function(u){
+    return {username:u.id, display_name:u.name, role_name:u.role,
+            gun_sequence:u.code, is_active:true};
+  });
+  _renderUsersList(local);
+  _renderRolesStatic();
+
+  // Silently refresh from DB if available
   if(sbHasConfig()){
     dbGet('app_users?select=*&order=created_at.asc', function(data, err){
-      if(!err && data) _renderUsersList(data);
+      if(!err && data && data.length) _renderUsersList(data);
     });
-    dbGet('roles?select=*&order=role_name.asc', function(data, err){
-      if(!err && data) _renderRolesList(data);
-    });
-  } else {
-    // Fallback: show hardcoded USERS
-    _renderUsersList(USERS.map(function(u){
-      return {id:u.id, username:u.id, display_name:u.name, role_name:u.role,
-              gun_sequence:u.code, is_active:true};
-    }));
   }
+}
+
+function _renderRolesStatic(){
+  var el=G('roles-list'); if(!el) return;
+  var ROLE_INFO = [
+    {role_name:'admin', display_name:'Administrator',
+     perms:['View Sales','New Sale','Edit Sale','Payments','Cash Flow','Expenses',
+            'Purchase','Metal Flow','Reports','Balance Sheet','Loans','Settings','Manage Users']},
+    {role_name:'staff', display_name:'RSJ Staff',
+     perms:['View Sales','New Sale','Payments']}
+  ];
+  el.innerHTML = ROLE_INFO.map(function(r){
+    return '<div style="margin-bottom:14px">'
+      +'<div style="font-weight:700;margin-bottom:6px">'+r.display_name
+      +' <span class="badge ba" style="font-size:10px">'+r.role_name+'</span></div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:4px">'
+      +r.perms.map(function(p){return '<span class="badge bg" style="font-size:9px">'+p+'</span>';}).join('')
+      +'</div></div>';
+  }).join('<div class="divv"></div>');
 }
 
 function _renderUsersList(users){
@@ -4585,6 +4663,29 @@ function extractProductFromMessage(msg){
   msg=msg.toLowerCase();
   var found=keywords.filter(function(k){return msg.indexOf(k)>=0;});
   return found.length?found.join(', '):'';
+}
+
+// ── WORKING DATE ──────────────────────────────────────────────
+var _workingDate = '';
+
+function td(){
+  return _workingDate || new Date().toISOString().split('T')[0];
+}
+
+function onWorkingDateChange(){
+  var el=G('working-date'), wrap=G('working-date-wrap');
+  _workingDate = el ? el.value : '';
+  var today = new Date().toISOString().split('T')[0];
+  if(wrap){
+    if(!_workingDate || _workingDate===today) wrap.classList.add('is-today');
+    else wrap.classList.remove('is-today');
+  }
+}
+
+function clearWorkingDate(){
+  _workingDate='';
+  var el=G('working-date'); if(el) el.value='';
+  var wrap=G('working-date-wrap'); if(wrap) wrap.classList.add('is-today');
 }
 
 // ── INIT ──
