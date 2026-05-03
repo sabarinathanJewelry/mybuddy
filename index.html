@@ -704,7 +704,6 @@ input:checked+.tslider::before { transform:translateX(17px); }
    RESPONSIVE: MOBILE (<768px)
 ═══════════════════════════════════════ */
 @media (max-width:767px) {
-  /* ── Layout ── */
   .sidebar{position:fixed;left:0;top:0;bottom:60px;transform:translateX(-100%);z-index:200;}
   .sidebar.open{transform:translateX(0);}
   .topbar{padding:0 8px;gap:4px;}
@@ -713,50 +712,32 @@ input:checked+.tslider::before { transform:translateX(17px); }
   .topbar-actions .topbar-btn span{display:none;}
   .topbar-btn{padding:0 8px;height:28px;font-size:11px;}
   .content{padding:10px 10px 74px;}
-
-  /* ── Working Date widget ── */
   .working-date-wrap{margin-left:4px;padding:2px 5px 2px 7px;}
   .wd-input{width:100px;font-size:11px;}
-
-  /* ── All grids → single column ── */
   .g2,.g3,.g4,.g5{grid-template-columns:1fr !important;gap:8px;}
-
-  /* ── Stats ── */
   .stat-grid{grid-template-columns:1fr 1fr;gap:8px;}
   .stat-val{font-size:17px;}
   .stat-card{padding:12px;}
-
-  /* ── Cards ── */
   .card{padding:12px;margin-bottom:10px;}
   .card-title{font-size:13px;}
   .card-sub{font-size:11px;}
   .card-header{flex-wrap:wrap;gap:6px;margin-bottom:10px;}
-
-  /* ── Metrics ── */
   .metrics.c3,.metrics.c4{grid-template-columns:1fr 1fr !important;gap:8px;}
   .met{padding:10px 11px;}
   .mv{font-size:15px;}
   .ml{font-size:9px;}
-
-  /* ── Page headers ── */
   .page-header h1{font-size:18px;}
   .page-header p{font-size:11px;}
-
-  /* ── Forms: 16px prevents iOS zoom ── */
   input,select,textarea{font-size:16px !important;padding:10px 11px;}
   label{font-size:10px;}
   .field{margin-bottom:10px;}
   .btn{font-size:12px;padding:8px 12px;}
   .btnsm{font-size:11px;padding:5px 9px;}
   .btnfull{width:100%;}
-
-  /* ── Tables ── */
   .data-table{font-size:11px;min-width:420px;}
   .data-table th{padding:6px 7px;font-size:9px;}
   .data-table td{padding:7px;}
   div[style*="overflow-x:auto"]{-webkit-overflow-scrolling:touch;}
-
-  /* ── Modals as bottom sheets ── */
   .modal-bg{align-items:flex-end;padding:0;}
   .msheet{border-radius:22px 22px 0 0;padding:0 14px 32px;max-width:100%;
           position:fixed;bottom:0;left:0;right:0;max-height:88vh;overflow-y:auto;
@@ -764,37 +745,21 @@ input:checked+.tslider::before { transform:translateX(17px); }
   .mhandle{display:block;width:40px;height:4px;background:var(--bdr);border-radius:2px;margin:14px auto 14px;}
   .mtitle{font-size:16px;margin-bottom:12px;}
   .mfoot{gap:8px;margin-top:14px;}
-
-  /* ── Sale page specific ── */
   #pg-sale .g2{grid-template-columns:1fr !important;}
   .li-box{padding:10px;}
   .lihead{margin-bottom:8px;}
   .ittotinp{font-size:16px;width:100%;box-sizing:border-box;}
   .payrow{padding:10px;}
-
-  /* ── Totals ── */
   .totpanel{padding:10px 12px;}
   .trow.big .tval{font-size:16px;}
-
-  /* ── Tabs wrap ── */
   .tabs{gap:4px;flex-wrap:wrap;}
   .tab{padding:5px 10px;font-size:11px;}
-
-  /* ── Reports ── */
-  #pg-reports .page-header > div{flex-direction:column;align-items:flex-start;}
-  #pg-reports .page-header > div > div:last-child{display:grid;grid-template-columns:1fr 1fr;gap:4px;width:100%;}
   #pg-reports .g2{grid-template-columns:1fr !important;}
   #pg-reports .g3{grid-template-columns:1fr 1fr !important;}
   .metrics.c4{grid-template-columns:1fr 1fr !important;}
-
-  /* ── Dashboard ── */
   .dash-grid{grid-template-columns:1fr;}
   .dash-side{display:none;}
-
-  /* ── Rates/sidebar ── */
   .rate-chip{padding:2px 6px;font-size:10px;}
-
-  /* ── Bottom nav ── */
   .botnav{display:flex;position:fixed;bottom:0;left:0;right:0;
           background:var(--card);border-top:1px solid var(--bdr);
           z-index:50;padding-bottom:env(safe-area-inset-bottom);}
@@ -805,10 +770,6 @@ input:checked+.tslider::before { transform:translateX(17px); }
   .bni.active{color:var(--gold-dark);}
   .bni svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
   .bni.active svg{stroke:var(--gold-dark);}
-
-  /* ── Hide scrollbars ── */
-  *{-ms-overflow-style:none;scrollbar-width:none;}
-  *::-webkit-scrollbar{display:none;}
 }
 
 /* ═══════════════════════════════════════
@@ -1108,7 +1069,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
     <div class="topbar-actions" id="topbar-actions">
       <button class="btn topbar-btn" id="topbar-primary-btn" onclick="topbarAction()" style="display:none"><span>+ New Sale</span></button>
     </div>
-    <div class="working-date-wrap" id="working-date-wrap" title="Working Date — all entries use this date">
+    <div class="working-date-wrap is-today" id="working-date-wrap" title="Working Date — all entries use this date">
       <span class="wd-label">&#128197;</span>
       <input type="date" id="working-date" class="wd-input" onchange="onWorkingDateChange()">
       <button class="wd-clear" onclick="clearWorkingDate()" title="Reset to today">&#10006;</button>
@@ -1886,7 +1847,30 @@ function G(id){return document.getElementById(id);}
 function V(id){var e=G(id);return e?e.value:'';}
 function N(id){return parseFloat(V(id))||0;}
 function fmt(n){return '\u20B9'+(+n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});}
-function td(){return new Date().toISOString().split('T')[0];}
+
+// ── WORKING DATE ──────────────────────────────────────────────
+var _workingDate = '';
+
+function td(){
+  return _workingDate || new Date().toISOString().split('T')[0];
+}
+
+function onWorkingDateChange(){
+  var el=G('working-date'), wrap=G('working-date-wrap');
+  _workingDate = el ? el.value : '';
+  var today = new Date().toISOString().split('T')[0];
+  if(wrap){
+    if(!_workingDate || _workingDate===today) wrap.classList.add('is-today');
+    else wrap.classList.remove('is-today');
+  }
+}
+
+function clearWorkingDate(){
+  _workingDate='';
+  var el=G('working-date'); if(el) el.value='';
+  var wrap=G('working-date-wrap'); if(wrap) wrap.classList.add('is-today');
+}
+
 function uid(){
   if(typeof crypto!=='undefined'&&crypto.randomUUID)return crypto.randomUUID();
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){
@@ -3487,8 +3471,11 @@ function getCustCredit(custId){
     var byName=(!p.cid||p.cid===''||p.cid===null)&&custName&&p.customer===custName;
     if(!byId&&!byName)return;
     switch(p.type){
-      case 'in':case 'advance':case 'oldgold-adv':case 'old_gold_advance':case 'chit_credit':
+      case 'in':case 'advance':case 'oldgold-adv':case 'old_gold_advance':
         credit+=p.amt; break;
+      case 'chit_bonus':  credit+=p.amt; break;   // cash credit
+      case 'chit_metal':  break;                   // metal liability — tracked separately, not cash credit
+      case 'chit_credit': credit+=p.amt; break;    // legacy
       // advance_used kept for compatibility but sale-level tracking is primary
       case 'advance_used': break; // handled via sale pays below — skip to avoid double count
       case 'out':   credit-=p.amt; break;
@@ -3603,42 +3590,140 @@ function chCustLookup(){
 
 function onChType(){
   var type=V('ch-type');
-  G('ch-cash-row').style.display=type==='bonus'?'':'none';
-  G('ch-wt-row').style.display=type==='weight'?'':'none';
+  // Show/hide sub-sections
+  var moneyRow=G('ch-money-row'), metalRow=G('ch-metal-row'), sgRow=G('ch-sg-row');
+  if(moneyRow) moneyRow.style.display = type==='money'  ? '' : 'none';
+  if(metalRow) metalRow.style.display = type==='metal'  ? '' : 'none';
+  if(sgRow)    sgRow.style.display    = type==='smartgold' ? '' : 'none';
+  // Auto-fill rates
+  if(type==='metal'){
+    var r=G('ch-cm-rate'); if(r&&!r.value) r.value=R.k22.toFixed(2);
+  }
+  if(type==='smartgold'){
+    var r2=G('ch-sg-rate'); if(r2&&!r2.value) r2.value=R.k22.toFixed(2);
+  }
+}
+
+// Chit Metal: ₹ → grams
+function chCalcMetalWeight(){
+  var metal=V('ch-cm-metal')||'Gold';
+  var rate=N('ch-cm-rate')||(metal==='Gold'?R.k22:R.sil);
+  var r=G('ch-cm-rate'); if(r&&!r.value) r.value=rate.toFixed(2);
+  var amt=N('ch-cm-amt');
+  var wt=rate>0?amt/rate:0;
+  var we=G('ch-cm-wt'); if(we) we.value=wt>0?wt.toFixed(3):'';
+}
+
+// Smart Gold: gross weight → pure weight
+function chCalcSmartGold(){
+  var metal=V('ch-sg-metal')||'Gold';
+  var purity=parseFloat(V('ch-sg-purity')||'0.9167');
+  var rate=N('ch-sg-rate')||(metal==='Gold'?R.k22:R.sil);
+  var r=G('ch-sg-rate'); if(r&&!r.value) r.value=rate.toFixed(2);
+  var gross=N('ch-sg-gross');
+  var pure=gross*purity;
+  var val=pure*rate;
+  var pe=G('ch-sg-pure'); if(pe) pe.value=pure>0?pure.toFixed(3):'';
+  // Update display
+  var dg=G('ch-sg-d-gross'); if(dg) dg.textContent=gross.toFixed(3)+'g';
+  var dp=G('ch-sg-d-pure');  if(dp) dp.textContent=pure.toFixed(3)+'g';
+  var dv=G('ch-sg-d-val');   if(dv) dv.textContent=fmt(val);
 }
 
 function chCalcVal(){var metal=V('ch-metal'),wt=N('ch-wt');var re2=G('ch-rate');var rate=N('ch-rate')||(metal==='Gold'?R.k22:R.sil);if(re2&&!re2.value)re2.value=rate.toFixed(2);var val=wt*rate;var ve=G('ch-val');if(ve&&!ve._edited)ve.value=val.toFixed(2);}
 
 function saveChitEntry(){
-  var custId=V('ch-cid'),custName=V('ch-cname').trim();
+  var custId=V('ch-cid'), custName=V('ch-cname').trim();
   if(!custName){alert('Search for the customer first.');return;}
-  var type=V('ch-type'),date=V('ch-date')||td(),ref=V('ch-ref');
-  var amt=0;
-  if(type==='bonus'){
-    amt=N('ch-amt');
-    if(!amt){alert('Enter chit bonus amount.');return;}
-    DB.cashLog.push({type:'in',date:date,amount:amt,desc:'Chit Bonus: '+custName,src:'chit'});
-    dbSaveCashEntry('in',date,amt,'Chit Bonus: '+custName,'chit');
-  } else {
-    var wt=N('ch-wt'),metal=V('ch-metal');
-    amt=N('ch-val')||wt*(metal==='Gold'?R.k22:R.sil);
-    if(!wt){alert('Enter weight.');return;}
-    var omItem={id:uid(),metal:metal,wt:wt,val:amt,date:date,src:'Chit: '+custName,batched:false};
-    DB.oldMetal.push(omItem);dbSaveOldMetal(omItem);
+  var type=V('ch-type'), date=V('ch-date')||td(), ref=V('ch-ref');
+
+  // ── CHIT MONEY ──────────────────────────────────────────────
+  if(type==='money'){
+    var amt=N('ch-amt');
+    if(!amt){alert('Enter amount.');return;}
+    // Cash received by shop
+    DB.cashLog.push({type:'in',date:date,amount:amt,desc:'Chit Money from '+custName,src:'chit'});
+    dbSaveCashEntry('in',date,amt,'Chit Money from '+custName,'chit');
+    // Customer gets cash credit
+    var py={id:uid(),cid:custId,customer:custName,type:'chit_bonus',
+      amt:amt,mode:'Chit Money',date:date,
+      note:'Chit money lent to shop'+(ref?' — '+ref:'')};
+    DB.payments.unshift(py);
+    dbSavePayment(py);
+    _chitClear();
+    closeM('m-chit'); renderPayments(); renderCashFlow();
+    alert('\u2713 Chit Money! '+custName+' credited: '+fmt(amt));
   }
-  var py={id:uid(),cid:custId,customer:custName,type:'chit_credit',amt:amt,
-    mode:type==='bonus'?'Chit Bonus':'Chit Weight',date:date,
-    note:(type==='bonus'?'Bonus':'Weight '+N('ch-wt').toFixed(3)+'g')+(ref?' - '+ref:'')};
-  DB.payments.unshift(py);
-  dbSavePayment(py);
-  // Clear form
-  var fields=['ch-phone','ch-amt','ch-wt','ch-val','ch-ref'];
-  fields.forEach(function(id){var e=G(id);if(e)e.value='';});
+
+  // ── CHIT METAL ──────────────────────────────────────────────
+  // Customer pays ₹, we owe them metal. NO physical gold movement.
+  else if(type==='metal'){
+    var cmAmt=N('ch-cm-amt'), cmWt=N('ch-cm-wt');
+    var metal=V('ch-cm-metal')||'Gold', rate=N('ch-cm-rate');
+    if(!cmAmt){alert('Enter the amount paid.');return;}
+    if(!cmWt||cmWt<=0){alert('Metal weight not calculated. Enter amount and rate.');return;}
+    // Cash received
+    DB.cashLog.push({type:'in',date:date,amount:cmAmt,desc:'Chit Metal from '+custName+' '+cmWt.toFixed(3)+'g '+metal,src:'chit'});
+    dbSaveCashEntry('in',date,cmAmt,'Chit Metal from '+custName,'chit');
+    // Customer gets METAL credit (liability - we owe them this weight)
+    // Stored as chit_metal type - NOT in batch pool
+    var py={id:uid(),cid:custId,customer:custName,type:'chit_metal',
+      amt:cmAmt,                  // cash value
+      metal_wt:cmWt,              // grams credited
+      metal_type:metal,
+      rate_used:rate,
+      mode:'Chit Metal',date:date,
+      note:cmWt.toFixed(3)+'g '+metal+' @ ₹'+rate.toFixed(0)+'/g'+(ref?' — '+ref:'')};
+    DB.payments.unshift(py);
+    dbSavePayment(py);
+    _chitClear();
+    closeM('m-chit'); renderPayments(); renderCashFlow();
+    alert('\u2713 Chit Metal! '+cmWt.toFixed(3)+'g '+metal+' credited to customer (liability)');
+  }
+
+  // ── SMART GOLD ─────────────────────────────────────────────
+  // Customer gives physical old gold. Gross → batch pool. Pure wt → customer account.
+  else if(type==='smartgold'){
+    var gross=N('ch-sg-gross'), pure=N('ch-sg-pure');
+    var sgMetal=V('ch-sg-metal')||'Gold', sgRate=N('ch-sg-rate');
+    var purity=parseFloat(V('ch-sg-purity')||'0.9167');
+    if(!gross){alert('Enter the gross weight.');return;}
+    if(!pure||pure<=0){alert('Pure weight not calculated.');return;}
+    var metalVal=pure*sgRate;
+
+    // Physical metal → unbatched pool (gross weight received)
+    var omItem={id:uid(),metal:sgMetal,wt:gross,pure:pure,val:metalVal,date:date,
+      src:'Smart Gold from '+custName+' ('+gross.toFixed(3)+'g @ '+Math.round(purity*100)+'%)',
+      batched:false};
+    DB.oldMetal.push(omItem);
+    dbSaveOldMetal(omItem);
+    var du=G('ds-unbat');
+    if(du)du.textContent=DB.oldMetal.filter(function(i){return!i.batched;}).length;
+
+    // Customer account → credited with PURE weight as metal liability
+    var py={id:uid(),cid:custId,customer:custName,type:'chit_metal',
+      amt:metalVal,          // cash value of pure gold
+      metal_wt:pure,         // pure grams credited to customer
+      metal_type:sgMetal,
+      gross_wt:gross,        // physical gold received
+      purity:purity,
+      rate_used:sgRate,
+      mode:'Smart Gold',date:date,
+      note:'Received '+gross.toFixed(3)+'g, '+Math.round(purity*100)+'% pure = '+pure.toFixed(3)+'g credited'+(ref?' — '+ref:'')};
+    DB.payments.unshift(py);
+    dbSavePayment(py);
+    _chitClear();
+    closeM('m-chit'); renderPayments(); renderDash(); renderCashFlow();
+    alert('\u2713 Smart Gold! '+gross.toFixed(3)+'g received | Customer credited: '+pure.toFixed(3)+'g '+sgMetal);
+  }
+}
+
+function _chitClear(){
+  ['ch-phone','ch-amt','ch-cm-amt','ch-cm-wt','ch-cm-rate',
+   'ch-sg-gross','ch-sg-pure','ch-sg-rate','ch-ref'].forEach(function(id){
+    var e=G(id);if(e)e.value='';
+  });
   G('ch-cid').value='';G('ch-cname').value='';G('ch-cust-res').innerHTML='';
-  var cv=G('ch-val');if(cv)cv._edited=false;
-  var cr=G('ch-rate');if(cr)cr.value='';
-  closeM('m-chit');renderPayments();renderCashFlow();renderDash();
-  alert('\u2713 Chit entry saved!\n'+custName+' credited: '+fmt(amt));
 }
 
 var _editPayIdx=null;
@@ -3720,9 +3805,9 @@ function bootApp(){
   renderDash();
   setTimeout(function(){initSaleForm();},100);
   setTimeout(function(){applyTranslations();},200);
-  // Init working date widget to today
+  // Init working date widget
   var wdEl=G('working-date');
-  if(wdEl){ wdEl.value=new Date().toISOString().split('T')[0]; }
+  if(wdEl) wdEl.value=new Date().toISOString().split('T')[0];
   var wdWrap=G('working-date-wrap');
   if(wdWrap) wdWrap.classList.add('is-today');
 }
@@ -4173,39 +4258,18 @@ function settingsTab(tab, btn){
 
 // ── Render users list in Settings ──
 function renderUsersTab(){
-  // Always show immediately from local USERS — never show loading state
-  var local = USERS.map(function(u){
+  // Always show immediately from local USERS — no Loading... state
+  _renderUsersList(USERS.map(function(u){
     return {username:u.id, display_name:u.name, role_name:u.role,
             gun_sequence:u.code, is_active:true};
-  });
-  _renderUsersList(local);
+  }));
   _renderRolesStatic();
-
-  // Silently refresh from DB if available
+  // Silently refresh from DB in background
   if(sbHasConfig()){
     dbGet('app_users?select=*&order=created_at.asc', function(data, err){
       if(!err && data && data.length) _renderUsersList(data);
     });
   }
-}
-
-function _renderRolesStatic(){
-  var el=G('roles-list'); if(!el) return;
-  var ROLE_INFO = [
-    {role_name:'admin', display_name:'Administrator',
-     perms:['View Sales','New Sale','Edit Sale','Payments','Cash Flow','Expenses',
-            'Purchase','Metal Flow','Reports','Balance Sheet','Loans','Settings','Manage Users']},
-    {role_name:'staff', display_name:'RSJ Staff',
-     perms:['View Sales','New Sale','Payments']}
-  ];
-  el.innerHTML = ROLE_INFO.map(function(r){
-    return '<div style="margin-bottom:14px">'
-      +'<div style="font-weight:700;margin-bottom:6px">'+r.display_name
-      +' <span class="badge ba" style="font-size:10px">'+r.role_name+'</span></div>'
-      +'<div style="display:flex;flex-wrap:wrap;gap:4px">'
-      +r.perms.map(function(p){return '<span class="badge bg" style="font-size:9px">'+p+'</span>';}).join('')
-      +'</div></div>';
-  }).join('<div class="divv"></div>');
 }
 
 function _renderUsersList(users){
@@ -4229,6 +4293,25 @@ function _renderUsersList(users){
     +'</tbody></table></div>';
 }
 
+
+function _renderRolesStatic(){
+  var el=G('roles-list'); if(!el) return;
+  var ROLE_INFO = [
+    {role_name:'admin', display_name:'Administrator',
+     perms:['View Sales','New Sale','Edit Sale','Payments','Cash Flow','Expenses',
+            'Purchase','Metal Flow','Reports','Balance Sheet','Loans','Settings','Manage Users']},
+    {role_name:'staff', display_name:'RSJ Staff',
+     perms:['View Sales','New Sale','Payments']}
+  ];
+  el.innerHTML = ROLE_INFO.map(function(r){
+    return '<div style="margin-bottom:14px">'
+      +'<div style="font-weight:700;margin-bottom:6px">'+r.display_name
+      +' <span class="badge ba" style="font-size:10px">'+r.role_name+'</span></div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:4px">'
+      +r.perms.map(function(p){return '<span class="badge bg" style="font-size:9px">'+p+'</span>';}).join('')
+      +'</div></div>';
+  }).join('<div class="divv"></div>');
+}
 function _renderRolesList(roles){
   var t = G('roles-list'); if(!t) return;
   var permLabels = {
@@ -4665,29 +4748,6 @@ function extractProductFromMessage(msg){
   return found.length?found.join(', '):'';
 }
 
-// ── WORKING DATE ──────────────────────────────────────────────
-var _workingDate = '';
-
-function td(){
-  return _workingDate || new Date().toISOString().split('T')[0];
-}
-
-function onWorkingDateChange(){
-  var el=G('working-date'), wrap=G('working-date-wrap');
-  _workingDate = el ? el.value : '';
-  var today = new Date().toISOString().split('T')[0];
-  if(wrap){
-    if(!_workingDate || _workingDate===today) wrap.classList.add('is-today');
-    else wrap.classList.remove('is-today');
-  }
-}
-
-function clearWorkingDate(){
-  _workingDate='';
-  var el=G('working-date'); if(el) el.value='';
-  var wrap=G('working-date-wrap'); if(wrap) wrap.classList.add('is-today');
-}
-
 // ── INIT ──
 ['ex-date','pu-date','cob-date','ce-date','st-date','or-date','cp-date','spy-date','og-date','ch-date'].forEach(function(id){var e=G(id);if(e)e.value=td();});
 var sd=G('s-date');if(sd)sd.value=td();
@@ -4703,55 +4763,114 @@ gunInit();
 setLang(LANG);
 </script>
 
-<div class="modal-bg" id="m-chit"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#127914; Chit Entry for Customer</div>
-  <div class="infobar" style="margin-bottom:12px">Record chit bonus received or chit weight received on behalf of a customer. Adds to their advance credit.</div>
-  <div class="field"><label>Customer Phone</label>
-    <input type="tel" id="ch-phone" maxlength="10" inputmode="numeric" oninput="chCustLookup()">
-    <div id="ch-cust-res" style="margin-top:6px"></div>
-    <input type="hidden" id="ch-cid"><input type="hidden" id="ch-cname">
+<div class="modal-bg" id="m-chit"><div class="msheet"><div class="mhandle"></div>
+<div class="mtitle">&#127914; Chit Entry</div>
+
+<div class="field"><label>Customer Phone</label>
+  <input type="tel" id="ch-phone" maxlength="10" inputmode="numeric" oninput="chCustLookup()">
+  <div id="ch-cust-res" style="margin-top:6px"></div>
+  <input type="hidden" id="ch-cid"><input type="hidden" id="ch-cname">
+</div>
+
+<div class="g2">
+  <div class="field"><label>Chit Type</label>
+    <select id="ch-type" onchange="onChType()">
+      <option value="money">&#128176; Chit Money — Customer lends cash to shop</option>
+      <option value="metal">&#129680; Chit Metal — Customer pays &#8377;, gets metal credit</option>
+      <option value="smartgold">&#129760; Smart Gold — Customer gives physical old gold</option>
+    </select>
   </div>
-  <div class="g2">
-    <div class="field"><label>Chit Type</label>
-      <select id="ch-type" onchange="onChType()">
-        <option value="bonus">Chit Bonus (Cash &#8377;)</option>
-        <option value="weight">Chit Weight (Gold/Silver)</option>
+  <div class="field"><label>Date</label><input type="date" id="ch-date"></div>
+</div>
+
+<!-- CHIT MONEY -->
+<div id="ch-money-row">
+  <div class="infobar" style="font-size:11px;margin-bottom:10px">
+    &#128176; Customer lends cash to us. Stored as advance credit. Deducted when they buy.
+  </div>
+  <div class="field"><label>Amount (&#8377;)</label>
+    <input type="number" id="ch-amt" step="0.01" inputmode="decimal" placeholder="e.g. 5000">
+  </div>
+</div>
+
+<!-- CHIT METAL -->
+<div id="ch-metal-row" style="display:none">
+  <div class="infobar" style="font-size:11px;margin-bottom:10px">
+    &#129680; Customer pays &#8377;, converted to metal weight at today&#39;s rate. <strong>We owe them this metal.</strong>
+    No physical gold moves — metal balance deducted when they buy from us.
+  </div>
+  <div class="g2" style="margin-bottom:8px">
+    <div class="field"><label>Metal</label>
+      <select id="ch-cm-metal" onchange="chCalcMetalWeight()">
+        <option value="Gold">Gold (22K)</option><option value="Silver">Silver</option>
       </select>
     </div>
-    <div class="field"><label>Date</label><input type="date" id="ch-date"></div>
-  </div>
-  <div id="ch-cash-row">
-    <div class="field"><label>Bonus Amount (&#8377;)</label>
-      <input type="number" id="ch-amt" step="0.01" inputmode="decimal" placeholder="e.g. 5000">
+    <div class="field"><label>Rate &#8377;/g</label>
+      <input type="number" id="ch-cm-rate" step="0.01" inputmode="decimal" oninput="chCalcMetalWeight()" placeholder="Auto from board rate">
     </div>
   </div>
-  <div id="ch-wt-row" style="display:none">
-    <div class="g2" style="margin-bottom:8px">
-      <div class="field"><label>Metal</label>
-        <select id="ch-metal" onchange="chCalcVal()">
-          <option>Gold</option><option>Silver</option>
-        </select>
-      </div>
-      <div class="field"><label>Rate &#8377;/g <span style="color:var(--tx3);font-weight:400">(auto)</span></label>
-        <input type="number" id="ch-rate" step="0.01" inputmode="decimal" oninput="chCalcVal()" placeholder="Auto from board rate">
-      </div>
+  <div class="g2">
+    <div class="field"><label>Amount Paid (&#8377;)</label>
+      <input type="number" id="ch-cm-amt" step="0.01" inputmode="decimal" oninput="chCalcMetalWeight()" placeholder="e.g. 2000">
     </div>
-    <div class="g2">
-      <div class="field"><label>Weight (g)</label>
-        <input type="number" id="ch-wt" step="0.001" inputmode="decimal" placeholder="e.g. 4.500" oninput="chCalcVal()">
-      </div>
-      <div class="field"><label>Value (&#8377;) &mdash; editable</label>
-        <input type="number" id="ch-val" step="0.01" inputmode="decimal" class="igold" oninput="this._edited=true">
-      </div>
+    <div class="field"><label>Metal Credit (g) — auto</label>
+      <input type="number" id="ch-cm-wt" step="0.001" inputmode="decimal" readonly class="igold" placeholder="Auto-calculated">
     </div>
-    <div class="warnbar" style="font-size:11px">&#9432; Metal goes to Unbatched Pool &#8594; Metal Flow &#8594; Batch tab</div>
   </div>
-  <div class="field"><label>Chit No / Reference</label>
-    <input type="text" id="ch-ref" placeholder="Chit number, group name...">
+</div>
+
+<!-- SMART GOLD -->
+<div id="ch-sg-row" style="display:none">
+  <div class="infobar" style="font-size:11px;margin-bottom:10px">
+    &#129760; Customer gives physical old gold. Assessed at purity.<br>
+    <strong>Physical gold</strong> goes to Unbatched Pool (batch &rarr; refinery).<br>
+    <strong>Customer account</strong> gets credited with pure weight.
   </div>
-  <div class="mfoot">
-    <button class="btn" onclick="closeM('m-chit')">Cancel</button>
-    <button class="btn btng" onclick="saveChitEntry()">&#10003; Save Chit Entry</button>
+  <div class="g2" style="margin-bottom:8px">
+    <div class="field"><label>Metal</label>
+      <select id="ch-sg-metal" onchange="chCalcSmartGold()">
+        <option value="Gold">Gold</option><option value="Silver">Silver</option>
+      </select>
+    </div>
+    <div class="field"><label>Purity</label>
+      <select id="ch-sg-purity" onchange="chCalcSmartGold()">
+        <option value="0.9167">22K (91.67%)</option>
+        <option value="1">Pure 999</option>
+        <option value="0.75">18K (75%)</option>
+        <option value="0.8">20K (80%)</option>
+        <option value="0.585">14K (58.5%)</option>
+      </select>
+    </div>
   </div>
+  <div class="g3">
+    <div class="field"><label>Gross Weight (g)</label>
+      <input type="number" id="ch-sg-gross" step="0.001" inputmode="decimal" placeholder="e.g. 18.000" oninput="chCalcSmartGold()">
+    </div>
+    <div class="field"><label>Pure Weight (g) — credited</label>
+      <input type="number" id="ch-sg-pure" step="0.001" inputmode="decimal" readonly class="igold" placeholder="Auto">
+    </div>
+    <div class="field"><label>Rate &#8377;/g</label>
+      <input type="number" id="ch-sg-rate" step="0.01" inputmode="decimal" oninput="chCalcSmartGold()" placeholder="Auto">
+    </div>
+  </div>
+  <div class="totpanel" style="margin-top:8px;margin-bottom:4px">
+    <div class="trow"><span class="tlbl">Gross Weight</span><span class="tval" id="ch-sg-d-gross">0.000g</span></div>
+    <div class="trow"><span class="tlbl">Pure Weight (credited to customer)</span><span class="tval" id="ch-sg-d-pure" style="color:var(--grn)">0.000g</span></div>
+    <div class="trow big"><span class="tlbl">Metal Value</span><span class="tval" id="ch-sg-d-val">&#8377;0</span></div>
+  </div>
+  <div style="background:var(--gnbg);border:1.5px solid rgba(29,122,58,.3);border-radius:9px;padding:8px 12px;font-size:11px;color:var(--grn);margin-top:6px">
+    &#10003; <strong>Gross weight</strong> goes to Unbatched Pool (physical metal received)<br>
+    &#10003; <strong>Pure weight</strong> credited to customer account (metal they can spend)
+  </div>
+</div>
+
+<div class="field" style="margin-top:12px"><label>Chit No / Reference</label>
+  <input type="text" id="ch-ref" placeholder="Chit number, group name...">
+</div>
+<div class="mfoot">
+  <button class="btn" onclick="closeM('m-chit')">Cancel</button>
+  <button class="btn btng" onclick="saveChitEntry()">&#10003; Save</button>
+</div>
 </div></div>
 <div class="modal-bg" id="m-editpay"><div class="msheet"><div class="mhandle"></div><div class="mtitle">Edit Payment</div><div class="g2"><div class="field"><label>Customer</label><input type="text" id="ep-customer" readonly style="background:var(--bg)"></div><div class="field"><label>Type</label><input type="text" id="ep-type" readonly style="background:var(--bg)"></div></div><div class="g2"><div class="field"><label>Date</label><input type="date" id="ep-date"></div><div class="field"><label>Amount (&#8377;)</label><input type="number" id="ep-amt" step="0.01" inputmode="decimal"></div></div><div class="field"><label>Mode</label><input type="text" id="ep-mode"></div><div class="field"><label>Note</label><input type="text" id="ep-note"></div><div class="mfoot"><button class="btn" onclick="closeM('m-editpay')">Cancel</button><button class="btn btng" onclick="saveEditPay()">Save</button></div></div></div>
 <div class="modal-bg" id="m-editcust"><div class="msheet"><div class="mhandle"></div><div class="mtitle">Edit Customer</div><div class="g2"><div class="field"><label>Name</label><input type="text" id="ec-name"></div><div class="field"><label>Phone</label><input type="tel" id="ec-phone" maxlength="10" inputmode="numeric"></div></div><div class="g2"><div class="field"><label>City</label><input type="text" id="ec-city"></div><div class="field"><label>Anniversary</label><input type="date" id="ec-anni"></div></div><div class="g2"><div class="field"><label>Opening Balance (&#8377;)</label><input type="number" id="ec-ob" inputmode="decimal"></div><div class="field"><label>Notes</label><input type="text" id="ec-notes"></div></div><div class="mfoot"><button class="btn" onclick="closeM('m-editcust')">Cancel</button><button class="btn btng" onclick="saveEditCust()">Save</button></div></div></div>
