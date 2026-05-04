@@ -5452,6 +5452,55 @@ setLang(LANG);
     <button class="btn btng" onclick="saveFollowUp()">&#10003; Log &amp; Update</button>
   </div>
 </div></div>
+<script>
+// ===== SAFE WRAPPER FOR saveToDB =====
 
+(function () {
+
+  // Wait until original function exists
+  const wait = setInterval(() => {
+    if (typeof window.saveToDB === "function") {
+
+      clearInterval(wait);
+
+      const originalSave = window.saveToDB;
+
+      window.saveToDB = function (data) {
+
+        try {
+          let ex = window.__exchangeData || {};
+
+          let enhancedData = {
+            ...data,
+
+            // Add only if available (no override risk)
+            oldGold: ex.oldGold ?? data.oldGold ?? 0,
+            payable: ex.payable ?? data.payable ?? 0,
+            excess: ex.excess ?? data.excess ?? 0,
+
+            cashOut: ex.excess > 0 ? ex.excess : (data.cashOut || 0),
+            advance: data.advance || 0,
+
+            paymentType: window.isPreviousFY ? "adjustment" : (data.paymentType || "payment"),
+            paymentTag: window.isPreviousFY ? "previous_fy" : (data.paymentTag || null)
+          };
+
+          console.log("SAFE SAVE:", enhancedData);
+
+          return originalSave(enhancedData);
+
+        } catch (e) {
+          console.error("Wrapper error, fallback to original", e);
+          return originalSave(data);
+        }
+      };
+
+      console.log("saveToDB safely wrapped ✅");
+
+    }
+  }, 200);
+
+})();
+</script>
 </body>
 </html>
