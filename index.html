@@ -1482,8 +1482,8 @@ input:checked+.tslider::before { transform:translateX(17px); }
   <div class="g2" style="align-items:start;gap:16px">
     <div class="card"><div class="card-header"><div class="card-title">All Suppliers</div></div><div id="sup-list"><div class="empty"><div class="etxt">No suppliers</div></div></div></div>
     <div class="card" id="sl-panel" style="display:none">
-      <div class="card-header"><div><div class="card-title">Ledger: <span id="sl-name" style="color:var(--gold-dark)"></span></div></div><div style="display:flex;gap:8px"><button class="btn btnsm btng" onclick="openM('m-settle')">Settle</button><button class="btn btnsm btnd" onclick="document.getElementById('sl-panel').style.display='none'">Close</button></div></div>
-      <div class="metrics c3" style="margin-bottom:12px"><div class="met"><div class="ml">Debit</div><div class="mv r" id="sl-dr">&#8377;0</div></div><div class="met"><div class="ml">Credit</div><div class="mv g" id="sl-cr">&#8377;0</div></div><div class="met"><div class="ml">Balance</div><div class="mv a" id="sl-net">&#8377;0</div></div></div>
+      <div class="card-header"><div><div class="card-title">Ledger: <span id="sl-name" style="color:var(--gold-dark)"></span></div></div><div style="display:flex;gap:8px"><button class="btn btnsm btng" onclick="openSettleModal()">Settle</button><button class="btn btnsm btnd" onclick="document.getElementById('sl-panel').style.display='none'">Close</button></div></div>
+      <div class="metrics c3" style="margin-bottom:12px"><div class="met"><div class="ml">Metal Balance</div><div class="mv r" id="sl-dr">0g</div></div><div class="met"><div class="ml">&#8377; Value</div><div class="mv g" id="sl-cr">&#8377;0</div></div><div class="met"><div class="ml">Net Owed</div><div class="mv a" id="sl-net">&#8377;0</div></div></div>
       <div id="sl-table" style="overflow-x:auto"></div>
     </div>
   </div>
@@ -1700,9 +1700,9 @@ input:checked+.tslider::before { transform:translateX(17px); }
   <div class="g2" style="align-items:start;gap:16px">
     <div class="card">
       <div class="card-header"><div class="card-title">&#9889; Supabase Connection</div></div>
-      <div class="infobar">Connect to Supabase to sync data across all devices and partners in real-time.</div>
-      <div class="field"><label>Supabase Project URL</label><input type="url" id="cfg-url" placeholder="https://xxxx.supabase.co" value="https://xnrrdmckxfdpeeemuphh.supabase.co"></div>
-      <div class="field"><label>Supabase Anon Key</label><input type="text" id="cfg-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." value="sb_publishable_cLduMsrh35viwkbWBiZwHw_3oUtGsZP"></div>
+      <div id="cfg-vercel-status"></div>
+      <div class="field"><label>Supabase Project URL</label><input type="url" id="cfg-url" placeholder="https://xxxx.supabase.co" ></div>
+      <div class="field"><label>Supabase Anon Key</label><input type="text" id="cfg-key" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." ></div>
       <div style="display:flex;gap:8px">
         <button class="btn btng" onclick="saveSupabaseConfig()">&#10003; Save &amp; Connect</button>
         <button class="btn" onclick="testConnection()">Test Connection</button>
@@ -1747,9 +1747,52 @@ input:checked+.tslider::before { transform:translateX(17px); }
 
 <div class="modal-bg" id="m-cust"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128101; Add Customer</div><div class="g2"><div class="field"><label>Full Name *</label><input type="text" id="cm-name"></div><div class="field"><label>Phone *</label><input type="tel" id="cm-phone" maxlength="10" inputmode="numeric"></div></div><div class="g2"><div class="field"><label>City</label><input type="text" id="cm-city"></div><div class="field"><label>Anniversary</label><input type="date" id="cm-anni"></div></div><div class="field"><label>Opening Balance (&#8377;)</label><input type="number" id="cm-ob" inputmode="decimal" placeholder="0.00"></div><div class="field"><label>Notes</label><input type="text" id="cm-notes"></div><div class="mfoot"><button class="btn" onclick="closeM('m-cust')">Cancel</button><button class="btn btng" onclick="saveCust()">Save Customer</button></div></div></div>
 
-<div class="modal-bg" id="m-sup"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#127970; Add Supplier</div><div class="field"><label>Supplier Name *</label><input type="text" id="sm-name"></div><div class="g2"><div class="field"><label>Phone</label><input type="tel" id="sm-phone"></div><div class="field"><label>Metal Type</label><select id="sm-metal"><option>Gold</option><option>Silver</option><option>Diamond</option><option>Mixed</option></select></div></div><div class="field"><label>Opening Balance (&#8377;) — you owe them</label><input type="number" id="sm-ob" inputmode="decimal" placeholder="0.00"></div><div class="mfoot"><button class="btn" onclick="closeM('m-sup')">Cancel</button><button class="btn btng" onclick="saveSup()">Save Supplier</button></div></div></div>
+<div class="modal-bg" id="m-sup"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#127970; Add Supplier</div>
+<div class="field"><label>Supplier Name *</label><input type="text" id="sm-name"></div>
+<div class="g2">
+  <div class="field"><label>Phone</label><input type="tel" id="sm-phone"></div>
+  <div class="field"><label>Metal Type</label><select id="sm-metal"><option>Gold</option><option>Silver</option><option>Diamond</option><option>Mixed</option></select></div>
+</div>
+<div class="g2">
+  <div class="field"><label>Opening Balance (grams) — metal we owe them</label><input type="number" id="sm-ob-grams" step="0.001" inputmode="decimal" placeholder="0.000"></div>
+  <div class="field"><label>Rate &#8377;/g at opening</label><input type="number" id="sm-ob-rate" step="0.01" inputmode="decimal" placeholder="Current rate"></div>
+</div>
+<div class="warnbar" style="font-size:11px">&#9432; Enter opening balance in <strong>grams</strong> of metal owed to this supplier, not in &#8377;. The &#8377; value will be calculated at the rate you enter.</div>
+<div class="mfoot"><button class="btn" onclick="closeM('m-sup')">Cancel</button><button class="btn btng" onclick="saveSup()">Save Supplier</button></div>
+</div></div>
 
-<div class="modal-bg" id="m-settle"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128179; Settle Supplier</div><div class="field"><label>Settlement Mode</label><select id="st-mode"><option>Cash</option><option>Bank Transfer / RTGS</option><option>Physical Gold (g)</option><option>Physical Silver (g)</option></select></div><div class="g2"><div class="field"><label>Amount / Weight</label><input type="number" id="st-amt" step="0.001" inputmode="decimal"></div><div class="field"><label>Rate &#8377;/g (if metal)</label><input type="number" id="st-rate" inputmode="decimal"></div></div><div class="g2"><div class="field"><label>Date</label><input type="date" id="st-date"></div><div class="field"><label>Reference</label><input type="text" id="st-ref"></div></div><div class="mfoot"><button class="btn" onclick="closeM('m-settle')">Cancel</button><button class="btn btng" onclick="saveSettle()">Record Settlement</button></div></div></div>
+<div class="modal-bg" id="m-settle"><div class="msheet"><div class="mhandle"></div>
+<div class="mtitle">&#128179; Settle Supplier — <span id="st-sup-name" style="color:var(--gold-dark)"></span></div>
+<div class="infobar" style="font-size:11px;margin-bottom:12px">
+  Current balance: <strong id="st-cur-grams">0.000g</strong> metal &nbsp;&bull;&nbsp; <strong id="st-cur-val">&#8377;0</strong>
+</div>
+<div class="g2">
+  <div class="field"><label>Grams being settled</label>
+    <input type="number" id="st-grams" step="0.001" inputmode="decimal" placeholder="e.g. 5.000" oninput="stCalcAmt()">
+  </div>
+  <div class="field"><label>Rate &#8377;/g (for this settlement)</label>
+    <input type="number" id="st-rate" step="0.01" inputmode="decimal" oninput="stCalcAmt()" placeholder="e.g. 14050">
+  </div>
+</div>
+<div class="totpanel" style="margin-bottom:12px">
+  <div class="trow"><span class="tlbl">Grams settling</span><span class="tval" id="st-d-grams">0.000g</span></div>
+  <div class="trow big"><span class="tlbl">Cash to pay (&#8377;)</span>
+    <input type="number" id="st-amt" step="0.01" inputmode="decimal" placeholder="Auto-calculated"
+      style="width:160px;text-align:right;font-size:18px;font-weight:800;color:var(--gold-dark);background:transparent;border:none;outline:none;font-family:inherit">
+  </div>
+</div>
+<div class="g2">
+  <div class="field"><label>Payment Mode</label>
+    <select id="st-mode"><option>Cash</option><option>Bank Transfer / RTGS</option><option>UPI</option><option>Cheque</option></select>
+  </div>
+  <div class="field"><label>Date</label><input type="date" id="st-date"></div>
+</div>
+<div class="field"><label>Reference / Cheque No</label><input type="text" id="st-ref" placeholder="Bank ref, cheque number..."></div>
+<div class="mfoot">
+  <button class="btn" onclick="closeM('m-settle')">Cancel</button>
+  <button class="btn btng" onclick="saveSettle()">Record Settlement</button>
+</div>
+</div></div>
 
 <div class="modal-bg" id="m-order"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128084; New Order</div>
   <div class="field"><label>Customer Phone</label><input type="tel" id="or-phone" maxlength="10" inputmode="numeric" oninput="custLookup('or')"><div id="or-cust-res" style="margin-top:4px"></div><input type="hidden" id="or-cid"><input type="hidden" id="or-cname"></div>
@@ -1824,8 +1867,8 @@ input:checked+.tslider::before { transform:translateX(17px); }
 
 // ── CONFIG ──
 var CFG = {
-  supabaseUrl: localStorage.getItem('erp_supabase_url') || 'https://xnrrdmckxfdpeeemuphh.supabase.co',
-  supabaseKey: localStorage.getItem('erp_supabase_key') || 'sb_publishable_cLduMsrh35viwkbWBiZwHw_3oUtGsZP',
+  supabaseUrl: localStorage.getItem('erp_supabase_url') || '',
+  supabaseKey: localStorage.getItem('erp_supabase_key') || '',
   useSupabase: true,
   currentUser: null
 };
@@ -1899,6 +1942,17 @@ function doLogin(){
 function showAuth(){var e=G('auth-screen');if(e)e.classList.add('show');}
 
 // ── SUPABASE: 3 simple fetch functions, nothing else ──
+
+// Load credentials from Vercel /api/config
+function loadEnvConfig(cb){
+  var cached=localStorage.getItem('erp_supabase_url');
+  if(cached){CFG.supabaseUrl=cached;CFG.supabaseKey=localStorage.getItem('erp_supabase_key')||'';}
+  fetch('/api/config').then(function(r){return r.ok?r.json():null;}).then(function(d){
+    if(d&&d.supabaseUrl){CFG.supabaseUrl=d.supabaseUrl;CFG.supabaseKey=d.supabaseKey||'';
+      localStorage.setItem('erp_supabase_url',d.supabaseUrl);localStorage.setItem('erp_supabase_key',d.supabaseKey||'');}
+    if(cb)cb();
+  }).catch(function(){if(cb)cb();});
+}
 function sbUrl(){return localStorage.getItem('erp_supabase_url')||CFG.supabaseUrl||'';}
 function sbKey(){return localStorage.getItem('erp_supabase_key')||CFG.supabaseKey||'';}
 function sbHasConfig(){return !!(sbUrl()&&sbKey());}
@@ -2122,15 +2176,15 @@ function custLookup(pfx){
   if(found){
     cidEl.value=found.id;cnEl.value=found.name;
     var stmt=getCustStatement(found.id);
+    var metalBal=getCustMetalBalance(found.id);
     var advHtml='';
-        if(stmt.credit>0||stmt.owed>0){
-      advHtml='<div style="margin-top:6px;border-radius:8px;overflow:hidden">'+
-        (stmt.credit>0?'<div style="background:var(--gnbg);border:1.5px solid rgba(29,122,58,0.3);border-radius:8px;padding:8px 12px;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between">'+
-          '<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--grn)">Available Advance</div><div style="font-size:18px;font-weight:800;color:var(--grn)">'+fmt(stmt.credit)+'</div></div>'+
-          '<button class="btn btng" onclick="applyCustAdvance(\''+found.id+'\')">'+'&#128176; Apply</button>'+
-        '</div>':'')+
-        (stmt.owed>0?'<div style="background:var(--rdbg);border:1.5px solid rgba(192,57,43,0.3);border-radius:8px;padding:6px 12px;font-size:12px;color:var(--red);font-weight:600">&#9888; Outstanding: '+fmt(stmt.owed)+'</div>':'')+
-      '</div>';
+    if(stmt.credit>0||stmt.owed>0||metalBal.gold>0||metalBal.silver>0){
+      advHtml='<div style="margin-top:6px">';
+      if(stmt.credit>0)advHtml+='<div style="background:var(--gnbg);border:1.5px solid rgba(29,122,58,.3);border-radius:8px;padding:8px 12px;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--grn)">Cash Advance</div><div style="font-size:18px;font-weight:800;color:var(--grn)">'+fmt(stmt.credit)+'</div></div><button class="btn btng" onclick="applyCustAdvance(\''+found.id+'\')">&#128176; Apply</button></div>';
+      if(metalBal.gold>0)advHtml+='<div style="background:var(--gold-pale);border:1.5px solid rgba(201,152,10,.35);border-radius:8px;padding:8px 12px;margin-bottom:4px"><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--gold-dark)">Gold Credit (we owe)</div><div style="font-size:16px;font-weight:800;color:var(--gold-dark)">'+metalBal.gold.toFixed(3)+'g <span style="font-size:11px;font-weight:500">&#8776; '+fmt(metalBal.gold*R.k22)+'</span></div></div>';
+      if(metalBal.silver>0)advHtml+='<div style="background:var(--blbg);border:1.5px solid rgba(26,95,171,.2);border-radius:8px;padding:8px 12px;margin-bottom:4px"><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--blu)">Silver Credit (we owe)</div><div style="font-size:16px;font-weight:800;color:var(--blu)">'+metalBal.silver.toFixed(3)+'g <span style="font-size:11px;font-weight:500">&#8776; '+fmt(metalBal.silver*R.sil)+'</span></div></div>';
+      if(stmt.owed>0)advHtml+='<div style="background:var(--rdbg);border:1.5px solid rgba(192,57,43,.3);border-radius:8px;padding:6px 12px;font-size:12px;color:var(--red);font-weight:600">&#9888; Outstanding: '+fmt(stmt.owed)+'</div>';
+      advHtml+='</div>';
     }
     res.innerHTML='<div class="custok"><strong>&#10003; '+found.name+'</strong>'+(found.city?' &middot; '+found.city:'')+'</div>'+advHtml;
   } else {
@@ -2389,10 +2443,97 @@ function renderPayments(){var q=(V('pay-search')||'').toLowerCase().trim();var f
 function saveSupPay(){var supId=V('spy-sup');if(!supId){alert('Select supplier.');return;}var sup=DB.sups[supId];if(!sup)return;var mode=V('spy-mode'),amt=N('spy-amt'),rate=N('spy-rate'),date=V('spy-date')||td(),ref=V('spy-ref');var credit=amt;if((mode.indexOf('Gold')>=0||mode.indexOf('Silver')>=0)&&rate>0)credit=amt*rate;if(!credit){alert('Enter amount.');return;}if(!sup.txns)sup.txns=[];sup.txns.push({type:'settlement',date:date,desc:mode,debit:0,credit:credit,note:ref||(rate?amt+'g @ \u20B9'+rate:'')});sup.balance=Math.max(0,(sup.balance||0)-credit);if(mode==='Cash')DB.cashLog.push({type:'out',date:date,amount:credit,desc:'Supplier: '+sup.name,src:'supplier'});var lastSTxn=sup.txns[sup.txns.length-1];dbSaveSupTxn(supId,lastSTxn);closeM('m-suppay');renderPayments();renderSups();renderCashFlow();alert('&#10003; Recorded!');}
 
 // ── PURCHASE ──
-function addPuItem(){puIC++;var id='pui'+puIC;var div=document.createElement('div');div.className='li-box';div.id=id;div.innerHTML='<div class="lihead"><span class="linum">Item #'+puIC+'</span><button class="btn btnsm btnd" style="padding:3px 9px" onclick="this.closest(\'.li-box\').remove()">&#10005;</button></div><div class="g2" style="margin-bottom:8px"><div class="field"><label>Description</label><input type="text" id="'+id+'-desc" placeholder="Necklace..."></div><div class="field"><label>Metal</label><select id="'+id+'-metal"><option>22K Gold</option><option>18K Gold</option><option>916 Gold</option><option>Silver</option><option>Diamond</option></select></div></div><div class="g3"><div class="field"><label>Gross (g)</label><input type="number" id="'+id+'-gross" step="0.001" inputmode="decimal"></div><div class="field"><label>Pure (g)</label><input type="number" id="'+id+'-pure" step="0.001" inputmode="decimal"></div><div class="field"><label>Cost VA %</label><input type="number" id="'+id+'-va" step="0.01" inputmode="decimal"></div></div>';G('pu-items').appendChild(div);}
+function addPuItem(){
+  puIC++;var id='pui'+puIC;
+  var div=document.createElement('div');div.className='li-box';div.id=id;
+  div.innerHTML=
+    '<div class="lihead"><span class="linum">Item #'+puIC+'</span>'+
+    '<button class="btn btnsm btnd" style="padding:3px 9px" onclick="this.closest(\'.li-box\').remove()">&#10005;</button></div>'+
+    '<div class="g2" style="margin-bottom:8px">'+
+      '<div class="field"><label>Description</label><input type="text" id="'+id+'-desc" placeholder="Necklace, Chain..."></div>'+
+      '<div class="field"><label>Metal</label><select id="'+id+'-metal" onchange="puCalcItem(\'' +id+ '\')">'+
+        '<option>22K Gold</option><option>18K Gold</option><option>916 Gold</option><option>Silver</option><option>Diamond</option>'+
+      '</select></div>'+
+    '</div>'+
+    '<div class="g4">'+
+      '<div class="field"><label>Gross Wt (g)</label><input type="number" id="'+id+'-gross" step="0.001" inputmode="decimal" oninput="puCalcItem(\''+ id +'\')"></div>'+
+      '<div class="field"><label>Net/Pure Wt (g)</label><input type="number" id="'+id+'-pure" step="0.001" inputmode="decimal" oninput="puCalcItem(\''+ id +'\')"></div>'+
+      '<div class="field"><label>Cost VA %</label><input type="number" id="'+id+'-va" step="0.01" inputmode="decimal" placeholder="12" oninput="puCalcItem(\''+ id +'\')"></div>'+
+      '<div class="field"><label>Rate &#8377;/g</label><input type="number" id="'+id+'-rate" step="0.01" inputmode="decimal" oninput="puCalcItem(\''+ id +'\')"></div>'+
+    '</div>'+
+    '<div class="g3">'+
+      '<div class="field"><label>Stone/MC Charges (&#8377;)</label><input type="number" id="'+id+'-stone" step="0.01" inputmode="decimal" value="0" oninput="puCalcItem(\''+ id +'\')"></div>'+
+      '<div class="field"><label>Metal Value (&#8377;)</label><input type="number" id="'+id+'-mval" readonly></div>'+
+      '<div class="field"><label>Item Cost (&#8377;)</label><input type="number" id="'+id+'-cost" readonly class="igold"></div>'+
+    '</div>';
+  G('pu-items').appendChild(div);
+  // Auto-fill rate from board rates
+  var re=G(id+'-rate');
+  if(re)re.value=R.k22.toFixed(2);
+}
+
+function puCalcItem(id){
+  var m=V(id+'-metal')||'22K Gold';
+  var gross=N(id+'-gross'),pure=N(id+'-pure')||gross;
+  var rate=N(id+'-rate')||(m.indexOf('Gold')>=0?R.k22:R.sil);
+  var re=G(id+'-rate'); if(re&&!re.value)re.value=rate.toFixed(2);
+  var va=N(id+'-va'), stone=N(id+'-stone');
+  var mval=pure*rate;
+  var vaAmt=mval*(va/100);
+  var cost=mval+vaAmt+stone;
+  var mv=G(id+'-mval'); if(mv)mv.value=mval.toFixed(2);
+  var cv=G(id+'-cost'); if(cv)cv.value=cost.toFixed(2);
+  // Auto-update total
+  var tot=0;
+  G('pu-items').querySelectorAll('.li-box').forEach(function(li){tot+=N(li.id+'-cost');});
+  var pt=G('pu-total'); if(pt&&tot>0)pt.value=tot.toFixed(2);
+}
 function addPuPay(){puPC++;var rid='pup'+puPC;var div=document.createElement('div');div.className='payrow';div.style.marginBottom='8px';div.id=rid;div.innerHTML='<div class="g2" style="margin-bottom:6px"><div class="field"><label>Mode</label><select id="'+rid+'-mode"><option>Cash</option><option>Bank Transfer / RTGS</option><option>Physical Gold (g)</option><option>Physical Silver (g)</option><option>UPI</option></select></div><div class="field"><label>Amount</label><input type="number" id="'+rid+'-amt" step="0.001" inputmode="decimal"></div></div><div class="field"><label>Rate &#8377;/g (if metal)</label><input type="number" id="'+rid+'-rate" step="0.01" inputmode="decimal" placeholder="optional"></div>';G('pu-pays').appendChild(div);}
-function savePurchase(){var supId=V('pu-sup');if(!supId){alert('Select supplier.');return;}var date=V('pu-date')||td(),bill=V('pu-bill')||'PU-'+Date.now(),items=[];G('pu-items').querySelectorAll('.li-box').forEach(function(li){var id=li.id;items.push({desc:V(id+'-desc'),metal:V(id+'-metal'),gross:N(id+'-gross'),pure:N(id+'-pure'),va:N(id+'-va')});});var total=N('pu-total');var puObj={id:uid(),date:date,bill:bill,supId:supId,supName:DB.sups[supId].name,items:items,total:total};DB.purchases.unshift(puObj);dbSavePurchase(puObj);if(!DB.sups[supId].txns)DB.sups[supId].txns=[];DB.sups[supId].txns.push({type:'purchase',date:date,bill:bill,debit:0,credit:total,note:items.length+' items'});DB.sups[supId].balance=(DB.sups[supId].balance||0)+total;G('pu-items').innerHTML='';G('pu-pays').innerHTML='';G('pu-total').value='';puIC=0;puPC=0;renderPurchases();alert('&#10003; Purchase saved!');}
-function renderPurchases(){var t=G('pu-list');if(!t)return;t.innerHTML=DB.purchases.length?'<table class="data-table"><thead><tr><th>Date</th><th>Bill</th><th>Supplier</th><th>Items</th><th class="num">Total</th></tr></thead><tbody>'+DB.purchases.map(function(p){return '<tr><td style="font-size:12px;color:var(--tx3)">'+p.date+'</td><td style="font-size:12px">'+p.bill+'</td><td style="font-weight:600">'+p.supName+'</td><td style="font-size:12px;color:var(--tx3)">'+p.items.map(function(i){return i.metal+(i.gross?' '+i.gross+'g':'');}).join(', ')+'</td><td class="num">'+fmt(p.total)+'</td></tr>';}).join('')+'</tbody></table>':'<div class="empty"><div class="etxt">No purchases</div></div>';}
+function savePurchase(){
+  var supId=V('pu-sup');if(!supId){alert('Select supplier.');return;}
+  var date=V('pu-date')||td(),bill=V('pu-bill')||'PU-'+Date.now(),items=[];
+  var totalGrams=0;
+  G('pu-items').querySelectorAll('.li-box').forEach(function(li){
+    var id=li.id;
+    var gross=N(id+'-gross'), pure=N(id+'-pure')||gross;
+    var stone=N(id+'-stone')||0, rate=N(id+'-rate')||(V(id+'-metal').indexOf('Gold')>=0?R.k22:R.sil);
+    items.push({desc:V(id+'-desc'),metal:V(id+'-metal'),gross:gross,pure:pure,
+      va:N(id+'-va'),stone:stone,rate:rate,cost:N(id+'-cost')||0});
+    totalGrams+=gross;
+  });
+  var total=N('pu-total');
+  var puObj={id:uid(),date:date,bill:bill,supId:supId,supName:DB.sups[supId].name,
+    items:items,total:total,total_grams:totalGrams};
+  DB.purchases.unshift(puObj);
+  dbSavePurchase(puObj);
+  if(!DB.sups[supId].txns)DB.sups[supId].txns=[];
+  DB.sups[supId].txns.push({type:'purchase',date:date,bill:bill,
+    added_grams:totalGrams,debit:totalGrams,credit:0,
+    note:items.length+' items, '+totalGrams.toFixed(3)+'g, \u20B9'+total.toFixed(0)});
+  DB.sups[supId].balance=(DB.sups[supId].balance||0)+total;
+  G('pu-items').innerHTML='';G('pu-pays').innerHTML='';G('pu-total').value='';puIC=0;puPC=0;
+  renderPurchases();renderSups();
+  alert('\u2713 Purchase saved! '+totalGrams.toFixed(3)+'g added to '+DB.sups[supId].name+'\'s balance');
+}
+function renderPurchases(){
+  var t=G('pu-list');if(!t)return;
+  t.innerHTML=DB.purchases.length?
+    '<table class="data-table"><thead><tr><th>Date</th><th>Bill</th><th>Supplier</th><th>Items</th><th class="num">Grams</th><th class="num">Cost</th></tr></thead><tbody>'+
+    DB.purchases.map(function(p){
+      var grams=p.total_grams||(p.items||[]).reduce(function(s,i){return s+(i.gross||0);},0);
+      return '<tr>'+
+        '<td style="font-size:12px;color:var(--tx3)">'+p.date+'</td>'+
+        '<td style="font-size:12px">'+p.bill+'</td>'+
+        '<td style="font-weight:600">'+p.supName+'</td>'+
+        '<td style="font-size:12px;color:var(--tx3)">'+
+          (p.items||[]).map(function(i){return i.metal+(i.gross?' '+i.gross.toFixed(3)+'g':'')+(i.stone?'+&#8377;'+i.stone:'');}).join(', ')+
+        '</td>'+
+        '<td class="num" style="font-weight:700;color:var(--gold-dark)">'+grams.toFixed(3)+'g</td>'+
+        '<td class="num">'+fmt(p.total)+'</td>'+
+      '</tr>';
+    }).join('')+'</tbody></table>':
+    '<div class="empty"><div class="etxt">No purchases</div></div>';
+}
 
 // ── EXPENSE ──
 function onExCat(){var v=V('ex-cat');var row=G('ex-custom-row');if(row)row.style.display=(v==='__custom__')?'block':'none';}
@@ -2411,16 +2552,21 @@ function renderCusts(){
   });
   if(G('ds-cust'))G('ds-cust').textContent=Object.keys(DB.custs).length;
   if(!cl.length){t.innerHTML='<div class="empty"><div class="etxt">No customers found</div></div>';return;}
-  var html='<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Name</th><th>Phone</th><th>City</th><th class="num">Advance</th><th class="num">Owes</th><th></th></tr></thead><tbody>';
+  var html='<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Name</th><th>Phone</th><th>City</th><th class="num">Cash Adv</th><th class="num">Metal Credit</th><th class="num">Owes</th><th></th></tr></thead><tbody>';
   cl.forEach(function(c){
     var adv=getCustCredit(c.id);
     var owed=DB.sales.filter(function(s){return s.cid===c.id&&s.balance>0;}).reduce(function(s,x){return s+x.balance;},0);
+    var mb2=getCustMetalBalance(c.id);
+    var mStr=(mb2.gold>0?'<span class="badge bgold" style="font-size:10px">'+mb2.gold.toFixed(3)+'g&#129680;</span>':'')
+      +(mb2.silver>0?'<span class="badge bb" style="font-size:10px"> '+mb2.silver.toFixed(3)+'gAg</span>':'')
+      ||'-';
     var tr=document.createElement('tr');
     tr.innerHTML=
       '<td style="font-weight:600">'+c.name+'</td>'+
       '<td style="font-size:12px">'+c.phone+'</td>'+
       '<td style="font-size:12px;color:var(--tx3)">'+(c.city||'-')+'</td>'+
       '<td class="num">'+(adv>0?'<span class="badge bg">'+fmt(adv)+'</span>':'-')+'</td>'+
+      '<td class="num">'+mStr+'</td>'+
       '<td class="num">'+(owed>0?'<span class="badge br">'+fmt(owed)+'</span>':'-')+'</td>'+
       '<td><div style="display:flex;gap:4px;justify-content:flex-end">'+
         '<button class="btn btnsm btnog" data-cid="'+c.id+'" data-act="ledger">Ledger</button>'+
@@ -2443,23 +2589,79 @@ function renderCusts(){
 function openCustLedger(id){var c=DB.custs[id];if(!c)return;G('cl-name').textContent=c.name;var tp=c.txns.reduce(function(s,t){return s+(t.amount||0);},0),tpd=c.txns.reduce(function(s,t){return s+(t.paid||0);},0),tb=c.txns.reduce(function(s,t){return s+(t.balance||0);},0);G('cl-total').innerHTML=fmt(tp);G('cl-paid').innerHTML=fmt(tpd);G('cl-bal').innerHTML=fmt(tb);G('cl-table').innerHTML=c.txns.length?'<table class="data-table"><thead><tr><th>Date</th><th>Type</th><th>Bill</th><th class="num">Amount</th><th class="num">Balance</th></tr></thead><tbody>'+c.txns.map(function(t){return '<tr><td style="font-size:12px;color:var(--tx3)">'+t.date+'</td><td><span class="badge bb" style="font-size:9px">'+t.type+'</span></td><td style="font-size:12px">'+(t.bill||'-')+'</td><td class="num">'+fmt(t.amount||0)+'</td><td class="num"><span class="badge '+(t.balance>0?'br':'bg')+'">'+fmt(t.balance||0)+'</span></td></tr>';}).join('')+'</tbody></table>':'<div class="empty"><div class="etxt">No transactions</div></div>';G('cl-panel').style.display='';}
 
 // ── SUPPLIERS ──
-function saveSup(){var name=V('sm-name').trim();if(!name){alert('Name required.');return;}var ob=N('sm-ob'),id=uid();DB.sups[id]={id:id,name:name,phone:V('sm-phone').trim(),metal:V('sm-metal'),balance:ob,txns:ob>0?[{type:'opening',date:td(),bill:'OB',debit:ob,credit:0,note:'Opening'}]:[]};dbSaveSup(DB.sups[id]);closeM('m-sup');renderSups();populateSupSelects();renderDash();}
+
+// ── Supplier metal balance in grams ──────────────────────────
+// = opening_grams + purchases_gross + suspense_available - settled_grams
+function getSupBalanceGrams(supId){
+  var sup=DB.sups[supId]; if(!sup) return 0;
+  var grams = sup.ob_grams || 0;  // opening balance in grams
+
+  // Add purchase items
+  DB.purchases.forEach(function(pu){
+    if(pu.supId!==supId) return;
+    (pu.items||[]).forEach(function(it){
+      grams += (it.gross||0);
+    });
+  });
+
+  // Add available suspense items
+  DB.suspense.forEach(function(i){
+    if(i.supplierId!==supId) return;
+    if(i.status==='available') grams += (i.gross||0);
+    // sold items: supplier gets credited when sold
+    if(i.status==='sold') grams += (i.gross||0);
+  });
+
+  // Subtract settled grams
+  (sup.txns||[]).forEach(function(t){
+    if(t.type==='settlement' && t.settled_grams>0) grams -= t.settled_grams;
+  });
+
+  return Math.max(0, Math.round(grams*1000)/1000);
+}
+
+// ₹ value of supplier metal balance at current rate
+function getSupBalanceValue(supId){
+  var sup=DB.sups[supId]; if(!sup) return 0;
+  var grams=getSupBalanceGrams(supId);
+  var mt=(sup.metal||'Gold');
+  var rate=mt.indexOf('Gold')>=0||mt.indexOf('Diamond')>=0 ? R.k22 : R.sil;
+  return grams*rate;
+}
+
+function saveSup(){
+  var name=V('sm-name').trim(); if(!name){alert('Name required.');return;}
+  var obGrams=N('sm-ob-grams'), obRate=N('sm-ob-rate')||(V('sm-metal')==='Silver'?R.sil:R.k22);
+  var obVal=obGrams*obRate;
+  var id=uid();
+  DB.sups[id]={id:id,name:name,phone:V('sm-phone').trim(),metal:V('sm-metal'),
+    ob_grams:obGrams, balance:obVal,  // balance in ₹ kept for compat
+    txns:obGrams>0?[{type:'opening',date:td(),bill:'OB',debit:obGrams,credit:0,
+      settled_grams:0,note:'Opening: '+obGrams.toFixed(3)+'g @ \u20B9'+obRate.toFixed(0)}]:[]};
+  dbSaveSup(DB.sups[id]);
+  closeM('m-sup');renderSups();populateSupSelects();renderDash();
+}
 function renderSups(){
   var t=G('sup-list');if(!t)return;
   var sl=Object.values(DB.sups);
   var dss=G('ds-sup');if(dss)dss.textContent=sl.length;
   if(!sl.length){t.innerHTML='<div class="empty"><div class="etxt">No suppliers</div></div>';return;}
-  var html='<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Name</th><th>Metal</th><th>Phone</th><th class="num">Balance</th><th></th></tr></thead><tbody>';
+  var html='<div style="overflow-x:auto"><table class="data-table"><thead><tr>'
+    +'<th>Name</th><th>Metal</th><th class="num">Grams Owed</th><th class="num">&#8377; Value</th><th></th>'
+    +'</tr></thead><tbody>';
   sl.forEach(function(s){
+    var grams=getSupBalanceGrams(s.id);
+    var val=getSupBalanceValue(s.id);
     var tr=document.createElement('tr');
     tr.innerHTML=
       '<td style="font-weight:600">'+s.name+'</td>'+
-      '<td><span class="badge bgold">'+s.metal+'</span></td>'+
-      '<td style="font-size:12px;color:var(--tx3)">'+(s.phone||'-')+'</td>'+
-      '<td class="num"><span class="badge '+(s.balance>0?'br':'bg')+'">'+fmt(s.balance)+'</span></td>'+
+      '<td><span class="badge bgold">'+(s.metal||'Gold')+'</span></td>'+
+      '<td class="num"><span style="font-weight:800;font-size:14px;color:'+(grams>0?'var(--red)':'var(--tx3)')+'">'+grams.toFixed(3)+'g</span></td>'+
+      '<td class="num"><span class="badge '+(val>0?'br':'bg')+'">'+fmt(val)+'</span></td>'+
       '<td><div style="display:flex;gap:4px;justify-content:flex-end">'+
         '<button class="btn btnsm btnog" data-sid="'+s.id+'" data-act="ledger">Ledger</button>'+
-        '<button class="btn btnsm" data-sid="'+s.id+'" data-act="edit">\u270e Edit</button>'+
+        '<button class="btn btnsm btng" data-sid="'+s.id+'" data-act="settle">Settle</button>'+
+        '<button class="btn btnsm" data-sid="'+s.id+'" data-act="edit">&#9998;</button>'+
       '</div></td>';
     html+=tr.outerHTML;
   });
@@ -2467,15 +2669,107 @@ function renderSups(){
   t.innerHTML=html;
   t.querySelectorAll('button[data-sid]').forEach(function(btn){
     btn.onclick=function(){
-      var sid=btn.getAttribute('data-sid');
-      var act=btn.getAttribute('data-act');
-      if(act==='ledger')openSupLedger(sid);
-      else openEditSup(sid);
+      var sid=btn.getAttribute('data-sid'),act=btn.getAttribute('data-act');
+      if(act==='ledger'){openSupLedger(sid);}
+      else if(act==='settle'){openSupLedger(sid);openSettleModal();}
+      else{openEditSup(sid);}
     };
   });
 }
-function openSupLedger(id){var s=DB.sups[id];if(!s)return;activeSup=s;G('sl-name').textContent=s.name;var dr=(s.txns||[]).reduce(function(sum,t){return sum+(t.debit||0);},0),cr=(s.txns||[]).reduce(function(sum,t){return sum+(t.credit||0);},0);G('sl-dr').innerHTML=fmt(dr);G('sl-cr').innerHTML=fmt(cr);G('sl-net').innerHTML=fmt(Math.max(0,dr-cr));G('sl-table').innerHTML=(s.txns||[]).length?'<table class="data-table"><thead><tr><th>Date</th><th>Type</th><th>Debit</th><th>Credit</th></tr></thead><tbody>'+(s.txns||[]).map(function(t){return '<tr><td style="font-size:12px;color:var(--tx3)">'+t.date+'</td><td><span class="badge '+(t.type.indexOf('sold')>=0?'br':t.type==='settlement'?'bg':'ba')+'" style="font-size:9px">'+t.type.replace(/_/g,' ')+'</span></td><td class="num" style="color:var(--red)">'+(t.debit?fmt(t.debit):'-')+'</td><td class="num" style="color:var(--grn)">'+(t.credit?fmt(t.credit):'-')+'</td></tr>';}).join('')+'</tbody></table>':'<div class="empty"><div class="etxt">No transactions</div></div>';G('sl-panel').style.display='';}
-function saveSettle(){if(!activeSup)return;var mode=V('st-mode'),amt=N('st-amt'),rate=N('st-rate'),date=V('st-date')||td(),ref=V('st-ref');var credit=amt;if((mode.indexOf('Gold')>=0||mode.indexOf('Silver')>=0)&&rate>0)credit=amt*rate;if(!credit){alert('Enter amount.');return;}if(!activeSup.txns)activeSup.txns=[];activeSup.txns.push({type:'settlement',date:date,desc:mode,debit:0,credit:credit,note:ref||(rate?amt+'g @ \u20B9'+rate:'')});activeSup.balance=Math.max(0,(activeSup.balance||0)-credit);if(mode==='Cash')DB.cashLog.push({type:'out',date:date,amount:credit,desc:'Settle: '+activeSup.name,src:'supplier'});var lastTxn=activeSup.txns[activeSup.txns.length-1];dbSaveSupTxn(activeSup.id,lastTxn);closeM('m-settle');openSupLedger(activeSup.id);renderSups();renderCashFlow();}
+function openSupLedger(id){
+  var s=DB.sups[id];if(!s)return;activeSup=s;
+  G('sl-name').textContent=s.name;
+  var grams=getSupBalanceGrams(id), val=getSupBalanceValue(id);
+  var mt=(s.metal||'Gold');
+  var totalPurchGrams=(DB.purchases.filter(function(p){return p.supId===id;})
+    .reduce(function(sum,p){return sum+(p.total_grams||0);},0));
+  var suspGrams=DB.suspense.filter(function(i){return i.supplierId===id;})
+    .reduce(function(sum,i){return sum+(i.gross||0);},0);
+  var settledGrams=(s.txns||[]).filter(function(t){return t.type==='settlement';})
+    .reduce(function(sum,t){return sum+(t.settled_grams||0);},0);
+
+  G('sl-dr').innerHTML=grams.toFixed(3)+'g';
+  G('sl-cr').innerHTML=fmt(val);
+  G('sl-net').innerHTML=fmt(val);
+
+  // Ledger table
+  var txns=(s.txns||[]);
+  G('sl-table').innerHTML=txns.length?
+    '<table class="data-table"><thead><tr><th>Date</th><th>Type</th><th class="num">Grams</th><th class="num">&#8377; Value</th><th>Note</th></tr></thead><tbody>'+
+    txns.map(function(t){
+      var isAdd=t.type==='purchase'||t.type==='opening';
+      var gStr=t.added_grams>0?'+'+t.added_grams.toFixed(3)+'g':
+               t.settled_grams>0?'-'+t.settled_grams.toFixed(3)+'g':
+               t.debit>0?'+'+t.debit.toFixed(3):'';
+      var vStr=t.cash_paid>0?fmt(t.cash_paid):t.credit>0?fmt(t.credit):'';
+      return '<tr><td style="font-size:12px;color:var(--tx3)">'+t.date+'</td>'+
+        '<td><span class="badge '+(isAdd?'br':'bg')+'" style="font-size:9px">'+t.type.replace(/_/g,' ')+'</span></td>'+
+        '<td class="num" style="font-weight:700;color:'+(isAdd?'var(--red)':'var(--grn)')+'">'+gStr+'</td>'+
+        '<td class="num">'+vStr+'</td>'+
+        '<td style="font-size:11px;color:var(--tx3)">'+(t.note||'')+'</td></tr>';
+    }).join('')+'</tbody></table>':
+    '<div class="empty"><div class="etxt">No transactions</div></div>';
+  G('sl-panel').style.display='';
+}
+
+function stCalcAmt(){
+  var grams=N('st-grams'), rate=N('st-rate');
+  if(!rate&&activeSup){
+    var mt=(activeSup.metal||'Gold');
+    rate=mt.indexOf('Gold')>=0||mt.indexOf('Diamond')>=0?R.k22:R.sil;
+    var re=G('st-rate'); if(re&&!re.value)re.value=rate.toFixed(2);
+  }
+  var amt=grams*rate;
+  var ad=G('st-d-grams'); if(ad)ad.textContent=grams.toFixed(3)+'g';
+  var aa=G('st-amt'); if(aa&&amt>0)aa.value=amt.toFixed(2);
+}
+
+
+function openSettleModal(){
+  if(!activeSup)return;
+  var curGrams=getSupBalanceGrams(activeSup.id);
+  var curVal=getSupBalanceValue(activeSup.id);
+  var mt=(activeSup.metal||'Gold');
+  var rate=mt.indexOf('Gold')>=0||mt.indexOf('Diamond')>=0?R.k22:R.sil;
+  var sn=G('st-sup-name'); if(sn)sn.textContent=activeSup.name;
+  var cg=G('st-cur-grams'); if(cg)cg.textContent=curGrams.toFixed(3)+'g';
+  var cv=G('st-cur-val');   if(cv)cv.textContent=fmt(curVal);
+  var rr=G('st-rate'); if(rr)rr.value=rate.toFixed(2);
+  var sd=G('st-date'); if(sd)sd.value=td();
+  var sg=G('st-grams'); if(sg){sg.value='';sg.focus();}
+  var sa=G('st-amt'); if(sa)sa.value='';
+  var dd=G('st-d-grams'); if(dd)dd.textContent='0.000g';
+  openM('m-settle');
+}
+
+function saveSettle(){
+  if(!activeSup)return;
+  var grams=N('st-grams'), rate=N('st-rate'), cashAmt=N('st-amt');
+  var mode=V('st-mode'), date=V('st-date')||td(), ref=V('st-ref');
+  if(!grams){alert('Enter grams being settled.');return;}
+  if(!cashAmt){alert('Enter cash amount.');return;}
+  var curGrams=getSupBalanceGrams(activeSup.id);
+  if(grams>curGrams+0.001){
+    if(!confirm('Settling '+grams.toFixed(3)+'g but balance is only '+curGrams.toFixed(3)+'g. Continue?'))return;
+  }
+  if(!activeSup.txns)activeSup.txns=[];
+  var txn={type:'settlement',date:date,desc:mode,
+    settled_grams:grams,rate_used:rate,cash_paid:cashAmt,
+    debit:0,credit:cashAmt,
+    note:grams.toFixed(3)+'g @ \u20B9'+rate.toFixed(0)+' = \u20B9'+cashAmt.toFixed(0)+(ref?' | '+ref:'')};
+  activeSup.txns.push(txn);
+  // Update ₹ balance for backward compat
+  activeSup.balance=Math.max(0,(activeSup.balance||0)-cashAmt);
+  // Cash out
+  DB.cashLog.push({type:'out',date:date,amount:cashAmt,
+    desc:'Supplier settle: '+activeSup.name+' '+grams.toFixed(3)+'g',src:'supplier'});
+  dbSaveSupTxn(activeSup.id,txn);
+  dbSaveCashEntry('out',date,cashAmt,'Supplier settle: '+activeSup.name,'supplier');
+  closeM('m-settle');
+  openSupLedger(activeSup.id);
+  renderSups();renderCashFlow();
+  alert('\u2713 Settled '+grams.toFixed(3)+'g | \u20B9'+cashAmt.toFixed(0)+' recorded');
+}
 
 // ── SUSPENSE ──
 function saveSuspense(){var supId=V('susp-sup'),desc=V('susp-desc').trim();if(!supId||!desc){alert('Supplier and description required.');return;}var suspObj={id:uid(),supplierId:supId,desc:desc,metal:V('susp-metal'),gross:N('susp-gross'),va:N('susp-va'),mc:N('susp-mc'),tag:V('susp-tag'),status:'available',addedDate:td()};DB.suspense.push(suspObj);dbSaveSuspense(suspObj);closeM('m-suspense');renderSuspense();renderDash();}
@@ -2572,12 +2866,28 @@ function renderDash(){
 
 // ── SETTINGS ──
 function renderSettings(){
-  // Load fresh user data if on users tab
   if(G('settings-users-tab')&&G('settings-users-tab').style.display!=='none')renderUsersTab();
   var ui=G('cfg-url');if(ui)ui.value=sbUrl();
-  var ki=G('cfg-key');if(ki)ki.value=sbKey();
+  var ki=G('cfg-key');if(ki)ki.value='';
   var total=DB.sales.length+Object.keys(DB.custs).length+Object.keys(DB.sups).length+DB.payments.length;
   var dr=G('db-records');if(dr)dr.textContent=total+' total records';
+  var vs=G('cfg-vercel-status');
+  fetch('/api/config').then(function(r){return r.ok?r.json():null;}).then(function(d){
+    if(!vs)return;
+    if(d&&d.supabaseUrl){
+      var proj=d.supabaseUrl.replace('https://','').split('.')[0];
+      vs.innerHTML='<div style="display:flex;gap:10px;align-items:center;background:var(--gnbg);border:1.5px solid rgba(29,122,58,.25);border-radius:10px;padding:10px 14px;margin-bottom:10px">'
+        +'<span style="font-size:20px">&#10003;</span><div><div style="font-weight:700;color:var(--grn)">Connected via Vercel Environment Variables</div>'
+        +'<div style="font-size:11px;color:var(--tx3)">Project: <strong>'+proj+'</strong> &bull; Key: <strong>&#128274; secure</strong></div></div></div>';
+      if(ui)ui.value=d.supabaseUrl;
+    } else if(sbUrl()){
+      vs.innerHTML='<div style="background:rgba(201,152,10,.08);border:1.5px solid rgba(201,152,10,.3);border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--gold-dark)">&#9888; Using cached credentials. Set SUPABASE_URL + SUPABASE_KEY in Vercel for production.</div>';
+    } else {
+      vs.innerHTML='<div style="background:var(--rdbg);border:1.5px solid rgba(192,57,43,.2);border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--red)">&#9888; Not connected. Enter credentials or set Vercel env vars.</div>';
+    }
+  }).catch(function(){
+    if(vs&&sbUrl())vs.innerHTML='<div style="background:rgba(201,152,10,.08);border:1.5px solid rgba(201,152,10,.3);border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--gold-dark)">&#9432; Using cached credentials.</div>';
+  });
 }
 
 
@@ -2596,7 +2906,7 @@ function dbSaveCust(c){
 
 function dbSaveSup(s){
   if(!sbHasConfig())return;
-  dbUpsert('suppliers',{id:s.id,name:s.name,phone:s.phone||null,metal_type:s.metal||'Gold',opening_bal:s.balance||0},function(d,e){
+  dbUpsert('suppliers',{id:s.id,name:s.name,phone:s.phone||null,metal_type:s.metal||'Gold',opening_bal:s.balance||0,opening_bal_grams:s.ob_grams||0},function(d,e){
     if(e)console.error('Sup:',e);else showDbStatus('Supplier saved ✓');
   });
 }
@@ -2738,7 +3048,7 @@ function dbLoadAll(){
 
   dbGet('suppliers?select=*&order=name.asc',function(d,e){
     if(e){console.error('Load suppliers:',e);return;}
-    (d||[]).forEach(function(r){if(!DB.sups[r.id])DB.sups[r.id]={id:r.id,name:r.name,phone:r.phone||'',metal:r.metal_type||'Gold',balance:parseFloat(r.opening_bal)||0,txns:[]};});
+    (d||[]).forEach(function(r){if(!DB.sups[r.id])DB.sups[r.id]={id:r.id,name:r.name,phone:r.phone||'',metal:r.metal_type||'Gold',balance:parseFloat(r.opening_bal)||0,ob_grams:parseFloat(r.opening_bal_grams)||0,txns:[]};});
     dbGet('supplier_transactions?select=*&order=txn_date.desc&txn_date=gte.'+from,function(d2,e2){
       if(!e2)(d2||[]).forEach(function(t){var s=DB.sups[t.supplier_id];if(s)s.txns.push({type:t.txn_type,date:t.txn_date,desc:t.description||'',debit:parseFloat(t.debit_inr)||0,credit:parseFloat(t.credit_inr)||0,note:t.reference||''}); });
       renderSups();populateSupSelects();console.log('Suppliers loaded:',d.length);
@@ -3504,6 +3814,29 @@ function getCustCredit(custId){
 }
 
 // Full customer statement: how much they owe us (debit) vs credit
+
+function getCustMetalBalance(custId){
+  if(!custId)return{gold:0,silver:0};
+  var cust=DB.custs[custId];var custName=cust?cust.name:'';
+  var gold=0,silver=0;
+  DB.payments.forEach(function(p){
+    var match=(p.cid&&p.cid===custId)||((!p.cid||p.cid==='')&&custName&&p.customer===custName);
+    if(!match)return;
+    if(p.type==='chit_metal'&&(p.metal_wt||0)>0){
+      if((p.metal_type||'Gold')==='Gold')gold+=p.metal_wt;else silver+=p.metal_wt;
+    }
+  });
+  DB.sales.forEach(function(s){
+    var isCust=(s.cid===custId)||(s.customer&&cust&&s.customer===cust.name);
+    if(!isCust)return;
+    (s.pays||[]).forEach(function(p){
+      if(p.mode==='Chit Metal Credit'&&(p.metal_wt||0)>0){
+        if((p.metal_type||'Gold')==='Gold')gold-=p.metal_wt;else silver-=p.metal_wt;
+      }
+    });
+  });
+  return{gold:Math.max(0,gold),silver:Math.max(0,silver)};
+}
 function getCustStatement(custId){
   var cust=DB.custs[custId]; if(!cust)return{credit:0,owed:0,net:0};
   var credit=getCustCredit(custId);
@@ -3782,8 +4115,8 @@ async function sha256(str){
 }
 
 // ── Login after gun game ──
-function bootApp(){
-  // Boot the real app — user is already identified from gun sequence
+function bootApp(){loadEnvConfig(function(){_bootAppCore();});}
+function _bootAppCore(){
   G('r22t').textContent='\u20B9'+R.k22.toLocaleString('en-IN');
   G('r18t').textContent='\u20B9'+R.k18.toLocaleString('en-IN');
   G('rsilt').textContent='\u20B9'+R.sil.toLocaleString('en-IN');
@@ -4144,82 +4477,52 @@ function renderBalance(){
     -DB.cashLog.filter(function(e){return e.type==='out';}).reduce(function(s,e){return s+e.amount;},0);
   var goldVal=metalR.gold*R.k22;
   var silverVal=metalR.silver*R.sil;
-
-  // Receivables = outstanding sale balances
   var receivables=DB.sales.reduce(function(s,sale){return s+(sale.balance||0);},0);
-
   var activeLoans=DB.loans.filter(function(l){return l.status==='active';});
   var totalLoanAmt=activeLoans.reduce(function(s,l){return s+(l.amt-(l.paid||0));},0);
   var totalLoanInterest=activeLoans.reduce(function(s,l){return s+calcTotalInterestAccrued(l);},0);
 
-  // ── Supplier balances: split by metal type ──
-  // sup.balance = value in ₹ we owe (from purchases debit minus settlements credit)
-  // Show: gold suppliers as grams (val / R.k22), silver as grams (val / R.sil), cash as ₹
-  var supGoldGrams=0, supSilverGrams=0, supCashOwed=0;
+  // Supplier liabilities using gram-based balance
+  var supGoldGrams=0,supSilverGrams=0;
   Object.values(DB.sups).forEach(function(sup){
-    var bal=sup.balance||0;
-    if(bal<=0)return;
-    var metal=(sup.metal||'Gold').toLowerCase();
-    if(metal.indexOf('gold')>=0||metal.indexOf('diamond')>=0){
-      // Convert ₹ balance → grams at current 22K rate
-      supGoldGrams+=bal/R.k22;
-    } else if(metal.indexOf('silver')>=0){
-      supSilverGrams+=bal/R.sil;
-    } else {
-      supCashOwed+=bal;
-    }
+    var grams=getSupBalanceGrams(sup.id);
+    if(grams<=0)return;
+    var mt=(sup.metal||'Gold').toLowerCase();
+    if(mt.indexOf('gold')>=0||mt.indexOf('diamond')>=0) supGoldGrams+=grams;
+    else supSilverGrams+=grams;
   });
-  var supGoldVal=supGoldGrams*R.k22;
-  var supSilverVal=supSilverGrams*R.sil;
-  var totalSupLiab=supGoldVal+supSilverVal+supCashOwed;
+  var supGoldVal=supGoldGrams*R.k22, supSilverVal=supSilverGrams*R.sil;
+  var totalSupLiab=supGoldVal+supSilverVal;
+
+  // Suspense on approval
+  var suspGoldVal=0,suspSilverVal=0;
+  DB.suspense.filter(function(i){return i.status==='available';}).forEach(function(i){
+    var rate=i.metal&&i.metal.indexOf('Gold')>=0?R.k22:R.sil;
+    var cv=((i.gross||0)*rate*(1+(i.va||0)/100))+(i.mc||0);
+    if(i.metal&&i.metal.indexOf('Gold')>=0)suspGoldVal+=cv; else suspSilverVal+=cv;
+  });
+  var totalSuspLiab=suspGoldVal+suspSilverVal;
 
   var totalAssets=cashBal+goldVal+silverVal+receivables;
-  var totalLiabilities=totalLoanAmt+totalSupLiab+totalLoanInterest;
+  var totalLiabilities=totalLoanAmt+totalSupLiab+totalSuspLiab+totalLoanInterest;
   var netWorth=totalAssets-totalLiabilities;
 
-  var assets=[
-    {label:'Cash in Hand',val:cashBal,icon:'&#128181;',color:'var(--grn)'},
-    {label:'Gold Reserve ('+metalR.gold.toFixed(3)+'g &times; &#8377;'+R.k22.toLocaleString('en-IN')+'/g)',val:goldVal,icon:'&#129680;',color:'var(--grn)'},
-    {label:'Silver Reserve ('+metalR.silver.toFixed(3)+'g &times; &#8377;'+R.sil+'/g)',val:silverVal,icon:'&#129680;',color:'var(--grn)'},
-    {label:'Outstanding from Customers (Sales Due)',val:receivables,icon:'&#128101;',color:'var(--grn)'},
-  ];
+  var assetHtml=[
+    {icon:'&#128181;',label:'Cash in Hand',val:cashBal},
+    {icon:'&#129680;',label:'Gold Reserve ('+metalR.gold.toFixed(3)+'g &times; &#8377;'+R.k22.toLocaleString('en-IN')+'/g)',val:goldVal},
+    {icon:'&#129680;',label:'Silver Reserve ('+metalR.silver.toFixed(3)+'g &times; &#8377;'+R.sil+'/g)',val:silverVal},
+    {icon:'&#128101;',label:'Outstanding from Customers',val:receivables},
+  ].map(function(a){return '<div class="lrow"><div style="flex:1">'+a.icon+' '+a.label+'</div><span style="font-weight:700;color:var(--grn)">'+fmt(a.val)+'</span></div>';}).join('');
 
-  // Build liabilities with metal detail
   var liabHtml='';
-  if(totalLoanAmt>0){
-    liabHtml+='<div class="lrow"><div style="flex:1"><span style="font-size:15px">&#127982;</span> Loans Outstanding</div>'
-      +'<span style="font-weight:700;color:var(--red)">'+fmt(totalLoanAmt)+'</span></div>';
-  }
-  // Supplier payables broken by metal
-  if(supGoldGrams>0){
-    liabHtml+='<div class="lrow"><div style="flex:1"><span style="font-size:15px">&#129760;</span> Supplier Payable — Gold'
-      +'<br><span style="font-size:11px;color:var(--tx3)">'+supGoldGrams.toFixed(3)+'g &times; &#8377;'+R.k22.toLocaleString('en-IN')+'/g</span></div>'
-      +'<span style="font-weight:700;color:var(--red)">'+fmt(supGoldVal)+'</span></div>';
-  }
-  if(supSilverGrams>0){
-    liabHtml+='<div class="lrow"><div style="flex:1"><span style="font-size:15px">&#129760;</span> Supplier Payable — Silver'
-      +'<br><span style="font-size:11px;color:var(--tx3)">'+supSilverGrams.toFixed(3)+'g &times; &#8377;'+R.sil+'/g</span></div>'
-      +'<span style="font-weight:700;color:var(--red)">'+fmt(supSilverVal)+'</span></div>';
-  }
-  if(supCashOwed>0){
-    liabHtml+='<div class="lrow"><div style="flex:1"><span style="font-size:15px">&#127970;</span> Supplier Payable — Cash</div>'
-      +'<span style="font-weight:700;color:var(--red)">'+fmt(supCashOwed)+'</span></div>';
-  }
-  if(supGoldGrams===0&&supSilverGrams===0&&supCashOwed===0){
-    liabHtml+='<div class="lrow"><div style="flex:1"><span style="font-size:15px">&#127970;</span> Supplier Payables</div>'
-      +'<span style="font-weight:700;color:var(--tx3)">&#8377;0</span></div>';
-  }
-  if(totalLoanInterest>0){
-    liabHtml+='<div class="lrow"><div style="flex:1"><span style="font-size:15px">&#128202;</span> Accrued Loan Interest</div>'
-      +'<span style="font-weight:700;color:var(--red)">'+fmt(totalLoanInterest)+'</span></div>';
-  }
+  if(totalLoanAmt>0)liabHtml+='<div class="lrow"><div style="flex:1">&#127982; Loans Outstanding</div><span style="font-weight:700;color:var(--red)">'+fmt(totalLoanAmt)+'</span></div>';
+  if(supGoldGrams>0)liabHtml+='<div class="lrow"><div style="flex:1">&#129760; Supplier — Gold<br><span style="font-size:11px;color:var(--tx3)">'+supGoldGrams.toFixed(3)+'g &times; &#8377;'+R.k22.toLocaleString('en-IN')+'/g</span></div><div style="text-align:right"><div style="font-weight:700;color:var(--red)">'+fmt(supGoldVal)+'</div><div style="font-size:10px;color:var(--tx3)">'+supGoldGrams.toFixed(3)+'g</div></div></div>';
+  if(supSilverGrams>0)liabHtml+='<div class="lrow"><div style="flex:1">&#129760; Supplier — Silver<br><span style="font-size:11px;color:var(--tx3)">'+supSilverGrams.toFixed(3)+'g &times; &#8377;'+R.sil+'/g</span></div><div style="text-align:right"><div style="font-weight:700;color:var(--red)">'+fmt(supSilverVal)+'</div><div style="font-size:10px;color:var(--tx3)">'+supSilverGrams.toFixed(3)+'g</div></div></div>';
+  if(supGoldGrams===0&&supSilverGrams===0)liabHtml+='<div class="lrow"><div style="flex:1">&#127970; Supplier Payables</div><span style="color:var(--tx3)">&#8377;0</span></div>';
+  if(totalSuspLiab>0)liabHtml+='<div class="lrow"><div style="flex:1">&#128274; Suspense Stock (on approval)<br><span style="font-size:11px;color:var(--tx3)">Owed to suppliers if sold</span></div><span style="font-weight:700;color:var(--amb)">'+fmt(totalSuspLiab)+'</span></div>';
+  if(totalLoanInterest>0)liabHtml+='<div class="lrow"><div style="flex:1">&#128202; Accrued Loan Interest</div><span style="font-weight:700;color:var(--red)">'+fmt(totalLoanInterest)+'</span></div>';
 
-  var assetHtml=assets.map(function(a){
-    return '<div class="lrow"><div style="flex:1"><span style="font-size:15px">'+a.icon+'</span> '+a.label+'</div>'
-      +'<span style="font-weight:700;color:'+(a.color||'var(--grn)')+'">'+fmt(a.val)+'</span></div>';
-  }).join('');
-  var netwHtml='<div class="lrow"><div style="flex:1;font-size:14px;font-weight:700">&#128202; Net Worth (Assets &minus; Liabilities)</div>'
-    +'<span style="font-size:20px;font-weight:800;color:'+(netWorth>=0?'var(--grn)':'var(--red)')+'">'+fmt(netWorth)+'</span></div>';
+  var netwHtml='<div class="lrow"><div style="flex:1;font-size:14px;font-weight:700">&#128202; Net Worth (Assets &minus; Liabilities)</div><span style="font-size:20px;font-weight:800;color:'+(netWorth>=0?'var(--grn)':'var(--red)')+'">'+fmt(netWorth)+'</span></div>';
 
   var ba=G('bs-assets'),bl=G('bs-liabilities'),bn=G('bs-networth');
   var ta=G('bs-total-assets'),tl=G('bs-total-liab');
