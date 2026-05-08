@@ -1395,7 +1395,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
   <div class="tab" onclick="mfTab('batch',this)">Batch</div>
   <div class="tab" onclick="mfTab('refinery',this)">Refinery</div>
   <div class="tab" onclick="mfTab('out',this)">Outflow</div>
-  <div class="tab" onclick="mfTab('sell',this)">Sell</div>
+  <div class="tab" onclick="mfTab('sell',this)">&#128176; Sell</div>
   <div class="tab" onclick="mfTab('log',this)">Log</div>
 </div>
 
@@ -1440,7 +1440,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
 <div id="mf-sell" style="display:none">
   <div class="card">
     <div class="card-header">
-      <div><div class="card-title">Sell Refined Gold / Silver</div><div class="card-sub">Record sale from reserve — reduces metal stock, adds to cash</div></div>
+      <div><div class="card-title">&#128176; Sell Refined Gold / Silver</div><div class="card-sub">Record sale from reserve — reduces metal stock, adds to cash</div></div>
       <button class="btn btnsm btnog" onclick="_showSellHistory()">History</button>
     </div>
     <div class="g3">
@@ -1907,7 +1907,8 @@ input:checked+.tslider::before { transform:translateX(17px); }
 <div class="modal-bg" id="m-payment"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128260; Customer Payment / Old Gold</div>
   <div class="field"><label>Type</label>
     <select id="cp-type" onchange="onCPType()">
-      <option value="in">Received from Customer (advance / part-payment)</option>
+      <option value="in">Received — Advance / Part-Payment</option>
+      <option value="old_bal_settle">Old Balance Settlement (reduces outstanding dues)</option>
       <option value="oldgold">Old Gold — Cash Out to Customer Immediately</option>
       <option value="oldgold-adv">Old Gold — Keep as Customer Advance (no cash out)</option>
       <option value="out">Refund / Payout to Customer</option>
@@ -1930,6 +1931,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
       <div class="trow big"><span class="tlbl">Offer Value (&#8377;)</span><input type="number" id="cp-og-val" step="0.01" inputmode="decimal" oninput="this._edited=true;syncCPAmt()" style="width:150px;text-align:right;font-size:18px;font-weight:800;color:var(--gold-dark);background:transparent;border:none;outline:none;font-family:inherit" placeholder="0.00"></div>
     </div>
   </div>
+  <div id="cp-obs-info" style="display:none" class="infobar" style="font-size:11px">&#9432; This payment will be applied to reduce the oldest outstanding sale balances first (FIFO). Any excess becomes a customer advance.</div>
   <div id="cp-cash-row">
     <div class="g2"><div class="field"><label id="cp-amt-lbl">Cash Amount (&#8377;)</label><input type="number" id="cp-amt" inputmode="decimal"></div><div class="field"><label>Date</label><input type="date" id="cp-date"></div></div>
     <div class="field"><label>Payment Mode</label><select id="cp-mode"><option>Cash</option><option>UPI - GPay</option><option>UPI - Paytm</option><option>Bank Transfer</option></select></div>
@@ -2268,13 +2270,15 @@ function custLookup(pfx){
     cidEl.value=found.id;cnEl.value=found.name;
     var stmt=getCustStatement(found.id);
     var metalBal=getCustMetalBalance(found.id);
+    var nb=stmt.netBal||0;
     var advHtml='';
-    if(stmt.credit>0||stmt.owed>0||metalBal.gold>0||metalBal.silver>0){
+    if(nb>0.01||nb<-0.01||metalBal.gold>0||metalBal.silver>0){
       advHtml='<div style="margin-top:6px">';
-      if(stmt.credit>0)advHtml+='<div style="background:var(--gnbg);border:1.5px solid rgba(29,122,58,.3);border-radius:8px;padding:8px 12px;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--grn)">Cash Advance</div><div style="font-size:18px;font-weight:800;color:var(--grn)">'+fmt(stmt.credit)+'</div></div><button class="btn btng" onclick="applyCustAdvance(\''+found.id+'\')">&#128176; Apply</button></div>';
+      if(nb>0.01)advHtml+='<div style="background:var(--gnbg);border:1.5px solid rgba(29,122,58,.3);border-radius:8px;padding:8px 12px;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--grn)">Net Advance</div><div style="font-size:18px;font-weight:800;color:var(--grn)">'+fmt(nb)+'</div></div><button class="btn btng" onclick="applyCustAdvance(\''+found.id+'\')">&#128176; Apply</button></div>';
+      if(nb<-0.01)advHtml+='<div style="background:var(--rdbg);border:1.5px solid rgba(192,57,43,.3);border-radius:8px;padding:6px 12px;font-size:12px;color:var(--red);font-weight:600">&#9888; Net Balance Due: '+fmt(-nb)+'</div>';
       if(metalBal.gold>0)advHtml+='<div style="background:var(--gold-pale);border:1.5px solid rgba(201,152,10,.35);border-radius:8px;padding:8px 12px;margin-bottom:4px"><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--gold-dark)">Gold Credit (we owe)</div><div style="font-size:16px;font-weight:800;color:var(--gold-dark)">'+metalBal.gold.toFixed(3)+'g <span style="font-size:11px;font-weight:500">&#8776; '+fmt(metalBal.gold*R.k22)+'</span></div></div>';
       if(metalBal.silver>0)advHtml+='<div style="background:var(--blbg);border:1.5px solid rgba(26,95,171,.2);border-radius:8px;padding:8px 12px;margin-bottom:4px"><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:var(--blu)">Silver Credit (we owe)</div><div style="font-size:16px;font-weight:800;color:var(--blu)">'+metalBal.silver.toFixed(3)+'g <span style="font-size:11px;font-weight:500">&#8776; '+fmt(metalBal.silver*R.sil)+'</span></div></div>';
-      if(stmt.owed>0)advHtml+='<div style="background:var(--rdbg);border:1.5px solid rgba(192,57,43,.3);border-radius:8px;padding:6px 12px;font-size:12px;color:var(--red);font-weight:600">&#9888; Outstanding: '+fmt(stmt.owed)+'</div>';
+
       advHtml+='</div>';
     }
     res.innerHTML='<div class="custok"><strong>&#10003; '+found.name+'</strong>'+(found.city?' &middot; '+found.city:'')+'</div>'+advHtml;
@@ -2586,9 +2590,10 @@ function sedCustLookup(){
   if(found){
     G('sed-cid').value=found.id;G('sed-cname').value=found.name;
     var stmt=getCustStatement(found.id);
+    var nb=(stmt.netBal||0);
     res.innerHTML='<div class="custok"><strong>&#10003; '+found.name+'</strong>'+
-      (stmt.credit>0?' <span style="color:var(--grn);font-size:11px">Adv: '+fmt(stmt.credit)+'</span>':'')+
-      (stmt.owed>0?' <span style="color:var(--red);font-size:11px">Owes: '+fmt(stmt.owed)+'</span>':'')+
+      (nb>0.01?' <span style="color:var(--grn);font-size:11px">Adv: '+fmt(nb)+'</span>':'')+
+      (nb<-0.01?' <span style="color:var(--red);font-size:11px">Due: '+fmt(-nb)+'</span>':'')+
     '</div>';
   } else {
     G('sed-cid').value='';G('sed-cname').value='';
@@ -2682,7 +2687,25 @@ function renderOrders(){
 function deliverOrder(id){var o=null;DB.orders.forEach(function(x){if(x.id===id)o=x;});if(o){o.status='delivered';dbUpdateOrderStatus(id,'delivered');renderOrders();renderDash();}}
 
 // ── PAYMENTS ──
-function onCPType(){var type=V('cp-type');var ogRow=G('cp-og-row');var cashRow=G('cp-cash-row');var lbl=G('cp-amt-lbl');if(!ogRow||!cashRow)return;var isOG=(type==='oldgold'||type==='oldgold-adv');ogRow.style.display=isOG?'block':'none';if(type==='oldgold'){cashRow.style.display='block';if(lbl)lbl.textContent='Cash Paid to Customer (\u20B9)';}else if(type==='oldgold-adv'){cashRow.style.display='none';}else{cashRow.style.display='block';if(lbl)lbl.textContent='Amount (\u20B9)';}}
+function onCPType(){
+  var type=V('cp-type');
+  var ogRow=G('cp-og-row'),cashRow=G('cp-cash-row'),lbl=G('cp-amt-lbl');
+  var obsInfo=G('cp-obs-info');
+  if(!ogRow||!cashRow)return;
+  var isOG=(type==='oldgold'||type==='oldgold-adv');
+  var isOBS=(type==='old_bal_settle');
+  ogRow.style.display=isOG?'block':'none';
+  if(obsInfo)obsInfo.style.display=isOBS?'block':'none';
+  if(type==='oldgold'){
+    cashRow.style.display='block';
+    if(lbl)lbl.textContent='Cash Paid to Customer (\u20B9)';
+  } else if(type==='oldgold-adv'){
+    cashRow.style.display='none';
+  } else {
+    cashRow.style.display='block';
+    if(lbl)lbl.textContent=isOBS?'Amount Received (\u20B9)':'Amount (\u20B9)';
+  }
+}
 function calcOGVal(){
   var metal=V('cp-og-metal'),wt=N('cp-og-wt'),pStr=V('cp-og-purity');
   var purity=pStr==='custom'?1:parseFloat(pStr)||1;
@@ -2714,7 +2737,7 @@ function savePayment(){
   else{
     var amt=N('cp-amt');if(!amt){alert('Enter amount.');return;}
     var mode=V('cp-mode');
-    var isOBS=(mode==='Old Balance Settlement');
+    var isOBS=(type==='old_bal_settle');
     var pyType=isOBS?'old_bal_settle':type;
     var py={id:uid(),cid:cid,customer:cname,type:pyType,amt:amt,mode:mode,date:date,note:note};
     DB.payments.unshift(py);
@@ -2722,14 +2745,17 @@ function savePayment(){
     if(isOBS&&cid){
       // Apply directly to oldest outstanding sale balances
       var excess=applyBalanceSettlement(cid,amt,date,'Payment: '+mode);
+      var applied=amt-excess;
       if(excess>0.01){
-        // Excess becomes advance credit
+        // Excess becomes advance credit — add as a standalone advance payment
         py.excessCredit=excess;
+        var advPy={id:uid(),cid:cid,customer:cname,type:'in',amt:excess,
+          mode:mode,date:date,note:'Excess advance after OB settle'};
+        DB.payments.unshift(advPy);
+        dbSavePayment(advPy);
         if(DB.custs[cid])DB.custs[cid].txns.push({type:'advance',date:date,
           bill:'OBS-'+py.id.slice(-4),amount:0,paid:excess,balance:-excess,
           note:'Excess after settling old balance'});
-        alert('\u2713 \u20B9'+amt.toLocaleString('en-IN')+' applied.\n'+
-          'Old balance settled. \u20B9'+excess.toLocaleString('en-IN')+' kept as advance.');
       }
     } else {
       var isIn=(type==='in');
@@ -2737,22 +2763,31 @@ function savePayment(){
         bill:'PAY-'+py.id.slice(-4),amount:isIn?0:amt,paid:isIn?amt:0,balance:isIn?-amt:amt});
     }
 
-    if(mode==='Cash'||mode==='Cash (Old Balance)'){
-      if(type==='in'||isOBS)DB.cashLog.push({type:'in',date:date,amount:amt,desc:'Pmt '+cname+(isOBS?' (OB settle)':''),src:'payment'});
-      else DB.cashLog.push({type:'out',date:date,amount:amt,desc:'Payout '+cname,src:'payment'});
+    // Record cash/bank movement based on payment mode
+    var isInflow=(type==='in'||isOBS);
+    if(mode==='Cash'){
+      DB.cashLog.push({type:isInflow?'in':'out',date:date,amount:amt,
+        desc:(isInflow?'Pmt: ':'Payout: ')+cname+(isOBS?' (OB settle)':''),src:'payment'});
+      dbSaveCashEntry(isInflow?'in':'out',date,amt,(isInflow?'Pmt: ':'Payout: ')+cname,'payment');
       renderCashFlow();
-    } else if(mode==='Bank Transfer / RTGS'||mode==='Bank'){
-      // Bank receipt
+    } else if(mode==='UPI - GPay'||mode==='UPI - Paytm'||mode==='UPI'){
+      // UPI counts as cash inflow
+      if(isInflow){
+        DB.cashLog.push({type:'in',date:date,amount:amt,desc:'UPI Pmt: '+cname+(isOBS?' (OB settle)':''),src:'payment'});
+        dbSaveCashEntry('in',date,amt,'UPI Pmt: '+cname,'payment');
+        renderCashFlow();
+      }
+    } else if(mode.indexOf('Bank')>=0||mode.indexOf('RTGS')>=0){
       if(!DB.bankAccounts)DB.bankAccounts={};
       var bankKey='Main Account';
       if(!DB.bankAccounts[bankKey])DB.bankAccounts[bankKey]=[];
-      DB.bankAccounts[bankKey].push({type:type==='in'||isOBS?'in':'out',date:date,amount:amt,
-        desc:'Customer pmt: '+cname});
+      DB.bankAccounts[bankKey].push({type:isInflow?'in':'out',date:date,amount:amt,
+        desc:(isInflow?'Customer pmt: ':'Payout: ')+cname+(isOBS?' (OB)':'')});
     }
   }
-  closeM('m-payment');renderPayments();renderDash();
+  closeM('m-payment');renderPayments();renderDash();renderSalesList();
   dbSavePayment(DB.payments[0]);
-  alert('&#10003; Payment recorded!');
+  if(!isOBS)alert('\u2713 Payment recorded!');
 }
 function fltPays(f,btn){payFlt=f;document.querySelectorAll('#pg-payments .tab').forEach(function(t){t.classList.remove('active');});if(btn)btn.classList.add('active');renderPayments();}
 function payTypeLabel(type){
@@ -2962,8 +2997,8 @@ function renderCustBal(){
   var rows=custs.map(function(c){
     var stmt=getCustStatement(c.id);
     var mb=getCustMetalBalance(c.id);
-    totalAdv+=Math.max(0,stmt.credit);
-    totalDue+=stmt.owed;
+    totalAdv+=Math.max(0,stmt.netBal||stmt.credit);
+    totalDue+=stmt.netBal<0?-stmt.netBal:0;
     totalGoldG+=mb.gold; totalSilverG+=mb.silver;
 
     // Filter
@@ -3028,7 +3063,7 @@ function renderCusts(){
       '<td class="num">'+(adv>0?'<span class="badge bg" style="font-size:11px">'+fmt(adv)+'</span>':'-')+'</td>'+
       '<td class="num">'+mStr+'</td>'+
       '<td class="num">'+(owed>0?'<span class="badge br" style="font-size:11px">'+fmt(owed)+'</span>':'-')+'</td>'+
-      '<td class="num">'+(adv>owed&&adv>0?'<span class="badge bg">+'+fmt(adv-owed)+'</span>':owed>adv&&owed>0?'<span class="badge br">-'+fmt(owed-adv)+'</span>':'<span style="font-size:10px;color:var(--tx3)">-</span>')+'</td>'+
+      '<td class="num">'+(stmt.netBal>0.01?'<span class="badge bg">Adv '+fmt(stmt.netBal)+'</span>':stmt.netBal<-0.01?'<span class="badge br">Due '+fmt(-stmt.netBal)+'</span>':'<span style="font-size:10px;color:var(--tx3)">Settled</span>')+'</td>'+
       '<td><div style="display:flex;gap:4px;justify-content:flex-end">'+
         '<button class="btn btnsm btnog" data-cid="'+c.id+'" data-act="ledger">Ledger</button>'+
         '<button class="btn btnsm" data-cid="'+c.id+'" data-act="edit">\u270e Edit</button>'+
@@ -3073,9 +3108,10 @@ function getSupBalanceGrams(supId){
     if(i.status==='sold') grams += (i.gross||0);
   });
 
-  // Subtract settled grams
+  // Subtract settled grams (both cash/bank and metal-from-reserve settlements)
   (sup.txns||[]).forEach(function(t){
-    if(t.type==='settlement' && t.settled_grams>0) grams -= t.settled_grams;
+    if((t.type==='settlement'||t.type==='settlement_metal') && t.settled_grams>0)
+      grams -= t.settled_grams;
   });
 
   return Math.max(0, Math.round(grams*1000)/1000);
@@ -3487,7 +3523,17 @@ function dbSaveSup(s){
 
 function dbSaveSupTxn(supId,txn){
   if(!sbHasConfig())return;
-  dbPost('supplier_transactions',{supplier_id:supId,txn_type:txn.type,txn_date:txn.date,debit_inr:txn.debit||0,credit_inr:txn.credit||0,description:txn.desc||txn.note||''},null);
+  dbPost('supplier_transactions',{
+    supplier_id:supId,
+    txn_type:txn.type,
+    txn_date:txn.date,
+    debit_inr:txn.debit||0,
+    credit_inr:txn.credit||0,
+    description:txn.desc||txn.note||'',
+    settled_grams:txn.settled_grams||null,
+    rate_used:txn.rate_used||null,
+    cash_paid:txn.cash_paid||null
+  },null);
 }
 
 function dbSaveSale(sale){
@@ -4465,8 +4511,12 @@ function applyBalanceSettlement(custId, amount, date, note){
       (cust.txns||[]).forEach(function(t){if(t.bill===s.bill)tx=t;});
       if(tx){tx.paid=(tx.paid||0)+apply;tx.balance=s.balance;}
     }
+    // Persist to DB — update sale's paid amount
+    if(sbHasConfig()&&s.id){
+      dbPatch('sales','id=eq.'+s.id,{amount_paid:s.paid},null);
+    }
   });
-  return Math.max(0,Math.round(remaining*100)/100); // returns any unapplied excess
+  return Math.max(0,Math.round(remaining*100)/100);
 }
 
 // ── getCustStatement (overhaul) ──────────────────────────────
@@ -4542,20 +4592,30 @@ function getCustMetalBalance(custId){
   return{gold:Math.max(0,gold),silver:Math.max(0,silver)};
 }
 function getCustStatement(custId){
-  var cust=DB.custs[custId]; if(!cust)return{credit:0,owed:0,net:0};
+  var cust=DB.custs[custId]; if(!cust)return{credit:0,owed:0,net:0,netBal:0};
   var credit=getCustCredit(custId);
+  // Outstanding sales balance
   var owed=DB.sales.filter(function(s){return s.cid===custId&&s.balance>0;})
     .reduce(function(sum,s){return sum+s.balance;},0);
-  // Extra: standalone old_bal_settle payments that haven't been applied to a specific sale
+  // OBS payments already applied to sales via applyBalanceSettlement
+  // so owed is already reduced. Just net credit vs remaining owed.
   var obsApplied=0;
   DB.payments.forEach(function(p){
     if((p.cid===custId||(p.customer&&cust&&p.customer===cust.name))&&
-       (p.mode==='Old Balance Settlement'||p.type==='old_bal_settle'))
+       p.type==='old_bal_settle')
       obsApplied+=p.amt;
   });
+  // Remaining owed after OBS payments
   var netOwed=Math.max(0, owed-obsApplied);
-  var net=credit>0&&netOwed>0 ? Math.max(0,credit-netOwed) : (credit>0?credit:0);
-  return{credit:credit, owed:netOwed, net:net, obsApplied:obsApplied};
+  // Net balance: positive = we owe them (advance), negative = they still owe us
+  var netBal=credit - netOwed;
+  return{
+    credit: credit,          // total advance credit
+    owed: netOwed,           // remaining sales balance after OBS
+    obsApplied: obsApplied,
+    netBal: netBal,          // positive = advance, negative = still owes
+    net: Math.max(0, netBal) // legacy: positive advance only
+  };
 }
 
 // Add advance as a payment row in the current sale
