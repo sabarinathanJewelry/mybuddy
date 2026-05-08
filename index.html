@@ -1395,7 +1395,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
   <div class="tab" onclick="mfTab('batch',this)">Batch</div>
   <div class="tab" onclick="mfTab('refinery',this)">Refinery</div>
   <div class="tab" onclick="mfTab('out',this)">Outflow</div>
-  <div class="tab" onclick="mfTab('sell',this)">&#128176; Sell</div>
+  <div class="tab" onclick="mfTab('sell',this)">Sell</div>
   <div class="tab" onclick="mfTab('log',this)">Log</div>
 </div>
 
@@ -1440,7 +1440,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
 <div id="mf-sell" style="display:none">
   <div class="card">
     <div class="card-header">
-      <div><div class="card-title">&#128176; Sell Refined Gold / Silver</div><div class="card-sub">Record sale from reserve — reduces metal stock, adds to cash</div></div>
+      <div><div class="card-title">Sell Refined Gold / Silver</div><div class="card-sub">Record sale from reserve — reduces metal stock, adds to cash</div></div>
       <button class="btn btnsm btnog" onclick="_showSellHistory()">History</button>
     </div>
     <div class="g3">
@@ -1818,30 +1818,67 @@ input:checked+.tslider::before { transform:translateX(17px); }
 <div class="modal-bg" id="m-settle"><div class="msheet"><div class="mhandle"></div>
 <div class="mtitle">&#128179; Settle Supplier — <span id="st-sup-name" style="color:var(--gold-dark)"></span></div>
 <div class="infobar" style="font-size:11px;margin-bottom:12px">
-  Current balance: <strong id="st-cur-grams">0.000g</strong> metal &nbsp;&bull;&nbsp; <strong id="st-cur-val">&#8377;0</strong>
+  Balance: <strong id="st-cur-grams" style="color:var(--red)">0.000g</strong> &nbsp;&bull;&nbsp; <strong id="st-cur-val">&#8377;0</strong>
 </div>
-<div class="g2">
-  <div class="field"><label>Grams being settled</label>
-    <input type="number" id="st-grams" step="0.001" inputmode="decimal" placeholder="e.g. 5.000" oninput="stCalcAmt()">
-  </div>
-  <div class="field"><label>Rate &#8377;/g (for this settlement)</label>
-    <input type="number" id="st-rate" step="0.01" inputmode="decimal" oninput="stCalcAmt()" placeholder="e.g. 14050">
-  </div>
+
+<!-- Settlement method tabs -->
+<div class="tabs" style="margin-bottom:14px">
+  <div class="tab active" id="st-tab-cash" onclick="stSwitchMode('cash',this)">&#128181; Cash / Bank Payment</div>
+  <div class="tab" id="st-tab-metal" onclick="stSwitchMode('metal',this)">&#129680; Metal from Reserve</div>
 </div>
-<div class="totpanel" style="margin-bottom:12px">
-  <div class="trow"><span class="tlbl">Grams settling</span><span class="tval" id="st-d-grams">0.000g</span></div>
-  <div class="trow big"><span class="tlbl">Cash to pay (&#8377;)</span>
-    <input type="number" id="st-amt" step="0.01" inputmode="decimal" placeholder="Auto-calculated"
-      style="width:160px;text-align:right;font-size:18px;font-weight:800;color:var(--gold-dark);background:transparent;border:none;outline:none;font-family:inherit">
+
+<!-- MODE A: Cash/Bank — grams × rate = ₹ -->
+<div id="st-cash-panel">
+  <div class="g2">
+    <div class="field"><label>Grams being settled</label>
+      <input type="number" id="st-grams" step="0.001" inputmode="decimal" placeholder="e.g. 5.000" oninput="stCalcAmt()">
+    </div>
+    <div class="field"><label>Rate &#8377;/g (pure)</label>
+      <input type="number" id="st-rate" step="0.01" inputmode="decimal" oninput="stCalcAmt()" placeholder="e.g. 14050">
+    </div>
   </div>
-</div>
-<div class="g2">
-  <div class="field"><label>Payment Mode</label>
-    <select id="st-mode"><option>Cash</option><option>Bank Transfer / RTGS</option><option>UPI</option><option>Cheque</option></select>
+  <div class="totpanel" style="margin-bottom:12px">
+    <div class="trow"><span class="tlbl">Grams settling</span><span class="tval" id="st-d-grams">0.000g</span></div>
+    <div class="trow big"><span class="tlbl">Amount to pay (&#8377;)</span>
+      <input type="number" id="st-amt" step="0.01" inputmode="decimal" placeholder="Auto-calculated"
+        style="width:160px;text-align:right;font-size:18px;font-weight:800;color:var(--gold-dark);background:transparent;border:none;outline:none;font-family:inherit">
+    </div>
   </div>
-  <div class="field"><label>Date</label><input type="date" id="st-date"></div>
+  <div class="g2">
+    <div class="field"><label>Payment Mode</label>
+      <select id="st-mode"><option>Cash</option><option>Bank Transfer / RTGS</option><option>UPI</option><option>Cheque</option></select>
+    </div>
+    <div class="field"><label>Date</label><input type="date" id="st-date"></div>
+  </div>
+  <div class="field"><label>Reference / Cheque No</label><input type="text" id="st-ref" placeholder="Bank ref, cheque number..."></div>
 </div>
-<div class="field"><label>Reference / Cheque No</label><input type="text" id="st-ref" placeholder="Bank ref, cheque number..."></div>
+
+<!-- MODE B: Metal from Reserve — no cash moves -->
+<div id="st-metal-panel" style="display:none">
+  <div class="warnbar" style="font-size:11px;margin-bottom:12px">
+    &#129680; Physical gold/silver from your reserve will be given to supplier. No cash/bank movement.
+  </div>
+  <div class="g2">
+    <div class="field"><label>Metal</label>
+      <select id="st-met-metal"><option>Gold</option><option>Silver</option></select>
+    </div>
+    <div class="field"><label>Weight from reserve (g)</label>
+      <input type="number" id="st-met-wt" step="0.001" inputmode="decimal" placeholder="e.g. 5.000" oninput="stCalcMetalAmt()">
+    </div>
+  </div>
+  <div class="g2">
+    <div class="field"><label>Rate &#8377;/g (for valuation)</label>
+      <input type="number" id="st-met-rate" step="0.01" inputmode="decimal" oninput="stCalcMetalAmt()" placeholder="e.g. 14050">
+    </div>
+    <div class="field"><label>Date</label><input type="date" id="st-met-date"></div>
+  </div>
+  <div class="totpanel" style="margin-bottom:12px">
+    <div class="trow"><span class="tlbl">Metal weight</span><span class="tval" id="st-met-d-wt">0.000g</span></div>
+    <div class="trow big"><span class="tlbl">Equivalent value (&#8377;)</span><span class="tval" id="st-met-d-val" style="color:var(--gold-dark)">&#8377;0</span></div>
+  </div>
+  <div class="infobar" style="font-size:11px">Reserve: <strong id="st-reserve-bal">...</strong></div>
+</div>
+
 <div class="mfoot">
   <button class="btn" onclick="closeM('m-settle')">Cancel</button>
   <button class="btn btng" onclick="saveSettle()">Record Settlement</button>
@@ -2665,14 +2702,54 @@ function savePayment(){
   var cid=V('cp-cid'),cname=V('cp-cname');
   var type2=V('cp-type');
   if(!cname&&type2==='in'){
-    // Allow repair payments without customer — use Walk-in
     cname='Walk-in / Repair';
+  } else if(!cname&&type2==='old_bal_settle'){
+    alert('Select customer for old balance settlement.'); return;
   } else if(!cname){
     alert('Enter customer phone first.');return;
   }
   var type=V('cp-type'),date=V('cp-date')||td(),note=V('cp-note'),isOG=(type==='oldgold'||type==='oldgold-adv');
+  if(type==='old_bal_settle')cname=cname||V('cp-cname'); // ensure name used
   if(isOG){var ogWt=N('cp-og-wt'),ogVal=N('cp-og-val'),ogM=V('cp-og-metal');if(!ogWt){alert('Enter old gold weight.');return;}var ogPure=N('cp-og-pure')||ogWt;var ogItem={id:uid(),metal:ogM,wt:ogWt,pure:ogPure,val:ogVal,date:date,src:'Old '+ogM+' from '+cname+' ('+ogWt.toFixed(3)+'g)',batched:false};DB.oldMetal.push(ogItem);dbSaveOldMetal(ogItem);var cashAmt=type==='oldgold'?N('cp-amt'):0;if(type==='oldgold'&&cashAmt>0){DB.cashLog.push({type:'out',date:date,amount:cashAmt,desc:'Old Gold Cash Out: '+cname+' '+ogWt+'g',src:'payment'});dbSaveCashEntry('out',date,cashAmt,'Old Gold Cash Out: '+cname,'payment');}if(type==='oldgold-adv'&&DB.custs[cid])DB.custs[cid].txns.push({type:'old_gold_advance',date:date,bill:'OGA-'+Date.now().toString(36).slice(-4),amount:ogVal,paid:ogVal,balance:0});DB.payments.unshift({id:uid(),cid:cid,customer:cname,type:type,amt:type==='oldgold-adv'?ogVal:cashAmt,mode:type==='oldgold-adv'?'Old Gold (Advance)':V('cp-mode'),date:date,note:note,ogWt:ogWt,ogMetal:ogM,ogVal:ogVal});renderCashFlow();}
-  else{var amt=N('cp-amt');if(!amt){alert('Enter amount.');return;}var mode=V('cp-mode');var py={id:uid(),cid:cid,customer:cname,type:type,amt:amt,mode:mode,date:date,note:note};DB.payments.unshift(py);var isIn=(type==='in');if(DB.custs[cid])DB.custs[cid].txns.push({type:isIn?'payment_in':'payment_out',date:date,bill:'PAY-'+py.id.slice(-4),amount:isIn?0:amt,paid:isIn?amt:0,balance:isIn?-amt:amt});if(mode==='Cash'){if(isIn)DB.cashLog.push({type:'in',date:date,amount:amt,desc:'Cust pmt '+cname,src:'payment'});else DB.cashLog.push({type:'out',date:date,amount:amt,desc:'Payout '+cname,src:'payment'});renderCashFlow();}}
+  else{
+    var amt=N('cp-amt');if(!amt){alert('Enter amount.');return;}
+    var mode=V('cp-mode');
+    var isOBS=(mode==='Old Balance Settlement');
+    var pyType=isOBS?'old_bal_settle':type;
+    var py={id:uid(),cid:cid,customer:cname,type:pyType,amt:amt,mode:mode,date:date,note:note};
+    DB.payments.unshift(py);
+
+    if(isOBS&&cid){
+      // Apply directly to oldest outstanding sale balances
+      var excess=applyBalanceSettlement(cid,amt,date,'Payment: '+mode);
+      if(excess>0.01){
+        // Excess becomes advance credit
+        py.excessCredit=excess;
+        if(DB.custs[cid])DB.custs[cid].txns.push({type:'advance',date:date,
+          bill:'OBS-'+py.id.slice(-4),amount:0,paid:excess,balance:-excess,
+          note:'Excess after settling old balance'});
+        alert('\u2713 \u20B9'+amt.toLocaleString('en-IN')+' applied.\n'+
+          'Old balance settled. \u20B9'+excess.toLocaleString('en-IN')+' kept as advance.');
+      }
+    } else {
+      var isIn=(type==='in');
+      if(DB.custs[cid])DB.custs[cid].txns.push({type:isIn?'payment_in':'payment_out',date:date,
+        bill:'PAY-'+py.id.slice(-4),amount:isIn?0:amt,paid:isIn?amt:0,balance:isIn?-amt:amt});
+    }
+
+    if(mode==='Cash'||mode==='Cash (Old Balance)'){
+      if(type==='in'||isOBS)DB.cashLog.push({type:'in',date:date,amount:amt,desc:'Pmt '+cname+(isOBS?' (OB settle)':''),src:'payment'});
+      else DB.cashLog.push({type:'out',date:date,amount:amt,desc:'Payout '+cname,src:'payment'});
+      renderCashFlow();
+    } else if(mode==='Bank Transfer / RTGS'||mode==='Bank'){
+      // Bank receipt
+      if(!DB.bankAccounts)DB.bankAccounts={};
+      var bankKey='Main Account';
+      if(!DB.bankAccounts[bankKey])DB.bankAccounts[bankKey]=[];
+      DB.bankAccounts[bankKey].push({type:type==='in'||isOBS?'in':'out',date:date,amount:amt,
+        desc:'Customer pmt: '+cname});
+    }
+  }
   closeM('m-payment');renderPayments();renderDash();
   dbSavePayment(DB.payments[0]);
   alert('&#10003; Payment recorded!');
@@ -2816,9 +2893,34 @@ function renderPurchases(){
 }
 
 // ── EXPENSE ──
+
+function addCustomCat(){
+  var name=(V('ex-cname')||'').trim();
+  if(!name){alert('Enter category name.');return;}
+  var sel=G('ex-cat');
+  if(!sel)return;
+  // Check if already exists
+  var exists=false;
+  for(var i=0;i<sel.options.length;i++){
+    if(sel.options[i].value===name){exists=true;sel.selectedIndex=i;break;}
+  }
+  if(!exists){
+    // Insert before the __custom__ option
+    var customIdx=sel.options.length-1;
+    var opt=document.createElement('option');
+    opt.value=name; opt.text=name;
+    sel.insertBefore(opt, sel.options[customIdx]);
+    sel.value=name;
+  }
+  // Hide the custom row
+  var row=G('ex-custom-row');if(row)row.style.display='none';
+  // Now save the expense
+  saveExpense();
+}
+
 function onExCat(){var v=V('ex-cat');var row=G('ex-custom-row');if(row)row.style.display=(v==='__custom__')?'block':'none';}
 function addCustomCat(){var name=V('ex-cname').trim();if(!name)return;var sel=G('ex-cat');if(!sel)return;var newOpt=document.createElement('option');newOpt.value=name;newOpt.textContent=name;var lastOpt=sel.lastElementChild;sel.insertBefore(newOpt,lastOpt);sel.value=name;var flt=G('ex-flt');if(flt){var fo=document.createElement('option');fo.value=name;fo.textContent=name;flt.appendChild(fo);}var row=G('ex-custom-row');if(row)row.style.display='none';var cn=G('ex-cname');if(cn)cn.value='';}
-function saveExpense(){var cat=V('ex-cat');if(cat==='__custom__'){var row=G('ex-custom-row');if(row)row.style.display='block';return;}var date=V('ex-date')||td(),amt=N('ex-amt'),mode=V('ex-mode'),desc=V('ex-desc');if(!amt){alert('Enter amount.');return;}var exObj={id:uid(),date:date,amt:amt,cat:cat,mode:mode,desc:desc};DB.expenses.unshift(exObj);dbSaveExpense(exObj);if(mode==='Cash'){DB.cashLog.push({type:'out',date:date,amount:amt,desc:'Expense: '+cat+(desc?' - '+desc:''),src:'expense'});renderCashFlow();}var ea=G('ex-amt');if(ea)ea.value='';var ed=G('ex-desc');if(ed)ed.value='';renderExpenses();}
+function saveExpense(){var cat=V('ex-cat');if(!cat||cat==='__custom__'){var row=G('ex-custom-row');if(row)row.style.display='block';if(cat==='__custom__')return;}var date=V('ex-date')||td(),amt=N('ex-amt'),mode=V('ex-mode'),desc=V('ex-desc');if(!amt){alert('Enter amount.');return;}var exObj={id:uid(),date:date,amt:amt,cat:cat,mode:mode,desc:desc};DB.expenses.unshift(exObj);dbSaveExpense(exObj);if(mode==='Cash'){DB.cashLog.push({type:'out',date:date,amount:amt,desc:'Expense: '+cat+(desc?' - '+desc:''),src:'expense'});renderCashFlow();}var ea=G('ex-amt');if(ea)ea.value='';var ed=G('ex-desc');if(ed)ed.value='';renderExpenses();}
 function renderExpenses(){var flt=V('ex-flt');var f=flt?DB.expenses.filter(function(e){return e.cat===flt;}):DB.expenses;var tod=td(),mon=tod.slice(0,7);var todA=DB.expenses.filter(function(e){return e.date===tod;}).reduce(function(s,e){return s+e.amt;},0);var monA=DB.expenses.filter(function(e){return e.date.slice(0,7)===mon;}).reduce(function(s,e){return s+e.amt;},0);if(G('ex-tod'))G('ex-tod').innerHTML=fmt(todA);if(G('ex-mon'))G('ex-mon').innerHTML=fmt(monA);var t=G('ex-table');if(!t)return;t.innerHTML=f.length?'<table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Mode</th><th>Desc</th><th class="num">Amount</th></tr></thead><tbody>'+f.map(function(e){return '<tr><td style="font-size:12px;color:var(--tx3)">'+e.date+'</td><td style="font-weight:600">'+e.cat+'</td><td style="font-size:12px;color:var(--tx3)">'+e.mode+'</td><td style="font-size:12px;color:var(--tx3)">'+(e.desc||'-')+'</td><td class="num" style="color:var(--red)">'+fmt(e.amt)+'</td></tr>';}).join('')+'</tbody></table>':'<div class="empty"><div class="etxt">No expenses</div></div>';}
 
 // ── CUSTOMERS ──
@@ -2910,10 +3012,10 @@ function renderCusts(){
   });
   if(G('ds-cust'))G('ds-cust').textContent=Object.keys(DB.custs).length;
   if(!cl.length){t.innerHTML='<div class="empty"><div class="etxt">No customers found</div></div>';return;}
-  var html='<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Name</th><th>Phone</th><th>City</th><th class="num">Cash Adv</th><th class="num">Metal Credit</th><th class="num">Owes</th><th></th></tr></thead><tbody>';
+  var html='<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Name</th><th>Phone</th><th>City</th><th class="num">Advance</th><th class="num">Metal</th><th class="num">Owes</th><th class="num">Net</th><th></th></tr></thead><tbody>';
   cl.forEach(function(c){
-    var adv=getCustCredit(c.id);
-    var owed=DB.sales.filter(function(s){return s.cid===c.id&&s.balance>0;}).reduce(function(s,x){return s+x.balance;},0);
+    var stmt=getCustStatement(c.id);
+    var adv=stmt.credit, owed=stmt.owed;
     var mb2=getCustMetalBalance(c.id);
     var mStr=(mb2.gold>0?'<span class="badge bgold" style="font-size:10px">'+mb2.gold.toFixed(3)+'g&#129680;</span>':'')
       +(mb2.silver>0?'<span class="badge bb" style="font-size:10px"> '+mb2.silver.toFixed(3)+'gAg</span>':'')
@@ -2923,9 +3025,10 @@ function renderCusts(){
       '<td style="font-weight:600">'+c.name+'</td>'+
       '<td style="font-size:12px">'+c.phone+'</td>'+
       '<td style="font-size:12px;color:var(--tx3)">'+(c.city||'-')+'</td>'+
-      '<td class="num">'+(adv>0?'<span class="badge bg">'+fmt(adv)+'</span>':'-')+'</td>'+
+      '<td class="num">'+(adv>0?'<span class="badge bg" style="font-size:11px">'+fmt(adv)+'</span>':'-')+'</td>'+
       '<td class="num">'+mStr+'</td>'+
-      '<td class="num">'+(owed>0?'<span class="badge br">'+fmt(owed)+'</span>':'-')+'</td>'+
+      '<td class="num">'+(owed>0?'<span class="badge br" style="font-size:11px">'+fmt(owed)+'</span>':'-')+'</td>'+
+      '<td class="num">'+(adv>owed&&adv>0?'<span class="badge bg">+'+fmt(adv-owed)+'</span>':owed>adv&&owed>0?'<span class="badge br">-'+fmt(owed-adv)+'</span>':'<span style="font-size:10px;color:var(--tx3)">-</span>')+'</td>'+
       '<td><div style="display:flex;gap:4px;justify-content:flex-end">'+
         '<button class="btn btnsm btnog" data-cid="'+c.id+'" data-act="ledger">Ledger</button>'+
         '<button class="btn btnsm" data-cid="'+c.id+'" data-act="edit">\u270e Edit</button>'+
@@ -3070,6 +3173,35 @@ function openSupLedger(id){
   G('sl-panel').style.display='';
 }
 
+
+function stSwitchMode(mode,btn){
+  document.querySelectorAll('#m-settle .tab').forEach(function(t){t.classList.remove('active');});
+  if(btn)btn.classList.add('active');
+  var cp=G('st-cash-panel'), mp=G('st-metal-panel');
+  if(cp)cp.style.display=mode==='cash'?'':'none';
+  if(mp)mp.style.display=mode==='metal'?'':'none';
+  if(mode==='metal'){
+    // Show reserve balance
+    var rb=G('st-reserve-bal');
+    if(rb)rb.textContent='Gold: '+metalR.gold.toFixed(3)+'g | Silver: '+metalR.silver.toFixed(3)+'g';
+    var mrd=G('st-met-date');if(mrd&&!mrd.value)mrd.value=td();
+    var mrr=G('st-met-rate');
+    if(mrr&&!mrr.value)mrr.value=R.k22.toFixed(2);
+  }
+}
+
+function stCalcMetalAmt(){
+  var wt=N('st-met-wt'), rate=N('st-met-rate');
+  if(!rate&&activeSup){
+    var mt=(activeSup.metal||'Gold');
+    rate=mt.indexOf('Gold')>=0?R.k22:R.sil;
+    var re=G('st-met-rate');if(re&&!re.value)re.value=rate.toFixed(2);
+  }
+  var val=wt*rate;
+  var dw=G('st-met-d-wt');if(dw)dw.textContent=wt.toFixed(3)+'g';
+  var dv=G('st-met-d-val');if(dv)dv.textContent=fmt(val);
+}
+
 function stCalcAmt(){
   var grams=N('st-grams'), rate=N('st-rate');
   if(!rate&&activeSup){
@@ -3097,15 +3229,62 @@ function openSettleModal(){
   var sg=G('st-grams'); if(sg){sg.value='';sg.focus();}
   var sa=G('st-amt'); if(sa)sa.value='';
   var dd=G('st-d-grams'); if(dd)dd.textContent='0.000g';
+  // Reset to cash mode
+  stSwitchMode('cash', G('st-tab-cash'));
   openM('m-settle');
 }
 
 function saveSettle(){
   if(!activeSup)return;
+  // Which mode is active?
+  var mp=G('st-metal-panel');
+  var isMetal=mp&&mp.style.display!=='none';
+
+  if(isMetal){
+    // ── Mode B: Metal from Reserve ──────────────────────
+    var wt=N('st-met-wt'), rate=N('st-met-rate');
+    var date=V('st-met-date')||td();
+    if(!wt){alert('Enter metal weight.');return;}
+    var metal=V('st-met-metal')||'Gold';
+    var curReserve=metal==='Gold'?metalR.gold:metalR.silver;
+    if(wt>curReserve+0.001){
+      if(!confirm('Giving '+wt.toFixed(3)+'g but reserve only has '+curReserve.toFixed(3)+'g. Continue?'))return;
+    }
+    var curGrams=getSupBalanceGrams(activeSup.id);
+    if(wt>curGrams+0.001){
+      if(!confirm('Settling '+wt.toFixed(3)+'g but supplier balance is only '+curGrams.toFixed(3)+'g. Continue?'))return;
+    }
+    // Reduce metal reserve
+    if(metal==='Gold')metalR.gold=Math.max(0,metalR.gold-wt);
+    else metalR.silver=Math.max(0,metalR.silver-wt);
+    updateMFDisp();
+    // Log metal outflow
+    var mfEnt={type:'out',date:date,metal:metal,wt:wt,pure:wt,
+      src:'Supplier payment: '+activeSup.name,purpose:'SupPay'};
+    DB.metalLog.unshift(mfEnt);
+    dbSaveMetalLog(mfEnt);
+    // Record in supplier
+    if(!activeSup.txns)activeSup.txns=[];
+    var val=wt*rate;
+    var txn={type:'settlement_metal',date:date,desc:'Metal from reserve',
+      settled_grams:wt,rate_used:rate,cash_paid:0,
+      debit:0,credit:val,
+      note:wt.toFixed(3)+'g '+metal+' from reserve @ \u20B9'+rate.toFixed(0)};
+    activeSup.txns.push(txn);
+    activeSup.balance=Math.max(0,(activeSup.balance||0)-val);
+    dbSaveSupTxn(activeSup.id,txn);
+    closeM('m-settle');
+    openSupLedger(activeSup.id);
+    renderSups();renderMFLog();
+    alert('\u2713 '+wt.toFixed(3)+'g '+metal+' given from reserve\nEquivalent: '+fmt(val));
+    return;
+  }
+
+  // ── Mode A: Cash / Bank Payment ─────────────────────
   var grams=N('st-grams'), rate=N('st-rate'), cashAmt=N('st-amt');
   var mode=V('st-mode'), date=V('st-date')||td(), ref=V('st-ref');
   if(!grams){alert('Enter grams being settled.');return;}
-  if(!cashAmt){alert('Enter cash amount.');return;}
+  if(!cashAmt){alert('Enter payment amount.');return;}
   var curGrams=getSupBalanceGrams(activeSup.id);
   if(grams>curGrams+0.001){
     if(!confirm('Settling '+grams.toFixed(3)+'g but balance is only '+curGrams.toFixed(3)+'g. Continue?'))return;
@@ -3116,17 +3295,24 @@ function saveSettle(){
     debit:0,credit:cashAmt,
     note:grams.toFixed(3)+'g @ \u20B9'+rate.toFixed(0)+' = \u20B9'+cashAmt.toFixed(0)+(ref?' | '+ref:'')};
   activeSup.txns.push(txn);
-  // Update ₹ balance for backward compat
   activeSup.balance=Math.max(0,(activeSup.balance||0)-cashAmt);
-  // Cash out
-  DB.cashLog.push({type:'out',date:date,amount:cashAmt,
-    desc:'Supplier settle: '+activeSup.name+' '+grams.toFixed(3)+'g',src:'supplier'});
+  // Cash or Bank
+  if(mode==='Cash'){
+    DB.cashLog.push({type:'out',date:date,amount:cashAmt,
+      desc:'Supplier: '+activeSup.name+' '+grams.toFixed(3)+'g',src:'supplier'});
+    dbSaveCashEntry('out',date,cashAmt,'Supplier: '+activeSup.name,'supplier');
+  } else if(mode.indexOf('Bank')>=0||mode.indexOf('RTGS')>=0){
+    if(!DB.bankAccounts)DB.bankAccounts={};
+    var bk='Main Account';
+    if(!DB.bankAccounts[bk])DB.bankAccounts[bk]=[];
+    DB.bankAccounts[bk].push({type:'out',date:date,amount:cashAmt,
+      desc:'Supplier pay: '+activeSup.name+' '+grams.toFixed(3)+'g'+(ref?' | '+ref:'')});
+  }
   dbSaveSupTxn(activeSup.id,txn);
-  dbSaveCashEntry('out',date,cashAmt,'Supplier settle: '+activeSup.name,'supplier');
   closeM('m-settle');
   openSupLedger(activeSup.id);
   renderSups();renderCashFlow();
-  alert('\u2713 Settled '+grams.toFixed(3)+'g | \u20B9'+cashAmt.toFixed(0)+' recorded');
+  alert('\u2713 '+grams.toFixed(3)+'g settled | '+fmt(cashAmt)+' via '+mode);
 }
 
 // ── SUSPENSE ──
@@ -3366,6 +3552,29 @@ function dbSaveExpense(ex){
   });
 }
 
+function dbSaveLoan(loan){
+  if(!sbHasConfig())return;
+  dbUpsert('loans',{
+    id:loan.id,
+    lender_name:loan.lender,
+    loan_type:loan.type||'Bank Loan',
+    principal_amount:loan.amt||0,
+    interest_rate:loan.rate||0,
+    rate_type:loan.rateType||'month',
+    start_date:loan.start||td(),
+    due_date:loan.due||null,
+    amount_paid:loan.paid||0,
+    notes:loan.notes||null,
+    status:loan.status||'active'
+  },function(d,e){if(e)console.error('Save loan:',e);else showDbStatus('Loan saved \u2713');});
+}
+
+function dbUpdateLoan(loan){
+  if(!sbHasConfig())return;
+  dbPatch('loans','id=eq.'+loan.id,{amount_paid:loan.paid||0,status:loan.status||'active'},null);
+}
+
+
 function dbSaveCashEntry(type,date,amount,desc,source){
   if(!sbHasConfig())return;
   dbPost('cash_log',{log_type:type,log_date:date,amount:amount,description:desc,source:source||'manual'},function(d,e){if(e)console.error('CashLog:',e);});
@@ -3531,6 +3740,21 @@ function dbLoadAll(){
     updateMFDisp();loadPendingBatches();
     var dsb=G('ds-bat');if(dsb)dsb.textContent=DB.batches.filter(function(b){return b.status==='pending';}).length;
     console.log('Batches loaded:',d.length);
+  });
+
+  // Load loans
+  dbGet('loans?select=*&order=start_date.desc',function(d,e){
+    if(e){console.error('Load loans:',e);return;}
+    DB.loans=[];
+    (d||[]).forEach(function(r){
+      DB.loans.push({id:r.id,lender:r.lender_name,type:r.loan_type||'Bank Loan',
+        amt:parseFloat(r.principal_amount)||0,rate:parseFloat(r.interest_rate)||0,
+        rateType:r.rate_type||'month',start:r.start_date,due:r.due_date||'',
+        paid:parseFloat(r.amount_paid)||0,notes:r.notes||'',
+        status:r.status||'active',created:r.start_date});
+    });
+    renderLoans();renderBalance();
+    console.log('Loans loaded:',d.length);
   });
 
   setTimeout(function(){showDbStatus('Supabase');renderDash();},4000);
@@ -4220,6 +4444,36 @@ function translateLabel(inputId, key){
 // Calculate net credit a customer has with us
 // Credit sources: advance payments, old gold advances, opening balance
 // Debit sources: outstanding sale balances
+
+// ── Apply a payment to reduce outstanding sale balances (FIFO) ──────────────
+function applyBalanceSettlement(custId, amount, date, note){
+  if(!custId||!amount)return;
+  var remaining=amount;
+  // Sort sales by date ascending (oldest first)
+  var custSales=DB.sales.filter(function(s){return s.cid===custId&&s.balance>0;})
+    .sort(function(a,b){return a.date.localeCompare(b.date);});
+  custSales.forEach(function(s){
+    if(remaining<=0)return;
+    var apply=Math.min(remaining, s.balance);
+    s.paid=(s.paid||0)+apply;
+    s.balance=Math.max(0,s.balance-apply);
+    remaining-=apply;
+    // Update customer txn for that bill
+    var cust=DB.custs[custId];
+    if(cust){
+      var tx=null;
+      (cust.txns||[]).forEach(function(t){if(t.bill===s.bill)tx=t;});
+      if(tx){tx.paid=(tx.paid||0)+apply;tx.balance=s.balance;}
+    }
+  });
+  return Math.max(0,Math.round(remaining*100)/100); // returns any unapplied excess
+}
+
+// ── getCustStatement (overhaul) ──────────────────────────────
+// credit = standalone advance payments (excluding old_balance_settlement)
+// owed   = sum of outstanding sale balances (already adjusted by applyBalanceSettlement)
+// net    = credit - owed (positive = we owe customer, negative = they owe us)
+
 function getCustCredit(custId){
   if(!custId)return 0;
   var credit=0;
@@ -4237,6 +4491,8 @@ function getCustCredit(custId){
     if(!byId&&!byName)return;
     switch(p.type){
       case 'in':case 'advance':case 'oldgold-adv':case 'old_gold_advance':
+        // Skip old balance settlements — they reduce sales.balance directly, not advance
+        if(p.mode==='Old Balance Settlement'||p.type==='old_bal_settle')break;
         credit+=p.amt; break;
       case 'chit_bonus':  credit+=p.amt; break;   // cash credit
       case 'chit_metal':  break;                   // metal liability — tracked separately, not cash credit
@@ -4290,8 +4546,16 @@ function getCustStatement(custId){
   var credit=getCustCredit(custId);
   var owed=DB.sales.filter(function(s){return s.cid===custId&&s.balance>0;})
     .reduce(function(sum,s){return sum+s.balance;},0);
-  var net=Math.max(0,credit-owed); // net available = credit minus what they owe
-  return{credit:credit, owed:owed, net:net};
+  // Extra: standalone old_bal_settle payments that haven't been applied to a specific sale
+  var obsApplied=0;
+  DB.payments.forEach(function(p){
+    if((p.cid===custId||(p.customer&&cust&&p.customer===cust.name))&&
+       (p.mode==='Old Balance Settlement'||p.type==='old_bal_settle'))
+      obsApplied+=p.amt;
+  });
+  var netOwed=Math.max(0, owed-obsApplied);
+  var net=credit>0&&netOwed>0 ? Math.max(0,credit-netOwed) : (credit>0?credit:0);
+  return{credit:credit, owed:netOwed, net:net, obsApplied:obsApplied};
 }
 
 // Add advance as a payment row in the current sale
@@ -4826,9 +5090,10 @@ function saveLoan(){
     DB.cashLog.push({type:'in',date:loan.start,amount:loan.amt,desc:'Loan from '+lender,src:'loan'});
     if(sbHasConfig())dbSaveCashEntry('in',loan.start,loan.amt,'Loan: '+lender,'loan');
   }
+  dbSaveLoan(loan);
   closeM('m-addloan');
   renderLoans();renderBalance();renderCashFlow();
-  showDbStatus('Loan saved ✓');
+  alert('\u2713 Loan saved!');
 }
 
 function calcLoanInterest(loan){
@@ -4856,6 +5121,16 @@ function calcTotalInterestAccrued(loan){
   return 0;
 }
 
+
+function closeLoan(lid){
+  if(!confirm('Mark this loan as closed / repaid?'))return;
+  DB.loans.forEach(function(l){
+    if(l.id===lid){l.status='closed';l.closedDate=td();dbUpdateLoan(l);}
+  });
+  renderLoans();renderBalance();
+  alert('\u2713 Loan marked as closed');
+}
+
 function renderLoans(){
   var active=DB.loans.filter(function(l){return l.status==='active';});
   var closed=DB.loans.filter(function(l){return l.status!=='active';});
@@ -4879,7 +5154,10 @@ function renderLoans(){
       +'<div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:8px">'
         +'<div><div style="font-size:15px;font-weight:700">'+l.lender+'</div>'
         +'<div style="font-size:11px;color:var(--tx3);margin-top:2px"><span class="badge ba">'+l.type+'</span> &nbsp;'+l.rateType==='month'?l.rate+'% /month':l.rate+'% /'+l.rateType+' &nbsp;Started: '+l.start+(l.due?' &nbsp;Due: '+l.due:'')+'</div></div>'
-        +'<button class="btn btnsm" onclick="openEditLoan(\''+l.id+'\')">&#9998; Edit</button>'
+        +'<div style="display:flex;gap:6px">'+
+          '<button class="btn btnsm" onclick="openEditLoan(\''+l.id+'\')">&#9998; Edit</button>'+
+          '<button class="btn btnsm btnd" onclick="closeLoan(\''+l.id+'\')">&#10003; Close Loan</button>'+
+        '</div>'
       +'</div>'
       +'<div class="metrics c4" style="margin-top:10px">'
         +'<div class="met"><div class="ml">Principal</div><div class="mv r">'+fmt(l.amt)+'</div></div>'
