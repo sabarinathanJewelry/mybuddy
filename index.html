@@ -289,6 +289,7 @@ body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: 20px;
+  will-change: scroll-position;
 }
 
 /* ═══════════════════════════════════════
@@ -1042,6 +1043,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
     <div class="nav-section-label">People</div>
     <button class="nav-item" id="ni-leads" onclick="showPg('pg-leads',this,'Leads')"><span class="ni">&#128241;</span>WhatsApp Leads</button>
     <button class="nav-item" id="ni-customers" onclick="showPg('pg-customers',this,'Customers')"><span class="ni">&#128101;</span>Customers</button>
+    <button class="nav-item" id="ni-custbal" onclick="showPg('pg-custbal',this,'Customer Balances')"><span class="ni">&#128200;</span>Balances</button>
     <button class="nav-item" id="ni-suppliers" onclick="showPg('pg-suppliers',this,'Suppliers')"><span class="ni">&#127970;</span>Suppliers</button>
   </div>
   <div class="sidebar-footer">
@@ -1312,7 +1314,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
         <div class="tab" onclick="fltPays('out',this)">Paid Out</div>
       </div>
     </div>
-    <div style="margin-bottom:10px"><input type="text" id="pay-search" placeholder="Search customer name..." oninput="renderPayments()" style="font-size:13px"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"><input type="date" id="pay-from" onchange="renderPayments()" style="font-size:12px;width:130px"><input type="date" id="pay-to" onchange="renderPayments()" style="font-size:12px;width:130px"><input type="text" id="pay-search" placeholder="&#128269; Customer name..." oninput="renderPayments()" style="font-size:13px;flex:1;min-width:140px"></div>
     <div id="pay-list"><div class="empty"><div class="etxt">No payments yet</div></div></div>
   </div>
 
@@ -1332,7 +1334,8 @@ input:checked+.tslider::before { transform:translateX(17px); }
     <div class="met"><div class="ml" id="cf-out-lbl">Cash Out</div><div class="mv r" id="cf-out">&#8377;0</div></div>
     <div class="met" style="background:var(--gold-pale);border-color:rgba(201,152,10,0.3)"><div class="ml" id="cf-net-lbl">Net in Hand</div><div class="mv gold" id="cf-net">&#8377;0</div></div>
   </div>
-  <div class="card"><div class="card-header"><div class="card-title">Cash Register</div><div style="display:flex;gap:8px"><button class="btn btnsm btnog" onclick="openM('m-cashob')">Set Opening</button><button class="btn btnsm btng" onclick="openM('m-cashentry')">+ Entry</button></div></div><div id="cf-table"><div class="empty"><div class="etxt">No entries</div></div></div></div>
+  <div class="card"><div class="card-header"><div class="card-title">Cash Register</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btnsm btnog" onclick="openM('m-cashob')">Set Opening</button><button class="btn btnsm btng" onclick="openM('m-cashentry')">+ Entry</button><button class="btn btnsm" onclick="openM('m-cashtobank')" style="background:var(--blbg);color:var(--blu);border-color:rgba(26,95,171,.3)">&#127981; To Bank</button></div></div><div id="cf-table"><div class="empty"><div class="etxt">No entries</div></div></div></div>
+    <div class="card" style="margin-top:12px"><div class="card-header"><div class="card-title">&#127981; Bank Accounts</div></div><div id="bank-balances"><div class="empty" style="padding:10px"><div class="etxt">No transfers yet</div></div></div></div>
 </div>
 
 <!-- EXPENSES -->
@@ -1392,7 +1395,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
   <div class="tab" onclick="mfTab('batch',this)">Batch</div>
   <div class="tab" onclick="mfTab('refinery',this)">Refinery</div>
   <div class="tab" onclick="mfTab('out',this)">Outflow</div>
-  <div class="tab" onclick="mfTab('sell',this)">💰 Sell Gold</div>
+  <div class="tab" onclick="mfTab('sell',this)">&#128176; Sell</div>
   <div class="tab" onclick="mfTab('log',this)">Log</div>
 </div>
 
@@ -1436,20 +1439,35 @@ input:checked+.tslider::before { transform:translateX(17px); }
   </div>
 <div id="mf-sell" style="display:none">
   <div class="card">
-    <div class="card-header"><div class="card-title">💰 Sell Refined Gold</div></div>
-
-    <div class="g3">
-      <input type="number" id="sel-wt" placeholder="Weight (g)">
-      <input type="number" id="sel-rate" placeholder="Rate">
-      <input type="number" id="sel-sell-val" placeholder="Sell Value">
+    <div class="card-header">
+      <div><div class="card-title">&#128176; Sell Refined Gold / Silver</div><div class="card-sub">Record sale from reserve — reduces metal stock, adds to cash</div></div>
+      <button class="btn btnsm btnog" onclick="_showSellHistory()">History</button>
     </div>
-
     <div class="g3">
-      <input type="number" id="sel-buy-cost" placeholder="Buy Cost">
-      <input type="text" id="sel-party" placeholder="Buyer">
+      <div class="field"><label>Metal</label><select id="sel-metal"><option>Gold</option><option>Silver</option></select></div>
+      <div class="field"><label>Date</label><input type="date" id="sel-date"></div>
+      <div class="field"><label>Buyer Name</label><input type="text" id="sel-party" placeholder="Name / company"></div>
     </div>
-
-    <button onclick="sellRefinedGold()">Record Sale</button>
+    <div class="g3">
+      <div class="field"><label>Weight Sold (g)</label><input type="number" id="sel-wt" step="0.001" inputmode="decimal" placeholder="e.g. 50.000" oninput="calcSellTotal()"></div>
+      <div class="field"><label>Sale Rate &#8377;/g</label><input type="number" id="sel-rate" step="0.01" inputmode="decimal" oninput="calcSellTotal()"></div>
+      <div class="field"><label>Sale Amount (&#8377;)</label><input type="number" id="sel-sell-val" step="0.01" inputmode="decimal" class="igold" oninput="calcSellTotal()"></div>
+    </div>
+    <div class="g3">
+      <div class="field"><label>Purchase Cost (&#8377;)</label><input type="number" id="sel-buy-cost" step="0.01" inputmode="decimal" oninput="calcSellProfit()"></div>
+      <div class="field"><label>Testing Fee (&#8377;)</label><input type="number" id="sel-test-fee" step="0.01" inputmode="decimal" value="50" oninput="calcSellProfit()"></div>
+      <div class="field"><label>Payment Mode</label><select id="sel-mode"><option>Cash</option><option>Bank Transfer</option><option>UPI - GPay</option></select></div>
+    </div>
+    <div class="totpanel" style="margin-bottom:14px">
+      <div class="trow"><span class="tlbl">Sale Amount</span><span class="tval" id="sel-d-sale">&#8377;0</span></div>
+      <div class="trow"><span class="tlbl">Cost + Fees</span><span class="tval" id="sel-d-cost" style="color:var(--red)">&#8377;0</span></div>
+      <div class="trow big"><span class="tlbl">Gross Profit</span><span class="tval" id="sel-d-profit" style="color:var(--grn)">&#8377;0</span></div>
+    </div>
+    <button class="btn btng" onclick="sellRefinedGold()">&#10003; Record Sale &amp; Add to Cashbox</button>
+  </div>
+  <div class="card" id="sel-history-card" style="display:none">
+    <div class="card-header"><div class="card-title">Sale History</div><button class="btn btnsm btnd" onclick="G('sel-history-card').style.display='none'">Close</button></div>
+    <div id="sel-history-list"></div>
   </div>
 </div>
   <div id="mf-log" style="display:none" class="card"><div class="card-header"><div class="card-title">Flow Log</div></div><div id="mf-log-tbl"><div class="empty"><div class="etxt">No entries</div></div></div></div>
@@ -1491,18 +1509,54 @@ input:checked+.tslider::before { transform:translateX(17px); }
 </div>
 
 <!-- SALES LIST -->
+
+<div class="page" id="pg-custbal">
+  <div class="page-header">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div><h1>Customer Balances</h1><p>Advances, outstanding dues and metal credits</p></div>
+    </div>
+  </div>
+  <!-- Filter bar -->
+  <div class="card" style="margin-bottom:12px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input type="text" id="cb-search" placeholder="&#128269; Search name or phone..." oninput="renderCustBal()" style="flex:1;min-width:160px;font-size:13px">
+      <div class="tabs" style="margin-bottom:0;gap:4px">
+        <div class="tab active" onclick="cbFilter('all',this)">All</div>
+        <div class="tab" onclick="cbFilter('advance',this)">&#128176; Has Advance</div>
+        <div class="tab" onclick="cbFilter('due',this)">&#9888; Has Due</div>
+        <div class="tab" onclick="cbFilter('metal',this)">&#129680; Metal Credit</div>
+      </div>
+    </div>
+  </div>
+  <!-- Summary metrics -->
+  <div class="metrics c3" style="margin-bottom:14px">
+    <div class="met"><div class="ml">Total Advance Held</div><div class="mv g" id="cb-total-adv">&#8377;0</div></div>
+    <div class="met"><div class="ml">Total Outstanding Due</div><div class="mv r" id="cb-total-due">&#8377;0</div></div>
+    <div class="met"><div class="ml">Metal Liability</div><div class="mv gold" id="cb-total-metal">0.000g</div></div>
+  </div>
+  <div id="custbal-list"></div>
+</div>
+
 <div class="page" id="pg-saleslist">
   <div class="page-header">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
       <div><h1>Sales List</h1><p>All recorded bills</p></div>
-      <input type="text" id="sl-q" placeholder="Search customer, bill..." style="width:240px;font-size:13px" oninput="renderSalesList()">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <input type="date" id="sl-from" onchange="renderSalesList()" style="font-size:12px;width:130px">
+        <input type="date" id="sl-to" onchange="renderSalesList()" style="font-size:12px;width:130px">
+        <input type="text" id="sl-q" placeholder="&#128269; Customer, bill..." style="font-size:13px;min-width:160px" oninput="renderSalesList()">
+        <button class="btn btnsm" onclick="slClearFilters()">&#10006; Clear</button>
+      </div>
     </div>
   </div>
   <div id="sl-table-wrap"><div class="empty"><div class="etxt">No sales</div></div></div>
   <div class="card" id="sed-panel" style="display:none;margin-top:12px">
     <div class="card-header"><div><div class="card-title">Edit / View: <span id="sed-bill" style="color:var(--gold-dark)"></span></div></div><button class="btn btnsm btnd" onclick="document.getElementById('sed-panel').style.display='none'">Close</button></div>
+    <div id="sed-bal-info"></div>
     <div id="sed-items" style="overflow-x:auto"></div>
     <div class="divv"></div>
+    <div class="card-header" style="margin-bottom:6px"><div class="card-title">Customer</div></div>
+    <div id="sed-cust-edit" style="margin-bottom:10px"></div>
     <div class="card-header" style="margin-bottom:8px"><div class="card-title">Payments</div><button class="btn btnsm btnog" onclick="addSedPay()">+ Add</button></div>
     <div id="sed-pays"></div>
     <button class="btn btng" style="margin-top:10px" onclick="saveSaleEdit()">Save Changes</button>
@@ -1519,7 +1573,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
   </div>
 </div>
 
-<div class="page" id="pg-reports">
+<div class="page" id="pg-reports" style="overflow-y:auto;-webkit-overflow-scrolling:touch;">
   <div class="page-header">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
       <div><h1>Reports</h1><p>Sales analytics by date, payment mode and metal</p></div>
@@ -1743,9 +1797,9 @@ input:checked+.tslider::before { transform:translateX(17px); }
   <div class="mfoot"><button class="btn" onclick="closeM('m-newcust-og')">Cancel</button><button class="btn btng" onclick="saveOGNewCust()">Save &amp; Continue</button></div>
 </div></div>
 
-<div class="modal-bg" id="m-newcust"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128101; Register Customer</div><div class="g2"><div class="field"><label>Full Name *</label><input type="text" id="nc-name" autocomplete="off"></div><div class="field"><label>Phone *</label><input type="tel" id="nc-phone" maxlength="10" inputmode="numeric"></div></div><div class="g2"><div class="field"><label>City</label><input type="text" id="nc-city"></div><div class="field"><label>Anniversary</label><input type="date" id="nc-anni"></div></div><div class="field"><label>Opening Balance (&#8377;) — owes you</label><input type="number" id="nc-ob" inputmode="decimal" placeholder="0.00"></div><div class="field"><label>Notes</label><input type="text" id="nc-notes"></div><div class="mfoot"><button class="btn" onclick="closeM('m-newcust')">Cancel</button><button class="btn btng" onclick="saveNewCust()">Save &amp; Map to Sale</button></div></div></div>
+<div class="modal-bg" id="m-newcust"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128101; Register Customer</div><div class="g2"><div class="field"><label>Full Name *</label><input type="text" id="nc-name" autocomplete="off"></div><div class="field"><label>Phone *</label><input type="tel" id="nc-phone" maxlength="10" inputmode="numeric"></div></div><div class="g2"><div class="field"><label>City</label><input type="text" id="nc-city"></div><div class="field"><label>Anniversary</label><input type="date" id="nc-anni"></div></div><div class="field"><label>Opening Balance: positive=advance we owe, negative=they owe us</label><input type="number" id="nc-ob" inputmode="decimal" placeholder="e.g. 5000 or -2000"></div><div class="field"><label>Notes</label><input type="text" id="nc-notes"></div><div class="mfoot"><button class="btn" onclick="closeM('m-newcust')">Cancel</button><button class="btn btng" onclick="saveNewCust()">Save &amp; Map to Sale</button></div></div></div>
 
-<div class="modal-bg" id="m-cust"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128101; Add Customer</div><div class="g2"><div class="field"><label>Full Name *</label><input type="text" id="cm-name"></div><div class="field"><label>Phone *</label><input type="tel" id="cm-phone" maxlength="10" inputmode="numeric"></div></div><div class="g2"><div class="field"><label>City</label><input type="text" id="cm-city"></div><div class="field"><label>Anniversary</label><input type="date" id="cm-anni"></div></div><div class="field"><label>Opening Balance (&#8377;)</label><input type="number" id="cm-ob" inputmode="decimal" placeholder="0.00"></div><div class="field"><label>Notes</label><input type="text" id="cm-notes"></div><div class="mfoot"><button class="btn" onclick="closeM('m-cust')">Cancel</button><button class="btn btng" onclick="saveCust()">Save Customer</button></div></div></div>
+<div class="modal-bg" id="m-cust"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128101; Add Customer</div><div class="g2"><div class="field"><label>Full Name *</label><input type="text" id="cm-name"></div><div class="field"><label>Phone *</label><input type="tel" id="cm-phone" maxlength="10" inputmode="numeric"></div></div><div class="g2"><div class="field"><label>City</label><input type="text" id="cm-city"></div><div class="field"><label>Anniversary</label><input type="date" id="cm-anni"></div></div><div class="field"><label>Opening Balance (&#8377;): +advance we owe / -they owe us</label><input type="number" id="cm-ob" inputmode="decimal" placeholder="e.g. 5000 or -2000"></div><div class="field"><label>Notes</label><input type="text" id="cm-notes"></div><div class="mfoot"><button class="btn" onclick="closeM('m-cust')">Cancel</button><button class="btn btng" onclick="saveCust()">Save Customer</button></div></div></div>
 
 <div class="modal-bg" id="m-sup"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#127970; Add Supplier</div>
 <div class="field"><label>Supplier Name *</label><input type="text" id="sm-name"></div>
@@ -2118,7 +2172,7 @@ function showPg(id,btn,title){
   // Scroll to top
   var mc=G('main-content');if(mc)mc.scrollTop=0;
   // Init
-  var inits={'pg-sale':initSaleForm,'pg-saleslist':renderSalesList,'pg-customers':renderCusts,'pg-suppliers':function(){renderSups();populateSupSelects();},'pg-dash':renderDash,'pg-suspense':function(){populateSupSelects();renderSuspense();},'pg-purchase':function(){populateSupSelects();renderPurchases();},'pg-expense':renderExpenses,'pg-cashflow':renderCashFlow,'pg-metalflow':function(){populateSupSelects();loadUnbatched();},'pg-orders':renderOrders,'pg-payments':function(){populateSupSelects();renderPayments();var r=G('og-rate');if(r&&!r.value)r.value=R.k22.toFixed(2);},'pg-settings':renderSettings};
+  var inits={'pg-sale':initSaleForm,'pg-saleslist':renderSalesList,'pg-customers':renderCusts,'pg-custbal':renderCustBal,'pg-suppliers':function(){renderSups();populateSupSelects();},'pg-dash':renderDash,'pg-suspense':function(){populateSupSelects();renderSuspense();},'pg-purchase':function(){populateSupSelects();renderPurchases();},'pg-expense':renderExpenses,'pg-cashflow':renderCashFlow,'pg-metalflow':function(){populateSupSelects();loadUnbatched();},'pg-orders':renderOrders,'pg-payments':function(){populateSupSelects();renderPayments();var r=G('og-rate');if(r&&!r.value)r.value=R.k22.toFixed(2);},'pg-settings':renderSettings};
   if(inits[id])inits[id]();
 }
 function goBack(){showPg(prevPage,null,prevPage.replace('pg-',''));}
@@ -2203,7 +2257,10 @@ function saveNewCust(){
   var name=V('nc-name').trim(),phone=V('nc-phone').trim();
   if(!name||!phone){alert('Name and phone are required.');return;}
   var ob=N('nc-ob'),id=uid();
-  DB.custs[id]={id:id,name:name,phone:phone,city:V('nc-city').trim(),anni:V('nc-anni'),notes:V('nc-notes').trim(),ob:ob,txns:ob>0?[{type:'opening',date:td(),bill:'OB',amount:ob,paid:0,balance:ob}]:[]};
+  var _txns2=[];
+  if(ob>0)_txns2=[{type:'opening_advance',date:td(),bill:'OB',amount:0,paid:ob,balance:-ob,note:'Opening advance'}];
+  else if(ob<0)_txns2=[{type:'opening_due',date:td(),bill:'OB',amount:Math.abs(ob),paid:0,balance:Math.abs(ob),note:'Opening balance due'}];
+  DB.custs[id]={id:id,name:name,phone:phone,city:V('nc-city').trim(),anni:V('nc-anni'),notes:V('nc-notes').trim(),ob:ob,txns:_txns2};
   G('s-cid').value=id;G('s-cname').value=name;G('s-phone').value=phone;
   var r=G('s-cust-res');if(r)r.innerHTML='<div class="custok"><strong>&#10003; '+name+' <span class="badge bg">New</span></strong></div>';
   dbSaveCust(DB.custs[id]);
@@ -2289,7 +2346,7 @@ function addPay(cid){
   payC++;var rid='pr'+payC;var cont=G(cid);if(!cont)return;
   var div=document.createElement('div');div.className='payrow';div.id=rid;div.dataset.cont=cid;
   div.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span style="font-size:12px;font-weight:700;color:var(--gold-dark)">Payment #'+payC+'</span><button class="btn btnsm btnd" style="padding:3px 9px" onclick="removePay(\''+rid+'\',\''+cid+'\')">&#10005;</button></div>'+
-  '<div class="g2" style="margin-bottom:8px"><div class="field"><label>Mode</label><select id="'+rid+'-mode" onchange="onPayMode(\''+rid+'\',\''+cid+'\')"><option>Cash</option><option>UPI - GPay</option><option>UPI - Paytm</option><option>Bank Transfer / RTGS</option><option>Chit - Bonus</option><option>Chit - Weight</option><option>Exchange - Old Gold</option><option>Exchange - Old Silver</option><option>Chit - Weight</option><option>Chit - Bonus</option></select></div><div class="field"><label>Amount (&#8377;)</label><input type="number" id="'+rid+'-amt" step="0.01" inputmode="decimal" oninput="onPayAmt(\''+cid+'\')"></div></div>'+
+  '<div class="g2" style="margin-bottom:8px"><div class="field"><label>Mode</label><select id="'+rid+'-mode" onchange="onPayMode(\''+rid+'\',\''+cid+'\')"><option>Cash</option><option>UPI - GPay</option><option>UPI - Paytm</option><option>Bank Transfer / RTGS</option><option>Old Balance Settlement</option><option>Exchange - Old Gold</option><option>Exchange - Old Silver</option><option>Chit - Bonus</option><option>Chit - Weight</option></select></div><div class="field"><label>Amount (&#8377;)</label><input type="number" id="'+rid+'-amt" step="0.01" inputmode="decimal" oninput="onPayAmt(\''+cid+'\')"></div></div>'+
   '<div id="'+rid+'-exchbox" style="display:none" class="exchbox"><div class="g2"><div class="field"><label>Weight (g) → Batch pool</label><input type="number" id="'+rid+'-ewt" step="0.001" inputmode="decimal" placeholder="e.g. 1.93"></div><div class="field"><label>Value (&#8377;)</label><input type="number" id="'+rid+'-eval" step="0.01" inputmode="decimal" oninput="syncExch(\''+rid+'\',\''+cid+'\')"></div></div></div>'+
   '<div class="field"><label>Reference / Note</label><input type="text" id="'+rid+'-ref" placeholder="UTR, weight, chit no..."></div>';
   cont.appendChild(div);
@@ -2356,25 +2413,211 @@ function saveSale(){
   if(exchItems.length){var du=G('ds-unbat');if(du)du.textContent=DB.oldMetal.filter(function(i){return!i.batched;}).length;}
   if(cashR>0)DB.cashLog.push({type:'in',date:date,amount:cashR,desc:'Sale '+bill+' Cash',src:'sale'});
   var tEl=G('s-total');if(tEl)tEl._ov=false;
-  // Record advance deduction if used
   if(advanceUsed>0)recordAdvanceDeduction(cid,cname,advanceUsed,bill,date);
+
+  // ── Exchange overpayment: exchange value > invoice ──
+  var exchTotal=exchItems.reduce(function(s,e){return s+e.val;},0);
+  var overpaid=Math.round((exchTotal-grand+cashR)*100)/100; // how much more they gave vs bill
+  if(overpaid>0.01&&exchTotal>0){
+    // Ask: cashback or keep as advance
+    var choice=confirm(
+      '\u26A0 Exchange value (\u20B9'+exchTotal.toLocaleString('en-IN')+') > Invoice (\u20B9'+grand.toLocaleString('en-IN')+')\n'+
+      'Net overpaid: \u20B9'+overpaid.toLocaleString('en-IN')+'\n\n'+
+      'OK = Pay \u20B9'+overpaid.toLocaleString('en-IN')+' cash BACK to customer\n'+
+      'Cancel = Keep as customer advance credit'
+    );
+    if(!cid){
+      // Need customer to store advance
+      var custName2=cname||'Walk-in Customer';
+      var newCid=uid();
+      DB.custs[newCid]={id:newCid,name:custName2,phone:V('s-phone')||'',city:'',ob:0,txns:[]};
+      cid=newCid;
+    }
+    if(choice){
+      // Cashback — pay out from cashbox
+      DB.cashLog.push({type:'out',date:date,amount:overpaid,
+        desc:'Exchange cashback: '+cname+' | Bill '+bill,src:'exchange_cashback'});
+      dbSaveCashEntry('out',date,overpaid,'Exchange cashback: '+cname+' Bill '+bill,'exchange_cashback');
+      pays.push({mode:'Exchange Cashback',amt:-overpaid,ref:'Cashback on '+bill});
+    } else {
+      // Keep as advance credit
+      var advPy={id:uid(),cid:cid,customer:cname,type:'in',amt:overpaid,
+        mode:'Exchange Advance',date:date,note:'Excess from exchange on Bill '+bill};
+      DB.payments.unshift(advPy);
+      dbSavePayment(advPy);
+      if(DB.custs[cid])DB.custs[cid].txns.push({type:'advance',date:date,
+        bill:'EXC-'+bill,amount:0,paid:overpaid,balance:-overpaid,note:'Exchange overpayment'});
+    }
+    var alertMsg='\u2713 Saved! Bill: '+bill+'\n'+(choice?'\u20B9'+overpaid.toLocaleString('en-IN')+' cash paid back':'\u20B9'+overpaid.toLocaleString('en-IN')+' kept as advance');
+    dbSaveSale(DB.sales[0]);clearSale();renderDash();renderPayments();
+    alert(alertMsg);return;
+  }
+
   dbSaveSale(DB.sales[0]);
-  clearSale();renderDash();alert('\u2713 Saved! Bill: '+bill+(bal>0?' | Balance due: \u20B9'+bal.toFixed(2):''));
+  clearSale();renderDash();
+  alert('\u2713 Saved! Bill: '+bill+(bal>0?' | Balance due: \u20B9'+bal.toFixed(2):''));
 }
 function clearSale(){var lic=G('li-container');if(lic)lic.innerHTML='';var pc=G('pay-container');if(pc)pc.innerHTML='';clearCust('s');var tEl=G('s-total');if(tEl){tEl.value='';tEl._ov=false;}var vn=G('va-note');if(vn)vn.style.display='none';liC=0;payC=0;initSaleForm();}
 
 // ── SALES LIST ──
+function slClearFilters(){
+  ['sl-from','sl-to','sl-q'].forEach(function(id){var e=G(id);if(e)e.value='';});
+  renderSalesList();
+}
 function renderSalesList(){
   var q=(V('sl-q')||'').toLowerCase();
-  var f=DB.sales.filter(function(s){return !q||s.customer.toLowerCase().indexOf(q)>=0||s.bill.toLowerCase().indexOf(q)>=0;});
+  var from=V('sl-from'),to=V('sl-to');
+  var f=DB.sales.filter(function(s){
+    if(q&&s.customer.toLowerCase().indexOf(q)<0&&s.bill.toLowerCase().indexOf(q)<0)return false;
+    if(from&&s.date<from)return false;
+    if(to&&s.date>to)return false;
+    return true;
+  });
   var t=G('sl-table-wrap');if(!t)return;
   if(!f.length){t.innerHTML='<div class="empty"><div class="eico">&#129534;</div><div class="etxt">No sales found</div></div>';return;}
-  t.innerHTML='<div class="card" style="overflow-x:auto"><table class="data-table"><thead><tr><th>Bill</th><th>Date</th><th>Customer</th><th>Items</th><th class="num">Total</th><th>Status</th><th></th></tr></thead><tbody>'+f.map(function(s){return '<tr><td><span class="bbadge">'+s.bill+'</span></td><td style="white-space:nowrap;font-size:12px;color:var(--tx3)">'+s.date+'</td><td style="font-weight:600">'+s.customer+'</td><td style="font-size:11px;color:var(--tx3)">'+s.items.map(function(i){return (i.qty>1?i.qty+'x ':'')+i.metal+(i.wt?' '+i.wt+'g':'');}).join(', ')+'</td><td class="num">'+fmt(s.grand)+'</td><td><span class="badge '+(s.balance>0?'br':'bg')+'">'+(s.balance>0?'Due '+fmt(s.balance):'Paid')+'</span></td><td><button class="btn btnsm btnog" onclick="openSaleEdit(\''+s.id+'\')">Edit</button></td></tr>';}).join('')+'</tbody></table></div>';
+  var totalAmt=f.reduce(function(s,x){return s+x.grand;},0);
+  var totalDue=f.reduce(function(s,x){return s+(x.balance||0);},0);
+  t.innerHTML=
+    '<div class="metrics c3" style="margin-bottom:10px">'+
+      '<div class="met"><div class="ml">Bills</div><div class="mv">'+f.length+'</div></div>'+
+      '<div class="met"><div class="ml">Total Value</div><div class="mv gold">'+fmt(totalAmt)+'</div></div>'+
+      '<div class="met"><div class="ml">Outstanding</div><div class="mv '+(totalDue>0?'r':'g')+'">'+fmt(totalDue)+'</div></div>'+
+    '</div>'+
+    '<div class="card" style="overflow-x:auto"><table class="data-table"><thead><tr>'+
+      '<th>Bill</th><th>Date</th><th>Customer</th><th>Items</th><th class="num">Total</th><th>Status</th><th></th>'+
+    '</tr></thead><tbody>'+
+    f.map(function(s){
+      return '<tr>'+
+        '<td><span class="bbadge">'+s.bill+'</span></td>'+
+        '<td style="white-space:nowrap;font-size:12px;color:var(--tx3)">'+s.date+'</td>'+
+        '<td style="font-weight:600">'+s.customer+'</td>'+
+        '<td style="font-size:11px;color:var(--tx3)">'+s.items.map(function(i){
+          return (i.qty>1?i.qty+'x ':'')+i.metal+(i.wt?' '+i.wt+'g':'');
+        }).join(', ')+'</td>'+
+        '<td class="num">'+fmt(s.grand)+'</td>'+
+        '<td><span class="badge '+(s.balance>0?'br':'bg')+'">'+(s.balance>0?'Due '+fmt(s.balance):'Paid')+'</span></td>'+
+        '<td><button class="btn btnsm btnog" data-sid="'+s.id+'" onclick="openSaleEdit(this.dataset.sid)">Edit</button></td>'+
+      '</tr>';
+    }).join('')+'</tbody></table></div>';
 }
-function openSaleEdit(sid){var sale=null;DB.sales.forEach(function(s){if(s.id===sid)sale=s;});if(!sale)return;activeSedSale=sale;G('sed-bill').textContent=sale.bill+' &mdash; '+sale.customer;G('sed-items').innerHTML='<table class="data-table"><thead><tr><th>Metal</th><th>Desc</th><th>Qty</th><th>Wt</th><th>VA%</th><th class="num">Total</th></tr></thead><tbody>'+sale.items.map(function(it){return '<tr><td>'+it.metal+'</td><td>'+it.desc+'</td><td>'+(it.qty||1)+'</td><td>'+it.wt+'g</td><td>'+it.va.toFixed(1)+'%</td><td class="num">'+fmt(it.tot)+'</td></tr>';}).join('')+'</tbody></table>';renderSedPays(sale);G('sed-panel').style.display='block';G('sed-panel').scrollIntoView({behavior:'smooth'});}
-function renderSedPays(sale){G('sed-pays').innerHTML=sale.pays.map(function(p,i){return '<div class="payrow" style="margin-bottom:8px"><div class="g2" style="margin-bottom:6px"><div class="field"><label>Mode</label><select id="sedp'+i+'-mode">'+['Cash','UPI - GPay','UPI - Paytm','Bank Transfer / RTGS','Customer Advance','Exchange - Old Gold','Exchange - Old Silver','Chit - Weight','Chit - Bonus'].map(function(m){return '<option'+(m===p.mode?' selected':'')+'>'+m+'</option>';}).join('')+'</select></div><div class="field"><label>Amount</label><input type="number" id="sedp'+i+'-amt" value="'+p.amt+'" step="0.01" inputmode="decimal"></div></div><div class="field"><label>Reference</label><input type="text" id="sedp'+i+'-ref" value="'+(p.ref||'')+'"></div></div>';}).join('');}
+function openSaleEdit(sid){
+  var sale=null;DB.sales.forEach(function(s){if(s.id===sid)sale=s;});if(!sale)return;
+  activeSedSale=sale;
+  G('sed-bill').textContent=sale.bill+' — '+sale.customer;
+  // Show items
+  G('sed-items').innerHTML='<table class="data-table"><thead><tr><th>Metal</th><th>Desc</th><th>Qty</th><th>Wt</th><th>VA%</th><th class="num">Total</th></tr></thead><tbody>'+
+    sale.items.map(function(it){return '<tr><td>'+it.metal+'</td><td>'+it.desc+'</td><td>'+(it.qty||1)+'</td><td>'+it.wt+'g</td><td>'+it.va.toFixed(1)+'%</td><td class="num">'+fmt(it.tot)+'</td></tr>';}).join('')+
+    '</tbody></table>';
+  // Customer edit
+  var ce=G('sed-cust-edit');
+  if(ce){
+    ce.innerHTML=
+      '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px">'+
+        '<input type="tel" id="sed-phone" maxlength="10" inputmode="numeric" placeholder="Customer phone" value="'+(sale.cphone||'')+'" oninput="sedCustLookup()" style="flex:1;font-size:14px">'+
+        '<button class="btn btnsm" onclick="sedClearCust()">&#10005;</button>'+
+      '</div>'+
+      '<div id="sed-cust-res"></div>'+
+      '<input type="hidden" id="sed-cid" value="'+(sale.cid||'')+'">'+
+      '<input type="hidden" id="sed-cname" value="'+(sale.customer||'')+'">';
+    // Show current customer
+    if(sale.customer&&sale.customer!=='Walk-in Customer'){
+      G('sed-cust-res').innerHTML='<div class="custok"><strong>&#10003; '+sale.customer+'</strong></div>';
+    }
+  }
+  // Balance info
+  var biEl=G('sed-bal-info');
+  if(biEl){
+    biEl.innerHTML=
+      '<div class="metrics c3" style="margin-bottom:10px">'+
+        '<div class="met"><div class="ml">Invoice</div><div class="mv gold">'+fmt(sale.grand)+'</div></div>'+
+        '<div class="met"><div class="ml">Paid</div><div class="mv g" id="sed-paid-disp">'+fmt(sale.paid)+'</div></div>'+
+        '<div class="met"><div class="ml">Balance Due</div><div class="mv '+(sale.balance>0?'r':'g')+'" id="sed-bal-disp">'+fmt(sale.balance)+'</div></div>'+
+      '</div>';
+  }
+  renderSedPays(sale);
+  G('sed-panel').style.display='block';
+  G('sed-panel').scrollIntoView({behavior:'smooth'});
+}
+
+function sedCustLookup(){
+  var ph=V('sed-phone').trim();
+  var res=G('sed-cust-res');
+  if(!res)return;
+  if(ph.length<10){res.innerHTML='';return;}
+  var found=null;
+  Object.values(DB.custs).forEach(function(c){if(c.phone===ph)found=c;});
+  if(found){
+    G('sed-cid').value=found.id;G('sed-cname').value=found.name;
+    var stmt=getCustStatement(found.id);
+    res.innerHTML='<div class="custok"><strong>&#10003; '+found.name+'</strong>'+
+      (stmt.credit>0?' <span style="color:var(--grn);font-size:11px">Adv: '+fmt(stmt.credit)+'</span>':'')+
+      (stmt.owed>0?' <span style="color:var(--red);font-size:11px">Owes: '+fmt(stmt.owed)+'</span>':'')+
+    '</div>';
+  } else {
+    G('sed-cid').value='';G('sed-cname').value='';
+    res.innerHTML='<div class="custno" style="font-size:12px">Not found</div>';
+  }
+}
+
+function sedClearCust(){
+  G('sed-cid').value='';G('sed-cname').value='';
+  var rr=G('sed-phone');if(rr)rr.value='';
+  var res=G('sed-cust-res');if(res)res.innerHTML='';
+}
+function renderSedPays(sale){
+  var modes=['Cash','UPI - GPay','UPI - Paytm','Bank Transfer / RTGS',
+    'Customer Advance','Exchange - Old Gold','Exchange - Old Silver',
+    'Old Balance Settlement','Chit - Bonus','Chit - Weight','Exchange Cashback'];
+  G('sed-pays').innerHTML=sale.pays.map(function(p,i){
+    return '<div class="payrow" style="margin-bottom:8px">'+
+      '<div class="g2" style="margin-bottom:6px">'+
+        '<div class="field"><label>Mode</label><select id="sedp'+i+'-mode">'+
+          modes.map(function(m){return '<option'+(m===p.mode?' selected':'')+'>'+m+'</option>';}).join('')+
+        '</select></div>'+
+        '<div class="field"><label>Amount</label><input type="number" id="sedp'+i+'-amt" value="'+p.amt+'" step="0.01" inputmode="decimal"></div>'+
+      '</div>'+
+      '<div class="field"><label>Reference / Note</label><input type="text" id="sedp'+i+'-ref" value="'+(p.ref||'')+'"></div>'+
+    '</div>';
+  }).join('');
+}
 function addSedPay(){if(activeSedSale){activeSedSale.pays.push({mode:'Cash',amt:0,ref:''});renderSedPays(activeSedSale);}}
-function saveSaleEdit(){if(!activeSedSale)return;var newPays=activeSedSale.pays.map(function(p,i){return {mode:V('sedp'+i+'-mode'),amt:N('sedp'+i+'-amt'),ref:V('sedp'+i+'-ref')};});activeSedSale.pays=newPays;var paid=newPays.reduce(function(s,p){return s+p.amt;},0);activeSedSale.paid=paid;activeSedSale.balance=Math.max(0,activeSedSale.grand-paid);if(DB.custs[activeSedSale.cid]){var t=null;DB.custs[activeSedSale.cid].txns.forEach(function(tx){if(tx.bill===activeSedSale.bill)t=tx;});if(t){t.paid=paid;t.balance=activeSedSale.balance;}}renderSalesList();openSaleEdit(activeSedSale.id);renderDash();alert('&#10003; Updated!');}
+function saveSaleEdit(){
+  if(!activeSedSale)return;
+  // Update customer if changed
+  var newCid=V('sed-cid'), newCname=V('sed-cname');
+  if(newCname&&newCname!==activeSedSale.customer){
+    activeSedSale.cid=newCid||activeSedSale.cid;
+    activeSedSale.customer=newCname;
+    G('sed-bill').textContent=activeSedSale.bill+' — '+newCname;
+  }
+  var newPays=activeSedSale.pays.map(function(p,i){
+    return{mode:V('sedp'+i+'-mode'),amt:N('sedp'+i+'-amt'),ref:V('sedp'+i+'-ref')};
+  });
+  activeSedSale.pays=newPays;
+  var paid=newPays.filter(function(p){return p.mode!=='Exchange Cashback';})
+    .reduce(function(s,p){return s+p.amt;},0);
+  activeSedSale.paid=paid;
+  activeSedSale.balance=Math.max(0,activeSedSale.grand-paid);
+  // Validate: balance > 0 requires customer
+  if(activeSedSale.balance>0&&(!activeSedSale.cid||activeSedSale.customer==='Walk-in Customer')){
+    alert('Customer is required when there is a balance due. Please enter the customer phone above.');
+    return;
+  }
+  // Update customer ledger
+  var cust=DB.custs[activeSedSale.cid];
+  if(cust){
+    var t=null;
+    cust.txns.forEach(function(tx){if(tx.bill===activeSedSale.bill)t=tx;});
+    if(t){t.paid=paid;t.balance=activeSedSale.balance;}
+    else cust.txns.push({type:'sale',date:activeSedSale.date,bill:activeSedSale.bill,
+      amount:activeSedSale.grand,paid:paid,balance:activeSedSale.balance});
+  }
+  // Update balance display
+  var pd=G('sed-paid-disp');if(pd)pd.innerHTML=fmt(paid);
+  var bd=G('sed-bal-disp');if(bd)bd.innerHTML=fmt(activeSedSale.balance);
+  renderSalesList();renderDash();
+  alert('✓ Updated! '+(activeSedSale.balance>0?'Balance due: '+fmt(activeSedSale.balance):'Fully paid'));
+}
 
 // ── ORDERS ──
 function initOrderForm(){var c=G('or-li-container');if(c)c.innerHTML='';var p=G('or-pay-container');if(p)p.innerHTML='';var od=G('or-date');if(od)od.value=td();orLiC=0;addLI('order');addPay('or-pay-container');}
@@ -2419,7 +2662,14 @@ function calcOGVal(){
 function syncCPAmt(){var v=N('cp-og-val');var ae=G('cp-amt');if(ae)ae.value=v.toFixed(2);}
 
 function savePayment(){
-  var cid=V('cp-cid'),cname=V('cp-cname');if(!cname){alert('Enter customer phone first.');return;}
+  var cid=V('cp-cid'),cname=V('cp-cname');
+  var type2=V('cp-type');
+  if(!cname&&type2==='in'){
+    // Allow repair payments without customer — use Walk-in
+    cname='Walk-in / Repair';
+  } else if(!cname){
+    alert('Enter customer phone first.');return;
+  }
   var type=V('cp-type'),date=V('cp-date')||td(),note=V('cp-note'),isOG=(type==='oldgold'||type==='oldgold-adv');
   if(isOG){var ogWt=N('cp-og-wt'),ogVal=N('cp-og-val'),ogM=V('cp-og-metal');if(!ogWt){alert('Enter old gold weight.');return;}var ogPure=N('cp-og-pure')||ogWt;var ogItem={id:uid(),metal:ogM,wt:ogWt,pure:ogPure,val:ogVal,date:date,src:'Old '+ogM+' from '+cname+' ('+ogWt.toFixed(3)+'g)',batched:false};DB.oldMetal.push(ogItem);dbSaveOldMetal(ogItem);var cashAmt=type==='oldgold'?N('cp-amt'):0;if(type==='oldgold'&&cashAmt>0){DB.cashLog.push({type:'out',date:date,amount:cashAmt,desc:'Old Gold Cash Out: '+cname+' '+ogWt+'g',src:'payment'});dbSaveCashEntry('out',date,cashAmt,'Old Gold Cash Out: '+cname,'payment');}if(type==='oldgold-adv'&&DB.custs[cid])DB.custs[cid].txns.push({type:'old_gold_advance',date:date,bill:'OGA-'+Date.now().toString(36).slice(-4),amount:ogVal,paid:ogVal,balance:0});DB.payments.unshift({id:uid(),cid:cid,customer:cname,type:type,amt:type==='oldgold-adv'?ogVal:cashAmt,mode:type==='oldgold-adv'?'Old Gold (Advance)':V('cp-mode'),date:date,note:note,ogWt:ogWt,ogMetal:ogM,ogVal:ogVal});renderCashFlow();}
   else{var amt=N('cp-amt');if(!amt){alert('Enter amount.');return;}var mode=V('cp-mode');var py={id:uid(),cid:cid,customer:cname,type:type,amt:amt,mode:mode,date:date,note:note};DB.payments.unshift(py);var isIn=(type==='in');if(DB.custs[cid])DB.custs[cid].txns.push({type:isIn?'payment_in':'payment_out',date:date,bill:'PAY-'+py.id.slice(-4),amount:isIn?0:amt,paid:isIn?amt:0,balance:isIn?-amt:amt});if(mode==='Cash'){if(isIn)DB.cashLog.push({type:'in',date:date,amount:amt,desc:'Cust pmt '+cname,src:'payment'});else DB.cashLog.push({type:'out',date:date,amount:amt,desc:'Payout '+cname,src:'payment'});renderCashFlow();}}
@@ -2436,8 +2686,38 @@ function payIsIn(type){
   // GREEN = money received from customer or credit given to customer
   return type==='in'||type==='oldgold-adv'||type==='advance'||type==='old_gold_advance'||type==='advance_used'||type==='chit_credit';
 }
-function renderPayments(){var q=(V('pay-search')||'').toLowerCase().trim();var f=DB.payments.filter(function(p){var tOk=(payFlt==='all')||(payFlt==='in'&&payIsIn(p.type))||(payFlt==='out'&&!payIsIn(p.type));return tOk&&(!q||(p.customer||'').toLowerCase().indexOf(q)>=0);});var t=G('pay-list');if(!t)return;t.innerHTML=f.length?'<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Customer</th><th>Date</th><th>Details</th><th>Type</th><th class="num">Amount</th><th></th></tr></thead><tbody>'+f.map(function(p,i){var isIn=payIsIn(p.type);var det=(p.mode||'')+(p.ogWt?' · '+(parseFloat(p.ogWt)||0).toFixed(3)+'g '+(p.ogMetal||''):'');return '<tr><td style="font-weight:600">'+p.customer+'</td><td style="font-size:12px;color:var(--tx3);white-space:nowrap">'+p.date+'</td><td style="font-size:12px">'+det+(p.note?'<br><span style="font-size:10px;color:var(--tx3)">'+p.note+'</span>':'')+'</td><td><span class="badge '+(isIn?'bg':'br')+'">'+payTypeLabel(p.type)+'</span></td><td class="num" style="color:'+(isIn?'var(--grn)':'var(--red)')+';font-weight:700">'+(isIn?'+':'-')+fmt(p.amt)+'</td><td><button class="btn btnsm" onclick="editPayment('+i+')">Edit</button></td></tr>';}).join('')+'</tbody></table></div>':'<div class="empty"><div class="etxt">No payments yet</div></div>';
-
+function renderPayments(){
+  var q=(V('pay-search')||'').toLowerCase().trim();
+  var from=V('pay-from'),to=V('pay-to');
+  var f=DB.payments.filter(function(p){
+    var tOk=(payFlt==='all')||(payFlt==='in'&&payIsIn(p.type))||(payFlt==='out'&&!payIsIn(p.type));
+    if(!tOk)return false;
+    if(q&&(p.customer||'').toLowerCase().indexOf(q)<0)return false;
+    if(from&&p.date<from)return false;
+    if(to&&p.date>to)return false;
+    return true;
+  });
+  var t=G('pay-list');if(!t)return;
+  if(!f.length){t.innerHTML='<div class="empty"><div class="etxt">No payments yet</div></div>';return;}
+  var totalIn=f.filter(function(p){return payIsIn(p.type);}).reduce(function(s,p){return s+p.amt;},0);
+  var totalOut=f.filter(function(p){return !payIsIn(p.type);}).reduce(function(s,p){return s+p.amt;},0);
+  t.innerHTML=
+    '<div class="metrics c2" style="margin-bottom:8px">'+
+      '<div class="met"><div class="ml">Total In</div><div class="mv g">'+fmt(totalIn)+'</div></div>'+
+      '<div class="met"><div class="ml">Total Out</div><div class="mv r">'+fmt(totalOut)+'</div></div>'+
+    '</div>'+
+    '<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Customer</th><th>Date</th><th>Details</th><th>Type</th><th class="num">Amount</th><th></th></tr></thead><tbody>'+
+    f.map(function(p,i){
+      var isIn=payIsIn(p.type);
+      var det=(p.mode||'')+(p.ogWt?' &bull; '+(parseFloat(p.ogWt)||0).toFixed(3)+'g '+(p.ogMetal||''):'');
+      return '<tr><td style="font-weight:600">'+p.customer+'</td>'+
+        '<td style="font-size:12px;color:var(--tx3);white-space:nowrap">'+p.date+'</td>'+
+        '<td style="font-size:12px">'+det+(p.note?'<br><span style="font-size:10px;color:var(--tx3)">'+p.note+'</span>':'')+'</td>'+
+        '<td><span class="badge '+(isIn?'bg':'br')+'">'+payTypeLabel(p.type)+'</span></td>'+
+        '<td class="num" style="color:'+(isIn?'var(--grn)':'var(--red)')+';font-weight:700">'+(isIn?'+':'-')+fmt(p.amt)+'</td>'+
+        '<td><button class="btn btnsm" onclick="editPayment('+i+')">Edit</button></td>'+
+      '</tr>';
+    }).join('')+'</tbody></table></div>';
 }
 
 function saveSupPay(){var supId=V('spy-sup');if(!supId){alert('Select supplier.');return;}var sup=DB.sups[supId];if(!sup)return;var mode=V('spy-mode'),amt=N('spy-amt'),rate=N('spy-rate'),date=V('spy-date')||td(),ref=V('spy-ref');var credit=amt;if((mode.indexOf('Gold')>=0||mode.indexOf('Silver')>=0)&&rate>0)credit=amt*rate;if(!credit){alert('Enter amount.');return;}if(!sup.txns)sup.txns=[];sup.txns.push({type:'settlement',date:date,desc:mode,debit:0,credit:credit,note:ref||(rate?amt+'g @ \u20B9'+rate:'')});sup.balance=Math.max(0,(sup.balance||0)-credit);if(mode==='Cash')DB.cashLog.push({type:'out',date:date,amount:credit,desc:'Supplier: '+sup.name,src:'supplier'});var lastSTxn=sup.txns[sup.txns.length-1];dbSaveSupTxn(supId,lastSTxn);closeM('m-suppay');renderPayments();renderSups();renderCashFlow();alert('&#10003; Recorded!');}
@@ -2542,7 +2822,85 @@ function saveExpense(){var cat=V('ex-cat');if(cat==='__custom__'){var row=G('ex-
 function renderExpenses(){var flt=V('ex-flt');var f=flt?DB.expenses.filter(function(e){return e.cat===flt;}):DB.expenses;var tod=td(),mon=tod.slice(0,7);var todA=DB.expenses.filter(function(e){return e.date===tod;}).reduce(function(s,e){return s+e.amt;},0);var monA=DB.expenses.filter(function(e){return e.date.slice(0,7)===mon;}).reduce(function(s,e){return s+e.amt;},0);if(G('ex-tod'))G('ex-tod').innerHTML=fmt(todA);if(G('ex-mon'))G('ex-mon').innerHTML=fmt(monA);var t=G('ex-table');if(!t)return;t.innerHTML=f.length?'<table class="data-table"><thead><tr><th>Date</th><th>Category</th><th>Mode</th><th>Desc</th><th class="num">Amount</th></tr></thead><tbody>'+f.map(function(e){return '<tr><td style="font-size:12px;color:var(--tx3)">'+e.date+'</td><td style="font-weight:600">'+e.cat+'</td><td style="font-size:12px;color:var(--tx3)">'+e.mode+'</td><td style="font-size:12px;color:var(--tx3)">'+(e.desc||'-')+'</td><td class="num" style="color:var(--red)">'+fmt(e.amt)+'</td></tr>';}).join('')+'</tbody></table>':'<div class="empty"><div class="etxt">No expenses</div></div>';}
 
 // ── CUSTOMERS ──
-function saveCust(){var name=V('cm-name').trim(),phone=V('cm-phone').trim();if(!name||!phone){alert('Name and phone required.');return;}var ob=N('cm-ob'),id=uid();DB.custs[id]={id:id,name:name,phone:phone,city:V('cm-city').trim(),anni:V('cm-anni'),notes:V('cm-notes').trim(),ob:ob,txns:ob>0?[{type:'opening',date:td(),bill:'OB',amount:ob,paid:0,balance:ob}]:[]};dbSaveCust(DB.custs[id]);closeM('m-cust');renderCusts();renderDash();}
+function saveCust(){
+  var name=V('cm-name').trim(),phone=V('cm-phone').trim();
+  if(!name||!phone){alert('Name and phone required.');return;}
+  var ob=N('cm-ob'),id=uid();
+  var txns=[];
+  if(ob>0){
+    // Positive OB = advance we owe them (credit)
+    txns=[{type:'opening_advance',date:td(),bill:'OB',amount:0,paid:ob,balance:-ob,note:'Opening advance'}];
+  } else if(ob<0){
+    // Negative OB = they owe us (debit balance due)
+    txns=[{type:'opening_due',date:td(),bill:'OB',amount:Math.abs(ob),paid:0,balance:Math.abs(ob),note:'Opening balance due'}];
+  }
+  DB.custs[id]={id:id,name:name,phone:phone,city:V('cm-city').trim(),
+    anni:V('cm-anni'),notes:V('cm-notes').trim(),ob:ob,txns:txns};
+  dbSaveCust(DB.custs[id]);
+  closeM('m-cust');renderCusts();renderDash();
+}
+
+// ── CUSTOMER BALANCE PAGE ─────────────────────────────────────
+var _cbFilter='all';
+function cbFilter(f,btn){
+  _cbFilter=f;
+  document.querySelectorAll('#pg-custbal .tab').forEach(function(t){t.classList.remove('active');});
+  if(btn)btn.classList.add('active');
+  renderCustBal();
+}
+
+function renderCustBal(){
+  var q=(V('cb-search')||'').toLowerCase().trim();
+  var custs=Object.values(DB.custs).filter(function(c){
+    if(q&&(c.name||'').toLowerCase().indexOf(q)<0&&(c.phone||'').indexOf(q)<0)return false;
+    return true;
+  });
+
+  var totalAdv=0,totalDue=0,totalGoldG=0,totalSilverG=0;
+  var rows=custs.map(function(c){
+    var stmt=getCustStatement(c.id);
+    var mb=getCustMetalBalance(c.id);
+    totalAdv+=Math.max(0,stmt.credit);
+    totalDue+=stmt.owed;
+    totalGoldG+=mb.gold; totalSilverG+=mb.silver;
+
+    // Filter
+    if(_cbFilter==='advance'&&stmt.credit<=0&&mb.gold<=0&&mb.silver<=0)return null;
+    if(_cbFilter==='due'&&stmt.owed<=0)return null;
+    if(_cbFilter==='metal'&&mb.gold<=0&&mb.silver<=0)return null;
+    return {c:c,stmt:stmt,mb:mb};
+  }).filter(Boolean);
+
+  var ta=G('cb-total-adv'),td2=G('cb-total-due'),tm=G('cb-total-metal');
+  if(ta)ta.innerHTML=fmt(totalAdv);
+  if(td2)td2.innerHTML=fmt(totalDue);
+  if(tm)tm.innerHTML=totalGoldG.toFixed(3)+'g'+(totalSilverG>0?' / '+totalSilverG.toFixed(3)+'g Ag':'');
+
+  var el=G('custbal-list');if(!el)return;
+  if(!rows.length){el.innerHTML='<div class="empty"><div class="etxt">No customers match</div></div>';return;}
+
+  el.innerHTML=rows.map(function(row){
+    var c=row.c,s=row.stmt,m=row.mb;
+    var statusColor=s.owed>0?'var(--red)':s.credit>0?'var(--grn)':'var(--tx3)';
+    var metalHtml=(m.gold>0?'<span class="badge bgold" style="font-size:10px">'+m.gold.toFixed(3)+'g &#129680;</span>':'')+
+      (m.silver>0?'<span class="badge bb" style="font-size:10px">'+m.silver.toFixed(3)+'g Ag</span>':'');
+    return '<div class="card" style="margin-bottom:8px;padding:12px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:start;gap:10px;flex-wrap:wrap">'+
+        '<div>'+
+          '<div style="font-weight:700;font-size:14px">'+c.name+'</div>'+
+          '<div style="font-size:11px;color:var(--tx3)">'+c.phone+(c.city?' &bull; '+c.city:'')+'</div>'+
+          (metalHtml?'<div style="margin-top:4px">'+metalHtml+'</div>':'')+
+        '</div>'+
+        '<div style="text-align:right">'+
+          (s.credit>0?'<div style="font-size:13px;font-weight:700;color:var(--grn)">Advance: '+fmt(s.credit)+'</div>':'')+
+          (s.owed>0?'<div style="font-size:13px;font-weight:700;color:var(--red)">&#9888; Due: '+fmt(s.owed)+'</div>':'')+
+          (s.credit===0&&s.owed===0?'<span class="badge bg">Settled</span>':'')+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+
 function renderCusts(){
   var t=G('cust-list');if(!t)return;
   var q=(V('cust-search')||'').toLowerCase().trim();
@@ -2781,7 +3139,7 @@ function renderSuspense(){
 }
 
 // ── METAL FLOW ──
-function mfTab(tab,btn){['in','batch','refinery','out','log'].forEach(function(t){var e=G('mf-'+t);if(e)e.style.display='none';});var te=G('mf-'+tab);if(te)te.style.display='block';document.querySelectorAll('#pg-metalflow .tab').forEach(function(b){b.classList.remove('active');});if(btn)btn.classList.add('active');if(tab==='batch')loadUnbatched();if(tab==='refinery')loadPendingBatches();if(tab==='log')renderMFLog();}
+function mfTab(tab,btn){['in','batch','refinery','out','sell','log'].forEach(function(t){var e=G('mf-'+t);if(e)e.style.display='none';});var te=G('mf-'+tab);if(te)te.style.display='block';document.querySelectorAll('#pg-metalflow .tab').forEach(function(b){b.classList.remove('active');});if(btn)btn.classList.add('active');if(tab==='batch')loadUnbatched();if(tab==='refinery')loadPendingBatches();if(tab==='log')renderMFLog();if(tab==='sell'){var sd=G('sel-date');if(sd&&!sd.value)sd.value=td();}}
 function saveMFIn(){var metal=V('mfi-metal'),gross=N('mfi-gross'),pure=N('mfi-pure')||gross;if(!gross){alert('Enter weight.');return;}if(metal==='Gold')metalR.gold+=pure;else metalR.silver+=pure;var mfEntry={type:'in',date:td(),metal:metal,src:V('mfi-src'),gross:gross,pure:pure,rate:N('mfi-rate')};DB.metalLog.unshift(mfEntry);dbSaveMetalLog(mfEntry);updateMFDisp();renderMFLog();alert('&#10003; Added: '+pure.toFixed(3)+'g '+metal);}
 function loadUnbatched(){
   var metal=V('bat-metal')||'Gold';
@@ -2852,6 +3210,36 @@ function renderMFLog(){var t=G('mf-log-tbl');if(!t)return;t.innerHTML=DB.metalLo
 // ── CASH FLOW ──
 function saveCashOB(){var amt=N('cob-val');DB.cashOB=amt;dbSaveCashEntry('opening',V('cob-date')||td(),amt,'Opening Balance','opening');closeM('m-cashob');renderCashFlow();}
 function saveCashEntry(){var type=V('ce-type'),amt=N('ce-amt'),date=V('ce-date')||td(),desc=V('ce-desc');if(!amt){alert('Enter amount.');return;}DB.cashLog.push({type:type,date:date,amount:amt,desc:desc,src:'manual'});dbSaveCashEntry(type,date,amt,desc,'manual');closeM('m-cashentry');renderCashFlow();}
+
+// ── CASH TO BANK TRANSFER ────────────────────────────────────
+function saveCashToBank(){
+  var amt=N('ctb-amt'), bank=V('ctb-bank').trim(), ref=V('ctb-ref').trim();
+  if(!amt){alert('Enter amount.');return;}
+  if(!bank){alert('Enter bank account name.');return;}
+  var date=V('ctb-date')||td();
+  // Cash out from hand
+  DB.cashLog.push({type:'out',date:date,amount:amt,
+    desc:'Transfer to Bank: '+bank+(ref?' | '+ref:''),src:'bank_transfer'});
+  dbSaveCashEntry('out',date,amt,'Transfer to Bank: '+bank,'bank_transfer');
+  // Record bank credit
+  if(!DB.bankAccounts)DB.bankAccounts={};
+  if(!DB.bankAccounts[bank])DB.bankAccounts[bank]=[];
+  DB.bankAccounts[bank].push({type:'in',date:date,amount:amt,desc:'Cash deposit'+(ref?' | '+ref:'')});
+  closeM('m-cashtobank');
+  renderCashFlow();
+  alert('\u2713 \u20B9'+amt.toLocaleString('en-IN')+' transferred to '+bank);
+}
+
+function renderBankBalances(){
+  if(!DB.bankAccounts)return;
+  var html='';
+  Object.keys(DB.bankAccounts).forEach(function(bank){
+    var bal=DB.bankAccounts[bank].reduce(function(s,t){return s+(t.type==='in'?t.amount:-t.amount);},0);
+    html+='<div class="lrow"><div style="flex:1">&#127981; '+bank+'</div><span style="font-weight:700;color:var(--blu)">'+fmt(bal)+'</span></div>';
+  });
+  var el=G('bank-balances');if(el)el.innerHTML=html||'<div class="empty" style="padding:10px"><div class="etxt">No transfers yet</div></div>';
+}
+
 function renderCashFlow(){var totalIn=DB.cashLog.filter(function(e){return e.type==='in';}).reduce(function(s,e){return s+e.amount;},0);var totalOut=DB.cashLog.filter(function(e){return e.type==='out';}).reduce(function(s,e){return s+e.amount;},0);var net=DB.cashOB+totalIn-totalOut;if(G('cf-ob'))G('cf-ob').innerHTML=fmt(DB.cashOB);if(G('cf-in'))G('cf-in').innerHTML=fmt(totalIn);if(G('cf-out'))G('cf-out').innerHTML=fmt(totalOut);if(G('cf-net'))G('cf-net').innerHTML=fmt(net);if(G('d-cash'))G('d-cash').innerHTML=fmt(net);var all=[{type:'opening',date:'Opening',amount:DB.cashOB,desc:'Opening Balance',src:''}].concat(DB.cashLog.slice().reverse());var t=G('cf-table');if(!t)return;t.innerHTML=all.length?'<table class="data-table"><thead><tr><th>Date</th><th>Description</th><th>Source</th><th class="num">Amount</th></tr></thead><tbody>'+all.map(function(e){var isIn=e.type==='in'||e.type==='opening';return '<tr><td style="font-size:12px;color:var(--tx3)">'+e.date+'</td><td style="font-weight:600">'+e.desc+'</td><td style="font-size:11px;color:var(--tx3)">'+(e.src||'manual')+'</td><td class="num" style="color:'+(isIn?'var(--grn)':'var(--red)')+'">'+( isIn?'+':'-')+fmt(e.amount)+'</td></tr>';}).join('')+'</tbody></table>':'<div class="empty"><div class="etxt">No entries</div></div>';}
 
 // ── DASHBOARD ──
@@ -3333,23 +3721,82 @@ function glRespawnTarget(el){
   },800+Math.random()*800);
 }
 function calcSellTotal(){
-  var wt = Number(document.getElementById('sel-wt').value);
-  var rate = Number(document.getElementById('sel-rate').value);
-  if(wt && rate){
-    document.getElementById('sel-sell-val').value = (wt * rate).toFixed(2);
+  var wt=N('sel-wt'), rate=N('sel-rate');
+  if(wt&&rate){
+    var sv=G('sel-sell-val');
+    if(sv&&!sv._edited)sv.value=(wt*rate).toFixed(2);
   }
+  calcSellProfit();
+}
+
+function calcSellProfit(){
+  var sell=N('sel-sell-val'), cost=N('sel-buy-cost'), fee=N('sel-test-fee')||50;
+  var totalCost=cost+fee;
+  var profit=sell-totalCost;
+  var ds=G('sel-d-sale'),dc=G('sel-d-cost'),dp=G('sel-d-profit');
+  if(ds)ds.textContent=fmt(sell);
+  if(dc)dc.textContent=fmt(totalCost);
+  if(dp){dp.textContent=fmt(profit);dp.style.color=profit>=0?'var(--grn)':'var(--red)';}
 }
 
 function sellRefinedGold(){
-  var wt = Number(document.getElementById('sel-wt').value);
-  var sell = Number(document.getElementById('sel-sell-val').value);
-
-  if(!wt || !sell){
-    alert("Enter valid details");
-    return;
+  var wt=N('sel-wt'), sell=N('sel-sell-val');
+  var metal=V('sel-metal')||'Gold', date=V('sel-date')||td();
+  var cost=N('sel-buy-cost'), fee=N('sel-test-fee')||50, mode=V('sel-mode')||'Cash';
+  var party=V('sel-party').trim();
+  if(!wt){alert('Enter weight.');return;}
+  if(!sell){alert('Enter sale amount.');return;}
+  var totalCost=cost+fee, profit=sell-totalCost;
+  // Reduce metal reserve
+  if(metal==='Gold'){metalR.gold=Math.max(0,metalR.gold-wt);}
+  else{metalR.silver=Math.max(0,metalR.silver-wt);}
+  updateMFDisp();
+  // Add to cash
+  if(mode==='Cash'){
+    DB.cashLog.push({type:'in',date:date,amount:sell,desc:'Sell '+metal+' '+wt.toFixed(3)+'g'+(party?' to '+party:''),src:'refgold'});
+    dbSaveCashEntry('in',date,sell,'Sell '+metal+' '+wt.toFixed(3)+'g','refgold');
   }
+  // Log metal flow
+  var mfEntry={type:'out',date:date,metal:metal,wt:wt,pure:wt,
+    src:'Sold'+(party?' to '+party:''),purpose:'Sale'};
+  DB.metalLog.unshift(mfEntry);
+  dbSaveMetalLog(mfEntry);
+  // Record in refGoldSales
+  if(!DB.refGoldSales)DB.refGoldSales=[];
+  var rec={id:uid(),date:date,metal:metal,wt:wt,saleAmt:sell,costPrice:cost,
+    testFee:fee,otherCost:0,totalCost:totalCost,profit:profit,mode:mode,
+    note:party||''};
+  DB.refGoldSales.push(rec);
+  if(sbHasConfig()){
+    dbPost('refined_gold_sales',{id:rec.id,sale_date:date,metal:metal,
+      weight_g:wt,sale_amount:sell,cost_price:cost,test_fee:fee,
+      profit:profit,mode:mode,buyer_name:party||null},null);
+  }
+  // Clear form
+  ['sel-wt','sel-rate','sel-sell-val','sel-buy-cost','sel-party'].forEach(function(id){var e=G(id);if(e)e.value='';});
+  G('sel-test-fee').value='50';
+  calcSellProfit();
+  renderCashFlow();renderMFLog();
+  alert('\u2713 Sale recorded!\n'+wt.toFixed(3)+'g '+metal+' sold for '+fmt(sell)+'\nProfit: '+fmt(profit));
+}
 
-  alert("Sale recorded successfully!");
+function _showSellHistory(){
+  var card=G('sel-history-card');if(!card)return;
+  card.style.display='block';
+  var list=G('sel-history-list');if(!list)return;
+  var data=(DB.refGoldSales||[]).slice().reverse();
+  list.innerHTML=data.length?
+    '<table class="data-table"><thead><tr><th>Date</th><th>Metal</th><th class="num">Wt</th><th class="num">Sale</th><th class="num">Cost</th><th class="num">Profit</th><th>Buyer</th></tr></thead><tbody>'+
+    data.map(function(r){return '<tr>'+
+      '<td style="font-size:12px;color:var(--tx3)">'+r.date+'</td>'+
+      '<td>'+r.metal+'</td>'+
+      '<td class="num">'+r.wt.toFixed(3)+'g</td>'+
+      '<td class="num">'+fmt(r.saleAmt)+'</td>'+
+      '<td class="num" style="color:var(--red)">'+fmt(r.totalCost)+'</td>'+
+      '<td class="num" style="color:'+(r.profit>=0?'var(--grn)':'var(--red)')+'">'+fmt(r.profit)+'</td>'+
+      '<td style="font-size:11px;color:var(--tx3)">'+(r.note||'-')+'</td>'+
+    '</tr>';}).join('')+'</tbody></table>':
+    '<div class="empty"><div class="etxt">No sales recorded yet</div></div>';
 }
 // ── Ammo display (shows total shots, no sequence hint) ──
 function glUpdateAmmo(){
@@ -3779,8 +4226,9 @@ function getCustCredit(custId){
   var cust=DB.custs[custId];
   var custName=cust?cust.name:'';
 
-  // Opening balance: ob>0 means shop owes customer
+  // OB: positive = we owe customer (credit), negative = they owe us (reduces credit)
   if(cust&&cust.ob>0)credit+=cust.ob;
+  else if(cust&&cust.ob<0)credit+=cust.ob; // negative = reduce credit (they owe us)
 
   // Walk all standalone payment records (match by cid OR by name fallback)
   DB.payments.forEach(function(p){
@@ -5450,6 +5898,23 @@ setLang(LANG);
   <div class="mfoot">
     <button class="btn" onclick="closeM('m-followup')">Cancel</button>
     <button class="btn btng" onclick="saveFollowUp()">&#10003; Log &amp; Update</button>
+  </div>
+</div></div>
+
+
+<div class="modal-bg" id="m-cashtobank"><div class="msheet">
+  <div class="mhandle"></div>
+  <div class="mtitle">&#127981; Transfer Cash to Bank</div>
+  <div class="infobar" style="font-size:11px">Moves cash from hand to a bank account. Cash balance reduces, bank balance increases.</div>
+  <div class="field"><label>Amount (&#8377;)</label><input type="number" id="ctb-amt" step="0.01" inputmode="decimal"></div>
+  <div class="g2">
+    <div class="field"><label>Bank Account Name</label><input type="text" id="ctb-bank" placeholder="e.g. SBI Savings, HDFC Current..."></div>
+    <div class="field"><label>Date</label><input type="date" id="ctb-date"></div>
+  </div>
+  <div class="field"><label>Reference / Note</label><input type="text" id="ctb-ref" placeholder="Deposit slip no, UTR..."></div>
+  <div class="mfoot">
+    <button class="btn" onclick="closeM('m-cashtobank')">Cancel</button>
+    <button class="btn btng" onclick="saveCashToBank()">Transfer</button>
   </div>
 </div></div>
 </body>
