@@ -3574,10 +3574,19 @@ function dbUpdateOrderStatus(ordId,status){
 
 function dbSavePayment(py){
   if(!sbHasConfig())return;
-  dbPost('customer_payments',{customer_id:py.cid||null,customer_name:py.customer,pmt_type:py.type,amount:py.amt,mode:py.mode||'',pmt_date:py.date,og_metal:py.ogMetal||null,og_weight_g:py.ogWt||0,og_value:py.ogVal||0,note:py.note||''},function(d,e){
+  // Map internal types to DB-allowed pmt_type values
+  // DB check constraint allows: in, out, oldgold, oldgold-adv, advance, advance_used,
+  //   old_gold_advance, chit_bonus, chit_metal, chit_credit
+  var dbType=py.type;
+  if(dbType==='old_bal_settle') dbType='in';  // OBS is a cash-in payment
+  dbPost('customer_payments',{customer_id:py.cid||null,customer_name:py.customer,
+    pmt_type:dbType,amount:py.amt,mode:py.mode||'',pmt_date:py.date,
+    og_metal:py.ogMetal||null,og_weight_g:py.ogWt||0,og_value:py.ogVal||0,
+    note:(py.type==='old_bal_settle'?'[OBS] ':'')+(py.note||'')},function(d,e){
     if(e)console.error('Payment:',e);else showDbStatus('Payment saved ✓');
   });
-  if(py.mode==='Cash'&&py.amt>0){var lt=(py.type==='in'||py.type==='oldgold-adv'||py.type==='advance'||py.type==='advance_used')?'in':'out';dbPost('cash_log',{log_type:lt,log_date:py.date,amount:py.amt,description:(lt==='in'?'Received: ':'Paid: ')+py.customer,source:'payment'},null);}
+  // NOTE: cash_log is saved separately by the calling function (savePayment, saveOGPurchase etc.)
+  // Do NOT save cash_log here — it causes double entries.
 }
 
 function dbSavePurchase(pu){
