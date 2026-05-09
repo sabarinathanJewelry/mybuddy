@@ -1980,7 +1980,7 @@ var R = {k22:7450, k18:6090, k916:7310, sil:92, dia:35000, plat:3200};
 var DB = {
   sales:[], custs:{}, sups:{}, suspense:[], purchases:[],
   expenses:[], metalLog:[], cashLog:[], orders:[], payments:[],
-  batches:[], oldMetal:[], cashOB:0
+  batches:[], oldMetal:[], cashOB:0, cashOBDate:null
 };
 var metalR = {gold:0, silver:0, goldsmiths:0, refinery:0};
 var goldBN=1, silverBN=1, liC=0, orLiC=0, payC=0, puIC=0, puPC=0;
@@ -2169,7 +2169,7 @@ function testConnection(){
     });
   }).catch(function(e){G('cfg-status').innerHTML='<span style="color:var(--red)">&#10005; '+e.message+'</span>';});
 }
-function clearAllData(){DB={sales:[],custs:{},sups:{},suspense:[],purchases:[],expenses:[],metalLog:[],cashLog:[],orders:[],payments:[],batches:[],oldMetal:[],cashOB:0};metalR={gold:0,silver:0,goldsmiths:0,refinery:0};goldBN=1;silverBN=1;renderDash();renderCashFlow();alert('Local data cleared.');}
+function clearAllData(){DB={sales:[],custs:{},sups:{},suspense:[],purchases:[],expenses:[],metalLog:[],cashLog:[],orders:[],payments:[],batches:[],oldMetal:[],cashOB:0,cashOBDate:null};metalR={gold:0,silver:0,goldsmiths:0,refinery:0};goldBN=1;silverBN=1;renderDash();renderCashFlow();alert('Local data cleared.');}
 
 // ── LOAD RATES FROM DB ──
 function loadRatesFromDB(){
@@ -3498,7 +3498,7 @@ function updateMFDisp(){
 function renderMFLog(){var t=G('mf-log-tbl');if(!t)return;t.innerHTML=DB.metalLog.length?'<table class="data-table"><thead><tr><th>Date</th><th>Metal</th><th>Type</th><th>Source</th><th class="num">Weight</th></tr></thead><tbody>'+DB.metalLog.map(function(e){var cls=e.type==='in'||e.type==='refinery_complete'?'bg':e.type==='out'?'br':'ba';var wshow=e.pure!=null?e.pure.toFixed(3)+'g':e.pure999!=null?e.pure999.toFixed(3)+'g pure':e.wt!=null?e.wt.toFixed(3)+'g':'';return '<tr><td style="font-size:12px;color:var(--tx3)">'+e.date+'</td><td style="font-weight:600">'+e.metal+'</td><td><span class="badge '+cls+'">'+e.type.replace(/_/g,' ')+'</span></td><td style="font-size:12px;color:var(--tx3)">'+(e.src||e.purpose||'')+(e.purity?' &middot; Purity: '+e.purity+'%':'')+(e.party?' &rarr; '+e.party:'')+'</td><td class="num">'+wshow+'</td></tr>';}).join('')+'</tbody></table>':'<div class="empty"><div class="etxt">No entries</div></div>';}
 
 // ── CASH FLOW ──
-function saveCashOB(){var amt=N('cob-val');DB.cashOB=amt;dbSaveCashEntry('opening',V('cob-date')||td(),amt,'Opening Balance','opening');closeM('m-cashob');renderCashFlow();}
+function saveCashOB(){var amt=N('cob-val');var obDate=V('cob-date')||td();DB.cashOB=amt;DB.cashOBDate=obDate;dbSaveCashEntry('opening',obDate,amt,'Opening Balance','opening');closeM('m-cashob');renderCashFlow();}
 function saveCashEntry(){var type=V('ce-type'),amt=N('ce-amt'),date=V('ce-date')||td(),desc=V('ce-desc');if(!amt){alert('Enter amount.');return;}DB.cashLog.push({type:type,date:date,amount:amt,desc:desc,src:'manual'});dbSaveCashEntry(type,date,amt,desc,'manual');closeM('m-cashentry');renderCashFlow();}
 
 // ── CASH TO BANK TRANSFER ────────────────────────────────────
@@ -3889,7 +3889,7 @@ function dbLoadAll(){
   dbGet('cash_log?select=*&order=log_date.desc&log_date=gte.'+from,function(d,e){
     if(e){console.error('Load cashlog:',e);return;}
     DB.cashLog=[];
-    (d||[]).forEach(function(r){if(r.log_type==='opening')DB.cashOB=parseFloat(r.amount)||0;else DB.cashLog.push({id:r.id,type:r.log_type,date:r.log_date,amount:parseFloat(r.amount)||0,desc:r.description||'',src:r.source||'manual'});});
+    (d||[]).forEach(function(r){if(r.log_type==='opening'){DB.cashOB=parseFloat(r.amount)||0;DB.cashOBDate=r.log_date||null;}else DB.cashLog.push({id:r.id,type:r.log_type,date:r.log_date,amount:parseFloat(r.amount)||0,desc:r.description||'',src:r.source||'manual'});});
     renderCashFlow();console.log('CashLog loaded:',d.length);
   });
 
@@ -5359,14 +5359,16 @@ function saveLoan(){
   var loan={id:uid(),lender:lender,type:V('ln-type'),amt:N('ln-amt'),rate:N('ln-rate'),rateType:V('ln-ratetype'),start:V('ln-start')||td(),due:V('ln-due'),paid:N('ln-paid')||0,notes:V('ln-notes'),status:'active',created:td()};
   DB.loans.push(loan);
   // Add to cash in ONLY for cash-based loans (Local/Personal), NOT for bank loans
-  if(loan.amt>0&&loan.paid===0&&loan.type==='Local / Personal'){
+  // Also check if loan date is AFTER opening balance date (to avoid double-counting)
+  var isAfterOB = !DB.cashOBDate || loan.start >= DB.cashOBDate;
+  if(loan.amt>0&&loan.paid===0&&loan.type==='Local / Personal'&&isAfterOB){
     DB.cashLog.push({type:'in',date:loan.start,amount:loan.amt,desc:'Cash Loan from '+lender,src:'loan'});
     if(sbHasConfig())dbSaveCashEntry('in',loan.start,loan.amt,'Cash Loan: '+lender,'loan');
   }
   dbSaveLoan(loan);
   closeM('m-addloan');
   renderLoans();renderBalance();renderCashFlow();
-  alert('\u2713 Loan saved!');
+  alert('\u2713 Loan saved!'+(loan.type==='Local / Personal'&&!isAfterOB?' (Pre-opening loan - not added to cash flow)':''));
 }
 
 function calcLoanInterest(loan){
