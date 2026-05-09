@@ -5338,10 +5338,14 @@ function saveLoanRepayment(){
     l.status='closed';l.closedDate=date;
     if(confirm('Loan fully repaid! Mark as closed?')){}
   }
-  // Cash out
-  DB.cashLog.push({type:'out',date:date,amount:amt,desc:'Loan Repayment: '+l.lender,src:'loan'});
+  // Cash out ONLY for cash-based loans (Local/Personal), NOT for bank loans
+  if(l.type==='Local / Personal'){
+    DB.cashLog.push({type:'out',date:date,amount:amt,desc:'Cash Loan Repayment: '+l.lender,src:'loan'});
+    if(sbHasConfig()){
+      dbSaveCashEntry('out',date,amt,'Cash Loan Repayment: '+l.lender,'loan');
+    }
+  }
   if(sbHasConfig()){
-    dbSaveCashEntry('out',date,amt,'Loan Repayment: '+l.lender,'loan');
     dbUpdateLoan(l);
   }
   closeM('m-payloan');
@@ -5354,10 +5358,10 @@ function saveLoan(){
   if(!lender){alert('Enter lender name.');return;}
   var loan={id:uid(),lender:lender,type:V('ln-type'),amt:N('ln-amt'),rate:N('ln-rate'),rateType:V('ln-ratetype'),start:V('ln-start')||td(),due:V('ln-due'),paid:N('ln-paid')||0,notes:V('ln-notes'),status:'active',created:td()};
   DB.loans.push(loan);
-  // Add to cash in if new loan
-  if(loan.amt>0&&loan.paid===0){
-    DB.cashLog.push({type:'in',date:loan.start,amount:loan.amt,desc:'Loan from '+lender,src:'loan'});
-    if(sbHasConfig())dbSaveCashEntry('in',loan.start,loan.amt,'Loan: '+lender,'loan');
+  // Add to cash in ONLY for cash-based loans (Local/Personal), NOT for bank loans
+  if(loan.amt>0&&loan.paid===0&&loan.type==='Local / Personal'){
+    DB.cashLog.push({type:'in',date:loan.start,amount:loan.amt,desc:'Cash Loan from '+lender,src:'loan'});
+    if(sbHasConfig())dbSaveCashEntry('in',loan.start,loan.amt,'Cash Loan: '+lender,'loan');
   }
   dbSaveLoan(loan);
   closeM('m-addloan');
