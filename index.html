@@ -1170,7 +1170,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
         <div class="card-header"><div><div class="card-title">Customer</div><div class="card-sub" style="color:var(--amb)">Required only if balance is due</div></div></div>
         <div class="g2" style="margin-bottom:8px">
           <div class="field"><label>Phone Number</label>
-            <div style="display:flex;gap:6px"><input type="tel" id="s-phone" maxlength="10" placeholder="10-digit number" inputmode="numeric" oninput="custLookup('s')" style="flex:1"><button class="btn btnsm btnd" style="padding:9px 10px;flex-shrink:0" onclick="clearCust('s')">&#10005;</button></div>
+            <div style="display:flex;gap:6px"><input type="tel" id="s-phone" maxlength="10" placeholder="Phone or Name..." inputmode="numeric" oninput="custLookup('s')" style="flex:1"><button class="btn btnsm btnd" style="padding:9px 10px;flex-shrink:0" onclick="clearCust('s')">&#10005;</button></div>
             <div id="s-cust-res"></div>
           </div>
           <div>
@@ -1244,7 +1244,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
       <div>
         <div class="field"><label>Customer Phone</label>
           <div style="display:flex;gap:6px">
-            <input type="tel" id="og-phone" maxlength="10" inputmode="numeric" placeholder="Search by phone" oninput="ogCustLookup()" style="flex:1">
+            <input type="tel" id="og-phone" maxlength="10" inputmode="numeric" placeholder="Phone or Name" oninput="ogCustLookup()" style="flex:1">
             <button class="btn btnsm btnog" onclick="openM('m-newcust-og')" style="white-space:nowrap">+ New</button>
           </div>
           <div id="og-cust-res" style="margin-top:6px"></div>
@@ -2272,7 +2272,34 @@ function custLookup(pfx){
   var ph=V(pfx+'-phone').trim();
   var res=G(pfx+'-cust-res'),cidEl=G(pfx+'-cid'),cnEl=G(pfx+'-cname');
   if(!res||!cidEl||!cnEl)return;
-  if(ph.length<10){res.innerHTML='';cidEl.value='';cnEl.value='';return;}
+  // Name search: 3+ chars but NOT a 10-digit number
+  if(ph.length>=3&&ph.length<10&&!/^\d{10}$/.test(ph)){
+    var matches=Object.values(DB.custs).filter(function(c){
+      return (c.name||'').toLowerCase().indexOf(ph.toLowerCase())>=0||
+             (c.phone||'').indexOf(ph)>=0;
+    });
+    if(!matches.length){
+      res.innerHTML='<div class="custno" style="font-size:12px">No customer found for &ldquo;'+ph+'&rdquo;</div>';
+      cidEl.value='';cnEl.value='';return;
+    }
+    // Build dropdown using data attributes to avoid quote escaping issues
+    var html='<div style="background:var(--card);border:1.5px solid var(--gold);border-radius:9px;margin-top:4px;max-height:180px;overflow-y:auto">';
+    matches.slice(0,8).forEach(function(c){
+      var stmt=getCustStatement(c.id);var nb=stmt.netBal||0;
+      var nbHtml=nb>0.01?'<span style="font-size:10px;color:var(--grn);font-weight:700">Adv '+fmt(nb)+'</span>':
+                 nb<-0.01?'<span style="font-size:10px;color:var(--red);font-weight:700">Due '+fmt(-nb)+'</span>':'';
+      html+='<div class="_csl-row" data-pfx="'+pfx+'" data-cid="'+c.id+'" style="padding:8px 12px;border-bottom:1px solid var(--bdr);cursor:pointer;display:flex;align-items:center;justify-content:space-between">'+
+        '<div><strong>'+c.name+'</strong> <span style="font-size:11px;color:var(--tx3)">'+c.phone+'</span></div>'+nbHtml+'</div>';
+    });
+    html+='</div>';
+    res.innerHTML=html;
+    // Attach click events
+    res.querySelectorAll('._csl-row').forEach(function(row){
+      row.onclick=function(){custSelectByName(row.dataset.pfx,row.dataset.cid,DB.custs[row.dataset.cid].name);};
+    });
+    return;
+  }
+    if(ph.length<10){res.innerHTML='';cidEl.value='';cnEl.value='';return;}
   var found=null;Object.values(DB.custs).forEach(function(c){if(c.phone===ph)found=c;});
   if(found){
     cidEl.value=found.id;cnEl.value=found.name;
@@ -2302,6 +2329,25 @@ function custLookup(pfx){
     }
   }
 }
+
+function custSelectByName(pfx, cid, cname){
+  var cidEl=G(pfx+'-cid'),cnEl=G(pfx+'-cname'),phEl=G(pfx+'-phone'),res=G(pfx+'-cust-res');
+  if(cidEl)cidEl.value=cid;
+  if(cnEl)cnEl.value=cname;
+  var c=DB.custs[cid];
+  if(phEl&&c)phEl.value=c.phone||'';
+  if(res){
+    var stmt=getCustStatement(cid);
+    var nb=stmt.netBal||0;
+    res.innerHTML='<div class="custok"><strong>&#10003; '+cname+'</strong>'+(c&&c.city?' &middot; '+c.city:'')+
+      (nb>0.01?' <span style="color:var(--grn);font-size:11px;font-weight:700">Adv: '+fmt(nb)+'</span>':nb<-0.01?' <span style="color:var(--red);font-size:11px;font-weight:700">Due: '+fmt(-nb)+'</span>':'')+'</div>';
+    // Also show advance apply button if in sale context
+    if(pfx==='s'&&nb>0.01){
+      res.innerHTML+='<button class="btn btnsm btng" style="margin-top:4px" data-caid="'+cid+'" onclick="applyCustAdvance(this.dataset.caid)">&#128176; Apply Advance</button>';
+    }
+  }
+}
+
 function clearCust(pfx){['phone','cid','cname'].forEach(function(k){var e=G(pfx+'-'+k);if(e)e.value='';});var r=G(pfx+'-cust-res');if(r)r.innerHTML='';}
 function saveNewCust(){
   var name=V('nc-name').trim(),phone=V('nc-phone').trim();
@@ -3483,7 +3529,7 @@ function renderBankBalances(){
   var el=G('bank-balances');if(el)el.innerHTML=html||'<div class="empty" style="padding:10px"><div class="etxt">No transfers yet</div></div>';
 }
 
-function renderCashFlow(){var totalIn=DB.cashLog.filter(function(e){return e.type==='in';}).reduce(function(s,e){return s+e.amount;},0);var totalOut=DB.cashLog.filter(function(e){return e.type==='out';}).reduce(function(s,e){return s+e.amount;},0);var net=DB.cashOB+totalIn-totalOut;if(G('cf-ob'))G('cf-ob').innerHTML=fmt(DB.cashOB);if(G('cf-in'))G('cf-in').innerHTML=fmt(totalIn);if(G('cf-out'))G('cf-out').innerHTML=fmt(totalOut);if(G('cf-net'))G('cf-net').innerHTML=fmt(net);if(G('d-cash'))G('d-cash').innerHTML=fmt(net);var all=[{type:'opening',date:'Opening',amount:DB.cashOB,desc:'Opening Balance',src:''}].concat(DB.cashLog.slice().reverse());var t=G('cf-table');if(!t)return;t.innerHTML=all.length?'<table class="data-table"><thead><tr><th>Date</th><th>Description</th><th>Source</th><th class="num">Amount</th></tr></thead><tbody>'+all.map(function(e){var isIn=e.type==='in'||e.type==='opening';return '<tr><td style="font-size:12px;color:var(--tx3)">'+e.date+'</td><td style="font-weight:600">'+e.desc+'</td><td style="font-size:11px;color:var(--tx3)">'+(e.src||'manual')+'</td><td class="num" style="color:'+(isIn?'var(--grn)':'var(--red)')+'">'+( isIn?'+':'-')+fmt(e.amount)+'</td></tr>';}).join('')+'</tbody></table>':'<div class="empty"><div class="etxt">No entries</div></div>';}
+function renderCashFlow(){var totalIn=DB.cashLog.filter(function(e){return e.type==='in';}).reduce(function(s,e){return s+e.amount;},0);var totalOut=DB.cashLog.filter(function(e){return e.type==='out';}).reduce(function(s,e){return s+e.amount;},0);var net=DB.cashOB+totalIn-totalOut;if(G('cf-ob'))G('cf-ob').innerHTML=fmt(DB.cashOB);if(G('cf-in'))G('cf-in').innerHTML=fmt(totalIn);if(G('cf-out'))G('cf-out').innerHTML=fmt(totalOut);if(G('cf-net'))G('cf-net').innerHTML=fmt(net);if(G('d-cash'))G('d-cash').innerHTML=fmt(net);var all=[{type:'opening',date:'Opening',amount:DB.cashOB,desc:'Opening Balance',src:''}].concat(DB.cashLog.slice().reverse());var t=G('cf-table');if(!t)return;t.innerHTML=all.length?'<table class="data-table"><thead><tr><th>Date</th><th>Description</th><th>Source</th><th class="num">Amount</th><th style="width:40px"></th></tr></thead><tbody>'+all.map(function(e,i){var isIn=e.type==='in'||e.type==='opening';var canEdit=(e.type!=='opening');return '<tr><td style="font-size:12px;color:var(--tx3)">'+e.date+'</td><td style="font-weight:600">'+e.desc+'</td><td style="font-size:11px;color:var(--tx3)">'+(e.src||'manual')+'</td><td class="num" style="color:'+(isIn?'var(--grn)':'var(--red)')+'">'+( isIn?'+':'-')+fmt(e.amount)+'</td><td>'+(canEdit?'<button class="btn btnsm" style="padding:3px 7px;font-size:10px" onclick="openEditCashLog('+(i-1)+')">✎</button>':'')+'</td></tr>';}).join('')+'</tbody></table>':'<div class="empty"><div class="etxt">No entries</div></div>';renderBankBalances();}
 
 // ── DASHBOARD ──
 function renderDash(){
@@ -3496,6 +3542,71 @@ function renderDash(){
 }
 
 // ── SETTINGS ──
+
+var _editCashLogIdx=null;
+function openEditCashLog(idx){
+  // idx is 0-based index into DB.cashLog (reversed display, so idx=-1 would be opening - guarded)
+  if(idx<0||idx>=DB.cashLog.length)return;
+  _editCashLogIdx=idx;
+  var e=DB.cashLog[idx];
+  G('ecl-date').value=e.date||'';
+  G('ecl-amt').value=e.amount||'';
+  G('ecl-desc').value=e.desc||'';
+  G('ecl-type').value=e.type||'in';
+  // Show source
+  var srcEl=G('ecl-source');if(srcEl)srcEl.textContent=e.src||'manual';
+  openM('m-editcashlog');
+}
+function saveEditCashLog(){
+  if(_editCashLogIdx===null)return;
+  var e=DB.cashLog[_editCashLogIdx];if(!e)return;
+  var newDate=V('ecl-date')||e.date;
+  var newAmt=N('ecl-amt')||e.amount;
+  var newDesc=V('ecl-desc')||e.desc;
+  var newType=V('ecl-type')||e.type;
+  // Update local
+  e.date=newDate; e.amount=newAmt; e.desc=newDesc; e.type=newType;
+  // Patch DB if we have an id
+  if(sbHasConfig()&&e.id){
+    dbPatch('cash_log','id=eq.'+e.id,{
+      log_date:newDate,amount:newAmt,
+      description:newDesc,log_type:newType
+    },function(ok,err){if(err)console.error('CashLog patch:',err);else showDbStatus('Cash entry updated ✓');});
+  }
+  closeM('m-editcashlog');
+  renderCashFlow();
+  alert('✓ Cash entry updated!');
+}
+
+
+function renderUsersSettings(){
+  var tbody=G('users-table'); if(!tbody)return;
+  // Show local USERS immediately
+  tbody.innerHTML=USERS.map(function(u){
+    var roleColor=u.role==='admin'?'#1D7A3A':'#1A5FAB';
+    return '<tr>'+
+      '<td style="font-weight:600">'+u.name+'</td>'+
+      '<td style="font-size:12px;color:var(--tx3)">@'+u.id+'</td>'+
+      '<td><span class="badge '+(u.role==='admin'?'bg':'bb')+'">'+u.role+'</span></td>'+
+      '<td style="font-family:monospace;font-size:11px;letter-spacing:0.08em">'+u.code.join(' › ')+'</td>'+
+    '</tr>';
+  }).join('');
+  // Try DB silently
+  if(sbHasConfig()){
+    dbGet('app_users?select=*&order=created_at.asc',function(data,err){
+      if(err||!data||!data.length)return; // silently skip if table doesn't exist
+      tbody.innerHTML=data.map(function(u){
+        return '<tr>'+
+          '<td style="font-weight:600">'+(u.display_name||u.full_name||'')+'</td>'+
+          '<td style="font-size:12px;color:var(--tx3)">@'+u.username+'</td>'+
+          '<td><span class="badge '+(u.role_name==='admin'||u.role==='admin'?'bg':'bb')+'">'+(u.role_name||u.role||'')+'</span></td>'+
+          '<td><span class="badge ba" style="font-size:9px">DB</span></td>'+
+        '</tr>';
+      }).join('');
+    });
+  }
+}
+
 function renderSettings(){
   if(G('settings-users-tab')&&G('settings-users-tab').style.display!=='none')renderUsersTab();
   var ui=G('cfg-url');if(ui)ui.value=sbUrl();
@@ -3651,9 +3762,12 @@ function dbUpdateLoan(loan){
 }
 
 
-function dbSaveCashEntry(type,date,amount,desc,source){
+function dbSaveCashEntry(type,date,amount,desc,source,_logRef){
   if(!sbHasConfig())return;
-  dbPost('cash_log',{log_type:type,log_date:date,amount:amount,description:desc,source:source||'manual'},function(d,e){if(e)console.error('CashLog:',e);});
+  dbPost('cash_log',{log_type:type,log_date:date,amount:amount,description:desc,source:source||'manual'},function(d,e){
+    if(e)console.error('CashLog:',e);
+    else if(_logRef&&d&&d[0])_logRef.id=d[0].id;
+  });
 }
 
 function dbSaveMetalLog(entry){
@@ -3774,7 +3888,7 @@ function dbLoadAll(){
   dbGet('cash_log?select=*&order=log_date.desc&log_date=gte.'+from,function(d,e){
     if(e){console.error('Load cashlog:',e);return;}
     DB.cashLog=[];
-    (d||[]).forEach(function(r){if(r.log_type==='opening')DB.cashOB=parseFloat(r.amount)||0;else DB.cashLog.push({type:r.log_type,date:r.log_date,amount:parseFloat(r.amount)||0,desc:r.description||'',src:r.source||'manual'});});
+    (d||[]).forEach(function(r){if(r.log_type==='opening')DB.cashOB=parseFloat(r.amount)||0;else DB.cashLog.push({id:r.id,type:r.log_type,date:r.log_date,amount:parseFloat(r.amount)||0,desc:r.description||'',src:r.source||'manual'});});
     renderCashFlow();console.log('CashLog loaded:',d.length);
   });
 
@@ -6376,6 +6490,33 @@ setLang(LANG);
 </div>
 <button class="btn btng" style="width:100%;margin-top:10px" onclick="saveLoanRepayment()">&#10003; Save Repayment</button>
 <button class="btn" style="width:100%;margin-top:6px" onclick="closeM('m-payloan')">Cancel</button>
+</div></div>
+
+<!-- EDIT CASH LOG ENTRY MODAL -->
+<div class="modal-bg" id="m-editcashlog"><div class="msheet"><div class="mhandle"></div>
+<div class="mtitle">&#9998; Edit Cash Entry</div>
+<div class="warnbar" style="font-size:11px">Source: <strong id="ecl-source" style="color:var(--amb)">manual</strong> &nbsp;&mdash;&nbsp; Changing date/amount corrects the cash register only. The original transaction is not changed.</div>
+<div class="g2">
+  <div class="field"><label>Date</label>
+    <input type="date" id="ecl-date" class="igold">
+  </div>
+  <div class="field"><label>Type</label>
+    <select id="ecl-type">
+      <option value="in">Cash In (+)</option>
+      <option value="out">Cash Out (-)</option>
+    </select>
+  </div>
+</div>
+<div class="field"><label>Amount (&#8377;)</label>
+  <input type="number" id="ecl-amt" class="igold" step="0.01" inputmode="decimal">
+</div>
+<div class="field"><label>Description</label>
+  <input type="text" id="ecl-desc" placeholder="Entry description">
+</div>
+<div class="mfoot">
+  <button class="btn" onclick="closeM('m-editcashlog')">Cancel</button>
+  <button class="btn btng" onclick="saveEditCashLog()">&#10003; Save Changes</button>
+</div>
 </div></div>
 </body>
 </html>
