@@ -1287,14 +1287,18 @@ input:checked+.tslider::before { transform:translateX(17px); }
         <div class="field"><label>Date</label><input type="date" id="og-date"></div>
         <div class="field"><label>Note</label><input type="text" id="og-note" placeholder="Stone deducted, condition, etc."></div>
         <!-- Action buttons -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:4px">
           <button class="btn btng" onclick="saveOGPurchase('cash')" style="flex-direction:column;height:56px;gap:2px">
             <span style="font-size:15px">&#128176;</span>
-            <span style="font-size:11px">Pay Cash Now</span>
+            <span style="font-size:11px">Full Cash</span>
+          </button>
+          <button class="btn" style="background:var(--blbg);color:var(--blu);border:1.5px solid var(--blu);flex-direction:column;height:56px;gap:2px" onclick="saveOGPurchase('split')">
+            <span style="font-size:15px">&#9003;</span>
+            <span style="font-size:11px">Part Cash+Adv</span>
           </button>
           <button class="btn btnog" onclick="saveOGPurchase('advance')" style="flex-direction:column;height:56px;gap:2px">
             <span style="font-size:15px">&#129760;</span>
-            <span style="font-size:11px">Keep as Advance</span>
+            <span style="font-size:11px">Full Advance</span>
           </button>
         </div>
         <div class="warnbar" style="margin-top:10px;font-size:11px">
@@ -1395,7 +1399,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
   <div class="tab" onclick="mfTab('batch',this)">Batch</div>
   <div class="tab" onclick="mfTab('refinery',this)">Refinery</div>
   <div class="tab" onclick="mfTab('out',this)">Outflow</div>
-  <div class="tab" onclick="mfTab('sell',this)">&#128176; Sell</div>
+  <div class="tab" onclick="mfTab('sell',this)">&#128176; Sell Gold</div>
   <div class="tab" onclick="mfTab('log',this)">Log</div>
 </div>
 
@@ -1549,14 +1553,18 @@ input:checked+.tslider::before { transform:translateX(17px); }
       </div>
     </div>
   </div>
-  <div id="sl-table-wrap"><div class="empty"><div class="etxt">No sales</div></div></div>
+  <div id="sl-table-wrap" style="max-height:calc(100vh - 280px);overflow-y:auto"><div class="empty"><div class="etxt">No sales</div></div></div>
   <div class="card" id="sed-panel" style="display:none;margin-top:12px">
     <div class="card-header"><div><div class="card-title">Edit / View: <span id="sed-bill" style="color:var(--gold-dark)"></span></div></div><button class="btn btnsm btnd" onclick="document.getElementById('sed-panel').style.display='none'">Close</button></div>
     <div id="sed-bal-info"></div>
     <div id="sed-items" style="overflow-x:auto"></div>
     <div class="divv"></div>
-    <div class="card-header" style="margin-bottom:6px"><div class="card-title">Customer</div></div>
+    <div class="card-header" style="margin-bottom:6px"><div class="card-title">Customer &amp; Date</div></div>
     <div id="sed-cust-edit" style="margin-bottom:10px"></div>
+    <div class="g2" style="margin-bottom:10px">
+      <div class="field"><label>Sale Date</label><input type="date" id="sed-date" class="igold"></div>
+      <div class="field"><label>Bill Note</label><input type="text" id="sed-note" placeholder="Optional note" class="igold"></div>
+    </div>
     <div class="card-header" style="margin-bottom:8px"><div class="card-title">Payments</div><button class="btn btnsm btnog" onclick="addSedPay()">+ Add</button></div>
     <div id="sed-pays"></div>
     <button class="btn btng" style="margin-top:10px" onclick="saveSaleEdit()">Save Changes</button>
@@ -1789,7 +1797,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
 </div>
 
 <!-- MODALS -->
-<div class="modal-bg" id="m-rates"><div class="msheet"><div class="mhandle"></div><div class="mtitle" id="m-rates-title">&#128202; Board Rates (&#8377;/g)</div><div class="field" style="margin-bottom:14px"><label>Effective Date</label><input type="date" id="mr-date" class="igold"></div><div class="g3" style="gap:10px"><div class="field"><label>22K Gold</label><input type="number" id="mr-22k" class="igold" inputmode="decimal"></div><div class="field"><label>18K Gold</label><input type="number" id="mr-18k" class="igold" inputmode="decimal"></div><div class="field"><label>916 Gold</label><input type="number" id="mr-916" class="igold" inputmode="decimal"></div><div class="field"><label>Silver &#8377;/g</label><input type="number" id="mr-sil" class="igold" inputmode="decimal"></div><div class="field"><label>Diamond &#8377;/ct</label><input type="number" id="mr-dia" class="igold" inputmode="decimal"></div><div class="field"><label>Platinum &#8377;/g</label><input type="number" id="mr-plat" class="igold" inputmode="decimal"></div></div><div class="mfoot"><button class="btn" onclick="closeM('m-rates')">Cancel</button><button class="btn btng" onclick="saveRates()">&#10003; Update Rates</button></div></div></div>
+<div class="modal-bg" id="m-rates"><div class="msheet"><div class="mhandle"></div><div class="mtitle" id="m-rates-title">&#128202; Board Rates (&#8377;/g)</div><div class="field" style="margin-bottom:14px"><label>Effective Date</label><input type="date" id="mr-date" class="igold"></div><div class="g3" style="gap:10px"><div class="field"><label>22K Gold</label><input type="number" id="mr-22k" class="igold" inputmode="decimal"></div><div class="field"><label>18K Gold</label><input type="number" id="mr-18k" class="igold" inputmode="decimal"></div><div class="field"><label>24K Gold (Pure)</label><input type="number" id="mr-916" class="igold" inputmode="decimal"></div><div class="field"><label>Silver &#8377;/g</label><input type="number" id="mr-sil" class="igold" inputmode="decimal"></div><div class="field"><label>Diamond &#8377;/ct</label><input type="number" id="mr-dia" class="igold" inputmode="decimal"></div><div class="field"><label>Platinum &#8377;/g</label><input type="number" id="mr-plat" class="igold" inputmode="decimal"></div></div><div class="mfoot"><button class="btn" onclick="closeM('m-rates')">Cancel</button><button class="btn btng" onclick="saveRates()">&#10003; Update Rates</button></div></div></div>
 
 <div class="modal-bg" id="m-newcust-og"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128101; New Customer (Old Gold)</div>
   <div class="g2"><div class="field"><label>Full Name *</label><input type="text" id="nog-name"></div><div class="field"><label>Phone *</label><input type="tel" id="nog-phone" maxlength="10" inputmode="numeric"></div></div>
@@ -1833,7 +1841,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
     <div class="field"><label>Grams being settled</label>
       <input type="number" id="st-grams" step="0.001" inputmode="decimal" placeholder="e.g. 5.000" oninput="stCalcAmt()">
     </div>
-    <div class="field"><label>Rate &#8377;/g (pure)</label>
+    <div class="field"><label>Rate &#8377;/g &mdash; 24K Pure <span style="font-size:10px;color:var(--gold-dark);font-weight:700">↻ Update daily</span></label>
       <input type="number" id="st-rate" step="0.01" inputmode="decimal" oninput="stCalcAmt()" placeholder="e.g. 14050">
     </div>
   </div>
@@ -2284,9 +2292,10 @@ function custLookup(pfx){
     res.innerHTML='<div class="custok"><strong>&#10003; '+found.name+'</strong>'+(found.city?' &middot; '+found.city:'')+'</div>'+advHtml;
   } else {
     cidEl.value='';cnEl.value='';
-    if(pfx==='s'){
-      res.innerHTML='<div class="custno">Not found. <button id="cust-reg-btn" class="btn btnsm btnog">+ Register</button></div>';
-      var btn=G('cust-reg-btn');
+    if(pfx==='s'||pfx==='cp'||pfx==='or'){
+      var _btnId='cr-btn-'+pfx;
+      res.innerHTML='<div class="custno">Not found. <button id="'+_btnId+'" class="btn btnsm btnog">+ New Customer</button></div>';
+      var btn=G(_btnId);
       if(btn)btn.onclick=function(){G('nc-phone').value=ph;openM('m-newcust');};
     } else {
       res.innerHTML='<div class="custno">Customer not found</div>';
@@ -2575,6 +2584,8 @@ function openSaleEdit(sid){
         '<div class="met"><div class="ml">Balance Due</div><div class="mv '+(sale.balance>0?'r':'g')+'" id="sed-bal-disp">'+fmt(sale.balance)+'</div></div>'+
       '</div>';
   }
+  var sdEl=G('sed-date');if(sdEl)sdEl.value=sale.date||td();
+  var snEl=G('sed-note');if(snEl)snEl.value=sale.note||'';
   renderSedPays(sale);
   G('sed-panel').style.display='block';
   G('sed-panel').scrollIntoView({behavior:'smooth'});
@@ -2631,7 +2642,17 @@ function saveSaleEdit(){
     activeSedSale.cid=newCid||activeSedSale.cid;
     activeSedSale.customer=newCname;
     G('sed-bill').textContent=activeSedSale.bill+' — '+newCname;
+    if(sbHasConfig())dbPatch('sales','id=eq.'+activeSedSale.id,
+      {customer_name:newCname,customer_id:newCid||null},null);
   }
+  // Update date if changed
+  var newDate=V('sed-date');
+  if(newDate&&newDate!==activeSedSale.date){
+    activeSedSale.date=newDate;
+    if(sbHasConfig())dbPatch('sales','id=eq.'+activeSedSale.id,{date:newDate},null);
+  }
+  var newNote=V('sed-note');
+  if(newNote!==undefined)activeSedSale.note=newNote;
   var newPays=activeSedSale.pays.map(function(p,i){
     return{mode:V('sedp'+i+'-mode'),amt:N('sedp'+i+'-amt'),ref:V('sedp'+i+'-ref')};
   });
@@ -3230,7 +3251,7 @@ function stCalcMetalAmt(){
   var wt=N('st-met-wt'), rate=N('st-met-rate');
   if(!rate&&activeSup){
     var mt=(activeSup.metal||'Gold');
-    rate=mt.indexOf('Gold')>=0?R.k22:R.sil;
+    rate=mt.indexOf('Gold')>=0?R.k916:R.sil; // 24K pure rate
     var re=G('st-met-rate');if(re&&!re.value)re.value=rate.toFixed(2);
   }
   var val=wt*rate;
@@ -3242,7 +3263,7 @@ function stCalcAmt(){
   var grams=N('st-grams'), rate=N('st-rate');
   if(!rate&&activeSup){
     var mt=(activeSup.metal||'Gold');
-    rate=mt.indexOf('Gold')>=0||mt.indexOf('Diamond')>=0?R.k22:R.sil;
+    rate=mt.indexOf('Gold')>=0||mt.indexOf('Diamond')>=0?R.k916:R.sil; // 24K pure rate for supplier settlement
     var re=G('st-rate'); if(re&&!re.value)re.value=rate.toFixed(2);
   }
   var amt=grams*rate;
@@ -3256,7 +3277,7 @@ function openSettleModal(){
   var curGrams=getSupBalanceGrams(activeSup.id);
   var curVal=getSupBalanceValue(activeSup.id);
   var mt=(activeSup.metal||'Gold');
-  var rate=mt.indexOf('Gold')>=0||mt.indexOf('Diamond')>=0?R.k22:R.sil;
+  var rate=mt.indexOf('Gold')>=0||mt.indexOf('Diamond')>=0?R.k916:R.sil; // 24K pure rate for supplier settlement
   var sn=G('st-sup-name'); if(sn)sn.textContent=activeSup.name;
   var cg=G('st-cur-grams'); if(cg)cg.textContent=curGrams.toFixed(3)+'g';
   var cv=G('st-cur-val');   if(cv)cv.textContent=fmt(curVal);
@@ -3893,7 +3914,16 @@ function saveOGPurchase(mode){
   if(!gross){alert('Enter the weight.');return;}
   if(!val){alert('Enter the offer value.');return;}
   var date=V('og-date')||td(),note=V('og-note');
-  var isCash=(mode==='cash');
+  // Handle split mode — ask for cash portion
+  var cashAmt=val, advAmt=0;
+  if(mode==='split'){
+    var cashStr=prompt('Total value: '+fmt(val)+'\nHow much to pay as CASH? (Remainder goes as advance credit)','');
+    if(cashStr===null)return; // cancelled
+    cashAmt=parseFloat(cashStr)||0;
+    if(cashAmt<0||cashAmt>val){alert('Cash amount must be between 0 and '+fmt(val));return;}
+    advAmt=val-cashAmt;
+  }
+  var isCash=(mode==='cash'||mode==='split');
   var type=isCash?'oldgold':'oldgold-adv';
 
   // Add to old metal pool (goes to batch tab)
@@ -3904,7 +3934,7 @@ function saveOGPurchase(mode){
 
   // Create payment record
   var py={id:uid(),cid:cid,customer:cname,type:type,
-    amt:isCash?val:val,
+    amt:isCash?cashAmt:val,
     mode:isCash?'Cash':'Old Gold (Advance)',
     date:date,note:note,
     ogWt:gross,ogMetal:metal,ogVal:val,ogPure:pure};
@@ -3912,15 +3942,28 @@ function saveOGPurchase(mode){
   dbSavePayment(py);
 
   // Cash out if paying immediately
-  if(isCash&&val>0){
-    DB.cashLog.push({type:'out',date:date,amount:val,desc:'Old Gold Cash Out: '+cname+' '+gross.toFixed(3)+'g',src:'payment'});
-    dbSaveCashEntry('out',date,val,'Old Gold Cash Out: '+cname,'payment');
+  if(isCash&&cashAmt>0){
+    DB.cashLog.push({type:'out',date:date,amount:cashAmt,desc:'Old Gold Cash Out: '+cname+' '+gross.toFixed(3)+'g',src:'payment'});
+    dbSaveCashEntry('out',date,cashAmt,'Old Gold Cash Out: '+cname,'payment');
     renderCashFlow();
   }
 
-  // If advance — credit customer account
+  // If advance (or split remainder) — credit customer account
   if(!isCash&&DB.custs[cid]){
     DB.custs[cid].txns.push({type:'old_gold_advance',date:date,bill:'OGA-'+Date.now().toString(36).slice(-4),amount:val,paid:val,balance:0});
+  }
+  // Split: also give advance credit for remainder
+  if(mode='split'&&advAmt>0){
+    var advPy={id:uid(),cid:cid,customer:cname,type:'oldgold-adv',
+      amt:advAmt,mode:'Old Gold (Advance)',date:date,
+      note:'OG Split Advance: '+gross.toFixed(3)+'g @ '+fmt(val)+' (Cash: '+fmt(cashAmt)+')',
+      ogWt:0,ogMetal:metal,ogVal:advAmt,ogPure:0};
+    DB.payments.unshift(advPy);
+    dbSavePayment(advPy);
+    if(DB.custs[cid]){
+      DB.custs[cid].txns.push({type:'old_gold_advance',date:date,
+        bill:'OGSA-'+Date.now().toString(36).slice(-4),amount:advAmt,paid:advAmt,balance:0});
+    }
   }
 
   // Update dashboard unbatched count
@@ -3936,9 +3979,14 @@ function saveOGPurchase(mode){
 
   renderPayments();renderDash();
 
-  var msg=isCash?
-    '\u2713 Old Gold purchased!\n'+gross.toFixed(3)+'g '+metal+' | Cash paid: '+fmt(val)+'\nGold added to Unbatched Pool':
-    '\u2713 Old Gold received as Advance!\n'+gross.toFixed(3)+'g '+metal+' | Credit: '+fmt(val)+'\nGold added to Unbatched Pool';
+  var msg;
+  if(mode==='cash'){
+    msg='✓ Old Gold purchased!\n'+gross.toFixed(3)+'g '+metal+' | Cash paid: '+fmt(val)+'\nGold added to Unbatched Pool';
+  } else if(mode==='split'){
+    msg='✓ Old Gold purchased (Split)!\n'+gross.toFixed(3)+'g '+metal+'\nCash paid: '+fmt(cashAmt)+'\nAdvance credit: '+fmt(advAmt)+'\nGold added to Unbatched Pool';
+  } else {
+    msg='✓ Old Gold received as Advance!\n'+gross.toFixed(3)+'g '+metal+' | Credit: '+fmt(val)+'\nGold added to Unbatched Pool';
+  }
   alert(msg);
 }
 
@@ -5149,6 +5197,43 @@ function saveRefGold(){
 }
 
 // ── LOANS ──
+
+function openPayLoan(lid){
+  var l=DB.loans.find(function(x){return x.id===lid;});if(!l)return;
+  _payLoanId=lid;
+  var outstanding=l.amt-(l.paid||0);
+  G('pln-lender').textContent=l.lender;
+  G('pln-outstanding').textContent=fmt(outstanding);
+  G('pln-amt').value='';
+  G('pln-date').value=td();
+  G('pln-note').value='';
+  openM('m-payloan');
+}
+function saveLoanRepayment(){
+  var l=DB.loans.find(function(x){return x.id===_payLoanId;});if(!l){closeM('m-payloan');return;}
+  var amt=N('pln-amt');
+  if(!amt||amt<=0){alert('Enter payment amount.');return;}
+  var outstanding=l.amt-(l.paid||0);
+  if(amt>outstanding+0.01){alert('Amount exceeds outstanding: '+fmt(outstanding));return;}
+  var date=V('pln-date')||td();
+  var note=V('pln-note')||('Principal repayment: '+l.lender);
+  // Update loan
+  l.paid=(l.paid||0)+amt;
+  if(l.paid>=l.amt-0.01){
+    l.status='closed';l.closedDate=date;
+    if(confirm('Loan fully repaid! Mark as closed?')){}
+  }
+  // Cash out
+  DB.cashLog.push({type:'out',date:date,amount:amt,desc:'Loan Repayment: '+l.lender,src:'loan'});
+  if(sbHasConfig()){
+    dbSaveCashEntry('out',date,amt,'Loan Repayment: '+l.lender,'loan');
+    dbUpdateLoan(l);
+  }
+  closeM('m-payloan');
+  renderLoans();renderBalance();renderCashFlow();
+  alert('\u2713 Repayment recorded!\nPaid: '+fmt(amt)+'\nOutstanding: '+fmt(Math.max(0,l.amt-l.paid)));
+}
+
 function saveLoan(){
   var lender=V('ln-lender').trim();
   if(!lender){alert('Enter lender name.');return;}
@@ -5224,6 +5309,7 @@ function renderLoans(){
         +'<div><div style="font-size:15px;font-weight:700">'+l.lender+'</div>'
         +'<div style="font-size:11px;color:var(--tx3);margin-top:2px"><span class="badge ba">'+l.type+'</span> &nbsp;'+l.rateType==='month'?l.rate+'% /month':l.rate+'% /'+l.rateType+' &nbsp;Started: '+l.start+(l.due?' &nbsp;Due: '+l.due:'')+'</div></div>'
         +'<div style="display:flex;gap:6px">'+
+          '<button class="btn btnsm btnog" onclick="openPayLoan(\''+l.id+'\')">₹ Pay</button>'+
           '<button class="btn btnsm" onclick="openEditLoan(\''+l.id+'\')">&#9998; Edit</button>'+
           '<button class="btn btnsm btnd" onclick="closeLoan(\''+l.id+'\')">&#10003; Close Loan</button>'+
         '</div>'
@@ -5244,7 +5330,7 @@ function renderLoans(){
     '<div class="empty" style="padding:16px"><div class="etxt">No closed loans</div></div>';
 }
 
-var _editLoanId=null;
+var _editLoanId=null, _payLoanId=null;
 function openEditLoan(id){
   var l=DB.loans.find(function(x){return x.id===id;}); if(!l)return;
   _editLoanId=id;
@@ -6263,6 +6349,33 @@ setLang(LANG);
     <button class="btn" onclick="closeM('m-cashtobank')">Cancel</button>
     <button class="btn btng" onclick="saveCashToBank()">Transfer</button>
   </div>
+</div></div>
+
+<!-- PAY LOAN PRINCIPAL MODAL -->
+<div class="modal-bg" id="m-payloan"><div class="msheet"><div class="mhandle"></div>
+<div class="mtitle">&#128176; Repay Principal</div>
+<div class="infobar" style="margin-bottom:12px">
+  <div style="display:flex;justify-content:space-between">
+    <span>Lender: <strong id="pln-lender"></strong></span>
+    <span>Outstanding: <strong id="pln-outstanding" style="color:var(--red)"></strong></span>
+  </div>
+</div>
+<div class="g2">
+  <div class="field"><label>Amount Paid (&#8377;)</label>
+    <input type="number" id="pln-amt" class="igold" inputmode="decimal" placeholder="e.g. 50000">
+  </div>
+  <div class="field"><label>Date</label>
+    <input type="date" id="pln-date" class="igold">
+  </div>
+</div>
+<div class="field"><label>Note (optional)</label>
+  <input type="text" id="pln-note" placeholder="e.g. Bank transfer">
+</div>
+<div class="infobar" style="font-size:12px;color:var(--tx2)">
+  &#128181; Cash paid out recorded to Cash Flow. Interest payments → record separately in Expenses.
+</div>
+<button class="btn btng" style="width:100%;margin-top:10px" onclick="saveLoanRepayment()">&#10003; Save Repayment</button>
+<button class="btn" style="width:100%;margin-top:6px" onclick="closeM('m-payloan')">Cancel</button>
 </div></div>
 </body>
 </html>
