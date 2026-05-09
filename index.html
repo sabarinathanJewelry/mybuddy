@@ -3430,7 +3430,30 @@ function renderSuspense(){
 
 // ── METAL FLOW ──
 function mfTab(tab,btn){['in','batch','refinery','out','sell','log'].forEach(function(t){var e=G('mf-'+t);if(e)e.style.display='none';});var te=G('mf-'+tab);if(te)te.style.display='block';document.querySelectorAll('#pg-metalflow .tab').forEach(function(b){b.classList.remove('active');});if(btn)btn.classList.add('active');if(tab==='batch')loadUnbatched();if(tab==='refinery')loadPendingBatches();if(tab==='log')renderMFLog();if(tab==='sell'){var sd=G('sel-date');if(sd&&!sd.value)sd.value=td();}}
-function saveMFIn(){var metal=V('mfi-metal'),gross=N('mfi-gross'),pure=N('mfi-pure')||gross;if(!gross){alert('Enter weight.');return;}if(metal==='Gold')metalR.gold+=pure;else metalR.silver+=pure;var mfEntry={type:'in',date:td(),metal:metal,src:V('mfi-src'),gross:gross,pure:pure,rate:N('mfi-rate')};DB.metalLog.unshift(mfEntry);dbSaveMetalLog(mfEntry);updateMFDisp();renderMFLog();alert('&#10003; Added: '+pure.toFixed(3)+'g '+metal);}
+function saveMFIn(){
+  var metal=V('mfi-metal'),src=V('mfi-src'),gross=N('mfi-gross'),pure=N('mfi-pure')||gross,rate=N('mfi-rate');
+  if(!gross){alert('Enter weight.');return;}
+  
+  // Update metal reserve
+  if(metal==='Gold')metalR.gold+=pure;
+  else metalR.silver+=pure;
+  
+  // Save metal log entry
+  var mfEntry={type:'in',date:td(),metal:metal,src:src,gross:gross,pure:pure,rate:rate};
+  DB.metalLog.unshift(mfEntry);
+  dbSaveMetalLog(mfEntry);
+  
+  // If buying bullion with cash, create cash outflow entry
+  if(src==='Bullion'&&rate>0){
+    var cost=gross*rate;
+    var desc='Bullion Purchase: '+gross.toFixed(3)+'g '+metal+' @ ₹'+rate.toFixed(2)+'/g';
+    DB.cashLog.push({type:'out',date:td(),amount:cost,desc:desc,src:'bullion'});
+    if(sbHasConfig())dbSaveCashEntry('out',td(),cost,desc,'bullion');
+  }
+  
+  updateMFDisp();renderMFLog();renderCashFlow();
+  alert('&#10003; Added: '+pure.toFixed(3)+'g '+metal+(src==='Bullion'&&rate>0?' | Cash paid: ₹'+fmt(gross*rate):''));
+}
 function loadUnbatched(){
   var metal=V('bat-metal')||'Gold';
   // Exclude Chit Metal entries — they are liabilities, not physical gold
