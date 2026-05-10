@@ -2871,29 +2871,34 @@ else{
         bill:'PAY-'+py.id.slice(-4),amount:isIn?0:amt,paid:isIn?amt:0,balance:isIn?-amt:amt});
     }
 
-    // Record cash/bank movement based on payment mode
-    // FIXED: Old Balance Settlement should NOT create cash flow entries
+    // ═════════════════════════════════════════════════════════════
+    // FIXED: Only CASH payments create cash_log entries
+    // UPI, Bank Transfer, RTGS → Go to bank accounts, NOT cash_log
+    // ═════════════════════════════════════════════════════════════
     if(!isOBS){
       var isInflow=(type==='in');
+      
+      // CASH ONLY - Creates cash_log entry
       if(mode==='Cash'){
         if(!sbHasConfig()){
-        DB.cashLog.push({type:isInflow?'in':'out',date:date,amount:amt,
-          desc:(isInflow?'Pmt: ':'Payout: ')+cname,src:'payment'});
+          DB.cashLog.push({type:isInflow?'in':'out',date:date,amount:amt,
+            desc:(isInflow?'Pmt: ':'Payout: ')+cname,src:'payment'});
         } else {
           dbSaveCashEntry(isInflow?'in':'out',date,amt,(isInflow?'Pmt: ':'Payout: ')+cname,'payment');
         }
         renderCashFlow();
-      } else if(mode==='UPI - GPay'||mode==='UPI - Paytm'||mode==='UPI'){
-        // UPI counts as cash inflow
-        if(isInflow){
-          if(!sbHasConfig()){
-          DB.cashLog.push({type:'in',date:date,amount:amt,desc:'UPI Pmt: '+cname,src:'payment'});
-          } else {
-            dbSaveCashEntry('in',date,amt,'UPI Pmt: '+cname,'payment');
-          }
-          renderCashFlow();
-        }
-      } else if(mode.indexOf('Bank')>=0||mode.indexOf('RTGS')>=0){
+      } 
+      // UPI - Goes to bank account, NOT cash_log (FIXED!)
+      else if(mode==='UPI - GPay'||mode==='UPI - Paytm'||mode==='UPI'){
+        if(!DB.bankAccounts)DB.bankAccounts={};
+        var bankKey='Main Account';
+        if(!DB.bankAccounts[bankKey])DB.bankAccounts[bankKey]=[];
+        DB.bankAccounts[bankKey].push({type:isInflow?'in':'out',date:date,amount:amt,
+          desc:(isInflow?'UPI pmt: ':'UPI payout: ')+cname});
+        // NO cash_log entry for UPI! ✅
+      } 
+      // Bank Transfer / RTGS - Goes to bank account, NOT cash_log
+      else if(mode.indexOf('Bank')>=0||mode.indexOf('RTGS')>=0){
         if(!DB.bankAccounts)DB.bankAccounts={};
         var bankKey='Main Account';
         if(!DB.bankAccounts[bankKey])DB.bankAccounts[bankKey]=[];
