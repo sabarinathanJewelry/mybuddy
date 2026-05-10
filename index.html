@@ -3247,6 +3247,7 @@ function renderCusts(){
       '<td class="num">'+(owed>0?'<span class="badge br" style="font-size:11px">'+fmt(owed)+'</span>':'-')+'</td>'+
       '<td class="num">'+(stmt.netBal>0.01?'<span class="badge bg">Adv '+fmt(stmt.netBal)+'</span>':stmt.netBal<-0.01?'<span class="badge br">Due '+fmt(-stmt.netBal)+'</span>':'<span style="font-size:10px;color:var(--tx3)">Settled</span>')+'</td>'+
       '<td><div style="display:flex;gap:4px;justify-content:flex-end">'+
+        '<button class="btn btnsm btng" data-cid="'+c.id+'" data-act="360" style="font-weight:600">👁️ View 360</button>'+
         '<button class="btn btnsm btnog" data-cid="'+c.id+'" data-act="ledger">Ledger</button>'+
         '<button class="btn btnsm" data-cid="'+c.id+'" data-act="edit">\u270e Edit</button>'+
       '</div></td>';
@@ -3260,6 +3261,7 @@ function renderCusts(){
       var cid=btn.getAttribute('data-cid');
       var act=btn.getAttribute('data-act');
       if(act==='ledger')openCustLedger(cid);
+      else if(act==='360')openCustomer360(cid);
       else openEditCust(cid);
     };
   });
@@ -5404,6 +5406,373 @@ var _editCustId=null;
 function openEditCust(id){var c=DB.custs[id];if(!c)return;_editCustId=id;G('ec-name').value=c.name||'';G('ec-phone').value=c.phone||'';G('ec-city').value=c.city||'';G('ec-anni').value=c.anni||'';G('ec-ob').value=c.ob||'';G('ec-notes').value=c.notes||'';openM('m-editcust');}
 function saveEditCust(){if(!_editCustId)return;var c=DB.custs[_editCustId];if(!c)return;c.name=V('ec-name').trim();c.phone=V('ec-phone').trim();c.city=V('ec-city').trim();c.anni=V('ec-anni');c.ob=N('ec-ob');c.notes=V('ec-notes').trim();dbSaveCust(c);closeM('m-editcust');renderCusts();alert('✓ Customer updated!');}
 
+// ═══════════════════════════════════════════════════════════
+// CUSTOMER 360 VIEW - Comprehensive Customer Profile
+// ═══════════════════════════════════════════════════════════
+
+var _current360CustomerId=null;
+var _current360Tab='overview';
+
+function openCustomer360(custId){
+  var c=DB.custs[custId];
+  if(!c)return;
+  
+  _current360CustomerId=custId;
+  _current360Tab='overview';
+  
+  // Set header info
+  G('c360-name').textContent=c.name||'Customer';
+  G('c360-phone').textContent=c.phone||'-';
+  G('c360-city').textContent=c.city||'-';
+  G('c360-opening').textContent=fmt(c.ob||0);
+  
+  // Calculate current balance
+  var balance=calcCustomerBalance(custId);
+  G('c360-balance').textContent=fmt(balance);
+  G('c360-balance').style.color=balance>=0?'var(--grn)':'var(--red)';
+  
+  // Calculate totals
+  var sales=DB.sales.filter(function(s){return s.cid===custId;});
+  var payments=DB.payments.filter(function(p){return p.cid===custId;});
+  var orders=DB.orders?DB.orders.filter(function(o){return o.cid===custId&&o.status!=='delivered'}):[];
+  
+  var totalSales=sales.reduce(function(sum,s){return sum+s.total;},0);
+  var totalPayments=payments.reduce(function(sum,p){return sum+p.amt;},0);
+  
+  G('c360-total-sales').textContent=fmt(totalSales);
+  G('c360-total-payments').textContent=fmt(totalPayments);
+  G('c360-sales-count').textContent=sales.length;
+  G('c360-payments-count').textContent=payments.length;
+  G('c360-orders-count').textContent=orders.length;
+  
+  // Show modal and render first tab
+  openM('m-cust360');
+  switch360Tab('overview');
+}
+
+function switch360Tab(tab){
+  _current360Tab=tab;
+  
+  // Update tab buttons
+  var tabs=document.querySelectorAll('.c360-tab');
+  tabs.forEach(function(t){t.classList.remove('active');});
+  var activeTab=G('tab-'+tab);
+  if(activeTab)activeTab.classList.add('active');
+  
+  // Render content
+  var content=G('c360-content');
+  if(!content)return;
+  
+  if(tab==='overview')render360Overview();
+  else if(tab==='sales')render360Sales();
+  else if(tab==='payments')render360Payments();
+  else if(tab==='orders')render360Orders();
+  else if(tab==='timeline')render360Timeline();
+}
+
+function render360Overview(){
+  var c=DB.custs[_current360CustomerId];
+  if(!c)return;
+  
+  var sales=DB.sales.filter(function(s){return s.cid===_current360CustomerId;});
+  var payments=DB.payments.filter(function(p){return p.cid===_current360CustomerId;});
+  var balance=calcCustomerBalance(_current360CustomerId);
+  
+  // Get recent activity
+  var recentSales=sales.slice(0,5);
+  var recentPayments=payments.slice(0,5);
+  
+  var html='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px">';
+  
+  // Recent Sales
+  html+='<div><h3 style="margin:0 0 15px 0">Recent Sales</h3>';
+  if(recentSales.length===0){
+    html+='<div style="padding:20px;text-align:center;color:var(--tx3)">No sales yet</div>';
+  } else {
+    recentSales.forEach(function(s){
+      html+='<div class="c360-item">';
+      html+='<div style="display:flex;justify-content:space-between;margin-bottom:8px">';
+      html+='<strong>Bill #'+s.billNo+'</strong>';
+      html+='<span style="color:var(--tx3)">'+s.date+'</span>';
+      html+='</div>';
+      html+='<div style="font-size:20px;font-weight:600;color:var(--grn)">₹'+fmt(s.total)+'</div>';
+      html+='<div style="font-size:13px;color:var(--tx3);margin-top:4px">';
+      html+='Paid: ₹'+fmt(s.paid||0)+' | Balance: ₹'+fmt(s.balance||0);
+      html+='</div>';
+      html+='</div>';
+    });
+  }
+  html+='</div>';
+  
+  // Recent Payments
+  html+='<div><h3 style="margin:0 0 15px 0">Recent Payments</h3>';
+  if(recentPayments.length===0){
+    html+='<div style="padding:20px;text-align:center;color:var(--tx3)">No payments yet</div>';
+  } else {
+    recentPayments.forEach(function(p){
+      var isIn=payIsIn(p.type);
+      html+='<div class="c360-item">';
+      html+='<div style="display:flex;justify-content:space-between;margin-bottom:8px">';
+      html+='<strong>'+payTypeLabel(p.type)+'</strong>';
+      html+='<span style="color:var(--tx3)">'+p.date+'</span>';
+      html+='</div>';
+      html+='<div style="font-size:20px;font-weight:600;color:'+(isIn?'var(--grn)':'var(--red)')+'">₹'+fmt(p.amt)+'</div>';
+      html+='<div style="font-size:13px;color:var(--tx3);margin-top:4px">'+p.mode+'</div>';
+      html+='</div>';
+    });
+  }
+  html+='</div>';
+  
+  html+='</div>';
+  
+  G('c360-content').innerHTML=html;
+}
+
+function render360Sales(){
+  var sales=DB.sales.filter(function(s){return s.cid===_current360CustomerId;});
+  
+  if(sales.length===0){
+    G('c360-content').innerHTML='<div style="padding:40px;text-align:center;color:var(--tx3)"><div style="font-size:48px;margin-bottom:10px">🛍️</div><div>No sales yet</div></div>';
+    return;
+  }
+  
+  var html='<div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">';
+  html+='<h3 style="margin:0">All Sales ('+sales.length+')</h3>';
+  html+='<div>Total: <strong>₹'+fmt(sales.reduce(function(sum,s){return sum+s.total;},0))+'</strong></div>';
+  html+='</div>';
+  
+  sales.forEach(function(s,idx){
+    var balColor=s.balance>0?'var(--red)':'var(--grn)';
+    html+='<div class="c360-item">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:start">';
+    html+='<div style="flex:1">';
+    html+='<div style="display:flex;gap:10px;align-items:center;margin-bottom:8px">';
+    html+='<strong style="font-size:16px">Bill #'+s.billNo+'</strong>';
+    html+='<span style="font-size:12px;color:var(--tx3)">'+s.date+'</span>';
+    html+='</div>';
+    html+='<div style="font-size:24px;font-weight:600;margin-bottom:8px">₹'+fmt(s.total)+'</div>';
+    html+='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;font-size:13px">';
+    html+='<div><span style="color:var(--tx3)">Paid:</span> <strong>₹'+fmt(s.paid||0)+'</strong></div>';
+    html+='<div><span style="color:var(--tx3)">Balance:</span> <strong style="color:'+balColor+'">₹'+fmt(s.balance||0)+'</strong></div>';
+    html+='<div><span style="color:var(--tx3)">Items:</span> <strong>'+(s.items?s.items.length:0)+'</strong></div>';
+    html+='</div>';
+    html+='</div>';
+    html+='<button class="btn" onclick="editSale360('+idx+')" style="padding:6px 12px">✏️ Edit</button>';
+    html+='</div>';
+    html+='</div>';
+  });
+  
+  G('c360-content').innerHTML=html;
+}
+
+function render360Payments(){
+  var payments=DB.payments.filter(function(p){return p.cid===_current360CustomerId;});
+  
+  if(payments.length===0){
+    G('c360-content').innerHTML='<div style="padding:40px;text-align:center;color:var(--tx3)"><div style="font-size:48px;margin-bottom:10px">💰</div><div>No payments yet</div></div>';
+    return;
+  }
+  
+  var html='<div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">';
+  html+='<h3 style="margin:0">All Payments ('+payments.length+')</h3>';
+  html+='<div>Total: <strong>₹'+fmt(payments.reduce(function(sum,p){return sum+p.amt;},0))+'</strong></div>';
+  html+='</div>';
+  
+  payments.forEach(function(p,idx){
+    var isIn=payIsIn(p.type);
+    var color=isIn?'var(--grn)':'var(--red)';
+    html+='<div class="c360-item">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:start">';
+    html+='<div style="flex:1">';
+    html+='<div style="display:flex;gap:10px;align-items:center;margin-bottom:8px">';
+    html+='<strong style="font-size:16px">'+payTypeLabel(p.type)+'</strong>';
+    html+='<span style="font-size:12px;color:var(--tx3)">'+p.date+'</span>';
+    html+='</div>';
+    html+='<div style="font-size:24px;font-weight:600;color:'+color+';margin-bottom:8px">₹'+fmt(p.amt)+'</div>';
+    html+='<div style="font-size:13px;color:var(--tx3)">';
+    html+='<strong>'+p.mode+'</strong>';
+    if(p.note)html+=' • '+p.note;
+    html+='</div>';
+    html+='</div>';
+    html+='<button class="btn" onclick="editPayment360('+idx+')" style="padding:6px 12px">✏️ Edit</button>';
+    html+='</div>';
+    html+='</div>';
+  });
+  
+  G('c360-content').innerHTML=html;
+}
+
+function render360Orders(){
+  var orders=DB.orders?DB.orders.filter(function(o){return o.cid===_current360CustomerId&&o.status!=='delivered'}):[];
+  
+  if(orders.length===0){
+    G('c360-content').innerHTML='<div style="padding:40px;text-align:center;color:var(--tx3)"><div style="font-size:48px;margin-bottom:10px">📦</div><div>No pending orders</div></div>';
+    return;
+  }
+  
+  var html='<h3 style="margin:0 0 20px 0">Pending Orders ('+orders.length+')</h3>';
+  
+  orders.forEach(function(o){
+    html+='<div class="c360-item">';
+    html+='<div style="display:flex;justify-content:space-between">';
+    html+='<div style="flex:1">';
+    html+='<strong style="font-size:16px">Order #'+o.ordNo+'</strong>';
+    html+='<div style="font-size:13px;color:var(--tx3);margin-top:4px">'+o.date+' • '+o.status+'</div>';
+    html+='<div style="margin-top:8px">'+o.desc+'</div>';
+    html+='</div>';
+    html+='</div>';
+    html+='</div>';
+  });
+  
+  G('c360-content').innerHTML=html;
+}
+
+function render360Timeline(){
+  var c=DB.custs[_current360CustomerId];
+  if(!c)return;
+  
+  // Combine all activities
+  var activities=[];
+  
+  // Add sales
+  DB.sales.filter(function(s){return s.cid===_current360CustomerId;}).forEach(function(s){
+    activities.push({type:'sale',date:s.date,data:s});
+  });
+  
+  // Add payments
+  DB.payments.filter(function(p){return p.cid===_current360CustomerId;}).forEach(function(p){
+    activities.push({type:'payment',date:p.date,data:p});
+  });
+  
+  // Add orders
+  if(DB.orders){
+    DB.orders.filter(function(o){return o.cid===_current360CustomerId;}).forEach(function(o){
+      activities.push({type:'order',date:o.date,data:o});
+    });
+  }
+  
+  // Sort by date (newest first)
+  activities.sort(function(a,b){return b.date.localeCompare(a.date);});
+  
+  if(activities.length===0){
+    G('c360-content').innerHTML='<div style="padding:40px;text-align:center;color:var(--tx3)"><div style="font-size:48px;margin-bottom:10px">📅</div><div>No activity yet</div></div>';
+    return;
+  }
+  
+  var html='<h3 style="margin:0 0 20px 0">Activity Timeline</h3>';
+  
+  activities.forEach(function(act){
+    var icon,title,details,color;
+    
+    if(act.type==='sale'){
+      icon='🛍️';
+      title='Sale • Bill #'+act.data.billNo;
+      details='₹'+fmt(act.data.total)+' • Paid: ₹'+fmt(act.data.paid||0);
+      color='var(--blu)';
+    } else if(act.type==='payment'){
+      icon='💰';
+      title=payTypeLabel(act.data.type);
+      details='₹'+fmt(act.data.amt)+' • '+act.data.mode;
+      color='var(--grn)';
+    } else if(act.type==='order'){
+      icon='📦';
+      title='Order #'+act.data.ordNo;
+      details=act.data.status+' • '+act.data.desc;
+      color='var(--org)';
+    }
+    
+    html+='<div class="c360-item">';
+    html+='<div style="display:flex;gap:15px">';
+    html+='<div style="font-size:32px">'+icon+'</div>';
+    html+='<div style="flex:1">';
+    html+='<div style="display:flex;justify-content:space-between;margin-bottom:4px">';
+    html+='<strong style="color:'+color+'">'+title+'</strong>';
+    html+='<span style="font-size:13px;color:var(--tx3)">'+act.date+'</span>';
+    html+='</div>';
+    html+='<div style="color:var(--tx3);font-size:14px">'+details+'</div>';
+    html+='</div>';
+    html+='</div>';
+    html+='</div>';
+  });
+  
+  G('c360-content').innerHTML=html;
+}
+
+// Quick actions from Customer 360
+function quickAddPayment360(){
+  // Pre-fill customer and open payment modal
+  var c=DB.custs[_current360CustomerId];
+  if(!c)return;
+  G('cp-cid').value=_current360CustomerId;
+  G('cp-cname').value=c.name;
+  G('cp-phone').value=c.phone||'';
+  closeM('m-cust360');
+  openM('m-payment');
+}
+
+function quickAddSale360(){
+  // Pre-fill customer and open new sale
+  var c=DB.custs[_current360CustomerId];
+  if(!c)return;
+  closeM('m-cust360');
+  goTo('sales');
+  setTimeout(function(){
+    G('s-phone').value=c.phone||'';
+    findCust();
+  },100);
+}
+
+function editCustomer360(){
+  closeM('m-cust360');
+  openEditCust(_current360CustomerId);
+}
+
+function editSale360(idx){
+  var sales=DB.sales.filter(function(s){return s.cid===_current360CustomerId;});
+  var sale=sales[idx];
+  if(!sale){
+    alert('Sale not found');
+    return;
+  }
+  closeM('m-cust360');
+  // Find sale in main DB.sales array and edit
+  var mainIdx=DB.sales.indexOf(sale);
+  if(mainIdx>=0){
+    editSale(mainIdx);
+  }
+}
+
+function editPayment360(idx){
+  var payments=DB.payments.filter(function(p){return p.cid===_current360CustomerId;});
+  var payment=payments[idx];
+  if(!payment){
+    alert('Payment not found');
+    return;
+  }
+  closeM('m-cust360');
+  // Find payment in main DB.payments array and edit
+  var mainIdx=DB.payments.indexOf(payment);
+  if(mainIdx>=0){
+    editPayment(mainIdx);
+  }
+}
+
+function calcCustomerBalance(custId){
+  var c=DB.custs[custId];
+  if(!c)return 0;
+  
+  var balance=c.ob||0;
+  
+  // Add all transactions
+  if(c.txns){
+    c.txns.forEach(function(t){
+      balance+=t.balance||0;
+    });
+  }
+  
+  return balance;
+}
+
 var _editSupId=null;
 function openEditSup(id){var s=DB.sups[id];if(!s)return;_editSupId=id;G('es-name').value=s.name||'';G('es-phone').value=s.phone||'';G('es-metal').value=s.metal||'Gold';G('es-ob').value=s.balance||'';openM('m-editsup');}
 function saveEditSup(){if(!_editSupId)return;var s=DB.sups[_editSupId];if(!s)return;s.name=V('es-name').trim();s.phone=V('es-phone').trim();s.metal=V('es-metal');s.balance=N('es-ob');dbSaveSup(s);closeM('m-editsup');renderSups();alert('✓ Supplier updated!');}
@@ -6629,6 +6998,81 @@ setLang(LANG);
 </div></div>
 <div class="modal-bg" id="m-editpay"><div class="msheet"><div class="mhandle"></div><div class="mtitle">Edit Payment</div><div class="g2"><div class="field"><label>Customer</label><input type="text" id="ep-customer" readonly style="background:var(--bg)"></div><div class="field"><label>Type</label><select id="ep-type" onchange="onEPTypeChange()"><option value="payment">Payment Received</option><option value="old_bal_settle">Old Balance Settlement</option><option value="in">Received (Old)</option><option value="oldgold">Old Gold — Cash Out</option><option value="oldgold-adv">Old Gold — Advance</option><option value="out">Refund / Payout</option></select></div></div><div class="field" id="ep-advance-field" style="margin-top:10px;padding:12px;background:var(--bg2);border-radius:8px;display:none"><label style="display:flex;align-items:center;gap:10px;cursor:pointer"><input type="checkbox" id="ep-is-advance" style="width:20px;height:20px;cursor:pointer"><span style="font-weight:600">This is an advance payment</span></label></div><div class="g2"><div class="field"><label>Date</label><input type="date" id="ep-date"></div><div class="field"><label>Amount (&#8377;)</label><input type="number" id="ep-amt" step="0.01" inputmode="decimal"></div></div><div class="field"><label>Mode</label><select id="ep-mode"><option>Cash</option><option>UPI - GPay</option><option>UPI - Paytm</option><option>Bank Transfer / RTGS</option></select></div><div class="field"><label>Note</label><input type="text" id="ep-note"></div><div class="mfoot"><button class="btn" onclick="closeM('m-editpay')">Cancel</button><button class="btn btng" onclick="saveEditPay()">Save Changes</button></div></div></div>
 <div class="modal-bg" id="m-editcust"><div class="msheet"><div class="mhandle"></div><div class="mtitle">Edit Customer</div><div class="g2"><div class="field"><label>Name</label><input type="text" id="ec-name"></div><div class="field"><label>Phone</label><input type="tel" id="ec-phone" maxlength="10" inputmode="numeric"></div></div><div class="g2"><div class="field"><label>City</label><input type="text" id="ec-city"></div><div class="field"><label>Anniversary</label><input type="date" id="ec-anni"></div></div><div class="g2"><div class="field"><label>Opening Balance (&#8377;)</label><input type="number" id="ec-ob" inputmode="decimal"></div><div class="field"><label>Notes</label><input type="text" id="ec-notes"></div></div><div class="mfoot"><button class="btn" onclick="closeM('m-editcust')">Cancel</button><button class="btn btng" onclick="saveEditCust()">Save</button></div></div></div>
+
+<div class="modal-bg" id="m-cust360" style="z-index:9999">
+  <div style="position:fixed;inset:0;background:var(--bg);overflow:auto">
+    <div style="max-width:1200px;margin:0 auto;padding:20px">
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+        <h2 id="c360-name" style="margin:0;font-size:24px">Customer Profile</h2>
+        <button class="btn" onclick="closeM('m-cust360')" style="padding:8px 16px">✕ Close</button>
+      </div>
+      
+      <!-- Customer Summary Card -->
+      <div style="background:var(--bg2);border-radius:12px;padding:20px;margin-bottom:20px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px">
+          <div>
+            <div style="font-size:12px;color:var(--tx3);margin-bottom:4px">Phone</div>
+            <div id="c360-phone" style="font-weight:600;font-size:16px">-</div>
+          </div>
+          <div>
+            <div style="font-size:12px;color:var(--tx3);margin-bottom:4px">City</div>
+            <div id="c360-city" style="font-weight:600;font-size:16px">-</div>
+          </div>
+          <div>
+            <div style="font-size:12px;color:var(--tx3);margin-bottom:4px">Opening Balance</div>
+            <div id="c360-opening" style="font-weight:600;font-size:16px">₹0</div>
+          </div>
+          <div>
+            <div style="font-size:12px;color:var(--tx3);margin-bottom:4px">Current Balance</div>
+            <div id="c360-balance" style="font-weight:600;font-size:18px;color:var(--grn)">₹0</div>
+          </div>
+          <div>
+            <div style="font-size:12px;color:var(--tx3);margin-bottom:4px">Total Purchases</div>
+            <div id="c360-total-sales" style="font-weight:600;font-size:16px">₹0</div>
+          </div>
+          <div>
+            <div style="font-size:12px;color:var(--tx3);margin-bottom:4px">Total Payments</div>
+            <div id="c360-total-payments" style="font-weight:600;font-size:16px">₹0</div>
+          </div>
+        </div>
+        <div style="margin-top:15px;display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btng" onclick="quickAddPayment360()" style="padding:8px 16px">💰 Add Payment</button>
+          <button class="btn" onclick="quickAddSale360()" style="padding:8px 16px">🛍️ New Sale</button>
+          <button class="btn" onclick="editCustomer360()" style="padding:8px 16px">✏️ Edit Info</button>
+        </div>
+      </div>
+      
+      <!-- Tabs -->
+      <div style="display:flex;gap:10px;margin-bottom:20px;border-bottom:2px solid var(--bg2);overflow-x:auto">
+        <button id="tab-overview" class="c360-tab active" onclick="switch360Tab('overview')" style="padding:12px 20px;background:none;border:none;cursor:pointer;border-bottom:3px solid transparent;font-weight:600">Overview</button>
+        <button id="tab-sales" class="c360-tab" onclick="switch360Tab('sales')" style="padding:12px 20px;background:none;border:none;cursor:pointer;border-bottom:3px solid transparent;font-weight:600">Sales (<span id="c360-sales-count">0</span>)</button>
+        <button id="tab-payments" class="c360-tab" onclick="switch360Tab('payments')" style="padding:12px 20px;background:none;border:none;cursor:pointer;border-bottom:3px solid transparent;font-weight:600">Payments (<span id="c360-payments-count">0</span>)</button>
+        <button id="tab-orders" class="c360-tab" onclick="switch360Tab('orders')" style="padding:12px 20px;background:none;border:none;cursor:pointer;border-bottom:3px solid transparent;font-weight:600">Orders (<span id="c360-orders-count">0</span>)</button>
+        <button id="tab-timeline" class="c360-tab" onclick="switch360Tab('timeline')" style="padding:12px 20px;background:none;border:none;cursor:pointer;border-bottom:3px solid transparent;font-weight:600">Timeline</button>
+      </div>
+      
+      <!-- Tab Content -->
+      <div id="c360-content" style="min-height:400px"></div>
+    </div>
+  </div>
+</div>
+
+<style>
+.c360-tab.active {
+  color: var(--blu);
+  border-bottom-color: var(--blu) !important;
+}
+.c360-item {
+  background: var(--bg2);
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 10px;
+}
+.c360-item:hover {
+  background: var(--bg3);
+}
+</style>
 <div class="modal-bg" id="m-editsup"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#9998; Edit Supplier</div><div class="g2"><div class="field"><label>Name</label><input type="text" id="es-name"></div><div class="field"><label>Phone</label><input type="tel" id="es-phone"></div></div><div class="g2"><div class="field"><label>Metal</label><select id="es-metal"><option>Gold</option><option>Silver</option><option>Diamond</option><option>Mixed</option></select></div><div class="field"><label>Balance (&#8377;)</label><input type="number" id="es-ob" inputmode="decimal"></div></div><div class="mfoot"><button class="btn" onclick="closeM('m-editsup')">Cancel</button><button class="btn btng" onclick="saveEditSup()">Save</button></div></div></div>
 <div class="modal-bg" id="m-editexp"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#9998; Edit Expense</div><div class="g2"><div class="field"><label>Date</label><input type="date" id="ee-date"></div><div class="field"><label>Amount (&#8377;)</label><input type="number" id="ee-amt" step="0.01" inputmode="decimal"></div></div><div class="g2"><div class="field"><label>Category</label><input type="text" id="ee-cat"></div><div class="field"><label>Mode</label><select id="ee-mode"><option>Cash</option><option>UPI</option><option>Bank Transfer</option></select></div></div><div class="field"><label>Description</label><input type="text" id="ee-desc"></div><div class="mfoot"><button class="btn" onclick="closeM('m-editexp')">Cancel</button><button class="btn btng" onclick="saveEditExpense()">Save</button></div></div></div>
 <div class="modal-bg" id="m-editord"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#9998; Edit Order</div><div class="field"><label>Delivery Date</label><input type="date" id="eo-del"></div><div class="field"><label>Design / Notes</label><textarea id="eo-desc" rows="3" style="resize:none"></textarea></div><div class="mfoot"><button class="btn" onclick="closeM('m-editord')">Cancel</button><button class="btn btng" onclick="saveEditOrder()">Save</button></div></div></div>
