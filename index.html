@@ -2,6 +2,7 @@
 
 
 
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1926,12 +1927,22 @@ input:checked+.tslider::before { transform:translateX(17px); }
 <div class="modal-bg" id="m-payment"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128260; Customer Payment / Old Gold</div>
   <div class="field"><label>Type</label>
     <select id="cp-type" onchange="onCPType()">
-      <option value="in">Received — Advance / Part-Payment</option>
-      <option value="old_bal_settle">Old Balance Settlement (reduces outstanding dues)</option>
+      <option value="payment">Payment Received</option>
+      <option value="old_bal_settle">Old Balance Settlement — For Opening Balance Only</option>
       <option value="oldgold">Old Gold — Cash Out to Customer Immediately</option>
       <option value="oldgold-adv">Old Gold — Keep as Customer Advance (no cash out)</option>
       <option value="out">Refund / Payout to Customer</option>
     </select>
+  </div>
+  <div class="field" id="cp-advance-field" style="margin-top:10px;padding:12px;background:var(--bg2);border-radius:8px">
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer">
+      <input type="checkbox" id="cp-is-advance" style="width:20px;height:20px;cursor:pointer">
+      <span style="font-weight:600">This is an advance payment (for future purchase)</span>
+    </label>
+    <div style="font-size:12px;color:var(--tx3);margin-top:6px;margin-left:30px">
+      ☑ Checked = Customer giving advance for future jewelry<br>
+      ☐ Unchecked = Customer paying for current sale balance
+    </div>
   </div>
   <div class="field"><label>Customer Phone</label><input type="tel" id="cp-phone" maxlength="10" inputmode="numeric" oninput="custLookup('cp')"><div id="cp-cust-res" style="margin-top:4px"></div><input type="hidden" id="cp-cid"><input type="hidden" id="cp-cname"></div>
   <div id="cp-og-row" style="display:none">
@@ -2772,11 +2783,14 @@ function onCPType(){
   var type=V('cp-type');
   var ogRow=G('cp-og-row'),cashRow=G('cp-cash-row'),lbl=G('cp-amt-lbl');
   var obsInfo=G('cp-obs-info');
+  var advField=G('cp-advance-field');
   if(!ogRow||!cashRow)return;
   var isOG=(type==='oldgold'||type==='oldgold-adv');
   var isOBS=(type==='old_bal_settle');
+  var isPayment=(type==='payment');
   ogRow.style.display=isOG?'block':'none';
   if(obsInfo)obsInfo.style.display=isOBS?'block':'none';
+  if(advField)advField.style.display=isPayment?'block':'none';
   if(type==='oldgold'){
     cashRow.style.display='block';
     if(lbl)lbl.textContent='Cash Paid to Customer (\u20B9)';
@@ -2846,7 +2860,20 @@ else{
     var amt=N('cp-amt');if(!amt){alert('Enter amount.');return;}
     var mode=V('cp-mode');
     var isOBS=(type==='old_bal_settle');
-    var pyType=isOBS?'old_bal_settle':type;
+    
+    // Check if advance checkbox is checked
+    var isAdvance=G('cp-is-advance')&&G('cp-is-advance').checked;
+    
+    // Determine payment type based on checkbox
+    var pyType;
+    if(isOBS){
+      pyType='old_bal_settle';
+    } else if(type==='payment'){
+      pyType=isAdvance?'advance':'payment';
+    } else {
+      pyType=type;
+    }
+    
     var py={id:uid(),cid:cid,customer:cname,type:pyType,amt:amt,mode:mode,date:date,note:note};
     DB.payments.unshift(py);
 
@@ -2857,7 +2884,7 @@ else{
       if(excess>0.01){
         // Excess becomes advance credit — add as a standalone advance payment
         py.excessCredit=excess;
-        var advPy={id:uid(),cid:cid,customer:cname,type:'in',amt:excess,
+        var advPy={id:uid(),cid:cid,customer:cname,type:'advance',amt:excess,
           mode:mode,date:date,note:'Excess advance after OB settle'};
         DB.payments.unshift(advPy);
         dbSavePayment(advPy);
@@ -2866,45 +2893,67 @@ else{
           note:'Excess after settling old balance'});
       }
     } else {
-      var isIn=(type==='in');
+      // Handle payment and advance types
+      var isIn=(type==='payment'||type==='advance'||type==='in');
       if(DB.custs[cid])DB.custs[cid].txns.push({type:isIn?'payment_in':'payment_out',date:date,
         bill:'PAY-'+py.id.slice(-4),amount:isIn?0:amt,paid:isIn?amt:0,balance:isIn?-amt:amt});
     }
 
     // ═════════════════════════════════════════════════════════════
-    // FIXED: Only CASH payments create cash_log entries
-    // UPI, Bank Transfer, RTGS → Go to bank accounts, NOT cash_log
+    // FIXED: Cash entries based on MODE for ALL payment types
+    // Old Balance Settlement NOW creates cash/bank entries too!
+    // UPI, Bank Transfer → Go to bank accounts, NOT cash_log
     // ═════════════════════════════════════════════════════════════
-    if(!isOBS){
-      var isInflow=(type==='in');
-      
-      // CASH ONLY - Creates cash_log entry
-      if(mode==='Cash'){
-        if(!sbHasConfig()){
-          DB.cashLog.push({type:isInflow?'in':'out',date:date,amount:amt,
-            desc:(isInflow?'Pmt: ':'Payout: ')+cname,src:'payment'});
-        } else {
-          dbSaveCashEntry(isInflow?'in':'out',date,amt,(isInflow?'Pmt: ':'Payout: ')+cname,'payment');
-        }
-        renderCashFlow();
-      } 
-      // UPI - Goes to bank account, NOT cash_log (FIXED!)
-      else if(mode==='UPI - GPay'||mode==='UPI - Paytm'||mode==='UPI'){
-        if(!DB.bankAccounts)DB.bankAccounts={};
-        var bankKey='Main Account';
-        if(!DB.bankAccounts[bankKey])DB.bankAccounts[bankKey]=[];
-        DB.bankAccounts[bankKey].push({type:isInflow?'in':'out',date:date,amount:amt,
-          desc:(isInflow?'UPI pmt: ':'UPI payout: ')+cname});
-        // NO cash_log entry for UPI! ✅
-      } 
-      // Bank Transfer / RTGS - Goes to bank account, NOT cash_log
-      else if(mode.indexOf('Bank')>=0||mode.indexOf('RTGS')>=0){
-        if(!DB.bankAccounts)DB.bankAccounts={};
-        var bankKey='Main Account';
-        if(!DB.bankAccounts[bankKey])DB.bankAccounts[bankKey]=[];
-        DB.bankAccounts[bankKey].push({type:isInflow?'in':'out',date:date,amount:amt,
-          desc:(isInflow?'Customer pmt: ':'Payout: ')+cname});
+    
+    // Determine if this is cash inflow or outflow
+    var isInflow=(type==='payment'||type==='advance'||type==='in'||type==='old_bal_settle');
+    var isOutflow=(type==='out');
+    
+    // CASH ONLY - Creates cash_log entry for ALL payment types
+    if(mode==='Cash'){
+      if(!sbHasConfig()){
+        DB.cashLog.push({
+          type:isOutflow?'out':'in',
+          date:date,
+          amount:amt,
+          desc:(isOBS?'OB Settle: ':(type==='payment'?'Pmt: ':(type==='advance'?'Advance: ':(isInflow?'Pmt: ':'Payout: '))))+cname,
+          src:'payment'
+        });
+      } else {
+        dbSaveCashEntry(
+          isOutflow?'out':'in',
+          date,
+          amt,
+          (isOBS?'OB Settle: ':(type==='payment'?'Pmt: ':(type==='advance'?'Advance: ':(isInflow?'Pmt: ':'Payout: '))))+cname,
+          'payment'
+        );
       }
+      renderCashFlow();
+    } 
+    // UPI - Goes to bank account, NOT cash_log
+    else if(mode==='UPI - GPay'||mode==='UPI - Paytm'||mode==='UPI'){
+      if(!DB.bankAccounts)DB.bankAccounts={};
+      var bankKey='Main Account';
+      if(!DB.bankAccounts[bankKey])DB.bankAccounts[bankKey]=[];
+      DB.bankAccounts[bankKey].push({
+        type:isOutflow?'out':'in',
+        date:date,
+        amount:amt,
+        desc:(isOBS?'UPI OB Settle: ':(type==='payment'?'UPI Pmt: ':(type==='advance'?'UPI Advance: ':(isInflow?'UPI pmt: ':'UPI payout: '))))+cname
+      });
+      // NO cash_log entry for UPI! ✅
+    } 
+    // Bank Transfer / RTGS - Goes to bank account, NOT cash_log
+    else if(mode.indexOf('Bank')>=0||mode.indexOf('RTGS')>=0){
+      if(!DB.bankAccounts)DB.bankAccounts={};
+      var bankKey='Main Account';
+      if(!DB.bankAccounts[bankKey])DB.bankAccounts[bankKey]=[];
+      DB.bankAccounts[bankKey].push({
+        type:isOutflow?'out':'in',
+        date:date,
+        amount:amt,
+        desc:(isOBS?'Bank OB Settle: ':(type==='payment'?'Bank Pmt: ':(type==='advance'?'Bank Advance: ':(isInflow?'Customer pmt: ':'Payout: '))))+cname
+      });
     }
   }
   closeM('m-payment');renderPayments();renderDash();renderSalesList();
@@ -2913,12 +2962,23 @@ else{
 }
 function fltPays(f,btn){payFlt=f;document.querySelectorAll('#pg-payments .tab').forEach(function(t){t.classList.remove('active');});if(btn)btn.classList.add('active');renderPayments();}
 function payTypeLabel(type){
-  var map={'in':'Received','out':'Refund','oldgold':'Old Gold — Cash Out','oldgold-adv':'Old Gold — Advance','advance':'Order Advance','old_gold_advance':'OG Advance','advance_used':'Advance Used','chit_credit':'Chit Credit'};
+  var map={
+    'in':'Received',
+    'payment':'Received Payment',
+    'advance':'Advance Payment',
+    'old_bal_settle':'Old Balance Settlement',
+    'out':'Refund',
+    'oldgold':'Old Gold — Cash Out',
+    'oldgold-adv':'Old Gold — Advance',
+    'old_gold_advance':'OG Advance',
+    'advance_used':'Advance Used',
+    'chit_credit':'Chit Credit'
+  };
   return map[type]||type.replace(/_/g,' ');
 }
 function payIsIn(type){
   // GREEN = money received from customer or credit given to customer
-  return type==='in'||type==='oldgold-adv'||type==='advance'||type==='old_gold_advance'||type==='advance_used'||type==='chit_credit';
+  return type==='in'||type==='payment'||type==='advance'||type==='old_bal_settle'||type==='oldgold-adv'||type==='old_gold_advance'||type==='advance_used'||type==='chit_credit';
 }
 function renderPayments(){
   var q=(V('pay-search')||'').toLowerCase().trim();
@@ -3886,13 +3946,15 @@ function dbSavePayment(py){
   if(!sbHasConfig())return;
   // Map internal types to DB-allowed pmt_type values
   // DB check constraint allows: in, out, oldgold, oldgold-adv, advance, advance_used,
-  //   old_gold_advance, chit_bonus, chit_metal, chit_credit, old_bal_settle
+  //   old_gold_advance, chit_bonus, chit_metal, chit_credit, old_bal_settle, payment
   var dbType=py.type;
-  // Note: old_bal_settle is now kept as-is (accounting adjustment, not cash payment)
+  // Map 'payment' to 'in' for backward compatibility with existing database
+  if(dbType==='payment')dbType='in';
+  
   dbPost('customer_payments',{customer_id:py.cid||null,customer_name:py.customer,
     pmt_type:dbType,amount:py.amt,mode:py.mode||'',pmt_date:py.date,
     og_metal:py.ogMetal||null,og_weight_g:py.ogWt||0,og_value:py.ogVal||0,
-    note:(py.type==='old_bal_settle'?'[OBS] ':'')+(py.note||'')},function(d,e){
+    note:(py.type==='old_bal_settle'?'[OBS] ':(py.type==='payment'?'[PMT] ':(py.type==='advance'?'[ADV] ':''))+(py.note||''))},function(d,e){
     if(e)console.error('Payment:',e);else showDbStatus('Payment saved ✓');
   });
   // NOTE: cash_log is saved separately by the calling function (savePayment, saveOGPurchase etc.)
@@ -5199,8 +5261,80 @@ function _chitClear(){
 }
 
 var _editPayIdx=null;
-function editPayment(idx){var q=(V('pay-search')||'').toLowerCase().trim();var f=DB.payments.filter(function(p){var tOk=(payFlt==='all')||(payFlt==='in'&&payIsIn(p.type))||(payFlt==='out'&&!payIsIn(p.type));return tOk&&(!q||(p.customer||'').toLowerCase().indexOf(q)>=0);});var pay=f[idx];if(!pay)return;_editPayIdx=DB.payments.indexOf(pay);G('ep-customer').value=pay.customer||'';G('ep-date').value=pay.date||td();G('ep-amt').value=pay.amt||'';G('ep-mode').value=pay.mode||'';G('ep-note').value=pay.note||'';G('ep-type').value=payTypeLabel(pay.type)||'';openM('m-editpay');}
-function saveEditPay(){if(_editPayIdx===null)return;var pay=DB.payments[_editPayIdx];if(!pay)return;pay.date=V('ep-date');pay.amt=N('ep-amt');pay.mode=V('ep-mode');pay.note=V('ep-note');closeM('m-editpay');renderPayments();alert('✓ Payment updated!');}
+function onEPTypeChange(){
+  var type=V('ep-type');
+  var advField=G('ep-advance-field');
+  if(advField)advField.style.display=(type==='payment'||type==='in')?'block':'none';
+}
+function editPayment(idx){
+  var q=(V('pay-search')||'').toLowerCase().trim();
+  var f=DB.payments.filter(function(p){
+    var tOk=(payFlt==='all')||(payFlt==='in'&&payIsIn(p.type))||(payFlt==='out'&&!payIsIn(p.type));
+    return tOk&&(!q||(p.customer||'').toLowerCase().indexOf(q)>=0);
+  });
+  var pay=f[idx];if(!pay)return;
+  _editPayIdx=DB.payments.indexOf(pay);
+  _editPayOriginal=JSON.parse(JSON.stringify(pay));
+  
+  G('ep-customer').value=pay.customer||'';
+  G('ep-date').value=pay.date||td();
+  G('ep-amt').value=pay.amt||'';
+  G('ep-mode').value=pay.mode||'Cash';
+  G('ep-note').value=pay.note||'';
+  
+  // Map payment types to dropdown
+  var typeVal=pay.type;
+  var isAdvance=(pay.type==='advance');
+  
+  // If type is 'payment' or 'advance', set to 'payment' and use checkbox
+  if(pay.type==='payment'||pay.type==='advance'||pay.type==='in'){
+    typeVal='payment';
+    G('ep-is-advance').checked=isAdvance;
+    G('ep-advance-field').style.display='block';
+  } else {
+    typeVal=pay.type;
+    G('ep-is-advance').checked=false;
+    G('ep-advance-field').style.display='none';
+  }
+  
+  G('ep-type').value=typeVal;
+  openM('m-editpay');
+}
+function saveEditPay(){
+  if(_editPayIdx===null)return;
+  var pay=DB.payments[_editPayIdx];
+  if(!pay)return;
+  
+  var oldType=_editPayOriginal.type;
+  var oldMode=_editPayOriginal.mode;
+  var oldAmt=_editPayOriginal.amount;
+  var oldDate=_editPayOriginal.date;
+  
+  // Get new values
+  pay.date=V('ep-date');
+  pay.amt=N('ep-amt');
+  pay.mode=V('ep-mode');
+  pay.note=V('ep-note');
+  
+  // Determine new type based on checkbox
+  var typeFromDropdown=V('ep-type');
+  var isAdvance=G('ep-is-advance')&&G('ep-is-advance').checked;
+  
+  if(typeFromDropdown==='payment'){
+    pay.type=isAdvance?'advance':'payment';
+  } else {
+    pay.type=typeFromDropdown;
+  }
+  
+  // Update database if connected
+  if(sbHasConfig()){
+    dbSavePayment(pay);
+  }
+  
+  closeM('m-editpay');
+  renderPayments();
+  alert('✓ Payment updated!');
+}
 var _editCustId=null;
 function openEditCust(id){var c=DB.custs[id];if(!c)return;_editCustId=id;G('ec-name').value=c.name||'';G('ec-phone').value=c.phone||'';G('ec-city').value=c.city||'';G('ec-anni').value=c.anni||'';G('ec-ob').value=c.ob||'';G('ec-notes').value=c.notes||'';openM('m-editcust');}
 function saveEditCust(){if(!_editCustId)return;var c=DB.custs[_editCustId];if(!c)return;c.name=V('ec-name').trim();c.phone=V('ec-phone').trim();c.city=V('ec-city').trim();c.anni=V('ec-anni');c.ob=N('ec-ob');c.notes=V('ec-notes').trim();dbSaveCust(c);closeM('m-editcust');renderCusts();alert('✓ Customer updated!');}
@@ -6428,7 +6562,7 @@ setLang(LANG);
   <button class="btn btng" onclick="saveChitEntry()">&#10003; Save</button>
 </div>
 </div></div>
-<div class="modal-bg" id="m-editpay"><div class="msheet"><div class="mhandle"></div><div class="mtitle">Edit Payment</div><div class="g2"><div class="field"><label>Customer</label><input type="text" id="ep-customer" readonly style="background:var(--bg)"></div><div class="field"><label>Type</label><input type="text" id="ep-type" readonly style="background:var(--bg)"></div></div><div class="g2"><div class="field"><label>Date</label><input type="date" id="ep-date"></div><div class="field"><label>Amount (&#8377;)</label><input type="number" id="ep-amt" step="0.01" inputmode="decimal"></div></div><div class="field"><label>Mode</label><input type="text" id="ep-mode"></div><div class="field"><label>Note</label><input type="text" id="ep-note"></div><div class="mfoot"><button class="btn" onclick="closeM('m-editpay')">Cancel</button><button class="btn btng" onclick="saveEditPay()">Save</button></div></div></div>
+<div class="modal-bg" id="m-editpay"><div class="msheet"><div class="mhandle"></div><div class="mtitle">Edit Payment</div><div class="g2"><div class="field"><label>Customer</label><input type="text" id="ep-customer" readonly style="background:var(--bg)"></div><div class="field"><label>Type</label><select id="ep-type" onchange="onEPTypeChange()"><option value="payment">Payment Received</option><option value="old_bal_settle">Old Balance Settlement</option><option value="in">Received (Old)</option><option value="oldgold">Old Gold — Cash Out</option><option value="oldgold-adv">Old Gold — Advance</option><option value="out">Refund / Payout</option></select></div></div><div class="field" id="ep-advance-field" style="margin-top:10px;padding:12px;background:var(--bg2);border-radius:8px;display:none"><label style="display:flex;align-items:center;gap:10px;cursor:pointer"><input type="checkbox" id="ep-is-advance" style="width:20px;height:20px;cursor:pointer"><span style="font-weight:600">This is an advance payment</span></label></div><div class="g2"><div class="field"><label>Date</label><input type="date" id="ep-date"></div><div class="field"><label>Amount (&#8377;)</label><input type="number" id="ep-amt" step="0.01" inputmode="decimal"></div></div><div class="field"><label>Mode</label><select id="ep-mode"><option>Cash</option><option>UPI - GPay</option><option>UPI - Paytm</option><option>Bank Transfer / RTGS</option></select></div><div class="field"><label>Note</label><input type="text" id="ep-note"></div><div class="mfoot"><button class="btn" onclick="closeM('m-editpay')">Cancel</button><button class="btn btng" onclick="saveEditPay()">Save Changes</button></div></div></div>
 <div class="modal-bg" id="m-editcust"><div class="msheet"><div class="mhandle"></div><div class="mtitle">Edit Customer</div><div class="g2"><div class="field"><label>Name</label><input type="text" id="ec-name"></div><div class="field"><label>Phone</label><input type="tel" id="ec-phone" maxlength="10" inputmode="numeric"></div></div><div class="g2"><div class="field"><label>City</label><input type="text" id="ec-city"></div><div class="field"><label>Anniversary</label><input type="date" id="ec-anni"></div></div><div class="g2"><div class="field"><label>Opening Balance (&#8377;)</label><input type="number" id="ec-ob" inputmode="decimal"></div><div class="field"><label>Notes</label><input type="text" id="ec-notes"></div></div><div class="mfoot"><button class="btn" onclick="closeM('m-editcust')">Cancel</button><button class="btn btng" onclick="saveEditCust()">Save</button></div></div></div>
 <div class="modal-bg" id="m-editsup"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#9998; Edit Supplier</div><div class="g2"><div class="field"><label>Name</label><input type="text" id="es-name"></div><div class="field"><label>Phone</label><input type="tel" id="es-phone"></div></div><div class="g2"><div class="field"><label>Metal</label><select id="es-metal"><option>Gold</option><option>Silver</option><option>Diamond</option><option>Mixed</option></select></div><div class="field"><label>Balance (&#8377;)</label><input type="number" id="es-ob" inputmode="decimal"></div></div><div class="mfoot"><button class="btn" onclick="closeM('m-editsup')">Cancel</button><button class="btn btng" onclick="saveEditSup()">Save</button></div></div></div>
 <div class="modal-bg" id="m-editexp"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#9998; Edit Expense</div><div class="g2"><div class="field"><label>Date</label><input type="date" id="ee-date"></div><div class="field"><label>Amount (&#8377;)</label><input type="number" id="ee-amt" step="0.01" inputmode="decimal"></div></div><div class="g2"><div class="field"><label>Category</label><input type="text" id="ee-cat"></div><div class="field"><label>Mode</label><select id="ee-mode"><option>Cash</option><option>UPI</option><option>Bank Transfer</option></select></div></div><div class="field"><label>Description</label><input type="text" id="ee-desc"></div><div class="mfoot"><button class="btn" onclick="closeM('m-editexp')">Cancel</button><button class="btn btng" onclick="saveEditExpense()">Save</button></div></div></div>
