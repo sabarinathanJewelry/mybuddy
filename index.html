@@ -2533,9 +2533,12 @@ function saveSale(){
     }
     if(choice){
       // Cashback — pay out from cashbox
+      if(!sbHasConfig()){
       DB.cashLog.push({type:'out',date:date,amount:overpaid,
         desc:'Exchange cashback: '+cname+' | Bill '+bill,src:'exchange_cashback'});
+      }else{
       dbSaveCashEntry('out',date,overpaid,'Exchange cashback: '+cname+' Bill '+bill,'exchange_cashback');
+      }
       pays.push({mode:'Exchange Cashback',amt:-overpaid,ref:'Cashback on '+bill});
     } else {
       // Keep as advance credit
@@ -2802,8 +2805,35 @@ function savePayment(){
   }
   var type=V('cp-type'),date=V('cp-date')||td(),note=V('cp-note'),isOG=(type==='oldgold'||type==='oldgold-adv');
   if(type==='old_bal_settle')cname=cname||V('cp-cname'); // ensure name used
-  if(isOG){var ogWt=N('cp-og-wt'),ogVal=N('cp-og-val'),ogM=V('cp-og-metal');if(!ogWt){alert('Enter old gold weight.');return;}var ogPure=N('cp-og-pure')||ogWt;var ogItem={id:uid(),metal:ogM,wt:ogWt,pure:ogPure,val:ogVal,date:date,src:'Old '+ogM+' from '+cname+' ('+ogWt.toFixed(3)+'g)',batched:false};DB.oldMetal.push(ogItem);dbSaveOldMetal(ogItem);var cashAmt=type==='oldgold'?N('cp-amt'):0;if(type==='oldgold'&&cashAmt>0){DB.cashLog.push({type:'out',date:date,amount:cashAmt,desc:'Old Gold Cash Out: '+cname+' '+ogWt+'g',src:'payment'});dbSaveCashEntry('out',date,cashAmt,'Old Gold Cash Out: '+cname,'payment');}if(type==='oldgold-adv'&&DB.custs[cid])DB.custs[cid].txns.push({type:'old_gold_advance',date:date,bill:'OGA-'+Date.now().toString(36).slice(-4),amount:ogVal,paid:ogVal,balance:0});DB.payments.unshift({id:uid(),cid:cid,customer:cname,type:type,amt:type==='oldgold-adv'?ogVal:cashAmt,mode:type==='oldgold-adv'?'Old Gold (Advance)':V('cp-mode'),date:date,note:note,ogWt:ogWt,ogMetal:ogM,ogVal:ogVal});renderCashFlow();}
-  else{
+ if(isOG){
+  var ogWt=N('cp-og-wt'),ogVal=N('cp-og-val'),ogM=V('cp-og-metal');
+  if(!ogWt){alert('Enter old gold weight.');return;}
+  var ogPure=N('cp-og-pure')||ogWt;
+  var ogItem={id:uid(),metal:ogM,wt:ogWt,pure:ogPure,val:ogVal,date:date,src:'Old '+ogM+' from '+cname+' ('+ogWt.toFixed(3)+'g)',batched:false};
+  DB.oldMetal.push(ogItem);
+  dbSaveOldMetal(ogItem);
+  
+  var cashAmt=type==='oldgold'?N('cp-amt'):0;
+  
+  // FIXED: Create cash entry ONLY ONCE (not in both local and database)
+  if(type==='oldgold'&&cashAmt>0){
+    if(!sbHasConfig()){
+      // Offline: Add to local array
+      DB.cashLog.push({type:'out',date:date,amount:cashAmt,desc:'Old Gold Cash Out: '+cname+' '+ogWt+'g',src:'payment'});
+    } else {
+      // Online: Save to database only (will be loaded back)
+      dbSaveCashEntry('out',date,cashAmt,'Old Gold Cash Out: '+cname+' '+ogWt+'g','payment');
+    }
+  }
+  
+  if(type==='oldgold-adv'&&DB.custs[cid])
+    DB.custs[cid].txns.push({type:'old_gold_advance',date:date,bill:'OGA-'+Date.now().toString(36).slice(-4),amount:ogVal,paid:ogVal,balance:0});
+  
+  DB.payments.unshift({id:uid(),cid:cid,customer:cname,type:type,amt:type==='oldgold-adv'?ogVal:cashAmt,mode:type==='oldgold-adv'?'Old Gold (Advance)':V('cp-mode'),date:date,note:note,ogWt:ogWt,ogMetal:ogM,ogVal:ogVal});
+  
+  renderCashFlow();
+}
+else{
     var amt=N('cp-amt');if(!amt){alert('Enter amount.');return;}
     var mode=V('cp-mode');
     var isOBS=(type==='old_bal_settle');
@@ -2837,15 +2867,21 @@ function savePayment(){
     if(!isOBS){
       var isInflow=(type==='in');
       if(mode==='Cash'){
+        if(!sbHasConfig()){
         DB.cashLog.push({type:isInflow?'in':'out',date:date,amount:amt,
           desc:(isInflow?'Pmt: ':'Payout: ')+cname,src:'payment'});
-        dbSaveCashEntry(isInflow?'in':'out',date,amt,(isInflow?'Pmt: ':'Payout: ')+cname,'payment');
+        } else {
+          dbSaveCashEntry(isInflow?'in':'out',date,amt,(isInflow?'Pmt: ':'Payout: ')+cname,'payment');
+        }
         renderCashFlow();
       } else if(mode==='UPI - GPay'||mode==='UPI - Paytm'||mode==='UPI'){
         // UPI counts as cash inflow
         if(isInflow){
+          if(!sbHasConfig()){
           DB.cashLog.push({type:'in',date:date,amount:amt,desc:'UPI Pmt: '+cname,src:'payment'});
-          dbSaveCashEntry('in',date,amt,'UPI Pmt: '+cname,'payment');
+          } else {
+            dbSaveCashEntry('in',date,amt,'UPI Pmt: '+cname,'payment');
+          }
           renderCashFlow();
         }
       } else if(mode.indexOf('Bank')>=0||mode.indexOf('RTGS')>=0){
@@ -3406,9 +3442,12 @@ function saveSettle(){
   activeSup.balance=Math.max(0,(activeSup.balance||0)-cashAmt);
   // Cash or Bank
   if(mode==='Cash'){
+    if(!sbHasConfig()){
     DB.cashLog.push({type:'out',date:date,amount:cashAmt,
       desc:'Supplier: '+activeSup.name+' '+grams.toFixed(3)+'g',src:'supplier'});
+    }else{
     dbSaveCashEntry('out',date,cashAmt,'Supplier: '+activeSup.name,'supplier');
+    }
   } else if(mode.indexOf('Bank')>=0||mode.indexOf('RTGS')>=0){
     if(!DB.bankAccounts)DB.bankAccounts={};
     var bk='Main Account';
@@ -3451,8 +3490,11 @@ function saveMFIn(){
   if(src==='Bullion'&&rate>0){
     var cost=gross*rate;
     var desc='Bullion Purchase: '+gross.toFixed(3)+'g '+metal+' @ ₹'+rate.toFixed(2)+'/g';
+     if(sbHasConfig()){
     DB.cashLog.push({type:'out',date:td(),amount:cost,desc:desc,src:'bullion'});
-    if(sbHasConfig())dbSaveCashEntry('out',td(),cost,desc,'bullion');
+     }else{
+   dbSaveCashEntry('out',td(),cost,desc,'bullion');
+     }
   }
   
   updateMFDisp();renderMFLog();renderCashFlow();
@@ -3526,7 +3568,7 @@ function renderMFLog(){var t=G('mf-log-tbl');if(!t)return;t.innerHTML=DB.metalLo
 
 // ── CASH FLOW ──
 function saveCashOB(){var amt=N('cob-val');var obDate=V('cob-date')||td();DB.cashOB=amt;DB.cashOBDate=obDate;dbSaveCashEntry('opening',obDate,amt,'Opening Balance','opening');closeM('m-cashob');renderCashFlow();}
-function saveCashEntry(){var type=V('ce-type'),amt=N('ce-amt'),date=V('ce-date')||td(),desc=V('ce-desc');if(!amt){alert('Enter amount.');return;}DB.cashLog.push({type:type,date:date,amount:amt,desc:desc,src:'manual'});dbSaveCashEntry(type,date,amt,desc,'manual');closeM('m-cashentry');renderCashFlow();}
+function saveCashEntry(){var type=V('ce-type'),amt=N('ce-amt'),date=V('ce-date')||td(),desc=V('ce-desc');if(!amt){alert('Enter amount.');return;}if(!sbHasConfig()){DB.cashLog.push({type:type,date:date,amount:amt,desc:desc,src:'manual'});}else{dbSaveCashEntry(type,date,amt,desc,'manual');closeM('m-cashentry');renderCashFlow();}}
 
 // ── CASH TO BANK TRANSFER ────────────────────────────────────
 function saveCashToBank(){
@@ -3535,9 +3577,12 @@ function saveCashToBank(){
   if(!bank){alert('Enter bank account name.');return;}
   var date=V('ctb-date')||td();
   // Cash out from hand
+  if(!sbHasConfig()){
   DB.cashLog.push({type:'out',date:date,amount:amt,
     desc:'Transfer to Bank: '+bank+(ref?' | '+ref:''),src:'bank_transfer'});
+  }else{
   dbSaveCashEntry('out',date,amt,'Transfer to Bank: '+bank,'bank_transfer');
+  }
   // Record bank credit
   if(!DB.bankAccounts)DB.bankAccounts={};
   if(!DB.bankAccounts[bank])DB.bankAccounts[bank]=[];
@@ -4085,8 +4130,10 @@ function saveOGPurchase(mode){
 
   // Cash out if paying immediately
   if(isCash&&cashAmt>0){
+    if(!sbHasConfig()){
     DB.cashLog.push({type:'out',date:date,amount:cashAmt,desc:'Old Gold Cash Out: '+cname+' '+gross.toFixed(3)+'g',src:'payment'});
-    dbSaveCashEntry('out',date,cashAmt,'Old Gold Cash Out: '+cname,'payment');
+    }else{
+    dbSaveCashEntry('out',date,cashAmt,'Old Gold Cash Out: '+cname,'payment');}
     renderCashFlow();
   }
 
@@ -4222,8 +4269,11 @@ function sellRefinedGold(){
   updateMFDisp();
   // Add to cash
   if(mode==='Cash'){
-    DB.cashLog.push({type:'in',date:date,amount:sell,desc:'Sell '+metal+' '+wt.toFixed(3)+'g'+(party?' to '+party:''),src:'refgold'});
-    dbSaveCashEntry('in',date,sell,'Sell '+metal+' '+wt.toFixed(3)+'g','refgold');
+    if(!sbHasConfig()){
+      DB.cashLog.push({type:'in',date:date,amount:sell,desc:'Sell '+metal+' '+wt.toFixed(3)+'g'+(party?' to '+party:''),src:'refgold'});
+    } else {
+      dbSaveCashEntry('in',date,sell,'Sell '+metal+' '+wt.toFixed(3)+'g','refgold');
+    }
   }
   // Log metal flow
   var mfEntry={type:'out',date:date,metal:metal,wt:wt,pure:wt,
@@ -4953,8 +5003,11 @@ function saveChitEntry(){
     var amt=N('ch-amt');
     if(!amt){alert('Enter amount.');return;}
     // Cash received by shop
+    if(!sbHasConfig()){
     DB.cashLog.push({type:'in',date:date,amount:amt,desc:'Chit Money from '+custName,src:'chit'});
+    }else {
     dbSaveCashEntry('in',date,amt,'Chit Money from '+custName,'chit');
+    }
     // Customer gets cash credit
     var py={id:uid(),cid:custId,customer:custName,type:'chit_bonus',
       amt:amt,mode:'Chit Money',date:date,
@@ -4974,8 +5027,11 @@ function saveChitEntry(){
     if(!cmAmt){alert('Enter the amount paid.');return;}
     if(!cmWt||cmWt<=0){alert('Metal weight not calculated. Enter amount and rate.');return;}
     // Cash received
-    DB.cashLog.push({type:'in',date:date,amount:cmAmt,desc:'Chit Metal from '+custName+' '+cmWt.toFixed(3)+'g '+metal,src:'chit'});
-    dbSaveCashEntry('in',date,cmAmt,'Chit Metal from '+custName,'chit');
+    if(!sbHasConfig()){
+      DB.cashLog.push({type:'in',date:date,amount:cmAmt,desc:'Chit Metal from '+custName+' '+cmWt.toFixed(3)+'g '+metal,src:'chit'});
+    } else {
+      dbSaveCashEntry('in',date,cmAmt,'Chit Metal from '+custName,'chit');
+    }
     // Customer gets METAL credit (liability - we owe them this weight)
     // Stored as chit_metal type - NOT in batch pool
     var py={id:uid(),cid:custId,customer:custName,type:'chit_metal',
@@ -5322,16 +5378,26 @@ function saveRefGold(){
   var date=G('rg-date')&&G('rg-date').value||td();
   var rec={id:uid(),date:date,metal:V('rg-metal'),wt:wt,saleAmt:sale,costPrice:cost,testFee:test,otherCost:other,totalCost:totalCost,profit:profit,mode:V('rg-mode'),note:V('rg-note')};
   DB.refGoldSales.push(rec);
-  // Add sale to cash flow
-  DB.cashLog.push({type:'in',date:date,amount:sale,desc:'Refined '+rec.metal+' Sale '+(wt?wt.toFixed(3)+'g':''),src:'refgold'});
-  if(cost>0)DB.cashLog.push({type:'out',date:date,amount:cost,desc:'Refined Gold Purchase Cost',src:'refgold'});
+  
+  // FIXED: Add to cash flow ONLY if NOT saving to database
+  // When Supabase is configured, database save is authoritative
+  // When offline, local array is authoritative
+  if(!sbHasConfig()){
+    // Offline mode: Add to local array only
+    DB.cashLog.push({type:'in',date:date,amount:sale,desc:'Refined '+rec.metal+' Sale '+(wt?wt.toFixed(3)+'g':''),src:'refgold'});
+    if(cost>0)DB.cashLog.push({type:'out',date:date,amount:cost,desc:'Refined Gold Purchase Cost',src:'refgold'});
+  }
+  
   // Reduce metal reserve
   if(wt>0){if(rec.metal==='Gold')metalR.gold=Math.max(0,metalR.gold-wt);else metalR.silver=Math.max(0,metalR.silver-wt);updateMFDisp();}
-  // Save to DB
+  
+  // Save to DB (database save will be loaded back into array on next data load)
   if(sbHasConfig()){
     dbPost('metal_log',{log_type:'out',log_date:date,metal:rec.metal,weight_g:wt,source:'Refined Sale',purpose:'Sold'},null);
-    dbSaveCashEntry('in',date,sale,'Refined '+rec.metal+' Sale','refgold');
+    dbSaveCashEntry('in',date,sale,'Refined '+rec.metal+' Sale '+(wt?wt.toFixed(3)+'g':''),'refgold');
+    if(cost>0)dbSaveCashEntry('out',date,cost,'Refined Gold Purchase Cost','refgold');
   }
+  
   renderCashFlow();
   closeM('m-refgold');
   renderReports();
