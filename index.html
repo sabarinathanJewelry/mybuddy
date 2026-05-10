@@ -1,6 +1,3 @@
-
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -3487,14 +3484,17 @@ function saveMFIn(){
   dbSaveMetalLog(mfEntry);
   
   // If buying bullion with cash, create cash outflow entry
+  // FIXED: Create cash entry ONLY ONCE (not in both local and database)
   if(src==='Bullion'&&rate>0){
     var cost=gross*rate;
     var desc='Bullion Purchase: '+gross.toFixed(3)+'g '+metal+' @ ₹'+rate.toFixed(2)+'/g';
-     if(sbHasConfig()){
-    DB.cashLog.push({type:'out',date:td(),amount:cost,desc:desc,src:'bullion'});
-     }else{
-   dbSaveCashEntry('out',td(),cost,desc,'bullion');
-     }
+    if(!sbHasConfig()){
+      // Offline: Add to local array
+      DB.cashLog.push({type:'out',date:td(),amount:cost,desc:desc,src:'bullion'});
+    } else {
+      // Online: Save to database only
+      dbSaveCashEntry('out',td(),cost,desc,'bullion');
+    }
   }
   
   updateMFDisp();renderMFLog();renderCashFlow();
@@ -3568,7 +3568,20 @@ function renderMFLog(){var t=G('mf-log-tbl');if(!t)return;t.innerHTML=DB.metalLo
 
 // ── CASH FLOW ──
 function saveCashOB(){var amt=N('cob-val');var obDate=V('cob-date')||td();DB.cashOB=amt;DB.cashOBDate=obDate;dbSaveCashEntry('opening',obDate,amt,'Opening Balance','opening');closeM('m-cashob');renderCashFlow();}
-function saveCashEntry(){var type=V('ce-type'),amt=N('ce-amt'),date=V('ce-date')||td(),desc=V('ce-desc');if(!amt){alert('Enter amount.');return;}if(!sbHasConfig()){DB.cashLog.push({type:type,date:date,amount:amt,desc:desc,src:'manual'});}else{dbSaveCashEntry(type,date,amt,desc,'manual');closeM('m-cashentry');renderCashFlow();}}
+function saveCashEntry(){
+  var type=V('ce-type'),amt=N('ce-amt'),date=V('ce-date')||td(),desc=V('ce-desc');
+  if(!amt){alert('Enter amount.');return;}
+  // FIXED: Create cash entry ONLY ONCE (not in both local and database)
+  if(!sbHasConfig()){
+    // Offline: Add to local array
+    DB.cashLog.push({type:type,date:date,amount:amt,desc:desc,src:'manual'});
+  } else {
+    // Online: Save to database only
+    dbSaveCashEntry(type,date,amt,desc,'manual');
+  }
+  closeM('m-cashentry');
+  renderCashFlow();
+}
 
 // ── CASH TO BANK TRANSFER ────────────────────────────────────
 function saveCashToBank(){
