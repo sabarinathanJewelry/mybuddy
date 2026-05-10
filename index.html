@@ -1,3 +1,7 @@
+
+
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1404,8 +1408,16 @@ input:checked+.tslider::before { transform:translateX(17px); }
 
   <div id="mf-in" class="card">
     <div class="card-header"><div class="card-title">Receive Metal (Bullion / Direct)</div></div>
-    <div class="g3" style="margin-bottom:10px"><div class="field"><label>Metal</label><select id="mfi-metal"><option>Gold</option><option>Silver</option></select></div><div class="field"><label>Source</label><select id="mfi-src"><option>Bullion</option><option>Old Gold - Customer</option><option>Exchange</option><option>Refinery Return</option></select></div><div class="field"><label>Rate &#8377;/g</label><input type="number" id="mfi-rate" step="0.01" inputmode="decimal"></div></div>
-    <div class="g2"><div class="field"><label>Gross Weight (g)</label><input type="number" id="mfi-gross" step="0.001" inputmode="decimal"></div><div class="field"><label>Pure Weight (g)</label><input type="number" id="mfi-pure" step="0.001" inputmode="decimal"></div></div>
+    <div class="g3" style="margin-bottom:10px"><div class="field"><label>Metal</label><select id="mfi-metal"><option>Gold</option><option>Silver</option></select></div><div class="field"><label>Source</label><select id="mfi-src" onchange="onMFSrcChange()"><option>Bullion</option><option>Old Gold - Customer</option><option>Exchange</option><option>Refinery Return</option></select></div><div class="field"><label>Rate &#8377;/g</label><input type="number" id="mfi-rate" step="0.01" inputmode="decimal" oninput="calcMFCost()"></div></div>
+    <div class="g2"><div class="field"><label>Gross Weight (g)</label><input type="number" id="mfi-gross" step="0.001" inputmode="decimal" oninput="calcMFCost()"></div><div class="field"><label>Pure Weight (g)</label><input type="number" id="mfi-pure" step="0.001" inputmode="decimal"></div></div>
+    <div id="mfi-bullion-fields" style="display:none; margin-top:12px; padding:12px; background:var(--bg2); border-radius:8px;">
+      <div class="g3" style="margin-bottom:10px">
+        <div class="field"><label>Supplier</label><select id="mfi-supplier"><option value="">-- Select Supplier --</option></select></div>
+        <div class="field"><label>Total Cost ₹</label><input type="number" id="mfi-total" step="0.01" readonly style="background:var(--bg3)"></div>
+        <div class="field"><label>Amount Paid ₹</label><input type="number" id="mfi-paid" step="0.01" inputmode="decimal" oninput="calcMFCost()" placeholder="Cash paid now"></div>
+      </div>
+      <div id="mfi-credit-info" style="display:none; background:rgba(255,193,7,0.1); border:1px solid rgba(255,193,7,0.3); border-radius:6px; padding:10px; font-size:13px;"><strong>Supplier Credit:</strong> ₹<span id="mfi-credit-amt">0</span> (to be paid later)</div>
+    </div>
     <button class="btn btng" onclick="saveMFIn()">Add to Reserve</button>
   </div>
 
@@ -3469,36 +3481,111 @@ function renderSuspense(){
 }
 
 // ── METAL FLOW ──
-function mfTab(tab,btn){['in','batch','refinery','out','sell','log'].forEach(function(t){var e=G('mf-'+t);if(e)e.style.display='none';});var te=G('mf-'+tab);if(te)te.style.display='block';document.querySelectorAll('#pg-metalflow .tab').forEach(function(b){b.classList.remove('active');});if(btn)btn.classList.add('active');if(tab==='batch')loadUnbatched();if(tab==='refinery')loadPendingBatches();if(tab==='log')renderMFLog();if(tab==='sell'){var sd=G('sel-date');if(sd&&!sd.value)sd.value=td();}}
+function mfTab(tab,btn){['in','batch','refinery','out','sell','log'].forEach(function(t){var e=G('mf-'+t);if(e)e.style.display='none';});var te=G('mf-'+tab);if(te)te.style.display='block';document.querySelectorAll('#pg-metalflow .tab').forEach(function(b){b.classList.remove('active');});if(btn)btn.classList.add('active');if(tab==='batch')loadUnbatched();if(tab==='refinery')loadPendingBatches();if(tab==='log')renderMFLog();if(tab==='sell'){var sd=G('sel-date');if(sd&&!sd.value)sd.value=td();}if(tab==='in'){populateMFSuppliers();onMFSrcChange();}}
+
+function populateMFSuppliers(){
+  var sel=G('mfi-supplier');
+  if(!sel)return;
+  var sups=Object.keys(DB.sups||{}).map(function(id){return DB.sups[id];});
+  sel.innerHTML='<option value="">-- Select Supplier --</option>'+
+    sups.map(function(s){return '<option value="'+s.id+'">'+s.name+'</option>';}).join('');
+}
+
+function onMFSrcChange(){
+  var src=V('mfi-src');
+  var fields=G('mfi-bullion-fields');
+  if(fields)fields.style.display=(src==='Bullion')?'block':'none';
+  calcMFCost();
+}
+
+function calcMFCost(){
+  var src=V('mfi-src');
+  if(src!=='Bullion')return;
+  var gross=N('mfi-gross')||0;
+  var rate=N('mfi-rate')||0;
+  var total=gross*rate;
+  var paid=N('mfi-paid')||0;
+  var credit=Math.max(0,total-paid);
+  var tc=G('mfi-total');if(tc)tc.value=total.toFixed(2);
+  var ci=G('mfi-credit-info');
+  var ca=G('mfi-credit-amt');
+  if(ci&&ca){
+    ci.style.display=credit>0?'block':'none';
+    ca.textContent=fmt(credit);
+  }
+}
 function saveMFIn(){
   var metal=V('mfi-metal'),src=V('mfi-src'),gross=N('mfi-gross'),pure=N('mfi-pure')||gross,rate=N('mfi-rate');
   if(!gross){alert('Enter weight.');return;}
+  
+  // For bullion, validate supplier and payment
+  var supId='',supName='',totalCost=0,amtPaid=0,credit=0;
+  if(src==='Bullion'){
+    if(!rate){alert('Enter rate per gram for bullion.');return;}
+    supId=V('mfi-supplier');
+    if(!supId){alert('Select supplier for bullion purchase.');return;}
+    supName=DB.sups[supId]?DB.sups[supId].name:'';
+    totalCost=gross*rate;
+    amtPaid=N('mfi-paid')||0;
+    if(amtPaid>totalCost){alert('Amount paid cannot exceed total cost.');return;}
+    credit=totalCost-amtPaid;
+  }
   
   // Update metal reserve
   if(metal==='Gold')metalR.gold+=pure;
   else metalR.silver+=pure;
   
   // Save metal log entry
-  var mfEntry={type:'in',date:td(),metal:metal,src:src,gross:gross,pure:pure,rate:rate};
+  var mfEntry={type:'in',date:td(),metal:metal,src:src,gross:gross,pure:pure,rate:rate,
+    supplier:supName,totalCost:totalCost,amtPaid:amtPaid,credit:credit};
   DB.metalLog.unshift(mfEntry);
   dbSaveMetalLog(mfEntry);
   
-  // If buying bullion with cash, create cash outflow entry
-  // FIXED: Create cash entry ONLY ONCE (not in both local and database)
-  if(src==='Bullion'&&rate>0){
-    var cost=gross*rate;
-    var desc='Bullion Purchase: '+gross.toFixed(3)+'g '+metal+' @ ₹'+rate.toFixed(2)+'/g';
-    if(!sbHasConfig()){
-      // Offline: Add to local array
-      DB.cashLog.push({type:'out',date:td(),amount:cost,desc:desc,src:'bullion'});
-    } else {
-      // Online: Save to database only
-      dbSaveCashEntry('out',td(),cost,desc,'bullion');
+  // If buying bullion: handle cash payment and supplier credit
+  if(src==='Bullion'){
+    // Create cash outflow for amount paid ONLY
+    if(amtPaid>0){
+      var desc='Bullion Purchase: '+gross.toFixed(3)+'g '+metal+' @ ₹'+rate.toFixed(2)+'/g (Paid: ₹'+fmt(amtPaid)+(credit>0?' | Credit: ₹'+fmt(credit):')+')';
+      if(!sbHasConfig()){
+        DB.cashLog.push({type:'out',date:td(),amount:amtPaid,desc:desc,src:'bullion'});
+      } else {
+        dbSaveCashEntry('out',td(),amtPaid,desc,'bullion');
+      }
+    }
+    
+    // Create supplier credit for unpaid amount
+    if(credit>0&&supId&&DB.sups[supId]){
+      var sup=DB.sups[supId];
+      if(!sup.txns)sup.txns=[];
+      sup.txns.push({
+        type:'purchase',
+        date:td(),
+        desc:'Bullion: '+gross.toFixed(3)+'g '+metal+' @ ₹'+rate.toFixed(2)+'/g',
+        debit:credit,
+        credit:0,
+        note:'Paid: ₹'+fmt(amtPaid)+' | Credit: ₹'+fmt(credit)
+      });
+      sup.balance=(sup.balance||0)+credit;
+      if(sbHasConfig())dbSaveSupTxn(supId,sup.txns[sup.txns.length-1]);
+      renderSups();
     }
   }
   
+  // Clear form
+  var gr=G('mfi-gross');if(gr)gr.value='';
+  var pu=G('mfi-pure');if(pu)pu.value='';
+  var rt=G('mfi-rate');if(rt)rt.value='';
+  var pd=G('mfi-paid');if(pd)pd.value='';
+  
   updateMFDisp();renderMFLog();renderCashFlow();
-  alert('&#10003; Added: '+pure.toFixed(3)+'g '+metal+(src==='Bullion'&&rate>0?' | Cash paid: ₹'+fmt(gross*rate):''));
+  
+  var msg='✓ Added: '+pure.toFixed(3)+'g '+metal;
+  if(src==='Bullion'){
+    msg+='\nCost: ₹'+fmt(totalCost);
+    if(amtPaid>0)msg+=' | Paid: ₹'+fmt(amtPaid);
+    if(credit>0)msg+=' | Credit to '+supName+': ₹'+fmt(credit);
+  }
+  alert(msg);
 }
 function loadUnbatched(){
   var metal=V('bat-metal')||'Gold';
