@@ -5307,33 +5307,98 @@ function saveEditPay(){
   
   var oldType=_editPayOriginal.type;
   var oldMode=_editPayOriginal.mode;
-  var oldAmt=_editPayOriginal.amount;
+  var oldAmt=_editPayOriginal.amt;
   var oldDate=_editPayOriginal.date;
   
   // Get new values
-  pay.date=V('ep-date');
-  pay.amt=N('ep-amt');
-  pay.mode=V('ep-mode');
-  pay.note=V('ep-note');
+  var newDate=V('ep-date');
+  var newAmt=N('ep-amt');
+  var newMode=V('ep-mode');
+  var newNote=V('ep-note');
   
   // Determine new type based on checkbox
   var typeFromDropdown=V('ep-type');
   var isAdvance=G('ep-is-advance')&&G('ep-is-advance').checked;
   
+  var newType;
   if(typeFromDropdown==='payment'){
-    pay.type=isAdvance?'advance':'payment';
+    newType=isAdvance?'advance':'payment';
   } else {
-    pay.type=typeFromDropdown;
+    newType=typeFromDropdown;
   }
+  
+  // Update local payment object
+  pay.date=newDate;
+  pay.amt=newAmt;
+  pay.mode=newMode;
+  pay.note=newNote;
+  pay.type=newType;
   
   // Update database if connected
   if(sbHasConfig()){
-    dbSavePayment(pay);
+    // Map type for database (payment → in for backward compatibility)
+    var dbType=newType;
+    if(dbType==='payment')dbType='in';
+    
+    // Build update data
+    var updateData={
+      pmt_type:dbType,
+      amount:newAmt,
+      mode:newMode,
+      pmt_date:newDate,
+      note:(newType==='old_bal_settle'?'[OBS] ':(newType==='payment'?'[PMT] ':(newType==='advance'?'[ADV] ':''))+(newNote||''))
+    };
+    
+    // Update in customer_payments table using payment ID
+    var filter='customer_name=eq.'+encodeURIComponent(pay.customer)+'&pmt_date=eq.'+oldDate+'&amount=eq.'+oldAmt;
+    
+    dbPatch('customer_payments',filter,updateData,function(ok,err){
+      if(err){
+        console.error('Failed to update payment:',err);
+        alert('⚠ Failed to update in database: '+err);
+      } else {
+        console.log('Payment updated in database');
+        
+        // Handle cash_log updates if mode or type changed
+        if(oldMode!==newMode||oldType!==newType||oldAmt!==newAmt||oldDate!==newDate){
+          handleCashLogUpdate(pay.customer,oldDate,oldAmt,oldMode,oldType,newDate,newAmt,newMode,newType);
+        }
+      }
+    });
   }
   
   closeM('m-editpay');
   renderPayments();
   alert('✓ Payment updated!');
+}
+
+function handleCashLogUpdate(customerName,oldDate,oldAmt,oldMode,oldType,newDate,newAmt,newMode,newType){
+  // Delete old cash entry if it was Cash mode
+  if(oldMode==='Cash'){
+    var delFilter='log_date=eq.'+oldDate+'&amount=eq.'+oldAmt+'&description=ilike.%'+encodeURIComponent(customerName)+'%';
+    fetch(sbUrl()+'/rest/v1/cash_log?'+delFilter,{
+      method:'DELETE',
+      headers:{'apikey':sbKey(),'Authorization':'Bearer '+sbKey()}
+    }).then(function(r){
+      if(r.ok){
+        console.log('Old cash entry deleted');
+        // Create new cash entry if new mode is Cash
+        if(newMode==='Cash'){
+          createCashEntryForPayment(newDate,newAmt,newMode,newType,customerName);
+        }
+      }
+    }).catch(function(e){console.error('Failed to delete old cash entry:',e);});
+  } else if(newMode==='Cash'&&oldMode!=='Cash'){
+    // Old was not cash, new is cash - just create entry
+    createCashEntryForPayment(newDate,newAmt,newMode,newType,customerName);
+  }
+}
+
+function createCashEntryForPayment(date,amt,mode,type,customerName){
+  var isInflow=(type==='payment'||type==='advance'||type==='in'||type==='old_bal_settle');
+  var desc=(type==='old_bal_settle'?'OB Settle: ':(type==='payment'?'Pmt: ':(type==='advance'?'Advance: ':'Pmt: ')))+customerName;
+  
+  dbSaveCashEntry(isInflow?'in':'out',date,amt,desc,'payment');
 }
 var _editCustId=null;
 function openEditCust(id){var c=DB.custs[id];if(!c)return;_editCustId=id;G('ec-name').value=c.name||'';G('ec-phone').value=c.phone||'';G('ec-city').value=c.city||'';G('ec-anni').value=c.anni||'';G('ec-ob').value=c.ob||'';G('ec-notes').value=c.notes||'';openM('m-editcust');}
