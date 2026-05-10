@@ -3545,7 +3545,7 @@ function saveMFIn(){
   if(src==='Bullion'){
     // Create cash outflow for amount paid ONLY
     if(amtPaid>0){
-      var desc='Bullion Purchase: '+gross.toFixed(3)+'g '+metal+' @ ₹'+rate.toFixed(2)+'/g (Paid: ₹'+fmt(amtPaid)+(credit>0?' | Credit: ₹'+fmt(credit):')+')';
+      var desc='Bullion Purchase: '+gross.toFixed(3)+'g '+metal+' @ ₹'+rate.toFixed(2)+'/g (Paid: ₹'+fmt(amtPaid)+(credit>0?' | Credit: ₹'+fmt(credit):'')+')';
       if(!sbHasConfig()){
         DB.cashLog.push({type:'out',date:td(),amount:amtPaid,desc:desc,src:'bullion'});
       } else {
