@@ -3388,7 +3388,6 @@ async function loadDailySheet(){
   var date=V('ds-date');
   if(!date){alert('Please select a date');return;}
   
-  // Show loading
   G('ds-cash-content').innerHTML='<div style="padding:20px;text-align:center;color:var(--tx3)">Loading...</div>';
   G('ds-bank-content').innerHTML='<div style="padding:20px;text-align:center;color:var(--tx3)">Loading...</div>';
   
@@ -3398,34 +3397,34 @@ async function loadDailySheet(){
     var prevD=new Date(d);prevD.setDate(prevD.getDate()-1);
     var prevDate=prevD.toISOString().split('T')[0];
     
-    // ── Fetch ALL data from Supabase ──
+    // ── CHANGE "supabase" to YOUR variable name ──
     
-    // 1. Get sales for selected date
-    var {data:sales,error:sErr}=await supa.from('sales')
+    // 1. Get sales
+    var {data:sales,error:sErr}=await supabase.from('sales')
       .select('*, sale_payments(*), sale_items(*)')
       .eq('sale_date',date);
-    if(sErr)throw sErr;
+    if(sErr){console.error('Sales error:',sErr);sales=[];}
     
-    // 2. Get customer payments for selected date
-    var {data:payments,error:pErr}=await supa.from('customer_payments')
+    // 2. Get customer payments
+    var {data:payments,error:pErr}=await supabase.from('customer_payments')
       .select('*')
       .eq('pmt_date',date);
-    if(pErr)throw pErr;
+    if(pErr){console.error('Payments error:',pErr);payments=[];}
     
-    // 3. Get expenses for selected date
-    var {data:expenses,error:eErr}=await supa.from('expenses')
+    // 3. Get expenses
+    var {data:expenses,error:eErr}=await supabase.from('expenses')
       .select('*')
       .eq('expense_date',date);
-    if(eErr)throw eErr;
+    if(eErr){console.error('Expenses error:',eErr);expenses=[];}
     
-    // 4. Get previous day closing from cash_log
-    var {data:prevLog,error:plErr}=await supa.from('cash_log')
+    // 4. Get previous day closing
+    var {data:prevLogs,error:plErr}=await supabase.from('cash_log')
       .select('*')
       .eq('log_date',prevDate)
       .eq('log_type','closing')
-      .limit(1)
-      .single();
-    // Ignore error if no previous closing found
+      .limit(1);
+    if(plErr)console.error('Previous log error:',plErr);
+    var prevLog=prevLogs&&prevLogs.length>0?prevLogs[0]:null;
     
     // ── Calculate Previous Day Closing ──
     var prevCash=prevLog?prevLog.closing_cash||125000:125000;
@@ -3446,40 +3445,25 @@ async function loadDailySheet(){
     
     // ── Calculate Cash Transactions ──
     var cashIn=0,cashOut=0;
-    var goldIn=0,goldOut=0;
-    var silverIn=0,silverOut=0;
     
     // Sales - Cash mode
     (sales||[]).forEach(function(s){
       var paidCash=0;
       (s.sale_payments||[]).forEach(function(sp){
-        if(sp.mode==='Cash'){
-          paidCash+=sp.amount||0;
-          // Track exchange metal as IN
-          if(sp.exch_wt_g>0){
-            goldIn+=sp.exch_wt_g;  // Assuming gold exchange
-          }
-        }
+        if(sp.mode==='Cash')paidCash+=sp.amount||0;
       });
       if(paidCash>0)cashIn+=paidCash;
-      
-      // Track metal sold (OUT)
-      goldOut+=s.gold_grams_sold||0;
-      silverOut+=s.silver_grams_sold||0;
     });
     
-    // Customer Payments - separate IN/OUT
+    // Customer Payments
     (payments||[]).forEach(function(p){
-      if(p.mode==='Cash'||!p.mode){  // Default to cash
+      if(p.mode==='Cash'||!p.mode){
         if(p.pmt_type==='in'||p.pmt_type==='payment'){
           cashIn+=p.amount||0;
         }else if(p.pmt_type==='out'){
           cashOut+=p.amount||0;
         }else if(p.pmt_type==='oldgold'||p.pmt_type==='oldgold-adv'){
-          // Old gold purchase - cash OUT, metal IN
           cashOut+=p.amount||0;
-          if(p.og_metal==='Gold')goldIn+=p.og_weight_g||0;
-          else if(p.og_metal==='Silver')silverIn+=p.og_weight_g||0;
         }
       }
     });
@@ -3493,16 +3477,12 @@ async function loadDailySheet(){
     var bankIn=0;
     (sales||[]).forEach(function(s){
       (s.sale_payments||[]).forEach(function(sp){
-        if(sp.mode==='UPI'||sp.mode==='Bank'){
-          bankIn+=sp.amount||0;
-        }
+        if(sp.mode==='UPI'||sp.mode==='Bank')bankIn+=sp.amount||0;
       });
     });
     
     (payments||[]).forEach(function(p){
-      if(p.mode==='UPI'||p.mode==='Bank'){
-        bankIn+=p.amount||0;
-      }
+      if(p.mode==='UPI'||p.mode==='Bank')bankIn+=p.amount||0;
     });
     
     // ── Render Cash Transactions ──
@@ -3529,7 +3509,7 @@ async function loadDailySheet(){
       }
     });
     
-    if(cashIn===0)cashHTML+='<div style="color:var(--tx3)">No cash IN</div>';
+    if(cashIn===0)cashHTML+='<div style="color:var(--tx3);padding:8px">No cash IN transactions</div>';
     cashHTML+='</div>';
     
     cashHTML+='<h4 style="color:var(--red);margin-bottom:12px">Cash OUT: ₹'+fmt(cashOut)+'</h4>';
@@ -3544,14 +3524,14 @@ async function loadDailySheet(){
     });
     
     (payments||[]).forEach(function(p){
-      if((p.mode==='Cash'||!p.mode)&&(p.pmt_type==='oldgold'||p.pmt_type==='oldgold-adv')){
+      if((p.mode==='Cash'||!p.mode)&&(p.pmt_type==='out')){
         cashHTML+='<div style="padding:8px;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between">';
-        cashHTML+='<span>Old Gold Purchase - '+p.customer_name+' ('+p.og_weight_g+'g)</span>';
+        cashHTML+='<span>Payment OUT - '+p.customer_name+'</span>';
         cashHTML+='<span style="font-weight:600;color:var(--red)">₹'+fmt(p.amount)+'</span></div>';
       }
     });
     
-    if(cashOut===0)cashHTML+='<div style="color:var(--tx3)">No cash OUT</div>';
+    if(cashOut===0)cashHTML+='<div style="color:var(--tx3);padding:8px">No cash OUT transactions</div>';
     cashHTML+='</div>';
     
     G('ds-cash-content').innerHTML=cashHTML;
@@ -3577,14 +3557,14 @@ async function loadDailySheet(){
       }
     });
     
-    if(!bankHTML)bankHTML='<div style="color:var(--tx3)">No bank transactions</div>';
+    if(!bankHTML)bankHTML='<div style="color:var(--tx3);padding:8px">No bank transactions</div>';
     G('ds-bank-content').innerHTML=bankHTML;
     G('ds-bank-in').textContent=fmt(bankIn);
     
     // ── Calculate Closing Balances ──
     var closeCash=prevCash+cashIn-cashOut;
-    var closeGold=prevGold+goldIn-goldOut;
-    var closeSilver=prevSilver+silverIn-silverOut;
+    var closeGold=prevGold;
+    var closeSilver=prevSilver;
     
     G('ds-close-cash').textContent=fmt(closeCash);
     G('ds-close-gold').textContent=closeGold.toFixed(3);
@@ -3605,9 +3585,8 @@ async function loadDailySheet(){
           customer:s.customer_name||'Walk-in',
           amount:sp.amount||0,
           mode:sp.mode,
-          gold:s.gold_grams_sold||0,
-          silver:s.silver_grams_sold||0,
-          bill:s.bill_no
+          gold:0,
+          silver:0
         });
       });
     });
@@ -3616,13 +3595,12 @@ async function loadDailySheet(){
       var time=p.created_at?new Date(p.created_at).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}):'--:--';
       allTxns.push({
         time:time,
-        type:p.pmt_type==='in'?'Payment IN':p.pmt_type==='out'?'Payment OUT':'Old Gold',
+        type:p.pmt_type==='in'?'Payment IN':p.pmt_type==='out'?'Payment OUT':'Payment',
         customer:p.customer_name||'-',
         amount:p.amount||0,
         mode:p.mode||'Cash',
-        gold:p.og_metal==='Gold'?p.og_weight_g||0:0,
-        silver:p.og_metal==='Silver'?p.og_weight_g||0:0,
-        bill:'-'
+        gold:0,
+        silver:0
       });
     });
     
@@ -3635,13 +3613,9 @@ async function loadDailySheet(){
         amount:e.amount||0,
         mode:e.mode||'Cash',
         gold:0,
-        silver:0,
-        bill:'-'
+        silver:0
       });
     });
-    
-    // Sort by time
-    allTxns.sort(function(a,b){return a.time.localeCompare(b.time);});
     
     allTxns.forEach(function(t){
       detailHTML+='<tr>';
@@ -3650,18 +3624,21 @@ async function loadDailySheet(){
       detailHTML+='<td>'+t.customer+'</td>';
       detailHTML+='<td class="num">₹'+fmt(t.amount)+'</td>';
       detailHTML+='<td>'+t.mode+'</td>';
-      detailHTML+='<td class="num">'+(t.gold>0?t.gold.toFixed(3)+'g 🏅':'-')+'</td>';
-      detailHTML+='<td class="num">'+(t.silver>0?t.silver.toFixed(3)+'g 🥈':'-')+'</td>';
+      detailHTML+='<td class="num">'+(t.gold>0?t.gold.toFixed(3)+'g':'-')+'</td>';
+      detailHTML+='<td class="num">'+(t.silver>0?t.silver.toFixed(3)+'g':'-')+'</td>';
       detailHTML+='</tr>';
     });
     
     if(!detailHTML)detailHTML='<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--tx3)">No transactions</td></tr>';
     G('ds-detail-tbody').innerHTML=detailHTML;
     
+    console.log('Daily Sheet loaded successfully!',{sales:sales.length,payments:payments.length,expenses:expenses.length});
+    
   } catch(err){
     console.error('Daily Sheet Error:',err);
     alert('Error loading Daily Sheet: '+err.message);
-    G('ds-cash-content').innerHTML='<div style="color:var(--red);padding:20px">Error loading data</div>';
+    G('ds-cash-content').innerHTML='<div style="color:var(--red);padding:20px">Error: '+err.message+'</div>';
+    G('ds-bank-content').innerHTML='<div style="color:var(--red);padding:20px">Error loading data</div>';
   }
 }
 function exportDailySheetPDF(){alert('PDF Export: Integrate with jsPDF library');}
@@ -5815,55 +5792,45 @@ async function openCustomer360(custId){
   if(!custId)return;
   
   try {
-    // Show loading
     openM('m-cust360');
     G('c360-content').innerHTML='<div style="padding:40px;text-align:center;color:var(--tx3)">Loading...</div>';
     
-    // ── Fetch ALL customer data ──
+    // ── CHANGE "supabase" to YOUR variable name ──
     
     // 1. Get customer info
-    var {data:customer,error:cErr}=await supa.from('customers')
+    var {data:customers,error:cErr}=await supabase.from('customers')
       .select('*')
-      .eq('id',custId)
-      .single();
+      .eq('id',custId);
     if(cErr)throw cErr;
+    var customer=customers&&customers.length>0?customers[0]:null;
     if(!customer){alert('Customer not found');closeM('m-cust360');return;}
     
     // 2. Get all sales (with payments)
-    var {data:sales,error:sErr}=await supa.from('sales')
-      .select('*, sale_payments(*), sale_items(*)')
+    var {data:sales,error:sErr}=await supabase.from('sales')
+      .select('*, sale_payments(*)')
       .eq('customer_id',custId)
       .order('sale_date',{ascending:false});
-    if(sErr)throw sErr;
+    if(sErr){console.error('Sales error:',sErr);sales=[];}
     
     // 3. Get separate payments
-    var {data:payments,error:pErr}=await supa.from('customer_payments')
+    var {data:payments,error:pErr}=await supabase.from('customer_payments')
       .select('*')
       .eq('customer_id',custId)
       .order('pmt_date',{ascending:false});
-    if(pErr)throw pErr;
+    if(pErr){console.error('Payments error:',pErr);payments=[];}
     
     // 4. Get orders
-    var {data:orders,error:oErr}=await supa.from('orders')
-      .select('*, order_items(*)')
+    var {data:orders,error:oErr}=await supabase.from('orders')
+      .select('*')
       .eq('customer_id',custId)
       .neq('status','delivered')
       .order('order_date',{ascending:false});
-    if(oErr)throw oErr;
-    
-    // 5. Get chit transactions
-    var {data:chits,error:chErr}=await supa.from('chit_transactions')
-      .select('*')
-      .eq('customer_id',custId)
-      .order('chit_date',{ascending:false});
-    // Ignore error if table doesn't exist yet
+    if(oErr){console.error('Orders error:',oErr);orders=[];}
     
     // ── Calculate Balances ──
-    
-    // Opening balance
     var openingBal=customer.opening_bal||0;
     
-    // Sales: total sales and balance due
+    // Sales totals
     var totalSales=0;
     var totalPaidInSales=0;
     var balanceDueFromSales=0;
@@ -5874,7 +5841,7 @@ async function openCustomer360(custId){
       balanceDueFromSales+=s.balance||0;
     });
     
-    // Separate payments: IN/OUT
+    // Separate payments
     var separatePaymentsIn=0;
     var separatePaymentsOut=0;
     
@@ -5887,6 +5854,7 @@ async function openCustomer360(custId){
     });
     
     // CURRENT CASH BALANCE
+    // Formula: opening + sales_balance - payments_in + payments_out
     var cashBalance=openingBal + balanceDueFromSales - separatePaymentsIn + separatePaymentsOut;
     
     // Metal balances
@@ -5898,19 +5866,17 @@ async function openCustomer360(custId){
     var chitGold=customer.chit_gold_balance_g||0;
     var chitSilver=customer.chit_silver_balance_g||0;
     
-    // Total payments (from sales + separate)
+    // Total payments
     var totalPayments=totalPaidInSales+separatePaymentsIn;
     
     // ── Update UI ──
     _current360CustomerId=custId;
     _current360Tab='all';
     
-    // Header
     G('c360-name').textContent=customer.name||'Customer';
     G('c360-phone').textContent=customer.phone||'-';
     G('c360-city').textContent=customer.city||'-';
     
-    // Balance cards
     G('c360-balance').textContent='₹'+fmt(Math.abs(cashBalance));
     G('c360-balance').style.color=cashBalance>=0?'var(--grn)':'var(--red)';
     
@@ -5927,17 +5893,23 @@ async function openCustomer360(custId){
     G('c360-payments-count').textContent=(payments||[]).length;
     G('c360-orders-count').textContent=(orders||[]).length;
     
-    // Store data for tabs
+    // Store data
     window._c360Data={
       customer:customer,
       sales:sales||[],
       payments:payments||[],
-      orders:orders||[],
-      chits:chits||[]
+      orders:orders||[]
     };
     
-    // Render first tab
     switch360Tab('all');
+    
+    console.log('Customer 360 loaded!',{
+      cashBalance:cashBalance,
+      totalSales:totalSales,
+      totalPayments:totalPayments,
+      salesCount:sales.length,
+      paymentsCount:payments.length
+    });
     
   } catch(err){
     console.error('Customer 360 Error:',err);
@@ -5945,6 +5917,7 @@ async function openCustomer360(custId){
     closeM('m-cust360');
   }
 }
+
 function switch360Tab(tab){
   _current360Tab=tab;
   
@@ -5977,7 +5950,7 @@ function render360All(){
       date:s.sale_date,
       type:'sale',
       icon:'🛍️',
-      title:'Bill #'+s.bill_no,  // ✅ FIXED: Show bill number!
+      title:'Bill #'+s.bill_no,
       amount:s.grand_total,
       paid:s.amount_paid,
       balance:s.balance,
@@ -5991,7 +5964,7 @@ function render360All(){
       date:p.pmt_date,
       type:'payment',
       icon:'💰',
-      title:p.pmt_type==='in'?'Payment Received':'Payment Made',
+      title:p.pmt_type==='in'?'Payment Received':p.pmt_type==='out'?'Payment OUT':'Payment',
       amount:p.amount,
       mode:p.mode,
       note:p.note,
@@ -6013,7 +5986,7 @@ function render360All(){
     });
   });
   
-  // Sort by date descending
+  // Sort by date
   allActivity.sort(function(a,b){
     return new Date(b.date)-new Date(a.date);
   });
@@ -6033,16 +6006,17 @@ function render360All(){
       html+='<div style="font-size:28px;font-weight:700;margin-bottom:8px">₹'+fmt(item.amount)+'</div>';
       html+='<div style="display:flex;gap:16px;font-size:14px;flex-wrap:wrap">';
       html+='<div><span style="color:var(--tx3)">Paid:</span> <strong>₹'+fmt(item.paid)+'</strong></div>';
-      html+='<div><span style="color:var(--tx3)">Balance:</span> <strong style="color:'+(item.balance>0?'var(--red)':'var(--grn)')+'">₹'+fmt(item.balance)+'</strong></div>';
+      html+='<div><span style="color:var(--tx3)">Balance:</span> <strong style="color:'+(item.balance>0?'var(--red)':'var(--grn)')+'">₹'+fmt(Math.abs(item.balance))+'</strong></div>';
       html+='</div>';
     }else if(item.type==='payment'){
-      html+='<div style="font-size:28px;font-weight:700;color:var(--grn);margin-bottom:8px">₹'+fmt(item.amount)+'</div>';
-      html+='<div style="font-size:14px;color:var(--tx3)">'+item.mode+''+(item.note?' • '+item.note:'')+'</div>';
+      var pmtColor=item.title.includes('OUT')?'var(--red)':'var(--grn)';
+      html+='<div style="font-size:28px;font-weight:700;color:'+pmtColor+';margin-bottom:8px">₹'+fmt(item.amount)+'</div>';
+      html+='<div style="font-size:14px;color:var(--tx3)">'+(item.mode||'Cash')+''+(item.note?' • '+item.note:'')+'</div>';
     }else if(item.type==='order'){
       html+='<div style="font-size:28px;font-weight:700;margin-bottom:8px">₹'+fmt(item.amount)+'</div>';
       html+='<div style="display:flex;gap:16px;font-size:14px;flex-wrap:wrap">';
       html+='<div><span style="color:var(--tx3)">Advance:</span> <strong>₹'+fmt(item.advance)+'</strong></div>';
-      html+='<div><span class="badge"'+' style="background:var(--blu);color:white">'+item.status+'</span></div>';
+      html+='<div><span class="badge" style="background:var(--blu);color:white;padding:4px 8px;border-radius:4px">'+item.status+'</span></div>';
       html+='</div>';
     }
     
@@ -6052,7 +6026,6 @@ function render360All(){
   if(!html)html='<div class="empty"><div class="etxt">No activity yet</div></div>';
   content.innerHTML=html;
 }
-
 // Helper functions to open sales/orders
 function openSaleDetail(saleId){
   var sale=null;
