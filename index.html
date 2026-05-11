@@ -3690,8 +3690,6 @@ async function loadDailySheet(){
     var prevD=new Date(d);prevD.setDate(prevD.getDate()-1);
     var prevDate=prevD.toISOString().split('T')[0];
     
-    // ── CHANGE "supabase" to YOUR variable name ──
-    
     // 1. Get sales
     var {data:sales,error:sErr}=await supabase.from('sales')
       .select('*, sale_payments(*), sale_items(*)')
@@ -3710,22 +3708,58 @@ async function loadDailySheet(){
       .eq('expense_date',date);
     if(eErr){console.error('Expenses error:',eErr);expenses=[];}
     
-    // 4. Get previous day closing
-    var {data:prevLogs,error:plErr}=await supabase.from('cash_log')
+    // 4. Get previous day closing - TRY MULTIPLE SOURCES
+    var prevCash=0, prevGold=0, prevSilver=0;
+    
+    // 4a. First try: cash_log with log_type='closing' for previous day
+    var {data:prevClosing,error:pcErr}=await supabase.from('cash_log')
       .select('*')
       .eq('log_date',prevDate)
       .eq('log_type','closing')
       .limit(1);
-    if(plErr)console.error('Previous log error:',plErr);
-    var prevLog=prevLogs&&prevLogs.length>0?prevLogs[0]:null;
     
-    // ── Calculate Previous Day Closing ──
-    var prevCash=prevLog?prevLog.closing_cash||125000:125000;
-    var prevGold=prevLog?prevLog.closing_gold_g||150.500:150.500;
-    var prevSilver=prevLog?prevLog.closing_silver_g||325.250:325.250;
+    if(!pcErr && prevClosing && prevClosing.length>0){
+      prevCash=prevClosing[0].closing_cash||0;
+      prevGold=prevClosing[0].closing_gold_g||0;
+      prevSilver=prevClosing[0].closing_silver_g||0;
+      console.log('✅ Found closing from previous day cash_log');
+    } else {
+      // 4b. Fallback: Calculate from ALL transactions up to previous day
+      console.log('⚠️ No closing record found, calculating from scratch...');
+      
+      // Get ALL cash_log entries up to previous day
+      var {data:allLogs}=await supabase.from('cash_log')
+        .select('*')
+        .lte('log_date',prevDate)
+        .order('log_date',{ascending:true});
+      
+      if(allLogs && allLogs.length>0){
+        allLogs.forEach(function(log){
+          if(log.log_type==='in'){
+            prevCash+=(log.amount||0);
+          } else if(log.log_type==='out'){
+            prevCash-=(log.amount||0);
+          }
+        });
+      }
+      
+      // Get ALL sales up to previous day for metal tracking
+      var {data:allSales}=await supabase.from('sales')
+        .select('gold_grams_sold, silver_grams_sold')
+        .lte('sale_date',prevDate);
+      
+      if(allSales && allSales.length>0){
+        allSales.forEach(function(s){
+          prevGold-=(s.gold_grams_sold||0);
+          prevSilver-=(s.silver_grams_sold||0);
+        });
+      }
+      
+      console.log('Calculated opening:', {prevCash, prevGold, prevSilver});
+    }
     
     // Show previous day
-    G('ds-prev').style.display='';
+    G('ds-prev').style.display=prevCash||prevGold||prevSilver?'':'none';
     G('ds-prev-date').textContent=prevDate;
     G('ds-prev-cash').textContent=fmt(prevCash);
     G('ds-prev-gold').textContent=prevGold.toFixed(3);
@@ -3737,79 +3771,82 @@ async function loadDailySheet(){
     G('ds-open-silver').textContent=prevSilver.toFixed(3);
     
     // ── Calculate Cash Transactions ──
-    var cashIn=0,cashOut=0;
+    var cashIn=0,cashOut=0,bankIn=0;
     
     // Sales - Cash mode
     (sales||[]).forEach(function(s){
-      var paidCash=0;
+      var paidCash=0, paidBank=0;
       (s.sale_payments||[]).forEach(function(sp){
-        if(sp.mode==='Cash')paidCash+=sp.amount||0;
+        if(sp.mode==='Cash') paidCash+=sp.amount||0;
+        else if(sp.mode==='UPI'||sp.mode==='Bank') paidBank+=sp.amount||0;
       });
       if(paidCash>0)cashIn+=paidCash;
+      if(paidBank>0)bankIn+=paidBank;
     });
     
     // Customer Payments
     (payments||[]).forEach(function(p){
+      var amt=p.amount||0;
       if(p.mode==='Cash'||!p.mode){
         if(p.pmt_type==='in'||p.pmt_type==='payment'){
-          cashIn+=p.amount||0;
+          cashIn+=amt;
         }else if(p.pmt_type==='out'){
-          cashOut+=p.amount||0;
+          cashOut+=amt;
         }else if(p.pmt_type==='oldgold'||p.pmt_type==='oldgold-adv'){
-          cashOut+=p.amount||0;
+          cashOut+=amt;
         }
+      } else if(p.mode==='UPI'||p.mode==='Bank'){
+        bankIn+=amt;
       }
     });
     
     // Expenses
     (expenses||[]).forEach(function(e){
-      if(e.mode==='Cash')cashOut+=e.amount||0;
+      if(e.mode==='Cash'||!e.mode){
+        cashOut+=e.amount||0;
+      }
     });
     
-    // ── Calculate Bank Transactions ──
-    var bankIn=0;
+    // ── Calculate Metal Changes ──
+    var goldChange=0, silverChange=0;
+    
     (sales||[]).forEach(function(s){
-      (s.sale_payments||[]).forEach(function(sp){
-        if(sp.mode==='UPI'||sp.mode==='Bank')bankIn+=sp.amount||0;
-      });
-    });
-    
-    (payments||[]).forEach(function(p){
-      if(p.mode==='UPI'||p.mode==='Bank')bankIn+=p.amount||0;
+      goldChange-=(s.gold_grams_sold||0);
+      silverChange-=(s.silver_grams_sold||0);
     });
     
     // ── Render Cash Transactions ──
-    var cashHTML='<h4 style="color:var(--grn);margin-bottom:12px">Cash IN: ₹'+fmt(cashIn)+'</h4>';
-    cashHTML+='<div style="margin-bottom:20px">';
+    var cashHTML='<div style="margin-top:8px">';
+    cashHTML+='<div style="padding:8px;background:var(--bg2);font-weight:600;border-radius:8px 8px 0 0">💵 Cash IN (+)</div>';
     
     (sales||[]).forEach(function(s){
-      var cashPaid=0;
+      var paidCash=0;
       (s.sale_payments||[]).forEach(function(sp){
-        if(sp.mode==='Cash')cashPaid+=sp.amount||0;
+        if(sp.mode==='Cash')paidCash+=sp.amount||0;
       });
-      if(cashPaid>0){
+      if(paidCash>0){
         cashHTML+='<div style="padding:8px;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between">';
-        cashHTML+='<span>Sale - '+s.bill_no+' ('+s.customer_name+')</span>';
-        cashHTML+='<span style="font-weight:600">₹'+fmt(cashPaid)+'</span></div>';
+        cashHTML+='<span>Sale - '+s.bill_no+'</span>';
+        cashHTML+='<span style="font-weight:600;color:var(--grn)">₹'+fmt(paidCash)+'</span></div>';
       }
     });
     
     (payments||[]).forEach(function(p){
       if((p.mode==='Cash'||!p.mode)&&(p.pmt_type==='in'||p.pmt_type==='payment')){
         cashHTML+='<div style="padding:8px;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between">';
-        cashHTML+='<span>Payment - '+p.customer_name+'</span>';
-        cashHTML+='<span style="font-weight:600">₹'+fmt(p.amount)+'</span></div>';
+        cashHTML+='<span>Payment IN - '+p.customer_name+'</span>';
+        cashHTML+='<span style="font-weight:600;color:var(--grn)">₹'+fmt(p.amount)+'</span></div>';
       }
     });
     
     if(cashIn===0)cashHTML+='<div style="color:var(--tx3);padding:8px">No cash IN transactions</div>';
     cashHTML+='</div>';
     
-    cashHTML+='<h4 style="color:var(--red);margin-bottom:12px">Cash OUT: ₹'+fmt(cashOut)+'</h4>';
-    cashHTML+='<div>';
+    cashHTML+='<div style="margin-top:16px">';
+    cashHTML+='<div style="padding:8px;background:var(--bg2);font-weight:600;border-radius:8px 8px 0 0">💸 Cash OUT (-)</div>';
     
     (expenses||[]).forEach(function(e){
-      if(e.mode==='Cash'){
+      if(e.mode==='Cash'||!e.mode){
         cashHTML+='<div style="padding:8px;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between">';
         cashHTML+='<span>Expense - '+e.category+'</span>';
         cashHTML+='<span style="font-weight:600;color:var(--red)">₹'+fmt(e.amount)+'</span></div>';
@@ -3856,14 +3893,57 @@ async function loadDailySheet(){
     
     // ── Calculate Closing Balances ──
     var closeCash=prevCash+cashIn-cashOut;
-    var closeGold=prevGold;
-    var closeSilver=prevSilver;
+    var closeGold=prevGold+goldChange;  // ✅ FIXED: Now updates!
+    var closeSilver=prevSilver+silverChange;  // ✅ FIXED: Now updates!
     
     G('ds-close-cash').textContent=fmt(closeCash);
     G('ds-close-gold').textContent=closeGold.toFixed(3);
     G('ds-close-silver').textContent=closeSilver.toFixed(3);
     G('ds-close-total').textContent=fmt(closeCash+bankIn);
     G('ds-bank-total').textContent=fmt(bankIn);
+    
+    // ✅ NEW: SAVE CLOSING TO DATABASE
+    try {
+      // Check if closing record already exists for this date
+      var {data:existingClosing}=await supabase.from('cash_log')
+        .select('id')
+        .eq('log_date',date)
+        .eq('log_type','closing')
+        .limit(1);
+      
+      if(existingClosing && existingClosing.length>0){
+        // Update existing
+        await supabase.from('cash_log')
+          .update({
+            closing_cash:closeCash,
+            closing_gold_g:closeGold,
+            closing_silver_g:closeSilver,
+            amount:closeCash,
+            description:'Daily closing for '+date,
+            updated_at:new Date().toISOString()
+          })
+          .eq('id',existingClosing[0].id);
+        console.log('✅ Updated closing record');
+      } else {
+        // Insert new
+        await supabase.from('cash_log')
+          .insert({
+            log_type:'closing',
+            log_date:date,
+            amount:closeCash,
+            closing_cash:closeCash,
+            closing_gold_g:closeGold,
+            closing_silver_g:closeSilver,
+            description:'Daily closing for '+date,
+            source:'daily_sheet',
+            created_at:new Date().toISOString()
+          });
+        console.log('✅ Inserted new closing record');
+      }
+    } catch(saveErr){
+      console.error('Error saving closing:', saveErr);
+      // Don't fail the whole load if saving fails
+    }
     
     // ── Render Detailed Transactions Table ──
     var detailHTML='';
@@ -3878,8 +3958,8 @@ async function loadDailySheet(){
           customer:s.customer_name||'Walk-in',
           amount:sp.amount||0,
           mode:sp.mode,
-          gold:0,
-          silver:0
+          gold:(s.gold_grams_sold||0),
+          silver:(s.silver_grams_sold||0)
         });
       });
     });
@@ -3913,19 +3993,25 @@ async function loadDailySheet(){
     allTxns.forEach(function(t){
       detailHTML+='<tr>';
       detailHTML+='<td>'+t.time+'</td>';
-      detailHTML+='<td><strong>'+t.type+'</strong></td>';
+      detailHTML+='<td><span class="badge '+(t.type.includes('Sale')?'badge-grn':t.type.includes('IN')?'badge-blu':t.type.includes('OUT')?'badge-red':'badge-gray')+'">'+t.type+'</span></td>';
       detailHTML+='<td>'+t.customer+'</td>';
       detailHTML+='<td class="num">₹'+fmt(t.amount)+'</td>';
-      detailHTML+='<td>'+t.mode+'</td>';
+      detailHTML+='<td><span class="badge badge-gray">'+t.mode+'</span></td>';
       detailHTML+='<td class="num">'+(t.gold>0?t.gold.toFixed(3)+'g':'-')+'</td>';
       detailHTML+='<td class="num">'+(t.silver>0?t.silver.toFixed(3)+'g':'-')+'</td>';
       detailHTML+='</tr>';
     });
     
-    if(!detailHTML)detailHTML='<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--tx3)">No transactions</td></tr>';
+    if(!detailHTML)detailHTML='<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--tx3)">No transactions for this date</td></tr>';
     G('ds-detail-tbody').innerHTML=detailHTML;
     
-    console.log('Daily Sheet loaded successfully!',{sales:sales.length,payments:payments.length,expenses:expenses.length});
+    console.log('✅ Daily Sheet loaded successfully!',{
+      sales:sales.length,
+      payments:payments.length,
+      expenses:expenses.length,
+      opening:{cash:prevCash,gold:prevGold,silver:prevSilver},
+      closing:{cash:closeCash,gold:closeGold,silver:closeSilver}
+    });
     
   } catch(err){
     console.error('Daily Sheet Error:',err);
@@ -3934,6 +4020,7 @@ async function loadDailySheet(){
     G('ds-bank-content').innerHTML='<div style="color:var(--red);padding:20px">Error loading data</div>';
   }
 }
+
 function exportDailySheetPDF(){alert('PDF Export: Integrate with jsPDF library');}
 
 // ── SUPPLIERS ──
