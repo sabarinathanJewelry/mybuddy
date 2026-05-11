@@ -3384,7 +3384,286 @@ function renderCusts(){
 function openCustLedger(id){var c=DB.custs[id];if(!c)return;G('cl-name').textContent=c.name;var tp=c.txns.reduce(function(s,t){return s+(t.amount||0);},0),tpd=c.txns.reduce(function(s,t){return s+(t.paid||0);},0),tb=c.txns.reduce(function(s,t){return s+(t.balance||0);},0);G('cl-total').innerHTML=fmt(tp);G('cl-paid').innerHTML=fmt(tpd);G('cl-bal').innerHTML=fmt(tb);G('cl-table').innerHTML=c.txns.length?'<table class="data-table"><thead><tr><th>Date</th><th>Type</th><th>Bill</th><th class="num">Amount</th><th class="num">Balance</th></tr></thead><tbody>'+c.txns.map(function(t){return '<tr><td style="font-size:12px;color:var(--tx3)">'+t.date+'</td><td><span class="badge bb" style="font-size:9px">'+t.type+'</span></td><td style="font-size:12px">'+(t.bill||'-')+'</td><td class="num">'+fmt(t.amount||0)+'</td><td class="num"><span class="badge '+(t.balance>0?'br':'bg')+'">'+fmt(t.balance||0)+'</span></td></tr>';}).join('')+'</tbody></table>':'<div class="empty"><div class="etxt">No transactions</div></div>';G('cl-panel').style.display='';}
 
 // ── DAILY SHEET ──
-function loadDailySheet(){var date=V('ds-date');if(!date){alert('Please select a date');return;}var d=new Date(date);var prevD=new Date(d);prevD.setDate(prevD.getDate()-1);var prevDate=prevD.toISOString().split('T')[0];var sales=DB.sales.filter(function(s){return s.date===date;});var payments=DB.payments.filter(function(p){return p.date===date;});var expenses=DB.expenses.filter(function(e){return e.date===date;});var prevCash=125000,prevGold=150.500,prevSilver=325.250;var prevLog=DB.cashLog.find(function(l){return l.date===prevDate&&l.type==='closing';});if(prevLog){prevCash=prevLog.amt||prevCash;prevGold=prevLog.gold||prevGold;prevSilver=prevLog.silver||prevSilver;}G('ds-prev').style.display='';G('ds-prev-date').textContent=prevDate;G('ds-prev-cash').textContent=fmt(prevCash);G('ds-prev-gold').textContent=prevGold.toFixed(3);G('ds-prev-silver').textContent=prevSilver.toFixed(3);G('ds-open-cash').textContent=fmt(prevCash);G('ds-open-gold').textContent=prevGold.toFixed(3);G('ds-open-silver').textContent=prevSilver.toFixed(3);var cashIn=0,cashOut=0;sales.forEach(function(s){if(s.mode==='Cash')cashIn+=s.paid||0;});payments.forEach(function(p){if(p.mode==='Cash'){if(p.type==='in'||p.type==='payment')cashIn+=p.amt;else cashOut+=p.amt;}});expenses.forEach(function(e){if(e.mode==='Cash')cashOut+=e.amt;});var bankIn=0;sales.forEach(function(s){if(s.mode==='UPI'||s.mode==='Bank')bankIn+=s.paid||0;});payments.forEach(function(p){if(p.mode==='UPI'||p.mode==='Bank')bankIn+=p.amt;});var cashHTML='<h4 style="color:var(--grn);margin-bottom:12px">Cash IN: ₹'+fmt(cashIn)+'</h4>';cashHTML+='<div style="margin-bottom:20px">';sales.filter(function(s){return s.mode==='Cash';}).forEach(function(s){cashHTML+='<div style="padding:8px;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between">';cashHTML+='<span>Sale - '+s.billNo+'</span><span style="font-weight:600">₹'+fmt(s.paid||0)+'</span></div>';});cashHTML+='</div>';cashHTML+='<h4 style="color:var(--red);margin-bottom:12px">Cash OUT: ₹'+fmt(cashOut)+'</h4>';cashHTML+='<div>';expenses.filter(function(e){return e.mode==='Cash';}).forEach(function(e){cashHTML+='<div style="padding:8px;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between">';cashHTML+='<span>Expense - '+e.cat+'</span><span style="font-weight:600;color:var(--red)">₹'+fmt(e.amt)+'</span></div>';});cashHTML+='</div>';G('ds-cash-content').innerHTML=cashHTML;G('ds-cash-net').textContent=fmt(cashIn-cashOut);var bankHTML='';sales.filter(function(s){return s.mode==='UPI'||s.mode==='Bank';}).forEach(function(s){bankHTML+='<div style="padding:8px;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between">';bankHTML+='<span>Sale - '+s.billNo+' ('+s.mode+')</span><span style="font-weight:600">₹'+fmt(s.paid||0)+'</span></div>';});if(!bankHTML)bankHTML='<div style="color:var(--tx3)">No bank transactions</div>';G('ds-bank-content').innerHTML=bankHTML;G('ds-bank-in').textContent=fmt(bankIn);var closeCash=prevCash+cashIn-cashOut;var closeGold=prevGold;var closeSilver=prevSilver;G('ds-close-cash').textContent=fmt(closeCash);G('ds-close-gold').textContent=closeGold.toFixed(3);G('ds-close-silver').textContent=closeSilver.toFixed(3);G('ds-close-total').textContent=fmt(closeCash+bankIn);G('ds-bank-total').textContent=fmt(bankIn);var detailHTML='';var allTxns=[];sales.forEach(function(s){allTxns.push({time:s.time||'--:--',type:'Sale',customer:s.custName||'Walk-in',amount:s.total,mode:s.mode,gold:0,silver:0});});payments.forEach(function(p){allTxns.push({time:p.time||'--:--',type:'Payment',customer:DB.custs[p.cid]?DB.custs[p.cid].name:'-',amount:p.amt,mode:p.mode,gold:0,silver:0});});expenses.forEach(function(e){allTxns.push({time:e.time||'--:--',type:'Expense',customer:e.cat,amount:e.amt,mode:e.mode,gold:0,silver:0});});allTxns.forEach(function(t){detailHTML+='<tr>';detailHTML+='<td>'+t.time+'</td>';detailHTML+='<td><strong>'+t.type+'</strong></td>';detailHTML+='<td>'+t.customer+'</td>';detailHTML+='<td class="num">₹'+fmt(t.amount)+'</td>';detailHTML+='<td>'+t.mode+'</td>';detailHTML+='<td class="num">'+(t.gold>0?t.gold.toFixed(3)+'g':'-')+'</td>';detailHTML+='<td class="num">'+(t.silver>0?t.silver.toFixed(3)+'g':'-')+'</td>';detailHTML+='</tr>';});if(!detailHTML)detailHTML='<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--tx3)">No transactions</td></tr>';G('ds-detail-tbody').innerHTML=detailHTML;}
+async function loadDailySheet(){
+  var date=V('ds-date');
+  if(!date){alert('Please select a date');return;}
+  
+  // Show loading
+  G('ds-cash-content').innerHTML='<div style="padding:20px;text-align:center;color:var(--tx3)">Loading...</div>';
+  G('ds-bank-content').innerHTML='<div style="padding:20px;text-align:center;color:var(--tx3)">Loading...</div>';
+  
+  try {
+    // Calculate previous day
+    var d=new Date(date);
+    var prevD=new Date(d);prevD.setDate(prevD.getDate()-1);
+    var prevDate=prevD.toISOString().split('T')[0];
+    
+    // ── Fetch ALL data from Supabase ──
+    
+    // 1. Get sales for selected date
+    var {data:sales,error:sErr}=await supa.from('sales')
+      .select('*, sale_payments(*), sale_items(*)')
+      .eq('sale_date',date);
+    if(sErr)throw sErr;
+    
+    // 2. Get customer payments for selected date
+    var {data:payments,error:pErr}=await supa.from('customer_payments')
+      .select('*')
+      .eq('pmt_date',date);
+    if(pErr)throw pErr;
+    
+    // 3. Get expenses for selected date
+    var {data:expenses,error:eErr}=await supa.from('expenses')
+      .select('*')
+      .eq('expense_date',date);
+    if(eErr)throw eErr;
+    
+    // 4. Get previous day closing from cash_log
+    var {data:prevLog,error:plErr}=await supa.from('cash_log')
+      .select('*')
+      .eq('log_date',prevDate)
+      .eq('log_type','closing')
+      .limit(1)
+      .single();
+    // Ignore error if no previous closing found
+    
+    // ── Calculate Previous Day Closing ──
+    var prevCash=prevLog?prevLog.closing_cash||125000:125000;
+    var prevGold=prevLog?prevLog.closing_gold_g||150.500:150.500;
+    var prevSilver=prevLog?prevLog.closing_silver_g||325.250:325.250;
+    
+    // Show previous day
+    G('ds-prev').style.display='';
+    G('ds-prev-date').textContent=prevDate;
+    G('ds-prev-cash').textContent=fmt(prevCash);
+    G('ds-prev-gold').textContent=prevGold.toFixed(3);
+    G('ds-prev-silver').textContent=prevSilver.toFixed(3);
+    
+    // Set opening balances
+    G('ds-open-cash').textContent=fmt(prevCash);
+    G('ds-open-gold').textContent=prevGold.toFixed(3);
+    G('ds-open-silver').textContent=prevSilver.toFixed(3);
+    
+    // ── Calculate Cash Transactions ──
+    var cashIn=0,cashOut=0;
+    var goldIn=0,goldOut=0;
+    var silverIn=0,silverOut=0;
+    
+    // Sales - Cash mode
+    (sales||[]).forEach(function(s){
+      var paidCash=0;
+      (s.sale_payments||[]).forEach(function(sp){
+        if(sp.mode==='Cash'){
+          paidCash+=sp.amount||0;
+          // Track exchange metal as IN
+          if(sp.exch_wt_g>0){
+            goldIn+=sp.exch_wt_g;  // Assuming gold exchange
+          }
+        }
+      });
+      if(paidCash>0)cashIn+=paidCash;
+      
+      // Track metal sold (OUT)
+      goldOut+=s.gold_grams_sold||0;
+      silverOut+=s.silver_grams_sold||0;
+    });
+    
+    // Customer Payments - separate IN/OUT
+    (payments||[]).forEach(function(p){
+      if(p.mode==='Cash'||!p.mode){  // Default to cash
+        if(p.pmt_type==='in'||p.pmt_type==='payment'){
+          cashIn+=p.amount||0;
+        }else if(p.pmt_type==='out'){
+          cashOut+=p.amount||0;
+        }else if(p.pmt_type==='oldgold'||p.pmt_type==='oldgold-adv'){
+          // Old gold purchase - cash OUT, metal IN
+          cashOut+=p.amount||0;
+          if(p.og_metal==='Gold')goldIn+=p.og_weight_g||0;
+          else if(p.og_metal==='Silver')silverIn+=p.og_weight_g||0;
+        }
+      }
+    });
+    
+    // Expenses
+    (expenses||[]).forEach(function(e){
+      if(e.mode==='Cash')cashOut+=e.amount||0;
+    });
+    
+    // ── Calculate Bank Transactions ──
+    var bankIn=0;
+    (sales||[]).forEach(function(s){
+      (s.sale_payments||[]).forEach(function(sp){
+        if(sp.mode==='UPI'||sp.mode==='Bank'){
+          bankIn+=sp.amount||0;
+        }
+      });
+    });
+    
+    (payments||[]).forEach(function(p){
+      if(p.mode==='UPI'||p.mode==='Bank'){
+        bankIn+=p.amount||0;
+      }
+    });
+    
+    // ── Render Cash Transactions ──
+    var cashHTML='<h4 style="color:var(--grn);margin-bottom:12px">Cash IN: ₹'+fmt(cashIn)+'</h4>';
+    cashHTML+='<div style="margin-bottom:20px">';
+    
+    (sales||[]).forEach(function(s){
+      var cashPaid=0;
+      (s.sale_payments||[]).forEach(function(sp){
+        if(sp.mode==='Cash')cashPaid+=sp.amount||0;
+      });
+      if(cashPaid>0){
+        cashHTML+='<div style="padding:8px;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between">';
+        cashHTML+='<span>Sale - '+s.bill_no+' ('+s.customer_name+')</span>';
+        cashHTML+='<span style="font-weight:600">₹'+fmt(cashPaid)+'</span></div>';
+      }
+    });
+    
+    (payments||[]).forEach(function(p){
+      if((p.mode==='Cash'||!p.mode)&&(p.pmt_type==='in'||p.pmt_type==='payment')){
+        cashHTML+='<div style="padding:8px;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between">';
+        cashHTML+='<span>Payment - '+p.customer_name+'</span>';
+        cashHTML+='<span style="font-weight:600">₹'+fmt(p.amount)+'</span></div>';
+      }
+    });
+    
+    if(cashIn===0)cashHTML+='<div style="color:var(--tx3)">No cash IN</div>';
+    cashHTML+='</div>';
+    
+    cashHTML+='<h4 style="color:var(--red);margin-bottom:12px">Cash OUT: ₹'+fmt(cashOut)+'</h4>';
+    cashHTML+='<div>';
+    
+    (expenses||[]).forEach(function(e){
+      if(e.mode==='Cash'){
+        cashHTML+='<div style="padding:8px;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between">';
+        cashHTML+='<span>Expense - '+e.category+'</span>';
+        cashHTML+='<span style="font-weight:600;color:var(--red)">₹'+fmt(e.amount)+'</span></div>';
+      }
+    });
+    
+    (payments||[]).forEach(function(p){
+      if((p.mode==='Cash'||!p.mode)&&(p.pmt_type==='oldgold'||p.pmt_type==='oldgold-adv')){
+        cashHTML+='<div style="padding:8px;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between">';
+        cashHTML+='<span>Old Gold Purchase - '+p.customer_name+' ('+p.og_weight_g+'g)</span>';
+        cashHTML+='<span style="font-weight:600;color:var(--red)">₹'+fmt(p.amount)+'</span></div>';
+      }
+    });
+    
+    if(cashOut===0)cashHTML+='<div style="color:var(--tx3)">No cash OUT</div>';
+    cashHTML+='</div>';
+    
+    G('ds-cash-content').innerHTML=cashHTML;
+    G('ds-cash-net').textContent=fmt(cashIn-cashOut);
+    
+    // ── Render Bank Transactions ──
+    var bankHTML='';
+    (sales||[]).forEach(function(s){
+      (s.sale_payments||[]).forEach(function(sp){
+        if(sp.mode==='UPI'||sp.mode==='Bank'){
+          bankHTML+='<div style="padding:8px;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between">';
+          bankHTML+='<span>Sale - '+s.bill_no+' ('+sp.mode+')</span>';
+          bankHTML+='<span style="font-weight:600">₹'+fmt(sp.amount)+'</span></div>';
+        }
+      });
+    });
+    
+    (payments||[]).forEach(function(p){
+      if(p.mode==='UPI'||p.mode==='Bank'){
+        bankHTML+='<div style="padding:8px;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between">';
+        bankHTML+='<span>Payment - '+p.customer_name+' ('+p.mode+')</span>';
+        bankHTML+='<span style="font-weight:600">₹'+fmt(p.amount)+'</span></div>';
+      }
+    });
+    
+    if(!bankHTML)bankHTML='<div style="color:var(--tx3)">No bank transactions</div>';
+    G('ds-bank-content').innerHTML=bankHTML;
+    G('ds-bank-in').textContent=fmt(bankIn);
+    
+    // ── Calculate Closing Balances ──
+    var closeCash=prevCash+cashIn-cashOut;
+    var closeGold=prevGold+goldIn-goldOut;
+    var closeSilver=prevSilver+silverIn-silverOut;
+    
+    G('ds-close-cash').textContent=fmt(closeCash);
+    G('ds-close-gold').textContent=closeGold.toFixed(3);
+    G('ds-close-silver').textContent=closeSilver.toFixed(3);
+    G('ds-close-total').textContent=fmt(closeCash+bankIn);
+    G('ds-bank-total').textContent=fmt(bankIn);
+    
+    // ── Render Detailed Transactions Table ──
+    var detailHTML='';
+    var allTxns=[];
+    
+    (sales||[]).forEach(function(s){
+      var time=s.created_at?new Date(s.created_at).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}):'--:--';
+      (s.sale_payments||[]).forEach(function(sp){
+        allTxns.push({
+          time:time,
+          type:'Sale',
+          customer:s.customer_name||'Walk-in',
+          amount:sp.amount||0,
+          mode:sp.mode,
+          gold:s.gold_grams_sold||0,
+          silver:s.silver_grams_sold||0,
+          bill:s.bill_no
+        });
+      });
+    });
+    
+    (payments||[]).forEach(function(p){
+      var time=p.created_at?new Date(p.created_at).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}):'--:--';
+      allTxns.push({
+        time:time,
+        type:p.pmt_type==='in'?'Payment IN':p.pmt_type==='out'?'Payment OUT':'Old Gold',
+        customer:p.customer_name||'-',
+        amount:p.amount||0,
+        mode:p.mode||'Cash',
+        gold:p.og_metal==='Gold'?p.og_weight_g||0:0,
+        silver:p.og_metal==='Silver'?p.og_weight_g||0:0,
+        bill:'-'
+      });
+    });
+    
+    (expenses||[]).forEach(function(e){
+      var time=e.created_at?new Date(e.created_at).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}):'--:--';
+      allTxns.push({
+        time:time,
+        type:'Expense',
+        customer:e.category,
+        amount:e.amount||0,
+        mode:e.mode||'Cash',
+        gold:0,
+        silver:0,
+        bill:'-'
+      });
+    });
+    
+    // Sort by time
+    allTxns.sort(function(a,b){return a.time.localeCompare(b.time);});
+    
+    allTxns.forEach(function(t){
+      detailHTML+='<tr>';
+      detailHTML+='<td>'+t.time+'</td>';
+      detailHTML+='<td><strong>'+t.type+'</strong></td>';
+      detailHTML+='<td>'+t.customer+'</td>';
+      detailHTML+='<td class="num">₹'+fmt(t.amount)+'</td>';
+      detailHTML+='<td>'+t.mode+'</td>';
+      detailHTML+='<td class="num">'+(t.gold>0?t.gold.toFixed(3)+'g 🏅':'-')+'</td>';
+      detailHTML+='<td class="num">'+(t.silver>0?t.silver.toFixed(3)+'g 🥈':'-')+'</td>';
+      detailHTML+='</tr>';
+    });
+    
+    if(!detailHTML)detailHTML='<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--tx3)">No transactions</td></tr>';
+    G('ds-detail-tbody').innerHTML=detailHTML;
+    
+  } catch(err){
+    console.error('Daily Sheet Error:',err);
+    alert('Error loading Daily Sheet: '+err.message);
+    G('ds-cash-content').innerHTML='<div style="color:var(--red);padding:20px">Error loading data</div>';
+  }
+}
 function exportDailySheetPDF(){alert('PDF Export: Integrate with jsPDF library');}
 
 // ── SUPPLIERS ──
@@ -5532,63 +5811,140 @@ function saveEditCust(){if(!_editCustId)return;var c=DB.custs[_editCustId];if(!c
 var _current360CustomerId=null;
 var _current360Tab='overview';
 
-function openCustomer360(custId){
-  var c=DB.custs[custId];
-  if(!c)return;
+async function openCustomer360(custId){
+  if(!custId)return;
   
-  _current360CustomerId=custId;
-  _current360Tab='all';
-  
-  // Set header info
-  G('c360-name').textContent=c.name||'Customer';
-  G('c360-phone').textContent=c.phone||'-';
-  G('c360-city').textContent=c.city||'-';
-  
-  // Calculate current balance
-  var balance=calcCustomerBalance(custId);
-  G('c360-balance').textContent=fmt(Math.abs(balance));
-  G('c360-balance').style.color=balance>=0?'var(--grn)':'var(--red)';
-  
-  // Set metal balances (default to 0 if not available)
-  var goldBal=c.goldBalance||0;
-  var silverBal=c.silverBalance||0;
-  G('c360-gold').innerHTML=goldBal.toFixed(3)+'<span style="font-size:12px;font-weight:400;color:var(--tx3)">g</span>';
-  G('c360-silver').innerHTML=silverBal.toFixed(3)+'<span style="font-size:12px;font-weight:400;color:var(--tx3)">g</span>';
-  
-  // Set chit balances (default to 0 if not available)
-  var chitMoney=c.chitMoney||0;
-  var chitGold=c.chitGold||0;
-  var chitSilver=c.chitSilver||0;
-  G('c360-chit').textContent='₹'+fmt(chitMoney);
-  G('c360-chit-metal').textContent=chitGold.toFixed(1)+'g🏅 '+chitSilver.toFixed(1)+'g🥈';
-  
-  // Calculate totals
-  var sales=DB.sales.filter(function(s){return s.cid===custId;});
-  
-  // FIXED: Include BOTH DB.payments AND customer transactions (order payments)
-  var regularPayments=DB.payments.filter(function(p){return p.cid===custId;});
-  var custTxnPayments=(c.txns||[]).filter(function(t){
-    return t.type==='payment_in'||t.type==='advance'||t.type==='payment_out';
-  });
-  
-  var orders=DB.orders?DB.orders.filter(function(o){return o.cid===custId&&o.status!=='delivered'}):[];
-  
-  var totalSales=sales.reduce(function(sum,s){return sum+s.total;},0);
-  var totalRegularPayments=regularPayments.reduce(function(sum,p){return sum+p.amt;},0);
-  var totalTxnPayments=custTxnPayments.reduce(function(sum,t){return sum+(t.paid||0);},0);
-  var totalPayments=totalRegularPayments+totalTxnPayments;
-  
-  G('c360-total-sales').textContent=fmt(totalSales);
-  G('c360-total-payments').textContent=fmt(totalPayments);
-  G('c360-sales-count').textContent=sales.length;
-  G('c360-payments-count').textContent=regularPayments.length+custTxnPayments.length;
-  G('c360-orders-count').textContent=orders.length;
-  
-  // Show modal and render first tab
-  openM('m-cust360');
-  switch360Tab('all');
+  try {
+    // Show loading
+    openM('m-cust360');
+    G('c360-content').innerHTML='<div style="padding:40px;text-align:center;color:var(--tx3)">Loading...</div>';
+    
+    // ── Fetch ALL customer data ──
+    
+    // 1. Get customer info
+    var {data:customer,error:cErr}=await supa.from('customers')
+      .select('*')
+      .eq('id',custId)
+      .single();
+    if(cErr)throw cErr;
+    if(!customer){alert('Customer not found');closeM('m-cust360');return;}
+    
+    // 2. Get all sales (with payments)
+    var {data:sales,error:sErr}=await supa.from('sales')
+      .select('*, sale_payments(*), sale_items(*)')
+      .eq('customer_id',custId)
+      .order('sale_date',{ascending:false});
+    if(sErr)throw sErr;
+    
+    // 3. Get separate payments
+    var {data:payments,error:pErr}=await supa.from('customer_payments')
+      .select('*')
+      .eq('customer_id',custId)
+      .order('pmt_date',{ascending:false});
+    if(pErr)throw pErr;
+    
+    // 4. Get orders
+    var {data:orders,error:oErr}=await supa.from('orders')
+      .select('*, order_items(*)')
+      .eq('customer_id',custId)
+      .neq('status','delivered')
+      .order('order_date',{ascending:false});
+    if(oErr)throw oErr;
+    
+    // 5. Get chit transactions
+    var {data:chits,error:chErr}=await supa.from('chit_transactions')
+      .select('*')
+      .eq('customer_id',custId)
+      .order('chit_date',{ascending:false});
+    // Ignore error if table doesn't exist yet
+    
+    // ── Calculate Balances ──
+    
+    // Opening balance
+    var openingBal=customer.opening_bal||0;
+    
+    // Sales: total sales and balance due
+    var totalSales=0;
+    var totalPaidInSales=0;
+    var balanceDueFromSales=0;
+    
+    (sales||[]).forEach(function(s){
+      totalSales+=s.grand_total||0;
+      totalPaidInSales+=s.amount_paid||0;
+      balanceDueFromSales+=s.balance||0;
+    });
+    
+    // Separate payments: IN/OUT
+    var separatePaymentsIn=0;
+    var separatePaymentsOut=0;
+    
+    (payments||[]).forEach(function(p){
+      if(p.pmt_type==='in'||p.pmt_type==='payment'){
+        separatePaymentsIn+=p.amount||0;
+      }else if(p.pmt_type==='out'){
+        separatePaymentsOut+=p.amount||0;
+      }
+    });
+    
+    // CURRENT CASH BALANCE
+    var cashBalance=openingBal + balanceDueFromSales - separatePaymentsIn + separatePaymentsOut;
+    
+    // Metal balances
+    var goldBal=customer.gold_balance_g||0;
+    var silverBal=customer.silver_balance_g||0;
+    
+    // Chit balances
+    var chitMoney=customer.chit_money_balance||0;
+    var chitGold=customer.chit_gold_balance_g||0;
+    var chitSilver=customer.chit_silver_balance_g||0;
+    
+    // Total payments (from sales + separate)
+    var totalPayments=totalPaidInSales+separatePaymentsIn;
+    
+    // ── Update UI ──
+    _current360CustomerId=custId;
+    _current360Tab='all';
+    
+    // Header
+    G('c360-name').textContent=customer.name||'Customer';
+    G('c360-phone').textContent=customer.phone||'-';
+    G('c360-city').textContent=customer.city||'-';
+    
+    // Balance cards
+    G('c360-balance').textContent='₹'+fmt(Math.abs(cashBalance));
+    G('c360-balance').style.color=cashBalance>=0?'var(--grn)':'var(--red)';
+    
+    G('c360-gold').innerHTML=goldBal.toFixed(3)+'<span style="font-size:12px;font-weight:400;color:var(--tx3)">g</span>';
+    G('c360-silver').innerHTML=silverBal.toFixed(3)+'<span style="font-size:12px;font-weight:400;color:var(--tx3)">g</span>';
+    
+    G('c360-chit').textContent='₹'+fmt(chitMoney);
+    G('c360-chit-metal').textContent=chitGold.toFixed(1)+'g🏅 '+chitSilver.toFixed(1)+'g🥈';
+    
+    G('c360-total-sales').textContent=fmt(totalSales);
+    G('c360-total-payments').textContent=fmt(totalPayments);
+    
+    G('c360-sales-count').textContent=(sales||[]).length;
+    G('c360-payments-count').textContent=(payments||[]).length;
+    G('c360-orders-count').textContent=(orders||[]).length;
+    
+    // Store data for tabs
+    window._c360Data={
+      customer:customer,
+      sales:sales||[],
+      payments:payments||[],
+      orders:orders||[],
+      chits:chits||[]
+    };
+    
+    // Render first tab
+    switch360Tab('all');
+    
+  } catch(err){
+    console.error('Customer 360 Error:',err);
+    alert('Error loading Customer 360: '+err.message);
+    closeM('m-cust360');
+  }
 }
-
 function switch360Tab(tab){
   _current360Tab=tab;
   
@@ -5609,163 +5965,92 @@ function switch360Tab(tab){
 }
 
 function render360All(){
-  var c=DB.custs[_current360CustomerId];
-  if(!c)return;
+  var content=G('c360-content');
+  if(!content||!window._c360Data)return;
   
-  // Combine ALL activities
-  var activities=[];
+  var html='';
+  var allActivity=[];
   
   // Add sales
-  DB.sales.filter(function(s){return s.cid===_current360CustomerId;}).forEach(function(s){
-    activities.push({
+  window._c360Data.sales.forEach(function(s){
+    allActivity.push({
+      date:s.sale_date,
       type:'sale',
-      date:s.date,
-      timestamp:new Date(s.date).getTime(),
+      icon:'🛍️',
+      title:'Bill #'+s.bill_no,  // ✅ FIXED: Show bill number!
+      amount:s.grand_total,
+      paid:s.amount_paid,
+      balance:s.balance,
       data:s
     });
   });
   
-  // Add regular payments
-  DB.payments.filter(function(p){return p.cid===_current360CustomerId;}).forEach(function(p){
-    activities.push({
+  // Add payments
+  window._c360Data.payments.forEach(function(p){
+    allActivity.push({
+      date:p.pmt_date,
       type:'payment',
-      date:p.date,
-      timestamp:new Date(p.date).getTime(),
+      icon:'💰',
+      title:p.pmt_type==='in'?'Payment Received':'Payment Made',
+      amount:p.amount,
+      mode:p.mode,
+      note:p.note,
       data:p
     });
   });
   
-  // Add customer transaction payments (order payments)
-  (c.txns||[]).filter(function(t){
-    return t.type==='payment_in'||t.type==='advance'||t.type==='payment_out';
-  }).forEach(function(t){
-    activities.push({
-      type:'txn_payment',
-      date:t.date,
-      timestamp:new Date(t.date).getTime(),
-      data:t
+  // Add orders
+  window._c360Data.orders.forEach(function(o){
+    allActivity.push({
+      date:o.order_date,
+      type:'order',
+      icon:'📋',
+      title:'Order #'+o.bill_no,
+      amount:o.estimated_value,
+      advance:o.advance_paid,
+      status:o.status,
+      data:o
     });
   });
   
-  // Add orders
-  if(DB.orders){
-    DB.orders.filter(function(o){return o.cid===_current360CustomerId;}).forEach(function(o){
-      activities.push({
-        type:'order',
-        date:o.date,
-        timestamp:new Date(o.date).getTime(),
-        data:o
-      });
-    });
-  }
+  // Sort by date descending
+  allActivity.sort(function(a,b){
+    return new Date(b.date)-new Date(a.date);
+  });
   
-  // Sort by date (newest first)
-  activities.sort(function(a,b){return b.timestamp-a.timestamp;});
-  
-  if(activities.length===0){
-    G('c360-content').innerHTML='<div style="padding:60px 20px;text-align:center;color:var(--tx3)"><div style="font-size:64px;margin-bottom:16px">📋</div><div style="font-size:18px">No activity yet</div></div>';
-    return;
-  }
-  
-  var html='';
-  
-  activities.forEach(function(act){
-    if(act.type==='sale'){
-      var s=act.data;
-      var balColor=s.balance>0?'var(--red)':'var(--grn)';
-      html+='<div class="c360-card" onclick="openSaleDetail(\''+s.id+'\')">';
-      html+='<div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:12px">';
-      html+='<div style="flex:1;min-width:200px">';
-      html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
-      html+='<span style="font-size:28px">🛍️</span>';
-      html+='<div>';
-      html+='<div style="font-weight:700;font-size:16px">Bill #'+s.billNo+'</div>';
-      html+='<div style="font-size:12px;color:var(--tx3)">'+s.date+'</div>';
+  // Render
+  allActivity.forEach(function(item){
+    html+='<div class="c360-card">';
+    html+='<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">';
+    html+='<span style="font-size:32px">'+item.icon+'</span>';
+    html+='<div style="flex:1">';
+    html+='<div style="font-weight:700;font-size:18px">'+item.title+'</div>';
+    html+='<div style="font-size:13px;color:var(--tx3)">'+item.date+'</div>';
+    html+='</div>';
+    html+='</div>';
+    
+    if(item.type==='sale'){
+      html+='<div style="font-size:28px;font-weight:700;margin-bottom:8px">₹'+fmt(item.amount)+'</div>';
+      html+='<div style="display:flex;gap:16px;font-size:14px;flex-wrap:wrap">';
+      html+='<div><span style="color:var(--tx3)">Paid:</span> <strong>₹'+fmt(item.paid)+'</strong></div>';
+      html+='<div><span style="color:var(--tx3)">Balance:</span> <strong style="color:'+(item.balance>0?'var(--red)':'var(--grn)')+'">₹'+fmt(item.balance)+'</strong></div>';
       html+='</div>';
-      html+='</div>';
-      html+='<div style="font-size:clamp(20px,5vw,28px);font-weight:700;margin:8px 0">₹'+fmt(s.total)+'</div>';
-      html+='<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:14px">';
-      html+='<div><span style="color:var(--tx3)">Paid:</span> <strong>₹'+fmt(s.paid||0)+'</strong></div>';
-      html+='<div><span style="color:var(--tx3)">Balance:</span> <strong style="color:'+balColor+'">₹'+fmt(s.balance||0)+'</strong></div>';
-      html+='<div><span style="color:var(--tx3)">Items:</span> <strong>'+(s.items?s.items.length:0)+'</strong></div>';
-      html+='</div>';
-      html+='</div>';
-      html+='<button class="btn" onclick="event.stopPropagation();editSale360FromList(\''+s.id+'\')" style="padding:8px 16px;white-space:nowrap">✏️ Edit</button>';
-      html+='</div>';
-      html+='</div>';
-      
-    } else if(act.type==='payment'){
-      var p=act.data;
-      var isIn=payIsIn(p.type);
-      var color=isIn?'var(--grn)':'var(--red)';
-      html+='<div class="c360-card" onclick="editPayment360FromList(\''+p.id+'\')">';
-      html+='<div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:12px">';
-      html+='<div style="flex:1;min-width:200px">';
-      html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
-      html+='<span style="font-size:28px">💰</span>';
-      html+='<div>';
-      html+='<div style="font-weight:700;font-size:16px">'+payTypeLabel(p.type)+'</div>';
-      html+='<div style="font-size:12px;color:var(--tx3)">'+p.date+'</div>';
-      html+='</div>';
-      html+='</div>';
-      html+='<div style="font-size:clamp(20px,5vw,28px);font-weight:700;color:'+color+';margin:8px 0">₹'+fmt(p.amt)+'</div>';
-      html+='<div style="font-size:14px;color:var(--tx3)">';
-      html+='<strong>'+p.mode+'</strong>';
-      if(p.note)html+=' • '+p.note;
-      html+='</div>';
-      html+='</div>';
-      html+='<button class="btn" onclick="event.stopPropagation();editPayment360FromList(\''+p.id+'\')" style="padding:8px 16px;white-space:nowrap">✏️ Edit</button>';
-      html+='</div>';
-      html+='</div>';
-      
-    } else if(act.type==='txn_payment'){
-      var t=act.data;
-      var amt=t.paid||t.amount||0;
-      html+='<div class="c360-card" style="cursor:default;opacity:0.9">';
-      html+='<div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:12px">';
-      html+='<div style="flex:1;min-width:200px">';
-      html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
-      html+='<span style="font-size:28px">💰</span>';
-      html+='<div>';
-      html+='<div style="font-weight:700;font-size:16px">'+(t.type==='advance'?'Order Advance':'Payment')+'</div>';
-      html+='<div style="font-size:12px;color:var(--tx3)">'+t.date+' • '+t.bill+'</div>';
-      html+='</div>';
-      html+='<span class="c360-badge" style="background:var(--blu);color:white">FROM ORDER</span>';
-      html+='</div>';
-      html+='<div style="font-size:clamp(20px,5vw,28px);font-weight:700;color:var(--grn);margin:8px 0">₹'+fmt(amt)+'</div>';
-      html+='</div>';
-      html+='<div style="padding:8px 16px;color:var(--tx3);font-size:12px;font-style:italic">Linked to order</div>';
-      html+='</div>';
-      html+='</div>';
-      
-    } else if(act.type==='order'){
-      var o=act.data;
-      var statusColor=o.status==='pending'?'var(--org)':(o.status==='delivered'?'var(--grn)':'var(--tx3)');
-      html+='<div class="c360-card" onclick="openOrderDetail(\''+o.id+'\')">';
-      html+='<div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:12px">';
-      html+='<div style="flex:1;min-width:200px">';
-      html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
-      html+='<span style="font-size:28px">📦</span>';
-      html+='<div>';
-      html+='<div style="font-weight:700;font-size:16px">Order #'+(o.ordNo||o.bill||o.id.slice(-6))+'</div>';
-      html+='<div style="font-size:12px;color:var(--tx3)">'+o.date+'</div>';
-      html+='</div>';
-      html+='<span class="c360-badge" style="background:'+statusColor+';color:white">'+o.status.toUpperCase()+'</span>';
-      html+='</div>';
-      html+='<div style="font-size:clamp(16px,4vw,20px);font-weight:600;margin:8px 0;color:var(--tx2)">'+o.desc+'</div>';
-      html+='<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:14px">';
-      html+='<div><span style="color:var(--tx3)">Est. Value:</span> <strong>₹'+fmt(o.estVal||0)+'</strong></div>';
-      html+='<div><span style="color:var(--tx3)">Advance:</span> <strong>₹'+fmt(o.advance||0)+'</strong></div>';
-      html+='<div><span style="color:var(--tx3)">Balance:</span> <strong>₹'+fmt((o.estVal||0)-(o.advance||0))+'</strong></div>';
-      html+='</div>';
-      html+='</div>';
-      html+='<button class="btn" onclick="event.stopPropagation();openOrderDetail(\''+o.id+'\')" style="padding:8px 16px;white-space:nowrap">👁️ View</button>';
-      html+='</div>';
+    }else if(item.type==='payment'){
+      html+='<div style="font-size:28px;font-weight:700;color:var(--grn);margin-bottom:8px">₹'+fmt(item.amount)+'</div>';
+      html+='<div style="font-size:14px;color:var(--tx3)">'+item.mode+''+(item.note?' • '+item.note:'')+'</div>';
+    }else if(item.type==='order'){
+      html+='<div style="font-size:28px;font-weight:700;margin-bottom:8px">₹'+fmt(item.amount)+'</div>';
+      html+='<div style="display:flex;gap:16px;font-size:14px;flex-wrap:wrap">';
+      html+='<div><span style="color:var(--tx3)">Advance:</span> <strong>₹'+fmt(item.advance)+'</strong></div>';
+      html+='<div><span class="badge"'+' style="background:var(--blu);color:white">'+item.status+'</span></div>';
       html+='</div>';
     }
+    
+    html+='</div>';
   });
   
-  G('c360-content').innerHTML=html;
+  if(!html)html='<div class="empty"><div class="etxt">No activity yet</div></div>';
+  content.innerHTML=html;
 }
 
 // Helper functions to open sales/orders
