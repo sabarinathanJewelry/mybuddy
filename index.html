@@ -2094,8 +2094,10 @@ input:checked+.tslider::before { transform:translateX(17px); }
 <div class="modal-bg" id="m-suspense"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128274; Add Suspense Item</div><div class="field"><label>Supplier *</label><select id="susp-sup"><option value="">-- Select Supplier --</option></select></div><div class="g2"><div class="field"><label>Description *</label><input type="text" id="susp-desc"></div><div class="field"><label>Tag / Barcode</label><input type="text" id="susp-tag"></div></div><div class="g2"><div class="field"><label>Metal</label><select id="susp-metal"><option>22K Gold</option><option>18K Gold</option><option>916 Gold</option><option>Silver</option><option>Diamond</option></select></div><div class="field"><label>Gross Wt (g)</label><input type="number" id="susp-gross" step="0.001" inputmode="decimal"></div></div><div class="g2"><div class="field"><label>Cost VA %</label><input type="number" id="susp-va" step="0.01" inputmode="decimal"></div><div class="field"><label>MC/Stone (&#8377;)</label><input type="number" id="susp-mc" step="0.01" inputmode="decimal"></div></div><div class="mfoot"><button class="btn" onclick="closeM('m-suspense')">Cancel</button><button class="btn btng" onclick="saveSuspense()">Add Item</button></div></div></div>
 
 <div class="modal-bg" id="m-si"><div class="msheet"><div class="mhandle"></div><div class="mtitle">&#128274; New Suspense (from Sale)</div><div class="field"><label>Supplier *</label><select id="si-sup"><option value="">-- Select Supplier --</option></select></div><div class="g2"><div class="field"><label>Description *</label><input type="text" id="si-desc"></div><div class="field"><label>Tag</label><input type="text" id="si-tag"></div></div><div class="g2"><div class="field"><label>Metal</label><select id="si-metal"><option>22K Gold</option><option>18K Gold</option><option>916 Gold</option><option>Silver</option></select></div><div class="field"><label>Gross Wt (g)</label><input type="number" id="si-gross" step="0.001" inputmode="decimal"></div></div><div class="g2"><div class="field"><label>Cost VA %</label><input type="number" id="si-va" step="0.01" inputmode="decimal"></div><div class="field"><label>MC/Stone (&#8377;)</label><input type="number" id="si-mc" step="0.01" inputmode="decimal"></div></div><div class="mfoot"><button class="btn" onclick="closeM('m-si')">Cancel</button><button class="btn btng" onclick="saveSuspInline()">Save &amp; Use in Sale</button></div></div></div>
-
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/functions-js@2"></script>
 <script>
+  
 /* ═══════════════════════════════════════════════════════════════
    JEWELLERP v6 — CORE APPLICATION
    Architecture: Adapter pattern — swap DB adapter without
@@ -2110,7 +2112,48 @@ var CFG = {
   useSupabase: true,
   currentUser: null
 };
-
+    //══════════════════════════════════════════════════════════════
+    // SUPABASE CLIENT INITIALIZATION
+    //══════════════════════════════════════════════════════════════
+    var supabase = null;
+    
+    function initSupabase() {
+      var url = localStorage.getItem('erp_supabase_url') || CFG.supabaseUrl || '';
+      var key = localStorage.getItem('erp_supabase_key') || CFG.supabaseKey || '';
+      
+      if (!url || !key) {
+        console.warn('⚠️ Supabase not configured. Go to Settings to add URL & Key.');
+        return false;
+      }
+      
+      if (!window.supabase || !window.supabase.createClient) {
+        console.error('❌ Supabase library not loaded!');
+        alert('Supabase library failed to load. Check internet connection.');
+        return false;
+      }
+      
+      try {
+        supabase = window.supabase.createClient(url, key);
+        console.log('✅ Supabase client initialized');
+        return true;
+      } catch (err) {
+        console.error('❌ Supabase init failed:', err);
+        alert('Supabase connection failed: ' + err.message);
+        return false;
+      }
+    }
+    
+    // Initialize immediately
+    setTimeout(initSupabase, 100);
+    
+    // Re-initialize when settings change
+    function reinitSupabase() {
+      var success = initSupabase();
+      if (success) {
+        console.log('🔄 Supabase reconnected');
+      }
+      return success;
+    }
 // ── STATE ──
 var R = {k22:7450, k18:6090, k916:7310, sil:92, dia:35000, plat:3200};
 var DB = {
