@@ -2117,43 +2117,72 @@ var CFG = {
     //══════════════════════════════════════════════════════════════
     var supabase = null;
     
-    function initSupabase() {
-      var url = localStorage.getItem('erp_supabase_url') || CFG.supabaseUrl || '';
-      var key = localStorage.getItem('erp_supabase_key') || CFG.supabaseKey || '';
+   supabase = {
+  from: function(table) {
+    return {
+      select: function(columns) {
+        var self = this;
+        self._table = table;
+        self._columns = columns;
+        self._filters = [];
+        
+        self.eq = function(field, value) {
+          self._filters.push(field + '=eq.' + value);
+          return self;
+        };
+        
+        self.order = function(field, opts) {
+          self._order = field + '.' + (opts && opts.ascending === false ? 'desc' : 'asc');
+          return self;
+        };
+        
+        self.limit = function(n) {
+          self._limit = n;
+          return self;
+        };
+        
+        self.then = function(resolve, reject) {
+          var query = self._columns !== '*' ? 'select=' + self._columns : 'select=*';
+          if (self._filters.length > 0) query += '&' + self._filters.join('&');
+          if (self._order) query += '&order=' + self._order;
+          if (self._limit) query += '&limit=' + self._limit;
+          
+          dbGet(self._table + '?' + query, function(data, error) {
+            if (error) resolve({data: null, error: {message: error}});
+            else resolve({data: data, error: null});
+          });
+        };
+        
+        return self;
+      },
       
-      if (!url || !key) {
-        console.warn('⚠️ Supabase not configured. Go to Settings to add URL & Key.');
-        return false;
+      insert: function(data) {
+        var self = this;
+        self._table = table;
+        
+        self.select = function() {
+          self._returnData = true;
+          return self;
+        };
+        
+        self.single = function() {
+          self._single = true;
+          return self;
+        };
+        
+        self.then = function(resolve, reject) {
+          dbPost(self._table, data, function(result, error) {
+            if (error) resolve({data: null, error: {message: error}});
+            else resolve({data: self._single ? result[0] : result, error: null});
+          });
+        };
+        
+        return self;
       }
-      
-      if (!window.supabase || !window.supabase.createClient) {
-        console.error('❌ Supabase library not loaded!');
-        alert('Supabase library failed to load. Check internet connection.');
-        return false;
-      }
-      
-      try {
-        supabase = window.supabase.createClient(url, key);
-        console.log('✅ Supabase client initialized');
-        return true;
-      } catch (err) {
-        console.error('❌ Supabase init failed:', err);
-        alert('Supabase connection failed: ' + err.message);
-        return false;
-      }
-    }
-    
-    // Initialize immediately
-    setTimeout(initSupabase, 100);
-    
-    // Re-initialize when settings change
-    function reinitSupabase() {
-      var success = initSupabase();
-      if (success) {
-        console.log('🔄 Supabase reconnected');
-      }
-      return success;
-    }
+    };
+  }
+};
+
 // ── STATE ──
 var R = {k22:7450, k18:6090, k916:7310, sil:92, dia:35000, plat:3200};
 var DB = {
