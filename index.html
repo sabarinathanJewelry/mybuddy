@@ -2112,76 +2112,297 @@ var CFG = {
   useSupabase: true,
   currentUser: null
 };
-    //══════════════════════════════════════════════════════════════
-    // SUPABASE CLIENT INITIALIZATION
-    //══════════════════════════════════════════════════════════════
-    var supabase = null;
-    
-   supabase = {
-  from: function(table) {
-    return {
-      select: function(columns) {
-        var self = this;
-        self._table = table;
-        self._columns = columns;
-        self._filters = [];
-        
-        self.eq = function(field, value) {
-          self._filters.push(field + '=eq.' + value);
-          return self;
-        };
-        
-        self.order = function(field, opts) {
-          self._order = field + '.' + (opts && opts.ascending === false ? 'desc' : 'asc');
-          return self;
-        };
-        
-        self.limit = function(n) {
-          self._limit = n;
-          return self;
-        };
-        
-        self.then = function(resolve, reject) {
-          var query = self._columns !== '*' ? 'select=' + self._columns : 'select=*';
-          if (self._filters.length > 0) query += '&' + self._filters.join('&');
-          if (self._order) query += '&order=' + self._order;
-          if (self._limit) query += '&limit=' + self._limit;
-          
-          dbGet(self._table + '?' + query, function(data, error) {
-            if (error) resolve({data: null, error: {message: error}});
-            else resolve({data: data, error: null});
-          });
-        };
-        
-        return self;
-      },
-      
-      insert: function(data) {
-        var self = this;
-        self._table = table;
-        
-        self.select = function() {
-          self._returnData = true;
-          return self;
-        };
-        
-        self.single = function() {
-          self._single = true;
-          return self;
-        };
-        
-        self.then = function(resolve, reject) {
-          dbPost(self._table, data, function(result, error) {
-            if (error) resolve({data: null, error: {message: error}});
-            else resolve({data: self._single ? result[0] : result, error: null});
-          });
-        };
-        
-        return self;
+   //══════════════════════════════════════════════════════════════════
+// COMPLETE SUPABASE ADAPTER
+// Add this after var CFG = {...} (around line 2112)
+//══════════════════════════════════════════════════════════════════
+
+// First, add dbDelete function if it doesn't exist
+if (typeof dbDelete === 'undefined') {
+  function dbDelete(table, filter, cb) {
+    if (!sbHasConfig()) {
+      if (cb) cb(null, 'Not configured');
+      return;
+    }
+    fetch(sbUrl() + '/rest/v1/' + table + '?' + filter, {
+      method: 'DELETE',
+      headers: {
+        'apikey': sbKey(),
+        'Authorization': 'Bearer ' + sbKey(),
+        'Prefer': 'return=minimal'
       }
-    };
+    })
+    .then(function(r) {
+      if (!r.ok) {
+        r.json().then(function(d) {
+          if (cb) cb(null, (d && d.message) || 'HTTP ' + r.status);
+        }).catch(function() {
+          if (cb) cb(null, 'HTTP ' + r.status);
+        });
+      } else {
+        if (cb) cb(true, null);
+      }
+    })
+    .catch(function(e) {
+      if (cb) cb(null, e.message);
+    });
   }
-};
+}
+
+var supabase = null;
+
+(function() {
+  // Helper to build query string
+  function buildQuery(options) {
+    var parts = [];
+    
+    // Select columns
+    if (options.columns && options.columns !== '*') {
+      parts.push('select=' + options.columns);
+    } else {
+      parts.push('select=*');
+    }
+    
+    // Filters
+    if (options.filters && options.filters.length > 0) {
+      parts = parts.concat(options.filters);
+    }
+    
+    // Order
+    if (options.order) {
+      parts.push('order=' + options.order);
+    }
+    
+    // Limit
+    if (options.limit) {
+      parts.push('limit=' + options.limit);
+    }
+    
+    return parts.join('&');
+  }
+  
+  // Query builder
+  function QueryBuilder(table) {
+    this._table = table;
+    this._columns = '*';
+    this._filters = [];
+    this._order = null;
+    this._limit = null;
+    this._operation = 'select';
+    this._data = null;
+    this._returnData = false;
+    this._single = false;
+  }
+  
+  // SELECT
+  QueryBuilder.prototype.select = function(columns) {
+    this._columns = columns || '*';
+    this._operation = 'select';
+    this._returnData = true;
+    return this;
+  };
+  
+  // FILTERS
+  QueryBuilder.prototype.eq = function(field, value) {
+    this._filters.push(field + '=eq.' + encodeURIComponent(value));
+    return this;
+  };
+  
+  QueryBuilder.prototype.neq = function(field, value) {
+    this._filters.push(field + '=neq.' + encodeURIComponent(value));
+    return this;
+  };
+  
+  QueryBuilder.prototype.gt = function(field, value) {
+    this._filters.push(field + '=gt.' + encodeURIComponent(value));
+    return this;
+  };
+  
+  QueryBuilder.prototype.gte = function(field, value) {
+    this._filters.push(field + '=gte.' + encodeURIComponent(value));
+    return this;
+  };
+  
+  QueryBuilder.prototype.lt = function(field, value) {
+    this._filters.push(field + '=lt.' + encodeURIComponent(value));
+    return this;
+  };
+  
+  QueryBuilder.prototype.lte = function(field, value) {
+    this._filters.push(field + '=lte.' + encodeURIComponent(value));
+    return this;
+  };
+  
+  QueryBuilder.prototype.like = function(field, pattern) {
+    this._filters.push(field + '=like.' + encodeURIComponent(pattern));
+    return this;
+  };
+  
+  QueryBuilder.prototype.ilike = function(field, pattern) {
+    this._filters.push(field + '=ilike.' + encodeURIComponent(pattern));
+    return this;
+  };
+  
+  QueryBuilder.prototype.is = function(field, value) {
+    this._filters.push(field + '=is.' + encodeURIComponent(value));
+    return this;
+  };
+  
+  QueryBuilder.prototype.in = function(field, values) {
+    this._filters.push(field + '=in.(' + values.join(',') + ')');
+    return this;
+  };
+  
+  // ORDER
+  QueryBuilder.prototype.order = function(field, options) {
+    var direction = (options && options.ascending === false) ? 'desc' : 'asc';
+    this._order = field + '.' + direction;
+    return this;
+  };
+  
+  // LIMIT
+  QueryBuilder.prototype.limit = function(count) {
+    this._limit = count;
+    return this;
+  };
+  
+  // SINGLE (return first result only)
+  QueryBuilder.prototype.single = function() {
+    this._single = true;
+    this._limit = 1;
+    return this;
+  };
+  
+  // INSERT
+  QueryBuilder.prototype.insert = function(data) {
+    this._operation = 'insert';
+    this._data = data;
+    return this;
+  };
+  
+  // UPDATE
+  QueryBuilder.prototype.update = function(data) {
+    this._operation = 'update';
+    this._data = data;
+    return this;
+  };
+  
+  // DELETE
+  QueryBuilder.prototype.delete = function() {
+    this._operation = 'delete';
+    return this;
+  };
+  
+  // EXECUTE (then/promise)
+  QueryBuilder.prototype.then = function(resolve, reject) {
+    var self = this;
+    
+    if (self._operation === 'select') {
+      // SELECT query
+      var query = buildQuery({
+        columns: self._columns,
+        filters: self._filters,
+        order: self._order,
+        limit: self._limit
+      });
+      
+      dbGet(self._table + '?' + query, function(data, error) {
+        if (error) {
+          resolve({data: null, error: {message: error}});
+        } else {
+          if (self._single && data && data.length > 0) {
+            resolve({data: data[0], error: null});
+          } else if (self._single && (!data || data.length === 0)) {
+            resolve({data: null, error: {message: 'No rows found'}});
+          } else {
+            resolve({data: data || [], error: null});
+          }
+        }
+      });
+      
+    } else if (self._operation === 'insert') {
+      // INSERT
+      dbPost(self._table, self._data, function(result, error) {
+        if (error) {
+          resolve({data: null, error: {message: error}});
+        } else {
+          if (self._single && result && result.length > 0) {
+            resolve({data: result[0], error: null});
+          } else {
+            resolve({data: result, error: null});
+          }
+        }
+      });
+      
+    } else if (self._operation === 'update') {
+      // UPDATE
+      var filterStr = self._filters.join('&');
+      dbPatch(self._table, filterStr, self._data, function(result, error) {
+        if (error) {
+          resolve({data: null, error: {message: error}});
+        } else {
+          resolve({data: result, error: null});
+        }
+      });
+      
+    } else if (self._operation === 'delete') {
+      // DELETE
+      var filterStr = self._filters.join('&');
+      dbDelete(self._table, filterStr, function(result, error) {
+        if (error) {
+          resolve({data: null, error: {message: error}});
+        } else {
+          resolve({data: result, error: null});
+        }
+      });
+    }
+  };
+  
+  // Main supabase object
+  supabase = {
+    from: function(table) {
+      return new QueryBuilder(table);
+    },
+    
+    // RPC calls (if needed)
+    rpc: function(functionName, params) {
+      return {
+        then: function(resolve, reject) {
+          fetch(sbUrl() + '/rest/v1/rpc/' + functionName, {
+            method: 'POST',
+            headers: {
+              'apikey': sbKey(),
+              'Authorization': 'Bearer ' + sbKey(),
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(params || {})
+          })
+          .then(function(r) {
+            return r.json().then(function(data) {
+              if (!r.ok) {
+                resolve({data: null, error: {message: data.message || 'RPC failed'}});
+              } else {
+                resolve({data: data, error: null});
+              }
+            });
+          })
+          .catch(function(err) {
+            resolve({data: null, error: {message: err.message}});
+          });
+        }
+      };
+    },
+    
+    // SQL helper (for increment operations)
+    sql: function(template) {
+      // This is a placeholder - for increment operations, 
+      // you'll need to calculate on client side
+      return template;
+    }
+  };
+  
+  console.log('✅ Supabase adapter initialized (using dbGet/dbPost wrapper)');
+})();
 
 // ── STATE ──
 var R = {k22:7450, k18:6090, k916:7310, sil:92, dia:35000, plat:3200};
