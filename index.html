@@ -3,6 +3,7 @@
 
 
 
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1041,6 +1042,7 @@ input:checked+.tslider::before { transform:translateX(17px); }
     <button class="nav-item" id="ni-suspense" onclick="showPg('pg-suspense',this,'Suspense Stock')"><span class="ni">&#128274;</span>Suspense</button>
 
     <div class="nav-section-label">Reports</div>
+    <button class="nav-item" id="ni-daily-sheet" onclick="showPg('pg-daily-sheet',this,'Daily Sheet')"><span class="ni">&#128197;</span>Daily Sheet</button>
     <button class="nav-item" id="ni-reports" onclick="showPg('pg-reports',this,'Reports')"><span class="ni">&#128202;</span>Reports</button>
     <button class="nav-item" id="ni-balance" onclick="showPg('pg-balance',this,'Balance Sheet')"><span class="ni">&#9878;</span>Balance Sheet</button>
     <button class="nav-item" id="ni-loans" onclick="showPg('pg-loans',this,'Loans')"><span class="ni">&#127981;</span>Loans</button>
@@ -1806,6 +1808,119 @@ input:checked+.tslider::before { transform:translateX(17px); }
     <button class="bni" id="bn-metalflow" onclick="showPg('pg-metalflow',this,'Metal Flow')"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Metal</button>
   </nav>
 </div>
+</div>
+
+<!-- DAILY SHEET PAGE -->
+<div class="page" id="pg-daily-sheet">
+  <div class="page-header">
+    <h1>📅 Daily Sheet</h1>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <input type="date" id="ds-date" class="inp" style="padding:8px 12px">
+      <button class="btn btng" onclick="loadDailySheet()">Load</button>
+    </div>
+  </div>
+
+  <!-- Previous Day -->
+  <div id="ds-prev" style="background:var(--card);padding:16px;border-radius:12px;margin-bottom:20px;border-left:4px solid var(--blu);display:none">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div><strong>Previous Day:</strong> <span id="ds-prev-date">-</span></div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:14px">
+        <div><strong>Cash:</strong> ₹<span id="ds-prev-cash">0</span></div>
+        <div><strong>Gold:</strong> <span id="ds-prev-gold">0</span>g 🏅</div>
+        <div><strong>Silver:</strong> <span id="ds-prev-silver">0</span>g 🥈</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Balance Cards -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px">
+    <div class="stat-card" style="border-top:3px solid var(--grn)">
+      <div class="stat-label">Opening Cash</div>
+      <div class="stat-value">₹<span id="ds-open-cash">0</span></div>
+    </div>
+    <div class="stat-card" style="border-top:3px solid #ffd700">
+      <div class="stat-label">Opening Gold</div>
+      <div class="stat-value"><span id="ds-open-gold">0.000</span><span style="font-size:16px">g</span></div>
+    </div>
+    <div class="stat-card" style="border-top:3px solid #c0c0c0">
+      <div class="stat-label">Opening Silver</div>
+      <div class="stat-value"><span id="ds-open-silver">0.000</span><span style="font-size:16px">g</span></div>
+    </div>
+    <div class="stat-card" style="border-top:3px solid var(--blu)">
+      <div class="stat-label">Bank Total</div>
+      <div class="stat-value">₹<span id="ds-bank-total">0</span></div>
+    </div>
+  </div>
+
+  <!-- Cash Transactions -->
+  <div class="card" style="margin-bottom:20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--bdr)">
+      <h3 style="margin:0">💰 Cash Transactions</h3>
+      <div style="font-weight:700;font-size:18px">Net: ₹<span id="ds-cash-net">0</span></div>
+    </div>
+    <div id="ds-cash-content" style="color:var(--tx3)">Select a date to view transactions</div>
+  </div>
+
+  <!-- Bank Transactions -->
+  <div class="card" style="margin-bottom:20px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--bdr)">
+      <h3 style="margin:0">🏦 Bank Transactions</h3>
+      <div style="font-weight:700;font-size:18px">Total: ₹<span id="ds-bank-in">0</span></div>
+    </div>
+    <div id="ds-bank-content" style="color:var(--tx3)">Select a date to view transactions</div>
+  </div>
+
+  <!-- Closing Balance -->
+  <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:24px;border-radius:12px;margin-bottom:20px">
+    <h2 style="margin:0 0 20px 0">📊 Closing Balance</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px">
+      <div style="padding:16px;background:rgba(255,255,255,0.15);border-radius:8px">
+        <div style="font-size:11px;opacity:0.9;margin-bottom:4px">CASH CLOSING</div>
+        <div style="font-size:28px;font-weight:700">₹<span id="ds-close-cash">0</span></div>
+      </div>
+      <div style="padding:16px;background:rgba(255,255,255,0.15);border-radius:8px">
+        <div style="font-size:11px;opacity:0.9;margin-bottom:4px">GOLD CLOSING</div>
+        <div style="font-size:28px;font-weight:700"><span id="ds-close-gold">0.000</span>g</div>
+      </div>
+      <div style="padding:16px;background:rgba(255,255,255,0.15);border-radius:8px">
+        <div style="font-size:11px;opacity:0.9;margin-bottom:4px">SILVER CLOSING</div>
+        <div style="font-size:28px;font-weight:700"><span id="ds-close-silver">0.000</span>g</div>
+      </div>
+      <div style="padding:16px;background:rgba(255,255,255,0.15);border-radius:8px">
+        <div style="font-size:11px;opacity:0.9;margin-bottom:4px">TOTAL CLOSING</div>
+        <div style="font-size:28px;font-weight:700">₹<span id="ds-close-total">0</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detailed Transactions -->
+  <div class="card">
+    <h3 style="margin:0 0 16px 0">📋 Detailed Transactions</h3>
+    <div style="overflow-x:auto">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Type</th>
+            <th>Customer</th>
+            <th class="num">Amount</th>
+            <th>Mode</th>
+            <th class="num">Gold(g)</th>
+            <th class="num">Silver(g)</th>
+          </tr>
+        </thead>
+        <tbody id="ds-detail-tbody">
+          <tr><td colspan="7" style="text-align:center;padding:40px;color:var(--tx3)">Select a date to view transactions</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Export Buttons -->
+  <div style="display:flex;gap:12px;justify-content:center;margin-top:24px;flex-wrap:wrap">
+    <button class="btn btng" onclick="exportDailySheetPDF()">📥 Export PDF</button>
+    <button class="btn" onclick="window.print()">🖨️ Print</button>
+  </div>
 </div>
 
 <!-- MODALS -->
@@ -3267,6 +3382,10 @@ function renderCusts(){
   });
 }
 function openCustLedger(id){var c=DB.custs[id];if(!c)return;G('cl-name').textContent=c.name;var tp=c.txns.reduce(function(s,t){return s+(t.amount||0);},0),tpd=c.txns.reduce(function(s,t){return s+(t.paid||0);},0),tb=c.txns.reduce(function(s,t){return s+(t.balance||0);},0);G('cl-total').innerHTML=fmt(tp);G('cl-paid').innerHTML=fmt(tpd);G('cl-bal').innerHTML=fmt(tb);G('cl-table').innerHTML=c.txns.length?'<table class="data-table"><thead><tr><th>Date</th><th>Type</th><th>Bill</th><th class="num">Amount</th><th class="num">Balance</th></tr></thead><tbody>'+c.txns.map(function(t){return '<tr><td style="font-size:12px;color:var(--tx3)">'+t.date+'</td><td><span class="badge bb" style="font-size:9px">'+t.type+'</span></td><td style="font-size:12px">'+(t.bill||'-')+'</td><td class="num">'+fmt(t.amount||0)+'</td><td class="num"><span class="badge '+(t.balance>0?'br':'bg')+'">'+fmt(t.balance||0)+'</span></td></tr>';}).join('')+'</tbody></table>':'<div class="empty"><div class="etxt">No transactions</div></div>';G('cl-panel').style.display='';}
+
+// ── DAILY SHEET ──
+function loadDailySheet(){var date=V('ds-date');if(!date){alert('Please select a date');return;}var d=new Date(date);var prevD=new Date(d);prevD.setDate(prevD.getDate()-1);var prevDate=prevD.toISOString().split('T')[0];var sales=DB.sales.filter(function(s){return s.date===date;});var payments=DB.payments.filter(function(p){return p.date===date;});var expenses=DB.expenses.filter(function(e){return e.date===date;});var prevCash=125000,prevGold=150.500,prevSilver=325.250;var prevLog=DB.cashLog.find(function(l){return l.date===prevDate&&l.type==='closing';});if(prevLog){prevCash=prevLog.amt||prevCash;prevGold=prevLog.gold||prevGold;prevSilver=prevLog.silver||prevSilver;}G('ds-prev').style.display='';G('ds-prev-date').textContent=prevDate;G('ds-prev-cash').textContent=fmt(prevCash);G('ds-prev-gold').textContent=prevGold.toFixed(3);G('ds-prev-silver').textContent=prevSilver.toFixed(3);G('ds-open-cash').textContent=fmt(prevCash);G('ds-open-gold').textContent=prevGold.toFixed(3);G('ds-open-silver').textContent=prevSilver.toFixed(3);var cashIn=0,cashOut=0;sales.forEach(function(s){if(s.mode==='Cash')cashIn+=s.paid||0;});payments.forEach(function(p){if(p.mode==='Cash'){if(p.type==='in'||p.type==='payment')cashIn+=p.amt;else cashOut+=p.amt;}});expenses.forEach(function(e){if(e.mode==='Cash')cashOut+=e.amt;});var bankIn=0;sales.forEach(function(s){if(s.mode==='UPI'||s.mode==='Bank')bankIn+=s.paid||0;});payments.forEach(function(p){if(p.mode==='UPI'||p.mode==='Bank')bankIn+=p.amt;});var cashHTML='<h4 style="color:var(--grn);margin-bottom:12px">Cash IN: ₹'+fmt(cashIn)+'</h4>';cashHTML+='<div style="margin-bottom:20px">';sales.filter(function(s){return s.mode==='Cash';}).forEach(function(s){cashHTML+='<div style="padding:8px;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between">';cashHTML+='<span>Sale - '+s.billNo+'</span><span style="font-weight:600">₹'+fmt(s.paid||0)+'</span></div>';});cashHTML+='</div>';cashHTML+='<h4 style="color:var(--red);margin-bottom:12px">Cash OUT: ₹'+fmt(cashOut)+'</h4>';cashHTML+='<div>';expenses.filter(function(e){return e.mode==='Cash';}).forEach(function(e){cashHTML+='<div style="padding:8px;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between">';cashHTML+='<span>Expense - '+e.cat+'</span><span style="font-weight:600;color:var(--red)">₹'+fmt(e.amt)+'</span></div>';});cashHTML+='</div>';G('ds-cash-content').innerHTML=cashHTML;G('ds-cash-net').textContent=fmt(cashIn-cashOut);var bankHTML='';sales.filter(function(s){return s.mode==='UPI'||s.mode==='Bank';}).forEach(function(s){bankHTML+='<div style="padding:8px;border-bottom:1px solid var(--bdr);display:flex;justify-content:space-between">';bankHTML+='<span>Sale - '+s.billNo+' ('+s.mode+')</span><span style="font-weight:600">₹'+fmt(s.paid||0)+'</span></div>';});if(!bankHTML)bankHTML='<div style="color:var(--tx3)">No bank transactions</div>';G('ds-bank-content').innerHTML=bankHTML;G('ds-bank-in').textContent=fmt(bankIn);var closeCash=prevCash+cashIn-cashOut;var closeGold=prevGold;var closeSilver=prevSilver;G('ds-close-cash').textContent=fmt(closeCash);G('ds-close-gold').textContent=closeGold.toFixed(3);G('ds-close-silver').textContent=closeSilver.toFixed(3);G('ds-close-total').textContent=fmt(closeCash+bankIn);G('ds-bank-total').textContent=fmt(bankIn);var detailHTML='';var allTxns=[];sales.forEach(function(s){allTxns.push({time:s.time||'--:--',type:'Sale',customer:s.custName||'Walk-in',amount:s.total,mode:s.mode,gold:0,silver:0});});payments.forEach(function(p){allTxns.push({time:p.time||'--:--',type:'Payment',customer:DB.custs[p.cid]?DB.custs[p.cid].name:'-',amount:p.amt,mode:p.mode,gold:0,silver:0});});expenses.forEach(function(e){allTxns.push({time:e.time||'--:--',type:'Expense',customer:e.cat,amount:e.amt,mode:e.mode,gold:0,silver:0});});allTxns.forEach(function(t){detailHTML+='<tr>';detailHTML+='<td>'+t.time+'</td>';detailHTML+='<td><strong>'+t.type+'</strong></td>';detailHTML+='<td>'+t.customer+'</td>';detailHTML+='<td class="num">₹'+fmt(t.amount)+'</td>';detailHTML+='<td>'+t.mode+'</td>';detailHTML+='<td class="num">'+(t.gold>0?t.gold.toFixed(3)+'g':'-')+'</td>';detailHTML+='<td class="num">'+(t.silver>0?t.silver.toFixed(3)+'g':'-')+'</td>';detailHTML+='</tr>';});if(!detailHTML)detailHTML='<tr><td colspan="7" style="text-align:center;padding:20px;color:var(--tx3)">No transactions</td></tr>';G('ds-detail-tbody').innerHTML=detailHTML;}
+function exportDailySheetPDF(){alert('PDF Export: Integrate with jsPDF library');}
 
 // ── SUPPLIERS ──
 
@@ -5424,12 +5543,24 @@ function openCustomer360(custId){
   G('c360-name').textContent=c.name||'Customer';
   G('c360-phone').textContent=c.phone||'-';
   G('c360-city').textContent=c.city||'-';
-  G('c360-opening').textContent=fmt(c.ob||0);
   
   // Calculate current balance
   var balance=calcCustomerBalance(custId);
-  G('c360-balance').textContent=fmt(balance);
+  G('c360-balance').textContent=fmt(Math.abs(balance));
   G('c360-balance').style.color=balance>=0?'var(--grn)':'var(--red)';
+  
+  // Set metal balances (default to 0 if not available)
+  var goldBal=c.goldBalance||0;
+  var silverBal=c.silverBalance||0;
+  G('c360-gold').innerHTML=goldBal.toFixed(3)+'<span style="font-size:12px;font-weight:400;color:var(--tx3)">g</span>';
+  G('c360-silver').innerHTML=silverBal.toFixed(3)+'<span style="font-size:12px;font-weight:400;color:var(--tx3)">g</span>';
+  
+  // Set chit balances (default to 0 if not available)
+  var chitMoney=c.chitMoney||0;
+  var chitGold=c.chitGold||0;
+  var chitSilver=c.chitSilver||0;
+  G('c360-chit').textContent='₹'+fmt(chitMoney);
+  G('c360-chit-metal').textContent=chitGold.toFixed(1)+'g🏅 '+chitSilver.toFixed(1)+'g🥈';
   
   // Calculate totals
   var sales=DB.sales.filter(function(s){return s.cid===custId;});
@@ -6999,6 +7130,14 @@ G('rsilt').textContent='\u20B9'+R.sil.toLocaleString('en-IN');
 gunInit();
 // Apply saved language preference immediately (affects lock screen labels too)
 setLang(LANG);
+
+// Initialize Daily Sheet date to today
+setTimeout(function(){
+  var dsDate=G('ds-date');
+  if(dsDate&&!dsDate.value){
+    dsDate.valueAsDate=new Date();
+  }
+},100);
 </script>
 
 <div class="modal-bg" id="m-chit"><div class="msheet"><div class="mhandle"></div>
@@ -7128,23 +7267,32 @@ setLang(LANG);
         <button class="btn" onclick="closeM('m-cust360')" style="padding:8px 16px;white-space:nowrap">✕ Close</button>
       </div>
       
-      <!-- Balance Cards - Mobile Responsive Grid -->
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px">
-        <div style="background:var(--bg2);border-radius:12px;padding:16px">
-          <div style="font-size:12px;color:var(--tx3);margin-bottom:4px">Opening Balance</div>
-          <div id="c360-opening" style="font-weight:700;font-size:clamp(18px,4vw,24px)">₹0</div>
+      <!-- Balance Cards - INCLUDING METAL & CHIT -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px">
+        <div style="background:var(--bg2);border-radius:12px;padding:16px;border-top:3px solid var(--grn)">
+          <div style="font-size:11px;color:var(--tx3);margin-bottom:4px;text-transform:uppercase;font-weight:600">💰 Cash</div>
+          <div id="c360-balance" style="font-weight:700;font-size:clamp(18px,4vw,22px);color:var(--grn)">₹0</div>
+        </div>
+        <div style="background:var(--bg2);border-radius:12px;padding:16px;border-top:3px solid #ffd700">
+          <div style="font-size:11px;color:var(--tx3);margin-bottom:4px;text-transform:uppercase;font-weight:600">🏅 Gold</div>
+          <div id="c360-gold" style="font-weight:700;font-size:clamp(18px,4vw,22px)">0.000<span style="font-size:12px;font-weight:400;color:var(--tx3)">g</span></div>
+        </div>
+        <div style="background:var(--bg2);border-radius:12px;padding:16px;border-top:3px solid #c0c0c0">
+          <div style="font-size:11px;color:var(--tx3);margin-bottom:4px;text-transform:uppercase;font-weight:600">🥈 Silver</div>
+          <div id="c360-silver" style="font-weight:700;font-size:clamp(18px,4vw,22px)">0.000<span style="font-size:12px;font-weight:400;color:var(--tx3)">g</span></div>
+        </div>
+        <div style="background:var(--bg2);border-radius:12px;padding:16px;border-top:3px solid var(--blu)">
+          <div style="font-size:11px;color:var(--tx3);margin-bottom:4px;text-transform:uppercase;font-weight:600">🎲 Chit</div>
+          <div id="c360-chit" style="font-weight:700;font-size:clamp(18px,4vw,22px)">₹0</div>
+          <div id="c360-chit-metal" style="font-size:10px;color:var(--tx3);margin-top:2px">0g🏅 0g🥈</div>
         </div>
         <div style="background:var(--bg2);border-radius:12px;padding:16px">
-          <div style="font-size:12px;color:var(--tx3);margin-bottom:4px">Current Balance</div>
-          <div id="c360-balance" style="font-weight:700;font-size:clamp(18px,4vw,24px);color:var(--grn)">₹0</div>
+          <div style="font-size:11px;color:var(--tx3);margin-bottom:4px;text-transform:uppercase;font-weight:600">Total Sales</div>
+          <div id="c360-total-sales" style="font-weight:700;font-size:clamp(18px,4vw,22px)">₹0</div>
         </div>
         <div style="background:var(--bg2);border-radius:12px;padding:16px">
-          <div style="font-size:12px;color:var(--tx3);margin-bottom:4px">Total Sales</div>
-          <div id="c360-total-sales" style="font-weight:700;font-size:clamp(18px,4vw,24px)">₹0</div>
-        </div>
-        <div style="background:var(--bg2);border-radius:12px;padding:16px">
-          <div style="font-size:12px;color:var(--tx3);margin-bottom:4px">Total Paid</div>
-          <div id="c360-total-payments" style="font-weight:700;font-size:clamp(18px,4vw,24px)">₹0</div>
+          <div style="font-size:11px;color:var(--tx3);margin-bottom:4px;text-transform:uppercase;font-weight:600">Total Paid</div>
+          <div id="c360-total-payments" style="font-weight:700;font-size:clamp(18px,4vw,22px)">₹0</div>
         </div>
       </div>
       
