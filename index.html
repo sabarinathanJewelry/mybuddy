@@ -5433,16 +5433,24 @@ function openCustomer360(custId){
   
   // Calculate totals
   var sales=DB.sales.filter(function(s){return s.cid===custId;});
-  var payments=DB.payments.filter(function(p){return p.cid===custId;});
+  
+  // FIXED: Include BOTH DB.payments AND customer transactions (order payments)
+  var regularPayments=DB.payments.filter(function(p){return p.cid===custId;});
+  var custTxnPayments=(c.txns||[]).filter(function(t){
+    return t.type==='payment_in'||t.type==='advance'||t.type==='payment_out';
+  });
+  
   var orders=DB.orders?DB.orders.filter(function(o){return o.cid===custId&&o.status!=='delivered'}):[];
   
   var totalSales=sales.reduce(function(sum,s){return sum+s.total;},0);
-  var totalPayments=payments.reduce(function(sum,p){return sum+p.amt;},0);
+  var totalRegularPayments=regularPayments.reduce(function(sum,p){return sum+p.amt;},0);
+  var totalTxnPayments=custTxnPayments.reduce(function(sum,t){return sum+(t.paid||0);},0);
+  var totalPayments=totalRegularPayments+totalTxnPayments;
   
   G('c360-total-sales').textContent=fmt(totalSales);
   G('c360-total-payments').textContent=fmt(totalPayments);
   G('c360-sales-count').textContent=sales.length;
-  G('c360-payments-count').textContent=payments.length;
+  G('c360-payments-count').textContent=regularPayments.length+custTxnPayments.length;
   G('c360-orders-count').textContent=orders.length;
   
   // Show modal and render first tab
@@ -5475,12 +5483,33 @@ function render360Overview(){
   if(!c)return;
   
   var sales=DB.sales.filter(function(s){return s.cid===_current360CustomerId;});
-  var payments=DB.payments.filter(function(p){return p.cid===_current360CustomerId;});
+  
+  // FIXED: Include BOTH regular payments AND customer transaction payments (order payments)
+  var regularPayments=DB.payments.filter(function(p){return p.cid===_current360CustomerId;});
+  var custTxnPayments=(c.txns||[]).filter(function(t){
+    return t.type==='payment_in'||t.type==='advance'||t.type==='payment_out';
+  }).map(function(t){
+    // Convert txn format to payment format for display
+    return {
+      date:t.date,
+      amt:t.paid||t.amount||0,
+      type:t.type==='payment_in'?'payment':(t.type==='advance'?'advance':'out'),
+      mode:'',
+      note:t.bill||'',
+      isFromTxn:true
+    };
+  });
+  
+  // Combine and sort by date
+  var allPayments=regularPayments.concat(custTxnPayments).sort(function(a,b){
+    return b.date.localeCompare(a.date);
+  });
+  
   var balance=calcCustomerBalance(_current360CustomerId);
   
   // Get recent activity
   var recentSales=sales.slice(0,5);
-  var recentPayments=payments.slice(0,5);
+  var recentPayments=allPayments.slice(0,5);
   
   var html='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px">';
   
@@ -5510,14 +5539,16 @@ function render360Overview(){
     html+='<div style="padding:20px;text-align:center;color:var(--tx3)">No payments yet</div>';
   } else {
     recentPayments.forEach(function(p){
-      var isIn=payIsIn(p.type);
+      var isIn=payIsIn(p.type)||(p.type==='payment_in');
+      var label=p.isFromTxn?(p.type==='advance'?'Order Advance':'Payment'):(payTypeLabel(p.type)||p.type);
       html+='<div class="c360-item">';
       html+='<div style="display:flex;justify-content:space-between;margin-bottom:8px">';
-      html+='<strong>'+payTypeLabel(p.type)+'</strong>';
+      html+='<strong>'+label+'</strong>';
       html+='<span style="color:var(--tx3)">'+p.date+'</span>';
       html+='</div>';
       html+='<div style="font-size:20px;font-weight:600;color:'+(isIn?'var(--grn)':'var(--red)')+'">₹'+fmt(p.amt)+'</div>';
-      html+='<div style="font-size:13px;color:var(--tx3);margin-top:4px">'+p.mode+'</div>';
+      html+='<div style="font-size:13px;color:var(--tx3);margin-top:4px">'+(p.mode||p.note||'-')+'</div>';
+      if(p.isFromTxn)html+='<div style="font-size:11px;color:var(--tx3);margin-top:2px">'+p.note+'</div>';
       html+='</div>';
     });
   }
@@ -5566,35 +5597,73 @@ function render360Sales(){
 }
 
 function render360Payments(){
-  var payments=DB.payments.filter(function(p){return p.cid===_current360CustomerId;});
+  var c=DB.custs[_current360CustomerId];
+  if(!c)return;
   
-  if(payments.length===0){
+  // FIXED: Include BOTH regular payments AND customer transaction payments (order payments)
+  var regularPayments=DB.payments.filter(function(p){return p.cid===_current360CustomerId;});
+  var custTxnPayments=(c.txns||[]).filter(function(t){
+    return t.type==='payment_in'||t.type==='advance'||t.type==='payment_out';
+  }).map(function(t){
+    // Convert txn format to payment format for display
+    return {
+      date:t.date,
+      amt:t.paid||t.amount||0,
+      type:t.type==='payment_in'?'payment':(t.type==='advance'?'advance':'out'),
+      mode:'',
+      note:t.bill||'',
+      isFromTxn:true,
+      txnData:t
+    };
+  });
+  
+  // Combine and sort by date (newest first)
+  var allPayments=regularPayments.concat(custTxnPayments).sort(function(a,b){
+    return b.date.localeCompare(a.date);
+  });
+  
+  if(allPayments.length===0){
     G('c360-content').innerHTML='<div style="padding:40px;text-align:center;color:var(--tx3)"><div style="font-size:48px;margin-bottom:10px">💰</div><div>No payments yet</div></div>';
     return;
   }
   
+  var totalAmt=allPayments.reduce(function(sum,p){return sum+p.amt;},0);
+  
   var html='<div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">';
-  html+='<h3 style="margin:0">All Payments ('+payments.length+')</h3>';
-  html+='<div>Total: <strong>₹'+fmt(payments.reduce(function(sum,p){return sum+p.amt;},0))+'</strong></div>';
+  html+='<h3 style="margin:0">All Payments ('+allPayments.length+')</h3>';
+  html+='<div>Total: <strong>₹'+fmt(totalAmt)+'</strong></div>';
   html+='</div>';
   
-  payments.forEach(function(p,idx){
-    var isIn=payIsIn(p.type);
+  allPayments.forEach(function(p,idx){
+    var isIn=payIsIn(p.type)||(p.type==='payment_in')||(p.type==='advance');
     var color=isIn?'var(--grn)':'var(--red)';
+    var label=p.isFromTxn?(p.type==='advance'?'Order Advance':'Payment'):payTypeLabel(p.type);
+    
     html+='<div class="c360-item">';
     html+='<div style="display:flex;justify-content:space-between;align-items:start">';
     html+='<div style="flex:1">';
     html+='<div style="display:flex;gap:10px;align-items:center;margin-bottom:8px">';
-    html+='<strong style="font-size:16px">'+payTypeLabel(p.type)+'</strong>';
+    html+='<strong style="font-size:16px">'+label+'</strong>';
+    if(p.isFromTxn)html+='<span style="font-size:11px;padding:2px 6px;background:var(--blu);color:white;border-radius:4px">Order Payment</span>';
     html+='<span style="font-size:12px;color:var(--tx3)">'+p.date+'</span>';
     html+='</div>';
     html+='<div style="font-size:24px;font-weight:600;color:'+color+';margin-bottom:8px">₹'+fmt(p.amt)+'</div>';
     html+='<div style="font-size:13px;color:var(--tx3)">';
-    html+='<strong>'+p.mode+'</strong>';
-    if(p.note)html+=' • '+p.note;
+    if(p.mode)html+='<strong>'+p.mode+'</strong>';
+    if(p.note&&!p.isFromTxn)html+=(p.mode?' • ':'')+p.note;
+    if(p.isFromTxn)html+=(p.mode?' • ':'')+'Bill: '+p.note;
     html+='</div>';
     html+='</div>';
-    html+='<button class="btn" onclick="editPayment360('+idx+')" style="padding:6px 12px">✏️ Edit</button>';
+    
+    // Only show edit button for regular payments (not txn payments)
+    if(!p.isFromTxn){
+      // Find index in regular payments array
+      var regIdx=regularPayments.indexOf(p);
+      html+='<button class="btn" onclick="editPayment360('+regIdx+')" style="padding:6px 12px">✏️ Edit</button>';
+    } else {
+      html+='<div style="padding:6px 12px;color:var(--tx3);font-size:12px;font-style:italic">From Order</div>';
+    }
+    
     html+='</div>';
     html+='</div>';
   });
@@ -5639,9 +5708,16 @@ function render360Timeline(){
     activities.push({type:'sale',date:s.date,data:s});
   });
   
-  // Add payments
+  // Add regular payments
   DB.payments.filter(function(p){return p.cid===_current360CustomerId;}).forEach(function(p){
     activities.push({type:'payment',date:p.date,data:p});
+  });
+  
+  // FIXED: Add customer transaction payments (order payments)
+  (c.txns||[]).filter(function(t){
+    return t.type==='payment_in'||t.type==='advance'||t.type==='payment_out';
+  }).forEach(function(t){
+    activities.push({type:'txn_payment',date:t.date,data:t});
   });
   
   // Add orders
@@ -5673,6 +5749,11 @@ function render360Timeline(){
       icon='💰';
       title=payTypeLabel(act.data.type);
       details='₹'+fmt(act.data.amt)+' • '+act.data.mode;
+      color='var(--grn)';
+    } else if(act.type==='txn_payment'){
+      icon='💰';
+      title=(act.data.type==='advance'?'Order Advance':'Payment')+' • '+act.data.bill;
+      details='₹'+fmt(act.data.paid||act.data.amount||0);
       color='var(--grn)';
     } else if(act.type==='order'){
       icon='📦';
@@ -5743,8 +5824,9 @@ function editSale360(idx){
 }
 
 function editPayment360(idx){
-  var payments=DB.payments.filter(function(p){return p.cid===_current360CustomerId;});
-  var payment=payments[idx];
+  // Get only regular payments (not txn payments)
+  var regularPayments=DB.payments.filter(function(p){return p.cid===_current360CustomerId;});
+  var payment=regularPayments[idx];
   if(!payment){
     alert('Payment not found');
     return;
