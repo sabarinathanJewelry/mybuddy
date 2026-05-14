@@ -1,0 +1,77 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase/client";
+import { useAuth } from "@/stores/auth";
+import { useBoardRate } from "@/stores/board-rate";
+import { useLangStore } from "@/stores/lang";
+
+export default function SessionBootstrap({ children }: { children: React.ReactNode }) {
+  const [ready, setReady] = useState(false);
+  const router = useRouter();
+  const setProfile = useAuth((s) => s.setProfile);
+  const setRate = useBoardRate((s) => s.setRate);
+  const setLang = useLangStore((s) => s.setLang);
+
+  useEffect(() => {
+    const client = supabase();
+
+    async function init() {
+      const { data: { session } } = await client.auth.getSession();
+      if (!session) {
+        router.replace("/login");
+        return;
+      }
+
+      // Load profile
+      const { data: profile } = await client
+        .from("profiles")
+        .select("id, display_name, role, language")
+        .eq("id", session.user.id)
+        .single();
+
+      if (profile) {
+        setProfile(profile);
+        if (profile.language) setLang(profile.language as "en" | "ta");
+      }
+
+      // Load current board rate
+      const { data: rate } = await client
+        .from("board_rates")
+        .select("*")
+        .order("effective_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (rate) setRate(rate);
+
+      setReady(true);
+    }
+
+    init();
+
+    const { data: listener } = client.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
+        setProfile(null);
+        router.replace("/login");
+      }
+    });
+
+    return () => listener.subscription.unsubscribe();
+  }, [router, setProfile, setRate, setLang]);
+
+  if (!ready) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-canvas">
+        <div className="text-center">
+          <div className="w-10 h-10 border-4 border-gold border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-ink-dim text-sm">Loading…</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
