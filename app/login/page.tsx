@@ -32,8 +32,7 @@ export default function LoginPage() {
       if (!res.ok) throw new Error(data.error || "Login failed");
 
       const { error: verifyErr } = await supabase().auth.verifyOtp({
-        email: data.email,
-        token: data.token,
+        token_hash: data.token,
         type: "magiclink",
       });
       if (verifyErr) throw verifyErr;
