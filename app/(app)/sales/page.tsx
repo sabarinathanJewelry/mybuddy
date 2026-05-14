@@ -10,7 +10,7 @@ export default function SalesPage() {
   const { data: sales, isLoading } = useSales();
 
   return (
-    <div className="max-w-3xl mx-auto space-y-5">
+    <div className="max-w-4xl mx-auto space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-ink">{t("sales")}</h1>
         <Link href="/sales/new" className="bg-gold hover:bg-gold-dark text-white text-sm font-medium px-4 py-2 rounded-lg2">
@@ -30,6 +30,7 @@ export default function SalesPage() {
                 <th className="text-left px-3 py-2.5 hidden sm:table-cell">{t("customers")}</th>
                 <th className="text-right px-3 py-2.5">{t("total")}</th>
                 <th className="text-left px-3 py-2.5">{t("status")}</th>
+                <th className="px-3 py-2.5"></th>
               </tr>
             </thead>
             <tbody>
@@ -44,10 +45,13 @@ export default function SalesPage() {
                       {s.status}
                     </span>
                   </td>
+                  <td className="px-3 py-2.5 text-right">
+                    <Link href={`/sales/${s.id}/edit`} className="text-xs text-gold hover:underline">Edit</Link>
+                  </td>
                 </tr>
               ))}
               {!sales?.length && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-ink-dim">{t("no_data")}</td></tr>
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-ink-dim">{t("no_data")}</td></tr>
               )}
             </tbody>
           </table>

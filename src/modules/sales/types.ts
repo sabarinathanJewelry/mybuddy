@@ -1,6 +1,6 @@
-export type Metal = "gold_22k" | "gold_24k" | "gold_18k" | "silver" | "silver_pure";
+export type Metal = "gold_22k" | "gold_24k" | "gold_18k" | "silver" | "silver_pure" | "silver_mpr";
 export type PaymentMode = "cash" | "upi" | "bank" | "old_gold" | "old_silver" | "advance";
-export type SaleSeries = "G" | "S" | "D";
+export type SaleSeries = "G22" | "G18" | "G24" | "S" | "D";
 
 export interface SaleItemDraft {
   id: string;
@@ -12,12 +12,24 @@ export interface SaleItemDraft {
   rate: number;
   va_pct: number;
   making_amt: number;
+  // Stone section (togglable)
+  show_stone: boolean;
   stone_amt: number;
+  // Diamond section (togglable)
+  show_diamond: boolean;
   diamond_amt: number;
+  diamond_carat_rate: number;
+  diamond_cents: number;
+  // GST
+  gst_enabled: boolean;
   gst_pct: number;
+  // Silver MPR — value entered directly, weight optional
+  is_value_entry: boolean;
+  // Suspense
   is_suspense: boolean;
   supplier_id: string | null;
-  // computed
+  supplier_name: string | null;
+  // Computed
   net_wt: number;
   pure_wt: number;
   line_total: number;
