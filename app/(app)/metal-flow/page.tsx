@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useGlobalDate } from "@/stores/global-date";
@@ -22,11 +23,12 @@ function useMetalFlow() {
 }
 
 const TABS = ["intake", "batches"] as const;
+type MetalTab = (typeof TABS)[number];
 
 export default function MetalFlowPage() {
   const t = useT();
   const { data, isLoading } = useMetalFlow();
-  const [tab, setTab] = (typeof window !== "undefined" ? [window.__metalTab ?? "intake", (v: string) => { (window as any).__metalTab = v; }] : ["intake", () => {}]) as [string, (v: string) => void];
+  const [tab, setTab] = useState<MetalTab>("intake");
 
   return (
     <div className="max-w-3xl mx-auto space-y-5">
@@ -34,7 +36,7 @@ export default function MetalFlowPage() {
 
       <div className="flex border-b border-line gap-1">
         {TABS.map((tb) => (
-          <button key={tb} onClick={() => {}} className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px capitalize ${tb === "intake" ? "border-gold text-gold" : "border-transparent text-ink-dim"}`}>
+          <button key={tb} onClick={() => setTab(tb)} className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px capitalize ${tab === tb ? "border-gold text-gold" : "border-transparent text-ink-dim"}`}>
             {tb}
           </button>
         ))}
@@ -42,7 +44,7 @@ export default function MetalFlowPage() {
 
       {isLoading ? <p className="text-ink-dim text-sm">{t("loading")}</p> : (
         <div className="space-y-4">
-          <h3 className="text-sm font-semibold text-ink-dim">{t("old_metal_intake")}</h3>
+          {tab === "intake" && <h3 className="text-sm font-semibold text-ink-dim">{t("old_metal_intake")}</h3>}
           <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
             <table className="w-full text-sm">
               <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">

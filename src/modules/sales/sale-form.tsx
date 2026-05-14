@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { v4 as uuid } from "crypto";
 import { useT } from "@/i18n";
 import { useGlobalDate } from "@/stores/global-date";
 import { useBoardRate } from "@/stores/board-rate";
@@ -18,7 +17,7 @@ import { clsx } from "clsx";
 
 function newItem(): SaleItemDraft {
   return {
-    id: Math.random().toString(36).slice(2),
+    id: crypto.randomUUID(),
     description: "", metal: "gold_22k", gross_wt: 0, stone_wt: 0,
     purity_pct: 91.6, rate: 0, va_pct: 0, making_amt: 0,
     stone_amt: 0, diamond_amt: 0, gst_pct: 3,
@@ -28,7 +27,7 @@ function newItem(): SaleItemDraft {
 }
 
 function newPayment(): SalePaymentDraft {
-  return { id: Math.random().toString(36).slice(2), mode: "cash", amount: 0, metal_wt: 0, metal_purity: 91.6, is_advance: false };
+  return { id: crypto.randomUUID(), mode: "cash", amount: 0, metal_wt: 0, metal_purity: 91.6, is_advance: false };
 }
 
 const METALS: { value: Metal; label: string }[] = [
