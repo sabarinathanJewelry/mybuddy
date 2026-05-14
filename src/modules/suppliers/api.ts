@@ -80,9 +80,11 @@ export function useSaveSupplierPayment() {
       if (error) throw error;
       // Best-effort ledger
       if (data.mode === "cash") {
-        await client.from("cash_ledger").insert({ tx_date: data.pay_date, direction: "out", amount: data.amount, description: "Supplier payment", ref_type: "supplier_payment", ref_id: row.id }).catch(console.warn);
+        const { error: e } = await client.from("cash_ledger").insert({ tx_date: data.pay_date, direction: "out", amount: data.amount, description: "Supplier payment", ref_type: "supplier_payment", ref_id: row.id });
+        if (e) console.warn(e);
       } else if (data.mode === "bank") {
-        await client.from("bank_ledger").insert({ tx_date: data.pay_date, direction: "out", amount: data.amount, description: "Supplier payment", ref_type: "supplier_payment", ref_id: row.id }).catch(console.warn);
+        const { error: e } = await client.from("bank_ledger").insert({ tx_date: data.pay_date, direction: "out", amount: data.amount, description: "Supplier payment", ref_type: "supplier_payment", ref_id: row.id });
+        if (e) console.warn(e);
       }
       return row;
     },

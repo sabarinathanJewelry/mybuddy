@@ -33,7 +33,8 @@ export default function LoansPage() {
       const { data: row, error } = await supabase().from("loans").insert({ ...data, outstanding: data.principal }).select().single();
       if (error) throw error;
       if (data.affects_cash) {
-        await supabase().from("cash_ledger").insert({ tx_date: data.loan_date, direction: "in", amount: data.principal, description: `Loan from ${data.lender}`, ref_type: "loan" }).catch(console.warn);
+        const { error: ledgerErr } = await supabase().from("cash_ledger").insert({ tx_date: data.loan_date, direction: "in", amount: data.principal, description: `Loan from ${data.lender}`, ref_type: "loan" });
+        if (ledgerErr) console.warn(ledgerErr);
       }
       return row;
     },

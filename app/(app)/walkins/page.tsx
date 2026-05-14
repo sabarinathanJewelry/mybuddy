@@ -26,7 +26,8 @@ export default function WalkinsPage() {
     mutationFn: async (data: typeof form) => {
       const { data: row, error } = await supabase().from("walk_ins").insert(data).select().single();
       if (error) throw error;
-      await supabase().from("cash_ledger").insert({ tx_date: data.sale_date, direction: "in", amount: data.amount, description: `Walk-in: ${data.description}`, ref_type: "walkin", ref_id: row.id }).catch(console.warn);
+      const { error: ledgerErr } = await supabase().from("cash_ledger").insert({ tx_date: data.sale_date, direction: "in", amount: data.amount, description: `Walk-in: ${data.description}`, ref_type: "walkin", ref_id: row.id });
+      if (ledgerErr) console.warn(ledgerErr);
       return row;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["walkins"] }); setShowForm(false); },

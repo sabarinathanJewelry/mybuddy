@@ -48,7 +48,8 @@ export default function ExpensesPage() {
         .insert({ ...data, category_id: data.category_id || null })
         .select().single();
       if (error) throw error;
-      await supabase().from("cash_ledger").insert({ tx_date: data.exp_date, direction: "out", amount: data.amount, description: data.description, ref_type: "expense", ref_id: row.id }).catch(console.warn);
+      const { error: ledgerErr } = await supabase().from("cash_ledger").insert({ tx_date: data.exp_date, direction: "out", amount: data.amount, description: data.description, ref_type: "expense", ref_id: row.id });
+      if (ledgerErr) console.warn(ledgerErr);
       return row;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["expenses"] }); setShowForm(false); },

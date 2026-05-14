@@ -27,15 +27,17 @@ export function useSavePayment() {
       if (error) throw error;
       // Best-effort ledger fan-out
       if (data.mode === "cash") {
-        await client.from("cash_ledger").insert({
+        const { error: e } = await client.from("cash_ledger").insert({
           tx_date: data.pay_date, direction: data.direction,
           amount: data.amount, description: "Payment", ref_type: "payment", ref_id: row.id,
-        }).catch(console.warn);
+        });
+        if (e) console.warn(e);
       } else if (data.mode === "upi" || data.mode === "bank") {
-        await client.from("bank_ledger").insert({
+        const { error: e } = await client.from("bank_ledger").insert({
           tx_date: data.pay_date, direction: data.direction,
           amount: data.amount, description: "Payment", ref_type: "payment", ref_id: row.id,
-        }).catch(console.warn);
+        });
+        if (e) console.warn(e);
       }
       return row;
     },
