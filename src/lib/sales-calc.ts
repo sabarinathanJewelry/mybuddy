@@ -39,7 +39,7 @@ export interface LineComputed {
 export function rateForMetal(board: BoardRate, metal: Metal | null): number {
   if (!metal) return 0;
   if (metal === "silver_mpr") return board.silver ?? 0;
-  return (board as Record<string, number>)[metal] ?? 0;
+  return board[metal as keyof BoardRate] ?? 0;
 }
 
 export function computeLine(i: LineInput): LineComputed {
