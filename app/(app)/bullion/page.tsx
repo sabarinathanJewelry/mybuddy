@@ -18,36 +18,48 @@ const PAY_MODES = [
 type TradeType = "buy" | "sell";
 type Metal = "gold" | "silver";
 
+// Supabase returns numeric columns as strings — coerce everything via Number()
+function sumBy(arr: any[], filter: (r: any) => boolean, key: string): number {
+  return arr.filter(filter).reduce((s: number, r: any) => s + (Number(r[key]) || 0), 0);
+}
+
 function useReserve() {
   return useQuery({
     queryKey: ["metal_reserve"],
     queryFn: async () => {
       const client = supabase();
-      const [batchRes, dispatchRes, bullionRes] = await Promise.all([
+      const [batchRes, dispatchRes, bullionRes, openingRes] = await Promise.all([
         client.from("melt_batches").select("metal, output_wt").eq("status", "refined"),
         client.from("metal_dispatches").select("metal, weight_g"),
         client.from("bullion_trades").select("trade_type, metal, pure_wt"),
+        client.from("opening_balances").select("balance_type, amount")
+          .in("balance_type", ["gold_g", "silver_g"])
+          .order("effective_date", { ascending: false }),
       ]);
 
-      const batches = batchRes.data ?? [];
-      const dispatches = dispatchRes.data ?? [];
-      const bullion = bullionRes.data ?? [];
+      const batches   = batchRes.data   ?? [];
+      const dispatches= dispatchRes.data ?? [];
+      const bullion   = bullionRes.data  ?? [];
+      const openings  = openingRes.data  ?? [];
 
-      const sumBy = (arr: any[], filter: (r: any) => boolean, key: string) =>
-        arr.filter(filter).reduce((s: number, r: any) => s + (r[key] ?? 0), 0);
+      // Latest opening per type
+      const openingGoldG   = Number(openings.find((o: any) => o.balance_type === "gold_g")?.amount)   || 0;
+      const openingSilverG = Number(openings.find((o: any) => o.balance_type === "silver_g")?.amount) || 0;
 
-      const goldFromBatches  = sumBy(batches,    (r) => r.metal?.startsWith("gold"),   "output_wt");
-      const silverFromBatches= sumBy(batches,    (r) => r.metal?.startsWith("silver"), "output_wt");
-      const goldDispatched   = sumBy(dispatches, (r) => r.metal === "gold",   "weight_g");
-      const silverDispatched = sumBy(dispatches, (r) => r.metal === "silver", "weight_g");
-      const goldBullionIn    = sumBy(bullion, (r) => r.trade_type === "buy"  && r.metal === "gold",   "pure_wt");
-      const silverBullionIn  = sumBy(bullion, (r) => r.trade_type === "buy"  && r.metal === "silver", "pure_wt");
-      const goldBullionOut   = sumBy(bullion, (r) => r.trade_type === "sell" && r.metal === "gold",   "pure_wt");
-      const silverBullionOut = sumBy(bullion, (r) => r.trade_type === "sell" && r.metal === "silver", "pure_wt");
+      const goldFromBatches   = sumBy(batches,    (r) => r.metal?.startsWith("gold"),   "output_wt");
+      const silverFromBatches = sumBy(batches,    (r) => r.metal?.startsWith("silver"), "output_wt");
+      const goldDispatched    = sumBy(dispatches, (r) => r.metal === "gold",   "weight_g");
+      const silverDispatched  = sumBy(dispatches, (r) => r.metal === "silver", "weight_g");
+      const goldBullionIn     = sumBy(bullion, (r) => r.trade_type === "buy"  && r.metal === "gold",   "pure_wt");
+      const silverBullionIn   = sumBy(bullion, (r) => r.trade_type === "buy"  && r.metal === "silver", "pure_wt");
+      const goldBullionOut    = sumBy(bullion, (r) => r.trade_type === "sell" && r.metal === "gold",   "pure_wt");
+      const silverBullionOut  = sumBy(bullion, (r) => r.trade_type === "sell" && r.metal === "silver", "pure_wt");
 
       return {
-        goldReserve:   goldFromBatches   + goldBullionIn   - goldDispatched   - goldBullionOut,
-        silverReserve: silverFromBatches + silverBullionIn - silverDispatched - silverBullionOut,
+        goldReserve:   openingGoldG   + goldFromBatches   + goldBullionIn   - goldDispatched   - goldBullionOut,
+        silverReserve: openingSilverG + silverFromBatches + silverBullionIn - silverDispatched - silverBullionOut,
+        openingGoldG,
+        openingSilverG,
       };
     },
   });
@@ -59,7 +71,6 @@ export default function BullionPage() {
   const qc = useQueryClient();
   const { data: reserve } = useReserve();
 
-  // Trades query with nested payments
   const { data: trades, isLoading } = useQuery({
     queryKey: ["bullion_trades"],
     queryFn: async () => {
@@ -81,11 +92,32 @@ export default function BullionPage() {
   const [tradeDate, setTradeDate] = useState(globalDate);
   const [pureWt, setPureWt] = useState(0);
   const [ratePerG, setRatePerG] = useState(0);
+  const [totalAmt, setTotalAmt] = useState(0);
+  // "total" = user last typed in total field, rate is auto-computed
+  // "rate"  = user last typed in rate field, total is auto-computed
+  const [activeField, setActiveField] = useState<"rate" | "total">("total");
   const [firstPayAmt, setFirstPayAmt] = useState(0);
   const [firstPayMode, setFirstPayMode] = useState("cash");
   const [formNotes, setFormNotes] = useState("");
 
-  const totalAmount = parseFloat((pureWt * ratePerG).toFixed(2));
+  function onWtChange(val: number) {
+    setPureWt(val);
+    if (activeField === "total" && totalAmt > 0 && val > 0) {
+      setRatePerG(parseFloat((totalAmt / val).toFixed(2)));
+    } else if (activeField === "rate" && ratePerG > 0) {
+      setTotalAmt(parseFloat((val * ratePerG).toFixed(2)));
+    }
+  }
+  function onRateChange(val: number) {
+    setRatePerG(val);
+    setActiveField("rate");
+    setTotalAmt(parseFloat((pureWt * val).toFixed(2)));
+  }
+  function onTotalChange(val: number) {
+    setTotalAmt(val);
+    setActiveField("total");
+    if (pureWt > 0) setRatePerG(parseFloat((val / pureWt).toFixed(2)));
+  }
 
   // Add payment panel
   const [payingTradeId, setPayingTradeId] = useState<string | null>(null);
@@ -94,20 +126,20 @@ export default function BullionPage() {
   const [payDate, setPayDate] = useState(globalDate);
 
   function resetForm() {
-    setPartyName(""); setPureWt(0); setRatePerG(0);
-    setFirstPayAmt(0); setFirstPayMode("cash"); setFormNotes("");
+    setPartyName(""); setPureWt(0); setRatePerG(0); setTotalAmt(0);
+    setActiveField("total"); setFirstPayAmt(0); setFirstPayMode("cash"); setFormNotes("");
     setTradeDate(globalDate); setShowForm(false);
   }
 
   const saveTrade = useMutation({
     mutationFn: async () => {
-      if (!partyName || pureWt <= 0 || ratePerG <= 0) throw new Error("Invalid input");
+      if (!partyName || pureWt <= 0 || totalAmt <= 0 || ratePerG <= 0) throw new Error("Invalid input");
       const client = supabase();
 
       const { data: row, error } = await client.from("bullion_trades").insert({
         trade_date: tradeDate, trade_type: tradeType,
         party_name: partyName, metal,
-        pure_wt: pureWt, rate_per_g: ratePerG, total_amount: totalAmount,
+        pure_wt: pureWt, rate_per_g: ratePerG, total_amount: totalAmt,
         notes: formNotes || null,
       }).select().single();
       if (error) throw error;
@@ -117,7 +149,6 @@ export default function BullionPage() {
           trade_id: row.id, pay_date: tradeDate,
           amount: firstPayAmt, mode: firstPayMode,
         });
-        // Buy = we pay OUT; Sell = we receive IN
         const direction = tradeType === "buy" ? "out" : "in";
         const desc = `Bullion ${tradeType}: ${partyName}`;
         if (firstPayMode === "cash") {
@@ -175,10 +206,10 @@ export default function BullionPage() {
   const rows = (trades ?? []) as any[];
 
   function paidFor(row: any): number {
-    return ((row.bullion_payments ?? []) as any[]).reduce((s: number, p: any) => s + (p.amount ?? 0), 0);
+    return ((row.bullion_payments ?? []) as any[]).reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0);
   }
   function pendingFor(row: any): number {
-    return row.total_amount - paidFor(row);
+    return Number(row.total_amount) - paidFor(row);
   }
 
   return (
@@ -186,16 +217,14 @@ export default function BullionPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">Bullion Trading</h1>
-          <p className="text-sm text-ink-dim mt-0.5">Buy / sell pure gold & silver with dealers — partial payments supported</p>
+          <p className="text-sm text-ink-dim mt-0.5">Buy / sell pure gold & silver — partial payments supported</p>
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => { setTradeType("buy"); setShowForm(true); }}
+          <button onClick={() => { setTradeType("buy"); setShowForm(true); }}
             className="bg-gold text-white text-sm px-4 py-2 rounded-lg2 font-medium">
             + Buy
           </button>
-          <button
-            onClick={() => { setTradeType("sell"); setShowForm(true); }}
+          <button onClick={() => { setTradeType("sell"); setShowForm(true); }}
             className="bg-ok text-white text-sm px-4 py-2 rounded-lg2 font-medium">
             + Sell
           </button>
@@ -208,12 +237,16 @@ export default function BullionPage() {
           <div className="bg-white rounded-xl border border-line p-4 shadow-soft">
             <p className="text-xs text-ink-dim mb-1">Gold Reserve (net)</p>
             <p className="text-xl font-bold text-gold">{grams(reserve.goldReserve)}</p>
-            <p className="text-xs text-ink-dim mt-1">Refined + Bullion bought − Dispatched − Bullion sold</p>
+            <p className="text-xs text-ink-dim mt-1">
+              Opening {grams(reserve.openingGoldG)} + Refined + Bought − Dispatched − Sold
+            </p>
           </div>
           <div className="bg-white rounded-xl border border-line p-4 shadow-soft">
             <p className="text-xs text-ink-dim mb-1">Silver Reserve (net)</p>
             <p className="text-xl font-bold text-ink-mid">{grams(reserve.silverReserve)}</p>
-            <p className="text-xs text-ink-dim mt-1">Same calculation for silver</p>
+            <p className="text-xs text-ink-dim mt-1">
+              Opening {grams(reserve.openingSilverG)} + same calculation
+            </p>
           </div>
         </div>
       )}
@@ -254,34 +287,49 @@ export default function BullionPage() {
                 onChange={(e) => setTradeDate(e.target.value)} className={inp} />
             </div>
 
+            {/* Weight */}
             <div>
               <label className="block text-xs text-ink-dim mb-1">Pure Weight (g) *</label>
               <input type="number" step="0.001" value={pureWt || ""}
                 placeholder="0" onFocus={(e) => e.target.select()}
-                onChange={(e) => setPureWt(parseFloat(e.target.value) || 0)}
+                onChange={(e) => onWtChange(parseFloat(e.target.value) || 0)}
                 className={inp} />
             </div>
 
+            {/* Rate — auto-computed when total is entered */}
             <div>
-              <label className="block text-xs text-ink-dim mb-1">Rate per gram (₹) *</label>
+              <label className="block text-xs text-ink-dim mb-1">
+                Rate per gram (₹)
+                {activeField === "total" && pureWt > 0 && <span className="ml-1 text-gold">(auto)</span>}
+              </label>
               <input type="number" step="0.01" value={ratePerG || ""}
                 placeholder="0" onFocus={(e) => e.target.select()}
-                onChange={(e) => setRatePerG(parseFloat(e.target.value) || 0)}
+                onChange={(e) => onRateChange(parseFloat(e.target.value) || 0)}
                 className={inp} />
             </div>
-          </div>
 
-          {pureWt > 0 && ratePerG > 0 && (
-            <div className="bg-gold/5 border border-gold/20 rounded-lg2 px-4 py-3 flex justify-between items-center text-sm">
-              <span className="text-ink-dim">{pureWt.toFixed(3)}g × {inr(ratePerG)}/g</span>
-              <span className="text-xl font-bold text-gold">{inr(totalAmount)}</span>
+            {/* Total — auto-computed when rate is entered */}
+            <div className="col-span-2">
+              <label className="block text-xs text-ink-dim mb-1">
+                Total Amount (₹) *
+                {activeField === "rate" && pureWt > 0 && <span className="ml-1 text-gold">(auto)</span>}
+              </label>
+              <input type="number" step="0.01" value={totalAmt || ""}
+                placeholder="Enter total OR enter rate above" onFocus={(e) => e.target.select()}
+                onChange={(e) => onTotalChange(parseFloat(e.target.value) || 0)}
+                className={`${inp} font-semibold`} />
+              <p className="text-xs text-ink-dim mt-1">
+                {pureWt > 0 && ratePerG > 0 && totalAmt > 0
+                  ? `${grams(pureWt)} × ${inr(ratePerG)}/g = ${inr(totalAmt)}`
+                  : "Enter weight + total, OR weight + rate — the third field auto-computes"}
+              </p>
             </div>
-          )}
+          </div>
 
           {/* Optional first payment */}
           <div className="border-t border-line pt-3 space-y-3">
             <p className="text-xs font-medium text-ink-dim">
-              {tradeType === "buy" ? "Pay now (optional — add more payments later)" : "Receive now (optional — add more later)"}
+              {tradeType === "buy" ? "Pay now (optional — add more later)" : "Receive now (optional — add more later)"}
             </p>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -300,9 +348,9 @@ export default function BullionPage() {
                 </select>
               </div>
             </div>
-            {firstPayAmt > 0 && totalAmount > 0 && (
+            {firstPayAmt > 0 && totalAmt > 0 && (
               <p className="text-xs text-ink-dim">
-                Pending after this: <strong className="text-err">{inr(totalAmount - firstPayAmt)}</strong>
+                Pending after this: <strong className="text-err">{inr(totalAmt - firstPayAmt)}</strong>
               </p>
             )}
           </div>
@@ -315,7 +363,7 @@ export default function BullionPage() {
 
           <div className="flex gap-2">
             <button
-              disabled={saveTrade.isPending || !partyName || pureWt <= 0 || ratePerG <= 0}
+              disabled={saveTrade.isPending || !partyName || pureWt <= 0 || totalAmt <= 0 || ratePerG <= 0}
               onClick={() => saveTrade.mutate()}
               className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
               {saveTrade.isPending ? "Saving…" : `Record ${tradeType === "buy" ? "Purchase" : "Sale"}`}
@@ -324,7 +372,7 @@ export default function BullionPage() {
               className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
           </div>
           {saveTrade.isError && (
-            <p className="text-xs text-err">Save failed — run migration 004 in Supabase SQL Editor first.</p>
+            <p className="text-xs text-err">Save failed — run migration 004 &amp; 005 in Supabase SQL Editor first.</p>
           )}
         </div>
       )}
@@ -342,7 +390,7 @@ export default function BullionPage() {
               <button onClick={() => setPayingTradeId(null)} className="text-ink-dim text-sm hover:text-ink">✕</button>
             </div>
             <div className="flex gap-4 text-xs">
-              <span className="text-ink-dim">Total: <strong className="text-ink">{inr(trade.total_amount)}</strong></span>
+              <span className="text-ink-dim">Total: <strong className="text-ink">{inr(Number(trade.total_amount))}</strong></span>
               <span className="text-ink-dim">Paid: <strong className="text-ok">{inr(paid)}</strong></span>
               <span className="text-ink-dim">Pending: <strong className="text-err">{inr(pend)}</strong></span>
             </div>
@@ -351,8 +399,7 @@ export default function BullionPage() {
                 <label className="block text-xs text-ink-dim mb-1">Amount</label>
                 <input type="number" step="0.01" value={payAmount || ""}
                   placeholder="0" onFocus={(e) => e.target.select()}
-                  onChange={(e) => setPayAmount(parseFloat(e.target.value) || 0)}
-                  className={inp} />
+                  onChange={(e) => setPayAmount(parseFloat(e.target.value) || 0)} className={inp} />
               </div>
               <div>
                 <label className="block text-xs text-ink-dim mb-1">Mode</label>
@@ -414,9 +461,9 @@ export default function BullionPage() {
                     <td className="px-3 py-2.5 capitalize">
                       <span className={r.metal === "gold" ? "text-gold" : "text-ink-mid"}>{r.metal}</span>
                     </td>
-                    <td className="px-3 py-2.5 text-right font-mono">{grams(r.pure_wt)}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{inr(r.rate_per_g)}</td>
-                    <td className="px-3 py-2.5 text-right font-mono font-semibold">{inr(r.total_amount)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono">{grams(Number(r.pure_wt))}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{inr(Number(r.rate_per_g))}</td>
+                    <td className="px-3 py-2.5 text-right font-mono font-semibold">{inr(Number(r.total_amount))}</td>
                     <td className="px-3 py-2.5 text-right font-mono text-ok">{inr(paid)}</td>
                     <td className="px-3 py-2.5 text-right font-mono">
                       <span className={pend > 0.01 ? "text-err font-semibold" : "text-ink-dim"}>{inr(pend)}</span>

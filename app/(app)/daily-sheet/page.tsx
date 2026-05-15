@@ -1,11 +1,15 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useGlobalDate } from "@/stores/global-date";
 import { useT } from "@/i18n";
 import { inr, grams } from "@/lib/format";
 
+const inp = "w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
+
+// Today's snapshot
 function useDaily(date: string) {
   const client = supabase();
   return useQuery({
@@ -19,26 +23,66 @@ function useDaily(date: string) {
         client.from("walk_in_summaries").select("gold_walkin,silver_walkin,other_walkin,gold_walkout,silver_walkout,other_walkout").eq("summary_date", date),
       ]);
 
-      const cashIn = (cashRes.data ?? []).filter((r) => r.direction === "in").reduce((s, r) => s + r.amount, 0);
-      const cashOut = (cashRes.data ?? []).filter((r) => r.direction === "out").reduce((s, r) => s + r.amount, 0);
-      const bankIn = (bankRes.data ?? []).filter((r) => r.direction === "in").reduce((s, r) => s + r.amount, 0);
-      const bankOut = (bankRes.data ?? []).filter((r) => r.direction === "out").reduce((s, r) => s + r.amount, 0);
-      const salesTotal = (salesRes.data ?? []).reduce((s, r) => s + r.total, 0);
-      const gstTotal = (salesRes.data ?? []).reduce((s, r) => s + (r.gst_amount ?? 0), 0);
+      const cashIn   = (cashRes.data ?? []).filter((r) => r.direction === "in").reduce((s, r) => s + Number(r.amount), 0);
+      const cashOut  = (cashRes.data ?? []).filter((r) => r.direction === "out").reduce((s, r) => s + Number(r.amount), 0);
+      const bankIn   = (bankRes.data ?? []).filter((r) => r.direction === "in").reduce((s, r) => s + Number(r.amount), 0);
+      const bankOut  = (bankRes.data ?? []).filter((r) => r.direction === "out").reduce((s, r) => s + Number(r.amount), 0);
+      const salesTotal = (salesRes.data ?? []).reduce((s, r) => s + Number(r.total), 0);
+      const gstTotal   = (salesRes.data ?? []).reduce((s, r) => s + (Number(r.gst_amount) || 0), 0);
       const salesCount = salesRes.data?.length ?? 0;
-      const oldGoldG = (metalRes.data ?? []).filter((r) => r.metal?.startsWith("gold")).reduce((s, r) => s + (r.pure_wt ?? 0), 0);
-      const oldSilverG = (metalRes.data ?? []).filter((r) => r.metal?.startsWith("silver")).reduce((s, r) => s + (r.pure_wt ?? 0), 0);
+      const oldGoldG   = (metalRes.data ?? []).filter((r) => r.metal?.startsWith("gold")).reduce((s, r) => s + (Number(r.pure_wt) || 0), 0);
+      const oldSilverG = (metalRes.data ?? []).filter((r) => r.metal?.startsWith("silver")).reduce((s, r) => s + (Number(r.pure_wt) || 0), 0);
       const walkinRow = (walkinRes.data ?? [])[0];
-      const walkinInCount = walkinRow
-        ? (walkinRow.gold_walkin ?? 0) + (walkinRow.silver_walkin ?? 0) + (walkinRow.other_walkin ?? 0)
-        : 0;
-      const walkinOutCount = walkinRow
-        ? (walkinRow.gold_walkout ?? 0) + (walkinRow.silver_walkout ?? 0) + (walkinRow.other_walkout ?? 0)
-        : 0;
-      const walkinGoldIn = walkinRow?.gold_walkin ?? 0;
+      const walkinInCount  = walkinRow ? (walkinRow.gold_walkin ?? 0) + (walkinRow.silver_walkin ?? 0) + (walkinRow.other_walkin ?? 0) : 0;
+      const walkinOutCount = walkinRow ? (walkinRow.gold_walkout ?? 0) + (walkinRow.silver_walkout ?? 0) + (walkinRow.other_walkout ?? 0) : 0;
+      const walkinGoldIn   = walkinRow?.gold_walkin ?? 0;
       const walkinSilverIn = walkinRow?.silver_walkin ?? 0;
 
       return { cashIn, cashOut, bankIn, bankOut, salesTotal, gstTotal, salesCount, oldGoldG, oldSilverG, walkinInCount, walkinOutCount, walkinGoldIn, walkinSilverIn };
+    },
+  });
+}
+
+// Running all-time position (opening + all movements)
+function usePosition() {
+  return useQuery({
+    queryKey: ["position"],
+    queryFn: async () => {
+      const client = supabase();
+      const [openingRes, cashAllRes, bankAllRes] = await Promise.all([
+        client.from("opening_balances").select("balance_type, amount, effective_date")
+          .order("effective_date", { ascending: false }),
+        client.from("cash_ledger").select("direction, amount"),
+        client.from("bank_ledger").select("direction, amount"),
+      ]);
+
+      // Take the latest opening entry per type
+      const seen = new Set<string>();
+      const opening: Record<string, number> = {};
+      for (const o of (openingRes.data ?? []) as any[]) {
+        if (!seen.has(o.balance_type)) {
+          seen.add(o.balance_type);
+          opening[o.balance_type] = Number(o.amount) || 0;
+        }
+      }
+
+      const cashRows = (cashAllRes.data ?? []) as any[];
+      const totalCashIn  = cashRows.filter((r) => r.direction === "in").reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      const totalCashOut = cashRows.filter((r) => r.direction === "out").reduce((s, r) => s + (Number(r.amount) || 0), 0);
+
+      const bankRows = (bankAllRes.data ?? []) as any[];
+      const totalBankIn  = bankRows.filter((r) => r.direction === "in").reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      const totalBankOut = bankRows.filter((r) => r.direction === "out").reduce((s, r) => s + (Number(r.amount) || 0), 0);
+
+      return {
+        openingCash:    opening["cash"]    ?? 0,
+        openingBank:    opening["bank"]    ?? 0,
+        openingGoldG:   opening["gold_g"]  ?? 0,
+        openingSilverG: opening["silver_g"] ?? 0,
+        hasOpening: Object.keys(opening).length > 0,
+        currentCash: (opening["cash"] ?? 0) + totalCashIn - totalCashOut,
+        currentBank: (opening["bank"] ?? 0) + totalBankIn - totalBankOut,
+      };
     },
   });
 }
@@ -57,7 +101,69 @@ function StatCard({ label, value, sub, color = "text-ink" }: StatCardProps) {
 export default function DailySheetPage() {
   const t = useT();
   const date = useGlobalDate((s) => s.date);
+  const qc = useQueryClient();
   const { data, isLoading } = useDaily(date);
+  const { data: pos } = usePosition();
+
+  // Cash → Bank transfer form
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [transferAmt, setTransferAmt] = useState(0);
+  const [transferDate, setTransferDate] = useState(date);
+  const [transferNotes, setTransferNotes] = useState("");
+
+  // Opening balance setup form
+  const [showOpeningForm, setShowOpeningForm] = useState(false);
+  const [obDate, setObDate] = useState(date);
+  const [obCash, setObCash] = useState(0);
+  const [obBank, setObBank] = useState(0);
+  const [obGold, setObGold] = useState(0);
+  const [obSilver, setObSilver] = useState(0);
+
+  const transfer = useMutation({
+    mutationFn: async () => {
+      if (transferAmt <= 0) throw new Error("Invalid amount");
+      const client = supabase();
+      const desc = transferNotes ? `Cash → Bank: ${transferNotes}` : "Cash → Bank transfer";
+      await Promise.all([
+        client.from("cash_ledger").insert({
+          tx_date: transferDate, direction: "out", amount: transferAmt,
+          description: desc, ref_type: "transfer",
+        }),
+        client.from("bank_ledger").insert({
+          tx_date: transferDate, direction: "in", amount: transferAmt,
+          description: desc, ref_type: "transfer",
+        }),
+      ]);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["daily-sheet", date] });
+      qc.invalidateQueries({ queryKey: ["position"] });
+      setTransferAmt(0); setTransferNotes(""); setShowTransfer(false);
+    },
+  });
+
+  const saveOpening = useMutation({
+    mutationFn: async () => {
+      const client = supabase();
+      const entries = [
+        { balance_type: "cash",     amount: obCash },
+        { balance_type: "bank",     amount: obBank },
+        { balance_type: "gold_g",   amount: obGold },
+        { balance_type: "silver_g", amount: obSilver },
+      ];
+      for (const e of entries) {
+        await client.from("opening_balances").upsert(
+          { effective_date: obDate, balance_type: e.balance_type, amount: e.amount },
+          { onConflict: "effective_date,balance_type" }
+        );
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["position"] });
+      qc.invalidateQueries({ queryKey: ["metal_reserve"] });
+      setShowOpeningForm(false);
+    },
+  });
 
   return (
     <div className="max-w-3xl mx-auto space-y-5">
@@ -66,18 +172,156 @@ export default function DailySheetPage() {
         <span className="text-sm text-ink-dim">{date}</span>
       </div>
 
+      {/* Opening balance setup banner */}
+      {pos && !pos.hasOpening && !showOpeningForm && (
+        <div className="bg-warn/5 border border-warn/30 rounded-xl px-4 py-3 flex items-center justify-between">
+          <p className="text-sm text-ink-dim">Set your <strong>FY opening balances</strong> to see accurate cash-in-hand and bank position.</p>
+          <button onClick={() => setShowOpeningForm(true)}
+            className="text-xs bg-warn text-white px-3 py-1.5 rounded-lg2 ml-4 whitespace-nowrap">
+            Setup Opening
+          </button>
+        </div>
+      )}
+
+      {/* Opening balance form */}
+      {showOpeningForm && (
+        <div className="bg-white border border-line rounded-xl p-5 shadow-soft space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-sm">Financial Year Opening Balances</h3>
+            <button onClick={() => setShowOpeningForm(false)} className="text-ink-dim text-sm">✕</button>
+          </div>
+          <p className="text-xs text-ink-dim">Set once at FY start. All subsequent movements are tracked from here.</p>
+
+          <div>
+            <label className="block text-xs text-ink-dim mb-1">Effective Date (FY start)</label>
+            <input type="date" value={obDate} onChange={(e) => setObDate(e.target.value)} className={inp} />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-ink-dim mb-1">Opening Cash in Hand (₹)</label>
+              <input type="number" step="0.01" value={obCash || ""}
+                placeholder="0" onFocus={(e) => e.target.select()}
+                onChange={(e) => setObCash(parseFloat(e.target.value) || 0)} className={inp} />
+            </div>
+            <div>
+              <label className="block text-xs text-ink-dim mb-1">Opening Bank Balance (₹)</label>
+              <input type="number" step="0.01" value={obBank || ""}
+                placeholder="0" onFocus={(e) => e.target.select()}
+                onChange={(e) => setObBank(parseFloat(e.target.value) || 0)} className={inp} />
+            </div>
+            <div>
+              <label className="block text-xs text-ink-dim mb-1">Opening Gold Reserve (g)</label>
+              <input type="number" step="0.001" value={obGold || ""}
+                placeholder="0" onFocus={(e) => e.target.select()}
+                onChange={(e) => setObGold(parseFloat(e.target.value) || 0)} className={inp} />
+            </div>
+            <div>
+              <label className="block text-xs text-ink-dim mb-1">Opening Silver Reserve (g)</label>
+              <input type="number" step="0.001" value={obSilver || ""}
+                placeholder="0" onFocus={(e) => e.target.select()}
+                onChange={(e) => setObSilver(parseFloat(e.target.value) || 0)} className={inp} />
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <button disabled={saveOpening.isPending} onClick={() => saveOpening.mutate()}
+              className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
+              {saveOpening.isPending ? "Saving…" : "Save Opening Balances"}
+            </button>
+            <button type="button" onClick={() => setShowOpeningForm(false)}
+              className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
+          </div>
+          {saveOpening.isError && (
+            <p className="text-xs text-err">Save failed — run migration 005 in Supabase SQL Editor first.</p>
+          )}
+        </div>
+      )}
+
+      {/* Current position (running balance) */}
+      {pos && pos.hasOpening && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-ink-dim uppercase tracking-wide">Current Position</h2>
+            <div className="flex gap-2">
+              <button onClick={() => { setShowOpeningForm(true); setObCash(pos.openingCash); setObBank(pos.openingBank); setObGold(pos.openingGoldG); setObSilver(pos.openingSilverG); }}
+                className="text-xs text-ink-dim hover:text-gold">Edit Opening</button>
+              <button onClick={() => setShowTransfer(!showTransfer)}
+                className="text-xs bg-canvas border border-line px-3 py-1 rounded-lg2 hover:border-gold">
+                💳 Cash → Bank
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <StatCard
+              label="Cash in Hand"
+              value={inr(pos.currentCash)}
+              color={pos.currentCash >= 0 ? "text-ok" : "text-err"}
+              sub={`Opening ${inr(pos.openingCash)} + all movements`}
+            />
+            <StatCard
+              label="Bank Balance"
+              value={inr(pos.currentBank)}
+              color={pos.currentBank >= 0 ? "text-ok" : "text-err"}
+              sub={`Opening ${inr(pos.openingBank)} + all movements`}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Cash → Bank transfer form */}
+      {showTransfer && (
+        <div className="bg-white border border-gold/30 rounded-xl p-4 shadow-soft space-y-3">
+          <h3 className="text-sm font-semibold text-ink">Cash → Bank Transfer</h3>
+          <p className="text-xs text-ink-dim">Cash leaves hand, enters bank account. Net position unchanged.</p>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs text-ink-dim mb-1">Amount (₹) *</label>
+              <input type="number" step="0.01" value={transferAmt || ""}
+                placeholder="0" onFocus={(e) => e.target.select()}
+                onChange={(e) => setTransferAmt(parseFloat(e.target.value) || 0)}
+                className={inp} />
+            </div>
+            <div>
+              <label className="block text-xs text-ink-dim mb-1">Date</label>
+              <input type="date" value={transferDate}
+                onChange={(e) => setTransferDate(e.target.value)} className={inp} />
+            </div>
+            <div>
+              <label className="block text-xs text-ink-dim mb-1">Notes</label>
+              <input value={transferNotes} onChange={(e) => setTransferNotes(e.target.value)}
+                className={inp} placeholder="Optional…" />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              disabled={transfer.isPending || transferAmt <= 0}
+              onClick={() => transfer.mutate()}
+              className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
+              {transfer.isPending ? "Saving…" : "Transfer"}
+            </button>
+            <button type="button" onClick={() => setShowTransfer(false)}
+              className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
+          </div>
+          {transfer.isError && <p className="text-xs text-err">Transfer failed.</p>}
+        </div>
+      )}
+
+      {/* --- TODAY's snapshot below --- */}
       {isLoading ? (
         <p className="text-ink-dim text-sm">{t("loading")}</p>
       ) : data ? (
         <>
-          {/* Sales summary */}
+          <h2 className="text-sm font-semibold text-ink-dim uppercase tracking-wide">Today&apos;s Activity</h2>
+
+          {/* Sales */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <StatCard label={t("sales_count")} value={String(data.salesCount)} color="text-gold" />
             <StatCard label={t("sales_total")} value={inr(data.salesTotal)} color="text-gold" />
             <StatCard label={t("gst_collected")} value={inr(data.gstTotal)} color="text-warn" />
           </div>
 
-          {/* Cash & Bank */}
+          {/* Cash & Bank today */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <StatCard label={t("cash_in")} value={inr(data.cashIn)} color="text-ok" />
             <StatCard label={t("cash_out")} value={inr(data.cashOut)} color="text-err" />
@@ -85,26 +329,26 @@ export default function DailySheetPage() {
             <StatCard label={t("bank_out")} value={inr(data.bankOut)} color="text-err" />
           </div>
 
-          {/* Net summary */}
+          {/* Net today */}
           <div className="grid grid-cols-2 gap-3">
             <StatCard
               label={t("net_cash")}
               value={inr(data.cashIn - data.cashOut)}
               color={data.cashIn - data.cashOut >= 0 ? "text-ok" : "text-err"}
-              sub="Cash In − Cash Out"
+              sub="Today: Cash In − Cash Out"
             />
             <StatCard
               label={t("net_bank")}
               value={inr(data.bankIn - data.bankOut)}
               color={data.bankIn - data.bankOut >= 0 ? "text-ok" : "text-err"}
-              sub="Bank In − Bank Out"
+              sub="Today: Bank In − Bank Out"
             />
           </div>
 
           {/* Metal */}
           <div className="grid grid-cols-2 gap-3">
-            <StatCard label={t("old_gold_g")} value={grams(data.oldGoldG)} color="text-gold" sub="Pure weight received" />
-            <StatCard label={t("old_silver_g")} value={grams(data.oldSilverG)} color="text-ink-mid" sub="Pure weight received" />
+            <StatCard label={t("old_gold_g")} value={grams(data.oldGoldG)} color="text-gold" sub="Pure weight received today" />
+            <StatCard label={t("old_silver_g")} value={grams(data.oldSilverG)} color="text-ink-mid" sub="Pure weight received today" />
           </div>
 
           {/* Walk-ins */}
@@ -118,6 +362,15 @@ export default function DailySheetPage() {
           )}
         </>
       ) : null}
+
+      {/* Edit Opening link if already set */}
+      {pos && pos.hasOpening && !showOpeningForm && (
+        <p className="text-xs text-ink-dim text-center">
+          Opening set: Cash {inr(pos.openingCash)}, Bank {inr(pos.openingBank)}, Gold {grams(pos.openingGoldG)}, Silver {grams(pos.openingSilverG)}.{" "}
+          <button onClick={() => { setShowOpeningForm(true); setObCash(pos.openingCash); setObBank(pos.openingBank); setObGold(pos.openingGoldG); setObSilver(pos.openingSilverG); }}
+            className="text-gold hover:underline">Edit</button>
+        </p>
+      )}
     </div>
   );
 }
