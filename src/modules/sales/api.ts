@@ -9,7 +9,8 @@ async function fanoutLedger(
   saleId: string,
   billDate: string,
   items: SaleDraft["items"],
-  payments: SaleDraft["payments"]
+  payments: SaleDraft["payments"],
+  customerId?: string | null
 ) {
   const client = supabase();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -17,6 +18,7 @@ async function fanoutLedger(
 
   for (const p of payments) {
     if (p.amount <= 0) continue;
+
     if (p.mode === "cash") {
       promises.push(Promise.resolve(client.from("cash_ledger").insert({
         tx_date: billDate, direction: "in", amount: p.amount,
@@ -34,6 +36,22 @@ async function fanoutLedger(
         gross_wt: p.metal_wt, purity_pct: p.metal_purity || 91.6,
         pure_wt: p.metal_wt * ((p.metal_purity || 91.6) / 100),
         source_type: "sale", source_id: saleId, status: "pending",
+      })));
+    }
+
+    // Credit the customer's balance for all non-advance payment modes.
+    // Advance is skipped — the customer's credit is already reflected in their prior deposits.
+    if (customerId && !p.is_advance) {
+      promises.push(Promise.resolve(client.from("payments").insert({
+        pay_date: billDate,
+        direction: "in",
+        mode: p.mode === "old_gold" || p.mode === "old_silver" ? "cash" : p.mode,
+        amount: p.amount,
+        customer_id: customerId,
+        sale_id: saleId,
+        notes: p.mode === "old_gold" ? "Old gold exchange"
+             : p.mode === "old_silver" ? "Old silver exchange"
+             : "Sale payment",
       })));
     }
   }
@@ -154,7 +172,7 @@ export function useSaveSale() {
         if (payErr) throw payErr;
       }
 
-      await fanoutLedger(sale.id, draft.bill_date, draft.items, draft.payments);
+      await fanoutLedger(sale.id, draft.bill_date, draft.items, draft.payments, draft.customer_id);
       return sale;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["sales"] }),
@@ -193,11 +211,12 @@ export function useUpdateSale() {
       const { error: delPayErr } = await client.from("sale_payments").delete().eq("sale_id", id);
       if (delPayErr) throw delPayErr;
 
-      // Wipe stale ledger + metal intake rows so daily sheet stays accurate after edits
+      // Wipe stale ledger + metal intake + customer payment rows so they can be re-inserted fresh
       await Promise.allSettled([
         client.from("cash_ledger").delete().eq("ref_type", "sale").eq("ref_id", id),
         client.from("bank_ledger").delete().eq("ref_type", "sale").eq("ref_id", id),
         client.from("old_metal_intake").delete().eq("source_type", "sale").eq("source_id", id),
+        client.from("payments").delete().eq("sale_id", id),
       ]);
 
       const validPay = draft.payments.filter((p) => p.amount > 0);
@@ -212,8 +231,8 @@ export function useUpdateSale() {
         if (payErr) throw payErr;
       }
 
-      // Re-write fresh ledger + metal intake entries for the updated payments
-      await fanoutLedger(id, draft.bill_date, draft.items, validPay);
+      // Re-write fresh ledger + metal intake + customer payment entries
+      await fanoutLedger(id, draft.bill_date, draft.items, validPay, draft.customer_id);
 
       return id;
     },
