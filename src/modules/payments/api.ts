@@ -23,8 +23,22 @@ export function useSavePayment() {
   return useMutation({
     mutationFn: async (data: Record<string, unknown>) => {
       const client = supabase();
-      const { data: row, error } = await client.from("payments").insert(data).select().single();
+      // payments table has no metal_wt / metal_purity — strip before insert
+      const { metal_wt, metal_purity, ...paymentData } = data as Record<string, unknown> & { metal_wt?: number; metal_purity?: number };
+      const { data: row, error } = await client.from("payments").insert(paymentData).select().single();
       if (error) throw error;
+      // Old gold/silver: record physical metal in intake table
+      if ((data.mode === "old_gold" || data.mode === "old_silver") && (metal_wt ?? 0) > 0) {
+        const metal = data.mode === "old_gold" ? "gold_22k" : "silver";
+        const purity = (metal_purity as number) || (data.mode === "old_gold" ? 91.6 : 92.5);
+        const { error: e } = await client.from("old_metal_intake").insert({
+          intake_date: data.pay_date, metal,
+          gross_wt: metal_wt, purity_pct: purity,
+          pure_wt: (metal_wt as number) * (purity / 100),
+          source_type: "payment", source_id: row.id, status: "pending",
+        });
+        if (e) console.warn("metal intake failed:", e);
+      }
       // Best-effort ledger fan-out
       if (data.mode === "cash") {
         const { error: e } = await client.from("cash_ledger").insert({
