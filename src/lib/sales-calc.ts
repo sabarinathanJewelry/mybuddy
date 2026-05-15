@@ -50,8 +50,8 @@ export function computeLine(i: LineInput): LineComputed {
     ? (i.diamond_cents > 0 ? (i.diamond_cents / 100) * i.diamond_carat_rate : i.diamond_amt)
     : 0;
   const net_wt = Math.max(0, i.gross_wt - stone_wt_eff);
-  const pure_wt = net_wt * (i.purity_pct / 100);
-  const metal_value = pure_wt * i.rate;
+  const pure_wt = net_wt * (i.purity_pct / 100); // informational only — for stock tracking
+  const metal_value = net_wt * i.rate; // rate is karat-specific, no purity conversion
   const va_amt = metal_value * (i.va_pct / 100);
   const gst_pct_eff = i.gst_enabled ? (i.gst_pct || 3) : 0;
   const line_before_gst = metal_value + va_amt + i.making_amt + stone_amt_eff + diamond_amt_eff;
