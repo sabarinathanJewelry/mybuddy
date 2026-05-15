@@ -18,10 +18,13 @@ const NAV = [
   { href: "/payments",     icon: "💳", key: "nav_payments" as const },
   { href: "/daily-sheet",  icon: "📋", key: "nav_daily_sheet" as const },
   { href: "/metal-flow",   icon: "⚗️",  key: "nav_metal_flow" as const },
+  { href: "/bullion",      icon: "🔶", key: "nav_bullion" as const },
   { href: "/loans",        icon: "🏦", key: "nav_loans" as const },
   { href: "/expenses",     icon: "📝", key: "nav_expenses" as const },
   { href: "/writeoff",     icon: "✂️",  key: "nav_scrap" as const },
   { href: "/chits",        icon: "🪙", key: "nav_chits" as const },
+  { href: "/gold-chit",    icon: "🥇", key: "nav_gold_chit" as const },
+  { href: "/cash-bonus",   icon: "💰", key: "nav_cash_bonus" as const },
   { href: "/walkins",      icon: "🚶", key: "nav_walkins" as const },
   { href: "/reports",      icon: "📈", key: "nav_reports" as const },
 ];

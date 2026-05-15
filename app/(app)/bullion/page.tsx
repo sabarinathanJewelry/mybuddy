@@ -1,0 +1,445 @@
+"use client";
+
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase/client";
+import { useGlobalDate } from "@/stores/global-date";
+import { useT } from "@/i18n";
+import { inr, grams, shortDate } from "@/lib/format";
+
+const inp = "w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
+
+const PAY_MODES = [
+  { value: "cash",  label: "Cash" },
+  { value: "upi",   label: "UPI/GPay" },
+  { value: "bank",  label: "Bank" },
+];
+
+type TradeType = "buy" | "sell";
+type Metal = "gold" | "silver";
+
+function useReserve() {
+  return useQuery({
+    queryKey: ["metal_reserve"],
+    queryFn: async () => {
+      const client = supabase();
+      const [batchRes, dispatchRes, bullionRes] = await Promise.all([
+        client.from("melt_batches").select("metal, output_wt").eq("status", "refined"),
+        client.from("metal_dispatches").select("metal, weight_g"),
+        client.from("bullion_trades").select("trade_type, metal, pure_wt"),
+      ]);
+
+      const batches = batchRes.data ?? [];
+      const dispatches = dispatchRes.data ?? [];
+      const bullion = bullionRes.data ?? [];
+
+      const sumBy = (arr: any[], filter: (r: any) => boolean, key: string) =>
+        arr.filter(filter).reduce((s: number, r: any) => s + (r[key] ?? 0), 0);
+
+      const goldFromBatches  = sumBy(batches,    (r) => r.metal?.startsWith("gold"),   "output_wt");
+      const silverFromBatches= sumBy(batches,    (r) => r.metal?.startsWith("silver"), "output_wt");
+      const goldDispatched   = sumBy(dispatches, (r) => r.metal === "gold",   "weight_g");
+      const silverDispatched = sumBy(dispatches, (r) => r.metal === "silver", "weight_g");
+      const goldBullionIn    = sumBy(bullion, (r) => r.trade_type === "buy"  && r.metal === "gold",   "pure_wt");
+      const silverBullionIn  = sumBy(bullion, (r) => r.trade_type === "buy"  && r.metal === "silver", "pure_wt");
+      const goldBullionOut   = sumBy(bullion, (r) => r.trade_type === "sell" && r.metal === "gold",   "pure_wt");
+      const silverBullionOut = sumBy(bullion, (r) => r.trade_type === "sell" && r.metal === "silver", "pure_wt");
+
+      return {
+        goldReserve:   goldFromBatches   + goldBullionIn   - goldDispatched   - goldBullionOut,
+        silverReserve: silverFromBatches + silverBullionIn - silverDispatched - silverBullionOut,
+      };
+    },
+  });
+}
+
+export default function BullionPage() {
+  const t = useT();
+  const globalDate = useGlobalDate((s) => s.date);
+  const qc = useQueryClient();
+  const { data: reserve } = useReserve();
+
+  // Trades query with nested payments
+  const { data: trades, isLoading } = useQuery({
+    queryKey: ["bullion_trades"],
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("bullion_trades")
+        .select("*, bullion_payments(id, pay_date, amount, mode)")
+        .order("trade_date", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+
+  // New trade form
+  const [showForm, setShowForm] = useState(false);
+  const [tradeType, setTradeType] = useState<TradeType>("buy");
+  const [metal, setMetal] = useState<Metal>("gold");
+  const [partyName, setPartyName] = useState("");
+  const [tradeDate, setTradeDate] = useState(globalDate);
+  const [pureWt, setPureWt] = useState(0);
+  const [ratePerG, setRatePerG] = useState(0);
+  const [firstPayAmt, setFirstPayAmt] = useState(0);
+  const [firstPayMode, setFirstPayMode] = useState("cash");
+  const [formNotes, setFormNotes] = useState("");
+
+  const totalAmount = parseFloat((pureWt * ratePerG).toFixed(2));
+
+  // Add payment panel
+  const [payingTradeId, setPayingTradeId] = useState<string | null>(null);
+  const [payAmount, setPayAmount] = useState(0);
+  const [payMode, setPayMode] = useState("cash");
+  const [payDate, setPayDate] = useState(globalDate);
+
+  function resetForm() {
+    setPartyName(""); setPureWt(0); setRatePerG(0);
+    setFirstPayAmt(0); setFirstPayMode("cash"); setFormNotes("");
+    setTradeDate(globalDate); setShowForm(false);
+  }
+
+  const saveTrade = useMutation({
+    mutationFn: async () => {
+      if (!partyName || pureWt <= 0 || ratePerG <= 0) throw new Error("Invalid input");
+      const client = supabase();
+
+      const { data: row, error } = await client.from("bullion_trades").insert({
+        trade_date: tradeDate, trade_type: tradeType,
+        party_name: partyName, metal,
+        pure_wt: pureWt, rate_per_g: ratePerG, total_amount: totalAmount,
+        notes: formNotes || null,
+      }).select().single();
+      if (error) throw error;
+
+      if (firstPayAmt > 0) {
+        await client.from("bullion_payments").insert({
+          trade_id: row.id, pay_date: tradeDate,
+          amount: firstPayAmt, mode: firstPayMode,
+        });
+        // Buy = we pay OUT; Sell = we receive IN
+        const direction = tradeType === "buy" ? "out" : "in";
+        const desc = `Bullion ${tradeType}: ${partyName}`;
+        if (firstPayMode === "cash") {
+          await client.from("cash_ledger").insert({
+            tx_date: tradeDate, direction, amount: firstPayAmt,
+            description: desc, ref_type: "bullion", ref_id: row.id,
+          });
+        } else {
+          await client.from("bank_ledger").insert({
+            tx_date: tradeDate, direction, amount: firstPayAmt,
+            description: desc, ref_type: "bullion", ref_id: row.id,
+          });
+        }
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["bullion_trades"] });
+      qc.invalidateQueries({ queryKey: ["metal_reserve"] });
+      resetForm();
+    },
+  });
+
+  const addPayment = useMutation({
+    mutationFn: async () => {
+      if (!payingTradeId || payAmount <= 0) throw new Error("Invalid");
+      const client = supabase();
+      const trade = (trades ?? []).find((t: any) => t.id === payingTradeId);
+      if (!trade) throw new Error("Trade not found");
+
+      await client.from("bullion_payments").insert({
+        trade_id: payingTradeId, pay_date: payDate,
+        amount: payAmount, mode: payMode,
+      });
+
+      const direction = trade.trade_type === "buy" ? "out" : "in";
+      const desc = `Bullion ${trade.trade_type}: ${trade.party_name}`;
+      if (payMode === "cash") {
+        await client.from("cash_ledger").insert({
+          tx_date: payDate, direction, amount: payAmount,
+          description: desc, ref_type: "bullion", ref_id: trade.id,
+        });
+      } else {
+        await client.from("bank_ledger").insert({
+          tx_date: payDate, direction, amount: payAmount,
+          description: desc, ref_type: "bullion", ref_id: trade.id,
+        });
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["bullion_trades"] });
+      setPayingTradeId(null); setPayAmount(0); setPayDate(globalDate);
+    },
+  });
+
+  const rows = (trades ?? []) as any[];
+
+  function paidFor(row: any): number {
+    return ((row.bullion_payments ?? []) as any[]).reduce((s: number, p: any) => s + (p.amount ?? 0), 0);
+  }
+  function pendingFor(row: any): number {
+    return row.total_amount - paidFor(row);
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold">Bullion Trading</h1>
+          <p className="text-sm text-ink-dim mt-0.5">Buy / sell pure gold & silver with dealers — partial payments supported</p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setTradeType("buy"); setShowForm(true); }}
+            className="bg-gold text-white text-sm px-4 py-2 rounded-lg2 font-medium">
+            + Buy
+          </button>
+          <button
+            onClick={() => { setTradeType("sell"); setShowForm(true); }}
+            className="bg-ok text-white text-sm px-4 py-2 rounded-lg2 font-medium">
+            + Sell
+          </button>
+        </div>
+      </div>
+
+      {/* Net reserve */}
+      {reserve && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-white rounded-xl border border-line p-4 shadow-soft">
+            <p className="text-xs text-ink-dim mb-1">Gold Reserve (net)</p>
+            <p className="text-xl font-bold text-gold">{grams(reserve.goldReserve)}</p>
+            <p className="text-xs text-ink-dim mt-1">Refined + Bullion bought − Dispatched − Bullion sold</p>
+          </div>
+          <div className="bg-white rounded-xl border border-line p-4 shadow-soft">
+            <p className="text-xs text-ink-dim mb-1">Silver Reserve (net)</p>
+            <p className="text-xl font-bold text-ink-mid">{grams(reserve.silverReserve)}</p>
+            <p className="text-xs text-ink-dim mt-1">Same calculation for silver</p>
+          </div>
+        </div>
+      )}
+
+      {/* Trade form */}
+      {showForm && (
+        <div className={`bg-white border rounded-xl p-5 shadow-soft space-y-4 ${tradeType === "buy" ? "border-gold/40" : "border-ok/40"}`}>
+          <h3 className={`font-semibold text-sm ${tradeType === "buy" ? "text-gold" : "text-ok"}`}>
+            {tradeType === "buy" ? "🔶 Buy from Bullion Dealer" : "💰 Sell to Bullion Dealer"}
+          </h3>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs text-ink-dim mb-1">Party / Dealer Name *</label>
+              <input value={partyName} onChange={(e) => setPartyName(e.target.value)}
+                className={inp} placeholder="Bullion dealer name" />
+            </div>
+
+            <div>
+              <label className="block text-xs text-ink-dim mb-1">Metal</label>
+              <div className="flex gap-2">
+                {(["gold", "silver"] as const).map((m) => (
+                  <button key={m} type="button" onClick={() => setMetal(m)}
+                    className={`flex-1 py-2 rounded-lg2 text-sm font-medium border transition-colors ${
+                      metal === m
+                        ? m === "gold" ? "bg-gold/10 border-gold text-gold" : "bg-ink-mid/10 border-ink-mid text-ink-mid"
+                        : "border-line text-ink-dim hover:border-gold"
+                    }`}>
+                    {m === "gold" ? "Gold" : "Silver"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-ink-dim mb-1">Date</label>
+              <input type="date" value={tradeDate}
+                onChange={(e) => setTradeDate(e.target.value)} className={inp} />
+            </div>
+
+            <div>
+              <label className="block text-xs text-ink-dim mb-1">Pure Weight (g) *</label>
+              <input type="number" step="0.001" value={pureWt || ""}
+                placeholder="0" onFocus={(e) => e.target.select()}
+                onChange={(e) => setPureWt(parseFloat(e.target.value) || 0)}
+                className={inp} />
+            </div>
+
+            <div>
+              <label className="block text-xs text-ink-dim mb-1">Rate per gram (₹) *</label>
+              <input type="number" step="0.01" value={ratePerG || ""}
+                placeholder="0" onFocus={(e) => e.target.select()}
+                onChange={(e) => setRatePerG(parseFloat(e.target.value) || 0)}
+                className={inp} />
+            </div>
+          </div>
+
+          {pureWt > 0 && ratePerG > 0 && (
+            <div className="bg-gold/5 border border-gold/20 rounded-lg2 px-4 py-3 flex justify-between items-center text-sm">
+              <span className="text-ink-dim">{pureWt.toFixed(3)}g × {inr(ratePerG)}/g</span>
+              <span className="text-xl font-bold text-gold">{inr(totalAmount)}</span>
+            </div>
+          )}
+
+          {/* Optional first payment */}
+          <div className="border-t border-line pt-3 space-y-3">
+            <p className="text-xs font-medium text-ink-dim">
+              {tradeType === "buy" ? "Pay now (optional — add more payments later)" : "Receive now (optional — add more later)"}
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-ink-dim mb-1">
+                  {tradeType === "buy" ? "Amount Paid" : "Amount Received"}
+                </label>
+                <input type="number" step="0.01" value={firstPayAmt || ""}
+                  placeholder="0" onFocus={(e) => e.target.select()}
+                  onChange={(e) => setFirstPayAmt(parseFloat(e.target.value) || 0)}
+                  className={inp} />
+              </div>
+              <div>
+                <label className="block text-xs text-ink-dim mb-1">Mode</label>
+                <select value={firstPayMode} onChange={(e) => setFirstPayMode(e.target.value)} className={inp}>
+                  {PAY_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
+            </div>
+            {firstPayAmt > 0 && totalAmount > 0 && (
+              <p className="text-xs text-ink-dim">
+                Pending after this: <strong className="text-err">{inr(totalAmount - firstPayAmt)}</strong>
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs text-ink-dim mb-1">Notes</label>
+            <input value={formNotes} onChange={(e) => setFormNotes(e.target.value)}
+              className={inp} placeholder="Optional…" />
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              disabled={saveTrade.isPending || !partyName || pureWt <= 0 || ratePerG <= 0}
+              onClick={() => saveTrade.mutate()}
+              className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
+              {saveTrade.isPending ? "Saving…" : `Record ${tradeType === "buy" ? "Purchase" : "Sale"}`}
+            </button>
+            <button type="button" onClick={resetForm}
+              className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
+          </div>
+          {saveTrade.isError && (
+            <p className="text-xs text-err">Save failed — run migration 004 in Supabase SQL Editor first.</p>
+          )}
+        </div>
+      )}
+
+      {/* Add payment panel */}
+      {payingTradeId !== null && (() => {
+        const trade = rows.find((r: any) => r.id === payingTradeId);
+        if (!trade) return null;
+        const paid = paidFor(trade);
+        const pend = pendingFor(trade);
+        return (
+          <div className="bg-white border border-ok/40 rounded-xl p-4 shadow-soft space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-ok">Add Payment — {trade.party_name}</h3>
+              <button onClick={() => setPayingTradeId(null)} className="text-ink-dim text-sm hover:text-ink">✕</button>
+            </div>
+            <div className="flex gap-4 text-xs">
+              <span className="text-ink-dim">Total: <strong className="text-ink">{inr(trade.total_amount)}</strong></span>
+              <span className="text-ink-dim">Paid: <strong className="text-ok">{inr(paid)}</strong></span>
+              <span className="text-ink-dim">Pending: <strong className="text-err">{inr(pend)}</strong></span>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs text-ink-dim mb-1">Amount</label>
+                <input type="number" step="0.01" value={payAmount || ""}
+                  placeholder="0" onFocus={(e) => e.target.select()}
+                  onChange={(e) => setPayAmount(parseFloat(e.target.value) || 0)}
+                  className={inp} />
+              </div>
+              <div>
+                <label className="block text-xs text-ink-dim mb-1">Mode</label>
+                <select value={payMode} onChange={(e) => setPayMode(e.target.value)} className={inp}>
+                  {PAY_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-ink-dim mb-1">Date</label>
+                <input type="date" value={payDate}
+                  onChange={(e) => setPayDate(e.target.value)} className={inp} />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                disabled={addPayment.isPending || payAmount <= 0}
+                onClick={() => addPayment.mutate()}
+                className="bg-ok text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
+                {addPayment.isPending ? "Saving…" : "Record Payment"}
+              </button>
+              <button onClick={() => setPayingTradeId(null)}
+                className="border border-line text-sm px-5 py-2 rounded-lg2">Cancel</button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Trades table */}
+      {isLoading ? <p className="text-ink-dim text-sm">{t("loading")}</p> : (
+        <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                <th className="text-left px-4 py-2.5">Date</th>
+                <th className="text-left px-3 py-2.5">Type</th>
+                <th className="text-left px-3 py-2.5">Party</th>
+                <th className="text-left px-3 py-2.5">Metal</th>
+                <th className="text-right px-3 py-2.5">Weight</th>
+                <th className="text-right px-3 py-2.5">Rate/g</th>
+                <th className="text-right px-3 py-2.5">Total</th>
+                <th className="text-right px-3 py-2.5">Paid</th>
+                <th className="text-right px-3 py-2.5">Pending</th>
+                <th className="px-3 py-2.5" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r: any) => {
+                const paid = paidFor(r);
+                const pend = pendingFor(r);
+                return (
+                  <tr key={r.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                    <td className="px-4 py-2.5 text-ink-dim">{shortDate(r.trade_date)}</td>
+                    <td className="px-3 py-2.5">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${r.trade_type === "buy" ? "bg-gold/10 text-gold" : "bg-ok/10 text-ok"}`}>
+                        {r.trade_type === "buy" ? "Buy" : "Sell"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 font-medium">{r.party_name}</td>
+                    <td className="px-3 py-2.5 capitalize">
+                      <span className={r.metal === "gold" ? "text-gold" : "text-ink-mid"}>{r.metal}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono">{grams(r.pure_wt)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{inr(r.rate_per_g)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono font-semibold">{inr(r.total_amount)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-ok">{inr(paid)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono">
+                      <span className={pend > 0.01 ? "text-err font-semibold" : "text-ink-dim"}>{inr(pend)}</span>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {pend > 0.01 && (
+                        <button
+                          onClick={() => { setPayingTradeId(r.id); setPayAmount(0); setPayDate(globalDate); }}
+                          className="text-xs text-gold hover:underline whitespace-nowrap">
+                          + Pay
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {!rows.length && (
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-ink-dim">{t("no_data")}</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
