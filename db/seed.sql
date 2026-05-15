@@ -4,8 +4,7 @@ values (15050, 16650, 12000, 315, 285, current_date);
 
 -- Default expense categories
 insert into expense_categories(name) values
-  ('Service'), ('Electricity'), ('Staff Salary'), ('Transport'),
-  ('Maintenance'), ('Miscellaneous'),('Interest'), ('Tax'), ('Commission'),('Complimentary'),('Donation');
+  ('Marketing'));
 
 -- To set up admin profile + gamified credentials after first login:
 -- update profiles set

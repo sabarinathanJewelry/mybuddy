@@ -29,6 +29,20 @@ function useIntake() {
   });
 }
 
+function useCustomers() {
+  return useQuery({
+    queryKey: ["customers_list"],
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("customers")
+        .select("id, name")
+        .order("name");
+      if (error) throw error;
+      return (data ?? []) as { id: string; name: string }[];
+    },
+  });
+}
+
 function useBatches() {
   return useQuery({
     queryKey: ["melt_batches"],
@@ -69,7 +83,21 @@ export default function MetalFlowPage() {
 
   // Intake
   const { data: intakeData, isLoading: intakeLoading } = useIntake();
+  const { data: customers = [] } = useCustomers();
   const [selectedIntake, setSelectedIntake] = useState<Set<string>>(new Set());
+  const [showIntakeForm, setShowIntakeForm] = useState(false);
+  const defaultIntakeForm = () => ({
+    intake_date: globalDate,
+    customer_id: "",
+    metal: "gold_22k" as string,
+    gross_wt: 0,
+    purity_pct: 91.6,
+    pure_wt: 0,
+    notes: "",
+    payout_amount: 0,
+    payout_mode: "cash" as "cash" | "bank",
+  });
+  const [intakeForm, setIntakeForm] = useState(defaultIntakeForm);
 
   // Batches
   const { data: batchData, isLoading: batchLoading } = useBatches();
@@ -117,6 +145,42 @@ export default function MetalFlowPage() {
       if (error) throw error;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["melt_batches"] }); setShowNewBatch(false); setNewBatch({ batch_no: "", batch_date: globalDate, metal: "gold_22k", notes: "" }); },
+  });
+
+  const saveIntake = useMutation({
+    mutationFn: async (d: ReturnType<typeof defaultIntakeForm>) => {
+      const client = supabase();
+      const { error } = await client.from("old_metal_intake").insert({
+        intake_date: d.intake_date,
+        metal: d.metal,
+        gross_wt: d.gross_wt,
+        purity_pct: d.purity_pct,
+        pure_wt: d.pure_wt,
+        customer_id: d.customer_id || null,
+        notes: d.notes || null,
+        source_type: "standalone",
+        status: "pending",
+      });
+      if (error) throw error;
+      if (d.payout_amount > 0) {
+        const table = d.payout_mode === "bank" ? "bank_ledger" : "cash_ledger";
+        const { error: ledgerErr } = await client.from(table).insert({
+          tx_date: d.intake_date,
+          direction: "out",
+          amount: d.payout_amount,
+          description: "Old gold purchase",
+          ref_type: "old_metal_intake",
+        });
+        if (ledgerErr) throw ledgerErr;
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["metal_intake"] });
+      qc.invalidateQueries({ queryKey: ["cash_ledger"] });
+      qc.invalidateQueries({ queryKey: ["bank_ledger"] });
+      setShowIntakeForm(false);
+      setIntakeForm(defaultIntakeForm());
+    },
   });
 
   const addToBatch = useMutation({
@@ -201,6 +265,131 @@ export default function MetalFlowPage() {
       {/* ── INTAKE TAB ─────────────────────────────────────────── */}
       {tab === "intake" && (
         <div className="space-y-3">
+          <div className="flex justify-end">
+            <button onClick={() => setShowIntakeForm(true)}
+              className="bg-gold text-white text-sm px-4 py-2 rounded-lg2">
+              + Add Old Metal
+            </button>
+          </div>
+
+          {showIntakeForm && (
+            <div className="bg-white border border-line rounded-xl p-4 shadow-soft space-y-4">
+              <h3 className="text-sm font-semibold">Record Old Metal Intake</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Date</label>
+                  <input type="date" value={intakeForm.intake_date}
+                    onChange={(e) => setIntakeForm({ ...intakeForm, intake_date: e.target.value })}
+                    className={inp} />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Customer</label>
+                  <select value={intakeForm.customer_id}
+                    onChange={(e) => setIntakeForm({ ...intakeForm, customer_id: e.target.value })}
+                    className={inp}>
+                    <option value="">— walk-in / no customer —</option>
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Metal</label>
+                  <select value={intakeForm.metal}
+                    onChange={(e) => setIntakeForm({ ...intakeForm, metal: e.target.value })}
+                    className={inp}>
+                    <option value="gold_22k">Gold 22K</option>
+                    <option value="gold_24k">Gold 24K</option>
+                    <option value="gold_18k">Gold 18K</option>
+                    <option value="silver">Silver</option>
+                    <option value="silver_pure">Silver Pure</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Gross Wt (g) *</label>
+                  <input type="number" step="0.001" value={intakeForm.gross_wt || ""}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      const gross = parseFloat(e.target.value) || 0;
+                      setIntakeForm({ ...intakeForm, gross_wt: gross, pure_wt: parseFloat((gross * intakeForm.purity_pct / 100).toFixed(3)) });
+                    }}
+                    className={inp} placeholder="0.000" />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Purity %</label>
+                  <div className="flex gap-1 mb-1">
+                    {[["22K", 91.6], ["18K", 75.0], ["24K", 99.9]].map(([label, val]) => (
+                      <button key={label as string} type="button"
+                        onClick={() => {
+                          const pct = val as number;
+                          setIntakeForm({ ...intakeForm, purity_pct: pct, pure_wt: parseFloat((intakeForm.gross_wt * pct / 100).toFixed(3)) });
+                        }}
+                        className={`text-xs px-2 py-0.5 rounded border transition-colors ${intakeForm.purity_pct === val ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:border-gold"}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <input type="number" step="0.01" value={intakeForm.purity_pct || ""}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      const pct = parseFloat(e.target.value) || 0;
+                      setIntakeForm({ ...intakeForm, purity_pct: pct, pure_wt: parseFloat((intakeForm.gross_wt * pct / 100).toFixed(3)) });
+                    }}
+                    className={inp} />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Pure Wt (g)</label>
+                  <input type="number" step="0.001" value={intakeForm.pure_wt || ""}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => setIntakeForm({ ...intakeForm, pure_wt: parseFloat(e.target.value) || 0 })}
+                    className={`${inp} bg-canvas`} />
+                </div>
+              </div>
+
+              <div className="border-t border-line pt-3 space-y-2">
+                <p className="text-xs font-medium text-ink-dim">Cash Payout to Customer (optional)</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Amount Paid (₹)</label>
+                    <input type="number" step="1" value={intakeForm.payout_amount || ""}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => setIntakeForm({ ...intakeForm, payout_amount: parseFloat(e.target.value) || 0 })}
+                      className={inp} placeholder="0" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Paid via</label>
+                    <select value={intakeForm.payout_mode}
+                      onChange={(e) => setIntakeForm({ ...intakeForm, payout_mode: e.target.value as "cash" | "bank" })}
+                      className={inp}>
+                      <option value="cash">Cash</option>
+                      <option value="bank">Bank / UPI</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Notes</label>
+                    <input value={intakeForm.notes}
+                      onChange={(e) => setIntakeForm({ ...intakeForm, notes: e.target.value })}
+                      className={inp} placeholder="Optional" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  disabled={!intakeForm.gross_wt || saveIntake.isPending}
+                  onClick={() => saveIntake.mutate(intakeForm)}
+                  className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
+                  {saveIntake.isPending ? "Saving…" : t("save")}
+                </button>
+                <button onClick={() => { setShowIntakeForm(false); setIntakeForm(defaultIntakeForm()); }}
+                  className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
+              </div>
+              {saveIntake.isError && (
+                <p className="text-xs text-err">Save failed — please try again.</p>
+              )}
+            </div>
+          )}
+
           {selectedIntake.size > 0 && (
             <div className="bg-gold/5 border border-gold/20 rounded-xl p-4 flex items-center justify-between">
               <span className="text-sm"><strong>{selectedIntake.size}</strong> item(s) selected</span>
