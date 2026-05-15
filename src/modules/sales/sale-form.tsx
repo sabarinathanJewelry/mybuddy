@@ -223,6 +223,7 @@ export default function SaleForm({ saleId }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (balance > 0.01 && !customer) return; // blocked by UI error below
     const draft: SaleDraft = {
       series, customer_id: customer?.id ?? null, bill_date: billDate, notes,
       items, payments: payments.filter((p) => p.amount > 0),
@@ -312,7 +313,7 @@ export default function SaleForm({ saleId }: Props) {
                   </div>
                   <div>
                     <label className="text-xs text-ink-dim">VA%</label>
-                    <Num value={item.va_pct} onChange={(v) => updateItem(idx, { va_pct: v })} step="0.01" />
+                    <Num value={Math.round(item.va_pct * 100) / 100} onChange={(v) => updateItem(idx, { va_pct: v })} step="0.01" />
                   </div>
                   <div>
                     <label className="text-xs text-ink-dim">Making (₹)</label>
@@ -489,22 +490,29 @@ export default function SaleForm({ saleId }: Props) {
       </div>
 
       {/* Summary + Actions */}
-      <div className="bg-white border border-line rounded-xl p-4 shadow-soft flex justify-between items-center flex-wrap gap-3">
-        <div className="flex gap-6 text-sm">
-          <div><span className="text-ink-dim">Total: </span><strong className="text-gold text-lg">{inr(grandTotal)}</strong></div>
-          <div><span className="text-ink-dim">Paid: </span><strong>{inr(totalPaid)}</strong></div>
-          <div><span className="text-ink-dim">Balance: </span><strong className={balance > 0 ? "text-err" : "text-ok"}>{inr(Math.abs(balance))}</strong></div>
+      <div className="bg-white border border-line rounded-xl p-4 shadow-soft space-y-3">
+        <div className="flex justify-between items-center flex-wrap gap-3">
+          <div className="flex gap-6 text-sm">
+            <div><span className="text-ink-dim">Total: </span><strong className="text-gold text-lg">{inr(grandTotal)}</strong></div>
+            <div><span className="text-ink-dim">Paid: </span><strong>{inr(totalPaid)}</strong></div>
+            <div><span className="text-ink-dim">Balance: </span><strong className={balance > 0.01 ? "text-err" : "text-ok"}>{inr(Math.abs(balance))}</strong></div>
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => router.push("/sales")}
+              className="border border-line text-ink-mid text-sm px-5 py-2.5 rounded-lg2 hover:bg-canvas">
+              {t("cancel")}
+            </button>
+            <button type="submit" disabled={isPending || (balance > 0.01 && !customer)}
+              className="bg-gold hover:bg-gold-dark text-white font-semibold text-sm px-6 py-2.5 rounded-lg2 disabled:opacity-50">
+              {isPending ? "Saving…" : saleId ? "Update Sale" : t("save")}
+            </button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <button type="button" onClick={() => router.push("/sales")}
-            className="border border-line text-ink-mid text-sm px-5 py-2.5 rounded-lg2 hover:bg-canvas">
-            {t("cancel")}
-          </button>
-          <button type="submit" disabled={isPending}
-            className="bg-gold hover:bg-gold-dark text-white font-semibold text-sm px-6 py-2.5 rounded-lg2 disabled:opacity-50">
-            {isPending ? "Saving…" : saleId ? "Update Sale" : t("save")}
-          </button>
-        </div>
+        {balance > 0.01 && !customer && (
+          <p className="text-xs text-err font-medium">
+            Balance due &#8212; select a customer to track this amount for follow-up.
+          </p>
+        )}
       </div>
 
     </form>
