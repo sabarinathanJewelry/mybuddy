@@ -391,7 +391,7 @@ export default function MetalFlowPage() {
                       </div>
 
                       {/* Refinery return form */}
-                      {refineryForm?.batchId === b.id && (
+                      {refineryForm !== null && refineryForm.batchId === b.id && (
                         <div className="bg-ok/5 border border-ok/20 rounded-lg2 p-4 space-y-3">
                           <h4 className="text-sm font-semibold text-ok">Refinery Return for {b.batch_no}</h4>
                           <p className="text-xs text-ink-dim">Input weight: <strong>{grams(b.input_wt)}</strong> (pure wt sent)</p>
