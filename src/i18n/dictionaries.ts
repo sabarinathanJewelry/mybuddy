@@ -13,6 +13,7 @@ const en = {
   nav_suppliers: "Suppliers",
   nav_payments: "Payments",
   nav_daily_sheet: "Daily Sheet",
+  nav_ledger: "Ledger",
   nav_metal_flow: "Metal Flow",
   nav_loans: "Loans",
   nav_expenses: "Expenses",

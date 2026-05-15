@@ -17,6 +17,7 @@ const NAV = [
   { href: "/suppliers",    icon: "🏭", key: "nav_suppliers" as const },
   { href: "/payments",     icon: "💳", key: "nav_payments" as const },
   { href: "/daily-sheet",  icon: "📋", key: "nav_daily_sheet" as const },
+  { href: "/ledger",       icon: "📒", key: "nav_ledger" as const },
   { href: "/metal-flow",   icon: "⚗️",  key: "nav_metal_flow" as const },
   { href: "/bullion",      icon: "🔶", key: "nav_bullion" as const },
   { href: "/loans",        icon: "🏦", key: "nav_loans" as const },
