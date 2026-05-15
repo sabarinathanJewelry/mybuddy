@@ -16,7 +16,7 @@ function useDaily(date: string) {
         client.from("bank_ledger").select("direction, amount").eq("tx_date", date),
         client.from("sales").select("id, total, gst_amount, status").eq("bill_date", date).eq("status", "confirmed"),
         client.from("old_metal_intake").select("metal, pure_wt").eq("intake_date", date),
-        client.from("walk_ins").select("amount, mode, entry_type").eq("sale_date", date),
+        client.from("walk_in_summaries").select("gold_walkin,silver_walkin,other_walkin,gold_walkout,silver_walkout,other_walkout").eq("summary_date", date),
       ]);
 
       const cashIn = (cashRes.data ?? []).filter((r) => r.direction === "in").reduce((s, r) => s + r.amount, 0);
@@ -28,13 +28,17 @@ function useDaily(date: string) {
       const salesCount = salesRes.data?.length ?? 0;
       const oldGoldG = (metalRes.data ?? []).filter((r) => r.metal?.startsWith("gold")).reduce((s, r) => s + (r.pure_wt ?? 0), 0);
       const oldSilverG = (metalRes.data ?? []).filter((r) => r.metal?.startsWith("silver")).reduce((s, r) => s + (r.pure_wt ?? 0), 0);
-      const walkinRows = walkinRes.data ?? [];
-      const walkinSales = walkinRows.filter((r) => (r.entry_type ?? "in") === "in");
-      const walkinTotal = walkinSales.reduce((s, r) => s + r.amount, 0);
-      const walkinInCount = walkinSales.length;
-      const walkinOutCount = walkinRows.filter((r) => r.entry_type === "out").length;
+      const walkinRow = (walkinRes.data ?? [])[0];
+      const walkinInCount = walkinRow
+        ? (walkinRow.gold_walkin ?? 0) + (walkinRow.silver_walkin ?? 0) + (walkinRow.other_walkin ?? 0)
+        : 0;
+      const walkinOutCount = walkinRow
+        ? (walkinRow.gold_walkout ?? 0) + (walkinRow.silver_walkout ?? 0) + (walkinRow.other_walkout ?? 0)
+        : 0;
+      const walkinGoldIn = walkinRow?.gold_walkin ?? 0;
+      const walkinSilverIn = walkinRow?.silver_walkin ?? 0;
 
-      return { cashIn, cashOut, bankIn, bankOut, salesTotal, gstTotal, salesCount, oldGoldG, oldSilverG, walkinTotal, walkinInCount, walkinOutCount };
+      return { cashIn, cashOut, bankIn, bankOut, salesTotal, gstTotal, salesCount, oldGoldG, oldSilverG, walkinInCount, walkinOutCount, walkinGoldIn, walkinSilverIn };
     },
   });
 }
@@ -105,10 +109,11 @@ export default function DailySheetPage() {
 
           {/* Walk-ins */}
           {(data.walkinInCount > 0 || data.walkinOutCount > 0) && (
-            <div className="grid grid-cols-3 gap-3">
-              <StatCard label="Walk-in Sales" value={inr(data.walkinTotal)} color="text-info" sub={`${data.walkinInCount} bought`} />
-              <StatCard label="Walk-ins (bought)" value={String(data.walkinInCount)} color="text-ok" />
-              <StatCard label="Walk-outs (no sale)" value={String(data.walkinOutCount)} color="text-err" />
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <StatCard label="Total Walk-ins" value={String(data.walkinInCount)} color="text-ok" />
+              <StatCard label="Walk-outs" value={String(data.walkinOutCount)} color="text-err" />
+              <StatCard label="Gold Interest" value={String(data.walkinGoldIn)} color="text-gold" />
+              <StatCard label="Silver Interest" value={String(data.walkinSilverIn)} color="text-ink-mid" />
             </div>
           )}
         </>
