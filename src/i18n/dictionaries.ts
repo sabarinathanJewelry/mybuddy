@@ -21,6 +21,7 @@ const en = {
   nav_reports: "Reports",
   nav_admin: "Admin",
   nav_logout: "Logout",
+  nav_info: "Info",
 
   // Common
   save: "Save",

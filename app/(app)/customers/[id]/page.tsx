@@ -17,9 +17,12 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
   const { data: view, isLoading } = useCustomer360(id);
 
   const totalSales = view?.sales.reduce((s, x) => s + (x.total ?? 0), 0) ?? 0;
-  const totalPaid = view?.payments.filter((p) => p.direction === "in").reduce((s, x) => s + x.amount, 0) ?? 0;
+  const totalPaidIn = view?.payments.filter((p) => p.direction === "in").reduce((s, x) => s + x.amount, 0) ?? 0;
+  const totalPaidOut = view?.payments.filter((p) => p.direction === "out").reduce((s, x) => s + x.amount, 0) ?? 0;
   const totalWriteoff = view?.writeoffs.reduce((s, x) => s + (x.amount ?? 0), 0) ?? 0;
-  const balance = (customer?.opening_balance ?? 0) + totalSales - totalPaid - totalWriteoff;
+  // Negative balance = customer owes us; Positive = customer has advance credit
+  // Sales increase debt; payments-in reduce debt; payments-out reduce our obligation; writeoffs reduce debt
+  const balance = (customer?.opening_balance ?? 0) - totalSales + totalPaidIn - totalPaidOut + totalWriteoff;
 
   return (
     <div className="max-w-3xl mx-auto space-y-5">
