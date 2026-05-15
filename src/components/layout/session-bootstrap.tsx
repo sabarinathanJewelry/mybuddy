@@ -6,6 +6,19 @@ import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/stores/auth";
 import { useBoardRate } from "@/stores/board-rate";
 import { useLangStore } from "@/stores/lang";
+import { useGlobalDate } from "@/stores/global-date";
+
+async function fetchRateForDate(date: string) {
+  const { data } = await supabase()
+    .from("board_rates")
+    .select("*")
+    .lte("effective_date", date)
+    .order("effective_date", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+  return data;
+}
 
 export default function SessionBootstrap({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
@@ -13,7 +26,9 @@ export default function SessionBootstrap({ children }: { children: React.ReactNo
   const setProfile = useAuth((s) => s.setProfile);
   const setRate = useBoardRate((s) => s.setRate);
   const setLang = useLangStore((s) => s.setLang);
+  const globalDate = useGlobalDate((s) => s.date);
 
+  // Initial session + board rate load
   useEffect(() => {
     const client = supabase();
 
@@ -24,7 +39,6 @@ export default function SessionBootstrap({ children }: { children: React.ReactNo
         return;
       }
 
-      // Load profile
       const { data: profile } = await client
         .from("profiles")
         .select("id, display_name, role, language")
@@ -36,15 +50,7 @@ export default function SessionBootstrap({ children }: { children: React.ReactNo
         if (profile.language) setLang(profile.language as "en" | "ta");
       }
 
-      // Load current board rate
-      const { data: rate } = await client
-        .from("board_rates")
-        .select("*")
-        .order("effective_date", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .single();
-
+      const rate = await fetchRateForDate(globalDate);
       if (rate) setRate(rate);
 
       setReady(true);
@@ -60,7 +66,16 @@ export default function SessionBootstrap({ children }: { children: React.ReactNo
     });
 
     return () => listener.subscription.unsubscribe();
-  }, [router, setProfile, setRate, setLang]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Reload board rate whenever global date changes
+  useEffect(() => {
+    if (!ready) return;
+    fetchRateForDate(globalDate).then((rate) => {
+      if (rate) setRate(rate);
+    });
+  }, [globalDate, ready, setRate]);
 
   if (!ready) {
     return (
