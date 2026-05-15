@@ -73,12 +73,13 @@ function defaultPurityForMetal(metal: Metal): number {
   return 99.9;
 }
 
-function newItem(series: SaleSeries = "G22"): SaleItemDraft {
+function newItem(series: SaleSeries = "G22", boardRate: import("@/lib/sales-calc").BoardRate | null = null): SaleItemDraft {
   const metal = defaultMetalForSeries(series);
+  const rate = boardRate ? rateForMetal(boardRate, metal) : 0;
   return {
     id: crypto.randomUUID(),
     description: "", metal, gross_wt: 0, stone_wt: 0,
-    purity_pct: defaultPurityForMetal(metal), rate: 0, va_pct: 0, making_amt: 0,
+    purity_pct: defaultPurityForMetal(metal), rate, va_pct: 0, making_amt: 0,
     show_stone: false, stone_amt: 0,
     show_diamond: false, diamond_amt: 0, diamond_carat_rate: 0, diamond_cents: 0,
     gst_enabled: true, gst_pct: 3,
@@ -110,6 +111,18 @@ export default function SaleForm({ saleId }: Props) {
   const [items, setItems] = useState<SaleItemDraft[]>(() => [newItem("G22")]);
   const [payments, setPayments] = useState<SalePaymentDraft[]>([newPayment()]);
   const [desiredTotal, setDesiredTotal] = useState(0);
+
+  // Auto-fill rates when board rate loads (form opens before boardRate is ready)
+  useEffect(() => {
+    if (!boardRate) return;
+    setItems((prev) => prev.map((item) => {
+      if (item.rate !== 0 || item.is_value_entry) return item;
+      const rate = rateForMetal(boardRate, item.metal);
+      if (!rate) return item;
+      return { ...item, rate, ...computeLine({ ...item, rate }) };
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardRate]);
 
   useEffect(() => {
     if (!existingSale) return;
@@ -251,7 +264,7 @@ export default function SaleForm({ saleId }: Props) {
       <div>
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold text-sm text-ink">Items</h3>
-          <button type="button" onClick={() => setItems((p) => [...p, newItem(series)])}
+          <button type="button" onClick={() => setItems((p) => [...p, newItem(series, boardRate)])}
             className="text-xs text-gold hover:underline">+ {t("add_item")}</button>
         </div>
         <div className="space-y-3">
