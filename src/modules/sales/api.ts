@@ -193,6 +193,13 @@ export function useUpdateSale() {
       const { error: delPayErr } = await client.from("sale_payments").delete().eq("sale_id", id);
       if (delPayErr) throw delPayErr;
 
+      // Wipe stale ledger + metal intake rows so daily sheet stays accurate after edits
+      await Promise.allSettled([
+        client.from("cash_ledger").delete().eq("ref_type", "sale").eq("ref_id", id),
+        client.from("bank_ledger").delete().eq("ref_type", "sale").eq("ref_id", id),
+        client.from("old_metal_intake").delete().eq("source_type", "sale").eq("source_id", id),
+      ]);
+
       const validPay = draft.payments.filter((p) => p.amount > 0);
       if (validPay.length) {
         const { error: payErr } = await client.from("sale_payments").insert(
@@ -204,6 +211,9 @@ export function useUpdateSale() {
         );
         if (payErr) throw payErr;
       }
+
+      // Re-write fresh ledger + metal intake entries for the updated payments
+      await fanoutLedger(id, draft.bill_date, draft.items, validPay);
 
       return id;
     },

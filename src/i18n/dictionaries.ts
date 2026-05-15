@@ -17,6 +17,7 @@ const en = {
   nav_loans: "Loans",
   nav_expenses: "Expenses",
   nav_scrap: "Balance Write-off",
+  nav_chits: "Chits",
   nav_walkins: "Walk-ins",
   nav_reports: "Reports",
   nav_admin: "Admin",

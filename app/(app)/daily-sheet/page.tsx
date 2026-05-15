@@ -16,7 +16,7 @@ function useDaily(date: string) {
         client.from("bank_ledger").select("direction, amount").eq("tx_date", date),
         client.from("sales").select("id, total, gst_amount, status").eq("bill_date", date).eq("status", "confirmed"),
         client.from("old_metal_intake").select("metal, pure_wt").eq("intake_date", date),
-        client.from("walk_ins").select("amount, mode").eq("sale_date", date),
+        client.from("walk_ins").select("amount, mode, entry_type").eq("sale_date", date),
       ]);
 
       const cashIn = (cashRes.data ?? []).filter((r) => r.direction === "in").reduce((s, r) => s + r.amount, 0);
@@ -28,9 +28,13 @@ function useDaily(date: string) {
       const salesCount = salesRes.data?.length ?? 0;
       const oldGoldG = (metalRes.data ?? []).filter((r) => r.metal?.startsWith("gold")).reduce((s, r) => s + (r.pure_wt ?? 0), 0);
       const oldSilverG = (metalRes.data ?? []).filter((r) => r.metal?.startsWith("silver")).reduce((s, r) => s + (r.pure_wt ?? 0), 0);
-      const walkinTotal = (walkinRes.data ?? []).reduce((s, r) => s + r.amount, 0);
+      const walkinRows = walkinRes.data ?? [];
+      const walkinSales = walkinRows.filter((r) => (r.entry_type ?? "in") === "in");
+      const walkinTotal = walkinSales.reduce((s, r) => s + r.amount, 0);
+      const walkinInCount = walkinSales.length;
+      const walkinOutCount = walkinRows.filter((r) => r.entry_type === "out").length;
 
-      return { cashIn, cashOut, bankIn, bankOut, salesTotal, gstTotal, salesCount, oldGoldG, oldSilverG, walkinTotal };
+      return { cashIn, cashOut, bankIn, bankOut, salesTotal, gstTotal, salesCount, oldGoldG, oldSilverG, walkinTotal, walkinInCount, walkinOutCount };
     },
   });
 }
@@ -100,8 +104,12 @@ export default function DailySheetPage() {
           </div>
 
           {/* Walk-ins */}
-          {data.walkinTotal > 0 && (
-            <StatCard label="Walk-in Counter" value={inr(data.walkinTotal)} color="text-info" />
+          {(data.walkinInCount > 0 || data.walkinOutCount > 0) && (
+            <div className="grid grid-cols-3 gap-3">
+              <StatCard label="Walk-in Sales" value={inr(data.walkinTotal)} color="text-info" sub={`${data.walkinInCount} bought`} />
+              <StatCard label="Walk-ins (bought)" value={String(data.walkinInCount)} color="text-ok" />
+              <StatCard label="Walk-outs (no sale)" value={String(data.walkinOutCount)} color="text-err" />
+            </div>
           )}
         </>
       ) : null}

@@ -21,6 +21,7 @@ const NAV = [
   { href: "/loans",        icon: "🏦", key: "nav_loans" as const },
   { href: "/expenses",     icon: "📝", key: "nav_expenses" as const },
   { href: "/writeoff",     icon: "✂️",  key: "nav_scrap" as const },
+  { href: "/chits",        icon: "🪙", key: "nav_chits" as const },
   { href: "/walkins",      icon: "🚶", key: "nav_walkins" as const },
   { href: "/reports",      icon: "📈", key: "nav_reports" as const },
 ];
