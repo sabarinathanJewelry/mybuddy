@@ -78,6 +78,6 @@ export function distributeTotalByVa(
     const target_before_gst = newTotal / (1 + gst_pct_eff / 100);
     const new_va_amt = target_before_gst - base_excl_va;
     const new_va_pct = l.metal_value > 0 ? (new_va_amt / l.metal_value) * 100 : 0;
-    return { ...l, va_pct: Math.max(0, new_va_pct) };
+    return { ...l, va_pct: Math.round(Math.max(0, new_va_pct) * 100) / 100 };
   });
 }

@@ -232,7 +232,7 @@ export default function SaleForm({ saleId }: Props) {
         <div>
           <label className="block text-xs font-medium text-ink-dim mb-1">Series</label>
           <select value={series}
-            onChange={(e) => { const s = e.target.value as SaleSeries; setSeries(s); setItems([newItem(s)]); }}
+            onChange={(e) => setSeries(e.target.value as SaleSeries)}
             className={inp}>
             {SERIES_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
@@ -435,10 +435,22 @@ export default function SaleForm({ saleId }: Props) {
               {(p.mode === "old_gold" || p.mode === "old_silver") && (
                 <>
                   <Num value={p.metal_wt}
-                    onChange={(v) => setPayments((prev) => prev.map((x, i) => i === idx ? { ...x, metal_wt: v } : x))}
+                    onChange={(v) => setPayments((prev) => prev.map((x, i) => {
+                      if (i !== idx) return x;
+                      const amt = boardRate
+                        ? v * (x.metal_purity / 100) * (x.mode === "old_gold" ? boardRate.gold_24k : boardRate.silver_pure)
+                        : x.amount;
+                      return { ...x, metal_wt: v, amount: Math.round(amt) };
+                    }))}
                     step="0.001" className="w-28 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" placeholder="Weight (g)" />
                   <Num value={p.metal_purity}
-                    onChange={(v) => setPayments((prev) => prev.map((x, i) => i === idx ? { ...x, metal_purity: v } : x))}
+                    onChange={(v) => setPayments((prev) => prev.map((x, i) => {
+                      if (i !== idx) return x;
+                      const amt = boardRate
+                        ? x.metal_wt * (v / 100) * (x.mode === "old_gold" ? boardRate.gold_24k : boardRate.silver_pure)
+                        : x.amount;
+                      return { ...x, metal_purity: v, amount: Math.round(amt) };
+                    }))}
                     step="0.01" className="w-24 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" placeholder="Purity%" />
                 </>
               )}
