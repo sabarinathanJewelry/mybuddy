@@ -111,6 +111,8 @@ export default function SaleForm({ saleId }: Props) {
   const [items, setItems] = useState<SaleItemDraft[]>(() => [newItem("G22")]);
   const [payments, setPayments] = useState<SalePaymentDraft[]>([newPayment()]);
   const [desiredTotal, setDesiredTotal] = useState(0);
+  const [changeDueMode, setChangeDueMode] = useState<"cash_back" | "advance">("cash_back");
+  const [changePayoutMode, setChangePayoutMode] = useState<"cash" | "bank">("cash");
 
   // Auto-fill rates when board rate loads (form opens before boardRate is ready)
   useEffect(() => {
@@ -218,15 +220,22 @@ export default function SaleForm({ saleId }: Props) {
 
   const grandTotal = items.reduce((s, i) => s + i.line_total, 0);
   const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
-  const balance = grandTotal - totalPaid;
+  const rawBalance = grandTotal - totalPaid;
+  // When payments exceed bill total, rawBalance is negative → change is owed to customer
+  const changeDue = rawBalance < -0.01 ? Math.abs(rawBalance) : 0;
+  const balance = changeDue > 0 ? 0 : rawBalance; // balance shown to user is never negative
   const isPending = saveSale.isPending || updateSale.isPending;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (balance > 0.01 && !customer) return; // blocked by UI error below
+    if (balance > 0.01 && !customer) return;
+    if (changeDue > 0.01 && changeDueMode === "advance" && !customer) return;
     const draft: SaleDraft = {
       series, customer_id: customer?.id ?? null, bill_date: billDate, notes,
       items, payments: payments.filter((p) => p.amount > 0),
+      change_due: changeDue > 0.01 ? changeDue : undefined,
+      change_mode: changeDue > 0.01 ? changeDueMode : undefined,
+      change_payout_mode: changeDue > 0.01 ? changePayoutMode : undefined,
     };
     if (saleId) {
       await updateSale.mutateAsync({ id: saleId, draft });
@@ -489,20 +498,82 @@ export default function SaleForm({ saleId }: Props) {
         <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inp} placeholder="Optional notes…" />
       </div>
 
+      {/* Change Due — when payments exceed the bill total */}
+      {changeDue > 0.01 && (
+        <div className="bg-warn/5 border border-warn/30 rounded-xl p-4 shadow-soft space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-sm font-semibold text-ink">Change Due: </span>
+              <span className="text-lg font-bold text-warn">{inr(changeDue)}</span>
+              <span className="text-xs text-ink-dim ml-2">Payments exceed bill by {inr(changeDue)}</span>
+            </div>
+          </div>
+
+          {/* Mode choice */}
+          <div className="flex gap-3">
+            <label className={clsx("flex items-center gap-2 px-4 py-2 rounded-lg2 border cursor-pointer text-sm transition-colors",
+              changeDueMode === "cash_back" ? "border-gold bg-gold/10 text-gold font-medium" : "border-line text-ink-dim hover:border-gold")}>
+              <input type="radio" name="change_mode" value="cash_back" checked={changeDueMode === "cash_back"}
+                onChange={() => setChangeDueMode("cash_back")} className="accent-gold" />
+              💵 Pay Cash Back
+            </label>
+            <label className={clsx("flex items-center gap-2 px-4 py-2 rounded-lg2 border cursor-pointer text-sm transition-colors",
+              changeDueMode === "advance" ? "border-gold bg-gold/10 text-gold font-medium" : "border-line text-ink-dim hover:border-gold")}>
+              <input type="radio" name="change_mode" value="advance" checked={changeDueMode === "advance"}
+                onChange={() => setChangeDueMode("advance")} className="accent-gold" />
+              🏷️ Keep as Advance
+            </label>
+          </div>
+
+          {/* Cash back: choose payout channel */}
+          {changeDueMode === "cash_back" && (
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-ink-dim">Pay via:</span>
+              {(["cash", "bank"] as const).map((m) => (
+                <label key={m} className={clsx("flex items-center gap-1.5 px-3 py-1.5 rounded-lg2 border cursor-pointer text-xs transition-colors",
+                  changePayoutMode === m ? "border-gold bg-gold/10 text-gold" : "border-line text-ink-dim hover:border-gold")}>
+                  <input type="radio" name="change_payout" value={m} checked={changePayoutMode === m}
+                    onChange={() => setChangePayoutMode(m)} className="accent-gold" />
+                  {m === "cash" ? "Cash" : "Bank / UPI"}
+                </label>
+              ))}
+              <span className="text-xs text-ink-dim">(records a {changePayoutMode} outflow of {inr(changeDue)})</span>
+            </div>
+          )}
+
+          {/* Advance: need customer */}
+          {changeDueMode === "advance" && !customer && (
+            <p className="text-xs text-err font-medium">
+              Select a customer above — advance credit requires a customer account.
+            </p>
+          )}
+          {changeDueMode === "advance" && customer && (
+            <p className="text-xs text-ok font-medium">
+              {inr(changeDue)} will be added to {customer.name}&apos;s advance balance.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Summary + Actions */}
       <div className="bg-white border border-line rounded-xl p-4 shadow-soft space-y-3">
         <div className="flex justify-between items-center flex-wrap gap-3">
           <div className="flex gap-6 text-sm">
             <div><span className="text-ink-dim">Total: </span><strong className="text-gold text-lg">{inr(grandTotal)}</strong></div>
             <div><span className="text-ink-dim">Paid: </span><strong>{inr(totalPaid)}</strong></div>
-            <div><span className="text-ink-dim">Balance: </span><strong className={balance > 0.01 ? "text-err" : "text-ok"}>{inr(Math.abs(balance))}</strong></div>
+            {changeDue > 0.01 ? (
+              <div><span className="text-ink-dim">Change: </span><strong className="text-warn">{inr(changeDue)}</strong></div>
+            ) : (
+              <div><span className="text-ink-dim">Balance: </span><strong className={balance > 0.01 ? "text-err" : "text-ok"}>{inr(balance)}</strong></div>
+            )}
           </div>
           <div className="flex gap-2">
             <button type="button" onClick={() => router.push("/sales")}
               className="border border-line text-ink-mid text-sm px-5 py-2.5 rounded-lg2 hover:bg-canvas">
               {t("cancel")}
             </button>
-            <button type="submit" disabled={isPending || (balance > 0.01 && !customer)}
+            <button type="submit"
+              disabled={isPending || (balance > 0.01 && !customer) || (changeDue > 0.01 && changeDueMode === "advance" && !customer)}
               className="bg-gold hover:bg-gold-dark text-white font-semibold text-sm px-6 py-2.5 rounded-lg2 disabled:opacity-50">
               {isPending ? "Saving…" : saleId ? "Update Sale" : t("save")}
             </button>

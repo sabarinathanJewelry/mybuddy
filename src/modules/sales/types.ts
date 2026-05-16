@@ -51,4 +51,8 @@ export interface SaleDraft {
   notes: string;
   items: SaleItemDraft[];
   payments: SalePaymentDraft[];
+  // When payments exceed sale total (e.g. old gold > bill amount)
+  change_due?: number;
+  change_mode?: "cash_back" | "advance" | null;
+  change_payout_mode?: "cash" | "bank";
 }

@@ -10,7 +10,10 @@ async function fanoutLedger(
   billDate: string,
   items: SaleDraft["items"],
   payments: SaleDraft["payments"],
-  customerId?: string | null
+  customerId?: string | null,
+  changeDue?: number,
+  changeMode?: SaleDraft["change_mode"],
+  changePayoutMode?: SaleDraft["change_payout_mode"]
 ) {
   const client = supabase();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,6 +58,25 @@ async function fanoutLedger(
       })));
     }
   }
+
+  // Handle change due (payments exceeded sale total)
+  if (changeDue && changeDue > 0.01 && changeMode === "cash_back") {
+    const table = changePayoutMode === "bank" ? "bank_ledger" : "cash_ledger";
+    promises.push(Promise.resolve(client.from(table).insert({
+      tx_date: billDate, direction: "out", amount: changeDue,
+      description: "Change/excess payout to customer", ref_type: "sale", ref_id: saleId,
+    })));
+    // If customer is tracked, record the payout to zero their surplus advance
+    if (customerId) {
+      promises.push(Promise.resolve(client.from("payments").insert({
+        pay_date: billDate, direction: "out", mode: changePayoutMode === "bank" ? "bank" : "cash",
+        amount: changeDue, customer_id: customerId, sale_id: saleId,
+        notes: "Change paid back to customer",
+      })));
+    }
+  }
+  // For "advance" mode: no extra entry needed — customer's balance already reflects the surplus
+  // from the old_gold/payment fan-out above.
 
   await Promise.allSettled(promises).then((results) => {
     results.forEach((r) => {
@@ -172,7 +194,7 @@ export function useSaveSale() {
         if (payErr) throw payErr;
       }
 
-      await fanoutLedger(sale.id, draft.bill_date, draft.items, draft.payments, draft.customer_id);
+      await fanoutLedger(sale.id, draft.bill_date, draft.items, draft.payments, draft.customer_id, draft.change_due, draft.change_mode, draft.change_payout_mode);
       return sale;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["sales"] }),
@@ -232,7 +254,7 @@ export function useUpdateSale() {
       }
 
       // Re-write fresh ledger + metal intake + customer payment entries
-      await fanoutLedger(id, draft.bill_date, draft.items, validPay, draft.customer_id);
+      await fanoutLedger(id, draft.bill_date, draft.items, validPay, draft.customer_id, draft.change_due, draft.change_mode, draft.change_payout_mode);
 
       return id;
     },
