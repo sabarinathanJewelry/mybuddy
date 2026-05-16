@@ -64,11 +64,65 @@ function useDispatches() {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("metal_dispatches")
-        .select("*")
+        .select("*, suppliers(name)")
         .order("dispatch_date", { ascending: false })
         .limit(50);
       if (error) throw error;
       return data ?? [];
+    },
+  });
+}
+
+function useReserve() {
+  return useQuery({
+    queryKey: ["metal_reserve"],
+    queryFn: async () => {
+      const client = supabase();
+      const [batchRes, dispatchRes, bullionRes, openingRes] = await Promise.all([
+        client.from("melt_batches").select("metal, output_wt").eq("status", "refined"),
+        client.from("metal_dispatches").select("metal, weight_g"),
+        client.from("bullion_trades").select("trade_type, metal, pure_wt"),
+        client.from("opening_balances").select("balance_type, amount")
+          .in("balance_type", ["gold_g", "silver_g"])
+          .order("effective_date", { ascending: false }),
+      ]);
+      const sum = (arr: any[], fn: (r: any) => boolean, key: string) =>
+        (arr ?? []).filter(fn).reduce((s: number, r: any) => s + (Number(r[key]) || 0), 0);
+
+      const batches    = batchRes.data   ?? [];
+      const dispatches = dispatchRes.data ?? [];
+      const bullion    = bullionRes.data  ?? [];
+      const openings   = openingRes.data  ?? [];
+
+      const openingGoldG   = Number(openings.find((o: any) => o.balance_type === "gold_g")?.amount)   || 0;
+      const openingSilverG = Number(openings.find((o: any) => o.balance_type === "silver_g")?.amount) || 0;
+
+      return {
+        goldReserve: openingGoldG
+          + sum(batches,    (r) => r.metal?.startsWith("gold"),   "output_wt")
+          + sum(bullion,    (r) => r.trade_type === "buy"  && r.metal === "gold",  "pure_wt")
+          - sum(dispatches, (r) => r.metal === "gold",  "weight_g")
+          - sum(bullion,    (r) => r.trade_type === "sell" && r.metal === "gold",  "pure_wt"),
+        silverReserve: openingSilverG
+          + sum(batches,    (r) => r.metal?.startsWith("silver"), "output_wt")
+          + sum(bullion,    (r) => r.trade_type === "buy"  && r.metal === "silver", "pure_wt")
+          - sum(dispatches, (r) => r.metal === "silver", "weight_g")
+          - sum(bullion,    (r) => r.trade_type === "sell" && r.metal === "silver", "pure_wt"),
+      };
+    },
+  });
+}
+
+function useSuppliers() {
+  return useQuery({
+    queryKey: ["suppliers_list"],
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("suppliers")
+        .select("id, name")
+        .order("name");
+      if (error) throw error;
+      return (data ?? []) as { id: string; name: string }[];
     },
   });
 }
@@ -109,9 +163,11 @@ export default function MetalFlowPage() {
   const [refineryForm, setRefineryForm] = useState<{ batchId: string; output_wt: number; loss_wt: number; output_purity_pct: number } | null>(null);
 
   // Reserve & dispatches
+  const { data: reserveData } = useReserve();
+  const { data: suppliersData = [] } = useSuppliers();
   const { data: dispatchData, isLoading: dispatchLoading } = useDispatches();
   const [showDispatch, setShowDispatch] = useState(false);
-  const [dispatchForm, setDispatchForm] = useState({ dispatch_date: globalDate, metal: "gold", weight_g: 0, purpose: "supplier", party_name: "", notes: "" });
+  const [dispatchForm, setDispatchForm] = useState({ dispatch_date: globalDate, metal: "gold", weight_g: 0, purpose: "supplier", supplier_id: "", party_name: "", notes: "" });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const intake = (intakeData as any[]) ?? [];
@@ -120,21 +176,10 @@ export default function MetalFlowPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dispatches = (dispatchData as any[]) ?? [];
 
-  // ── Reserve calculation ──
-  const refinedGold = batches
-    .filter((b: any) => b.status === "refined" && b.metal?.startsWith("gold"))
-    .reduce((s: number, b: any) => s + (b.output_wt ?? 0), 0);
-  const refinedSilver = batches
-    .filter((b: any) => b.status === "refined" && b.metal?.startsWith("silver"))
-    .reduce((s: number, b: any) => s + (b.output_wt ?? 0), 0);
-  const dispatchedGold = dispatches
-    .filter((d: any) => d.metal === "gold")
-    .reduce((s: number, d: any) => s + (d.weight_g ?? 0), 0);
-  const dispatchedSilver = dispatches
-    .filter((d: any) => d.metal === "silver")
-    .reduce((s: number, d: any) => s + (d.weight_g ?? 0), 0);
-  const goldReserve = Math.max(0, refinedGold - dispatchedGold);
-  const silverReserve = Math.max(0, refinedSilver - dispatchedSilver);
+  // ── Reserve (full: melt batches + bullion buys/sells + dispatches + opening) ──
+  const goldReserve   = reserveData?.goldReserve   ?? 0;
+  const silverReserve = reserveData?.silverReserve ?? 0;
+  const suppliers = suppliersData as { id: string; name: string }[];
 
   // ── Mutations ──
 
@@ -753,16 +798,12 @@ export default function MetalFlowPage() {
             <div className="bg-gold/5 border border-gold/20 rounded-xl p-5 shadow-soft">
               <p className="text-xs text-ink-dim mb-1">Gold Reserve (999 pure)</p>
               <p className="text-3xl font-bold text-gold">{grams(goldReserve)}</p>
-              <p className="text-xs text-ink-dim mt-2">
-                From refinery: {grams(refinedGold)} — Dispatched: {grams(dispatchedGold)}
-              </p>
+              <p className="text-xs text-ink-dim mt-2">Opening + Refined + Bullion bought - Dispatched - Sold</p>
             </div>
             <div className="bg-ink-mid/5 border border-line rounded-xl p-5 shadow-soft">
               <p className="text-xs text-ink-dim mb-1">Silver Reserve (999 pure)</p>
               <p className="text-3xl font-bold text-ink-mid">{grams(silverReserve)}</p>
-              <p className="text-xs text-ink-dim mt-2">
-                From refinery: {grams(refinedSilver)} — Dispatched: {grams(dispatchedSilver)}
-              </p>
+              <p className="text-xs text-ink-dim mt-2">Opening + Refined + Bullion bought - Dispatched - Sold</p>
             </div>
           </div>
 
@@ -808,9 +849,27 @@ export default function MetalFlowPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-ink-dim mb-1">Party / Name</label>
-                  <input value={dispatchForm.party_name}
-                    onChange={(e) => setDispatchForm({ ...dispatchForm, party_name: e.target.value })} className={inp} placeholder="Supplier / goldsmith name" />
+                  <label className="block text-xs text-ink-dim mb-1">
+                    {dispatchForm.purpose === "supplier" ? "Supplier" : "Party / Name"}
+                  </label>
+                  {dispatchForm.purpose === "supplier" && (
+                    <select value={dispatchForm.supplier_id}
+                      onChange={(e) => {
+                        const name = suppliers.find((s) => s.id === e.target.value)?.name ?? "";
+                        setDispatchForm({ ...dispatchForm, supplier_id: e.target.value, party_name: name });
+                      }}
+                      className={inp}>
+                      <option value="">-- select supplier --</option>
+                      {suppliers.map((s) => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  )}
+                  {dispatchForm.purpose !== "supplier" && (
+                    <input value={dispatchForm.party_name}
+                      onChange={(e) => setDispatchForm({ ...dispatchForm, party_name: e.target.value })}
+                      className={inp} placeholder="Goldsmith / party name" />
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs text-ink-dim mb-1">Notes</label>
