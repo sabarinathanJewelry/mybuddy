@@ -233,16 +233,28 @@ export default function SaleForm({ saleId }: Props) {
   function applyChitVaBenefit() {
     const chitPayment = payments.find((p: SalePaymentDraft) => p.mode === "chit_metal");
     if (!chitPayment || chitPayment.amount <= 0) return;
-    let remaining = chitPayment.amount;
-    setItems((prev: SaleItemDraft[]) => prev.map((item: SaleItemDraft) => {
-      if (item.is_value_entry || remaining <= 0) return item;
-      const atZeroVa = computeLine({ ...item, va_pct: 0 });
-      if (remaining >= atZeroVa.line_total) {
-        remaining -= atZeroVa.line_total;
-        return { ...item, va_pct: 0, ...atZeroVa };
-      }
-      return item;
-    }));
+    const chitAmt = chitPayment.amount;
+    setItems((prev: SaleItemDraft[]) => {
+      let remaining = chitAmt; // inside updater — safe against React StrictMode double-invoke
+      return prev.map((item: SaleItemDraft) => {
+        if (item.is_value_entry || remaining <= 0) return item;
+        const atZeroVa = computeLine({ ...item, va_pct: 0 });
+        if (remaining >= atZeroVa.line_total) {
+          // Chit covers this whole item — zero VA
+          remaining -= atZeroVa.line_total;
+          return { ...item, va_pct: 0, ...atZeroVa };
+        }
+        // Partial coverage: compute VA% so item total == remaining, then exhaust
+        const gstRate = item.gst_enabled ? ((item.gst_pct || 3) / 100) : 0;
+        const targetBeforeGst = remaining / (1 + gstRate);
+        const metalVal = atZeroVa.net_wt * item.rate;
+        const vaAmt = Math.max(0, targetBeforeGst - metalVal - item.making_amt);
+        const partialVaPct = metalVal > 0 ? (vaAmt / metalVal) * 100 : 0;
+        remaining = 0;
+        const partial = computeLine({ ...item, va_pct: partialVaPct });
+        return { ...item, va_pct: partialVaPct, ...partial };
+      });
+    });
   }
 
   const grandTotal = items.reduce((s: number, i: SaleItemDraft) => s + i.line_total, 0);

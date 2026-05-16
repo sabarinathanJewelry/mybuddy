@@ -77,7 +77,14 @@ export function distributeTotalByVa(
     const gst_pct_eff = l.gst_enabled ? (l.gst_pct || 3) : 0;
     const target_before_gst = newTotal / (1 + gst_pct_eff / 100);
     const new_va_amt = target_before_gst - base_excl_va;
-    const new_va_pct = l.metal_value > 0 ? (new_va_amt / l.metal_value) * 100 : 0;
-    return { ...l, va_pct: Math.max(0, new_va_pct) }; // full precision so computed total hits target exactly
+    let new_va_pct = l.metal_value > 0 ? (new_va_amt / l.metal_value) * 100 : 0;
+    new_va_pct = Math.max(0, new_va_pct);
+    // va_pct column is numeric(6,2) — cap at 9999 and put overflow in making_amt
+    let extra_making = 0;
+    if (new_va_pct > 9999) {
+      extra_making = ((new_va_pct - 9999) / 100) * l.metal_value;
+      new_va_pct = 9999;
+    }
+    return { ...l, va_pct: new_va_pct, making_amt: l.making_amt + extra_making };
   });
 }
