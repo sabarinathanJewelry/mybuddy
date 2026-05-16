@@ -97,17 +97,21 @@ function useReserve() {
       const openingGoldG   = Number(openings.find((o: any) => o.balance_type === "gold_g")?.amount)   || 0;
       const openingSilverG = Number(openings.find((o: any) => o.balance_type === "silver_g")?.amount) || 0;
 
+      const goldRefined    = sum(batches,    (r) => r.metal?.startsWith("gold"),    "output_wt");
+      const goldBullionIn  = sum(bullion,    (r) => r.trade_type === "buy"  && r.metal === "gold",  "pure_wt");
+      const goldDispatched = sum(dispatches, (r) => r.metal === "gold",   "weight_g");
+      const goldBullionOut = sum(bullion,    (r) => r.trade_type === "sell" && r.metal === "gold",  "pure_wt");
+
+      const silverRefined    = sum(batches,    (r) => r.metal?.startsWith("silver"),  "output_wt");
+      const silverBullionIn  = sum(bullion,    (r) => r.trade_type === "buy"  && r.metal === "silver", "pure_wt");
+      const silverDispatched = sum(dispatches, (r) => r.metal === "silver", "weight_g");
+      const silverBullionOut = sum(bullion,    (r) => r.trade_type === "sell" && r.metal === "silver", "pure_wt");
+
       return {
-        goldReserve: openingGoldG
-          + sum(batches,    (r) => r.metal?.startsWith("gold"),   "output_wt")
-          + sum(bullion,    (r) => r.trade_type === "buy"  && r.metal === "gold",  "pure_wt")
-          - sum(dispatches, (r) => r.metal === "gold",  "weight_g")
-          - sum(bullion,    (r) => r.trade_type === "sell" && r.metal === "gold",  "pure_wt"),
-        silverReserve: openingSilverG
-          + sum(batches,    (r) => r.metal?.startsWith("silver"), "output_wt")
-          + sum(bullion,    (r) => r.trade_type === "buy"  && r.metal === "silver", "pure_wt")
-          - sum(dispatches, (r) => r.metal === "silver", "weight_g")
-          - sum(bullion,    (r) => r.trade_type === "sell" && r.metal === "silver", "pure_wt"),
+        goldReserve:   openingGoldG   + goldRefined   + goldBullionIn   - goldDispatched   - goldBullionOut,
+        silverReserve: openingSilverG + silverRefined + silverBullionIn - silverDispatched - silverBullionOut,
+        openingGoldG, goldRefined, goldBullionIn, goldDispatched, goldBullionOut,
+        openingSilverG, silverRefined, silverBullionIn, silverDispatched, silverBullionOut,
       };
     },
   });
@@ -125,6 +129,28 @@ function useSuppliers() {
       return (data ?? []) as { id: string; name: string }[];
     },
   });
+}
+
+// ─── Reserve breakdown helper (extracted to avoid JSX context loss) ──────────
+
+function ReserveBreakdown({ refined, bullionIn, dispatched, cls }: {
+  refined: number; bullionIn: number; dispatched: number; cls: string;
+}) {
+  const rows = [
+    { label: "Refined:", value: grams(refined),              vc: cls },
+    { label: "Bullion bought:", value: grams(bullionIn),     vc: cls },
+    { label: "Dispatched:", value: "-" + grams(dispatched),  vc: "text-err" },
+  ];
+  return (
+    <div className="mt-3 space-y-0.5 text-xs text-ink-dim">
+      {rows.map((row) => (
+        <div key={row.label} className="flex justify-between">
+          <span>{row.label}</span>
+          <span className={row.vc}>{row.value}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // ─── Main component ─────────────────────────────────────────────────────────
@@ -176,9 +202,15 @@ export default function MetalFlowPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dispatches = (dispatchData as any[]) ?? [];
 
-  // ── Reserve (full: melt batches + bullion buys/sells + dispatches + opening) ──
-  const goldReserve   = reserveData?.goldReserve   ?? 0;
-  const silverReserve = reserveData?.silverReserve ?? 0;
+  // ── Reserve breakdown (all pre-computed outside JSX) ──
+  const goldReserve      = reserveData?.goldReserve      ?? 0;
+  const silverReserve    = reserveData?.silverReserve    ?? 0;
+  const goldRefined      = reserveData?.goldRefined      ?? 0;
+  const goldBullionIn    = reserveData?.goldBullionIn    ?? 0;
+  const goldDispatched   = reserveData?.goldDispatched   ?? 0;
+  const silverRefined    = reserveData?.silverRefined    ?? 0;
+  const silverBullionIn  = reserveData?.silverBullionIn  ?? 0;
+  const silverDispatched = reserveData?.silverDispatched ?? 0;
   const suppliers = suppliersData as { id: string; name: string }[];
 
   // ── Mutations ──
@@ -342,14 +374,18 @@ export default function MetalFlowPage() {
     mutationFn: async (d: typeof dispatchForm) => {
       const { error } = await supabase().from("metal_dispatches").insert({
         dispatch_date: d.dispatch_date, metal: d.metal, weight_g: d.weight_g,
-        purpose: d.purpose, party_name: d.party_name || null, notes: d.notes || null,
+        purpose: d.purpose,
+        supplier_id: d.supplier_id || null,
+        party_name: d.party_name || null,
+        notes: d.notes || null,
       });
       if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["metal_dispatches"] });
+      qc.invalidateQueries({ queryKey: ["metal_reserve"] });
       setShowDispatch(false);
-      setDispatchForm({ dispatch_date: globalDate, metal: "gold", weight_g: 0, purpose: "supplier", party_name: "", notes: "" });
+      setDispatchForm({ dispatch_date: globalDate, metal: "gold", weight_g: 0, purpose: "supplier", supplier_id: "", party_name: "", notes: "" });
     },
   });
 
@@ -798,12 +834,12 @@ export default function MetalFlowPage() {
             <div className="bg-gold/5 border border-gold/20 rounded-xl p-5 shadow-soft">
               <p className="text-xs text-ink-dim mb-1">Gold Reserve (999 pure)</p>
               <p className="text-3xl font-bold text-gold">{grams(goldReserve)}</p>
-              <p className="text-xs text-ink-dim mt-2">Opening + Refined + Bullion bought - Dispatched - Sold</p>
+              <ReserveBreakdown refined={goldRefined} bullionIn={goldBullionIn} dispatched={goldDispatched} cls="text-gold" />
             </div>
             <div className="bg-ink-mid/5 border border-line rounded-xl p-5 shadow-soft">
               <p className="text-xs text-ink-dim mb-1">Silver Reserve (999 pure)</p>
               <p className="text-3xl font-bold text-ink-mid">{grams(silverReserve)}</p>
-              <p className="text-xs text-ink-dim mt-2">Opening + Refined + Bullion bought - Dispatched - Sold</p>
+              <ReserveBreakdown refined={silverRefined} bullionIn={silverBullionIn} dispatched={silverDispatched} cls="text-ink-mid" />
             </div>
           </div>
 
