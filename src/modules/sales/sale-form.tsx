@@ -111,7 +111,7 @@ export default function SaleForm({ saleId }: Props) {
   const [items, setItems] = useState<SaleItemDraft[]>(() => [newItem("G22")]);
   const [payments, setPayments] = useState<SalePaymentDraft[]>([newPayment()]);
   const [desiredTotal, setDesiredTotal] = useState(0);
-  const [changeDueMode, setChangeDueMode] = useState<"cash_back" | "advance">("cash_back");
+  const [changeDueMode, setChangeDueMode] = useState<"cash_back" | "advance" | null>(null);
   const [changePayoutMode, setChangePayoutMode] = useState<"cash" | "bank">("cash");
 
   // Auto-fill rates when board rate loads (form opens before boardRate is ready)
@@ -229,6 +229,7 @@ export default function SaleForm({ saleId }: Props) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (balance > 0.01 && !customer) return;
+    if (changeDue > 0.01 && !changeDueMode) return;           // must choose
     if (changeDue > 0.01 && changeDueMode === "advance" && !customer) return;
     const draft: SaleDraft = {
       series, customer_id: customer?.id ?? null, bill_date: billDate, notes,
@@ -500,16 +501,15 @@ export default function SaleForm({ saleId }: Props) {
 
       {/* Change Due — when payments exceed the bill total */}
       {changeDue > 0.01 && (
-        <div className="bg-warn/5 border border-warn/30 rounded-xl p-4 shadow-soft space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-sm font-semibold text-ink">Change Due: </span>
-              <span className="text-lg font-bold text-warn">{inr(changeDue)}</span>
-              <span className="text-xs text-ink-dim ml-2">Payments exceed bill by {inr(changeDue)}</span>
-            </div>
+        <div className={clsx("border rounded-xl p-4 shadow-soft space-y-3",
+          !changeDueMode ? "bg-err/5 border-err/40" : "bg-warn/5 border-warn/30")}>
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-semibold text-ink">Change Due: </span>
+            <span className="text-lg font-bold text-warn">{inr(changeDue)}</span>
+            <span className="text-xs text-ink-dim">Payments exceed bill — choose what to do with the excess</span>
           </div>
 
-          {/* Mode choice */}
+          {/* Required choice */}
           <div className="flex gap-3">
             <label className={clsx("flex items-center gap-2 px-4 py-2 rounded-lg2 border cursor-pointer text-sm transition-colors",
               changeDueMode === "cash_back" ? "border-gold bg-gold/10 text-gold font-medium" : "border-line text-ink-dim hover:border-gold")}>
@@ -525,9 +525,16 @@ export default function SaleForm({ saleId }: Props) {
             </label>
           </div>
 
+          {/* No choice yet — block prompt */}
+          {!changeDueMode && (
+            <p className="text-xs text-err font-semibold">
+              ⚠ You must choose how to handle {inr(changeDue)} before saving.
+            </p>
+          )}
+
           {/* Cash back: choose payout channel */}
           {changeDueMode === "cash_back" && (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <span className="text-xs text-ink-dim">Pay via:</span>
               {(["cash", "bank"] as const).map((m) => (
                 <label key={m} className={clsx("flex items-center gap-1.5 px-3 py-1.5 rounded-lg2 border cursor-pointer text-xs transition-colors",
@@ -537,19 +544,19 @@ export default function SaleForm({ saleId }: Props) {
                   {m === "cash" ? "Cash" : "Bank / UPI"}
                 </label>
               ))}
-              <span className="text-xs text-ink-dim">(records a {changePayoutMode} outflow of {inr(changeDue)})</span>
+              <span className="text-xs text-ok font-medium">{inr(changeDue)} will be paid out as {changePayoutMode}</span>
             </div>
           )}
 
           {/* Advance: need customer */}
           {changeDueMode === "advance" && !customer && (
             <p className="text-xs text-err font-medium">
-              Select a customer above — advance credit requires a customer account.
+              ⚠ Select a customer above — advance credit requires a customer account.
             </p>
           )}
           {changeDueMode === "advance" && customer && (
             <p className="text-xs text-ok font-medium">
-              {inr(changeDue)} will be added to {customer.name}&apos;s advance balance.
+              ✓ {inr(changeDue)} will be kept as advance credit for {customer.name}.
             </p>
           )}
         </div>
@@ -573,7 +580,12 @@ export default function SaleForm({ saleId }: Props) {
               {t("cancel")}
             </button>
             <button type="submit"
-              disabled={isPending || (balance > 0.01 && !customer) || (changeDue > 0.01 && changeDueMode === "advance" && !customer)}
+              disabled={
+                isPending ||
+                (balance > 0.01 && !customer) ||
+                (changeDue > 0.01 && !changeDueMode) ||
+                (changeDue > 0.01 && changeDueMode === "advance" && !customer)
+              }
               className="bg-gold hover:bg-gold-dark text-white font-semibold text-sm px-6 py-2.5 rounded-lg2 disabled:opacity-50">
               {isPending ? "Saving…" : saleId ? "Update Sale" : t("save")}
             </button>
