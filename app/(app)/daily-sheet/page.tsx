@@ -15,15 +15,16 @@ function useDaily(date: string) {
   return useQuery({
     queryKey: ["daily-sheet", date],
     queryFn: async () => {
-      const [cashRes, bankRes, salesRes, metalRes, walkinRes, chitRes, gsdRes, cbRes] = await Promise.all([
+      const [cashRes, bankRes, salesRes, metalRes, walkinRes, chitRes, gsdRes, cbRes, expRes] = await Promise.all([
         client.from("cash_ledger").select("direction, amount").eq("tx_date", date),
         client.from("bank_ledger").select("direction, amount").eq("tx_date", date),
-        client.from("sales").select("id, total, gst_amount, status").eq("bill_date", date).eq("status", "confirmed"),
+        client.from("sales").select("id, total, gst_amount, status, sale_items(metal, net_wt, line_total)").eq("bill_date", date).eq("status", "confirmed"),
         client.from("old_metal_intake").select("metal, pure_wt").eq("intake_date", date),
         client.from("walk_in_summaries").select("gold_walkin,silver_walkin,other_walkin,gold_walkout,silver_walkout,other_walkout").eq("summary_date", date),
         client.from("chit_payments").select("amount, metal_grams, metal_type").eq("pay_date", date),
         client.from("gold_savings_deposits").select("pure_wt, metal_type").eq("deposit_date", date),
         client.from("cash_savings_deposits").select("amount").eq("deposit_date", date),
+        client.from("expenses").select("amount").eq("exp_date", date),
       ]);
 
       const cashIn   = (cashRes.data ?? []).filter((r) => r.direction === "in").reduce((s, r) => s + Number(r.amount), 0);
@@ -33,6 +34,14 @@ function useDaily(date: string) {
       const salesTotal = (salesRes.data ?? []).reduce((s, r) => s + Number(r.total), 0);
       const gstTotal   = (salesRes.data ?? []).reduce((s, r) => s + (Number(r.gst_amount) || 0), 0);
       const salesCount = salesRes.data?.length ?? 0;
+
+      // Flatten all sale_items for the day
+      const allItems = (salesRes.data ?? []).flatMap((s: any) => s.sale_items ?? []);
+      const goldSoldG   = allItems.filter((i: any) => (i.metal ?? "").startsWith("gold")).reduce((s: number, i: any) => s + (Number(i.net_wt) || 0), 0);
+      const silverSoldG = allItems.filter((i: any) => i.metal === "silver" || i.metal === "silver_pure").reduce((s: number, i: any) => s + (Number(i.net_wt) || 0), 0);
+      const mrpTotal    = allItems.filter((i: any) => i.metal === "silver_mpr").reduce((s: number, i: any) => s + (Number(i.line_total) || 0), 0);
+
+      const expenseTotal = (expRes.data ?? []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
       const oldGoldG   = (metalRes.data ?? []).filter((r) => r.metal?.startsWith("gold")).reduce((s, r) => s + (Number(r.pure_wt) || 0), 0);
       const oldSilverG = (metalRes.data ?? []).filter((r) => r.metal?.startsWith("silver")).reduce((s, r) => s + (Number(r.pure_wt) || 0), 0);
       const walkinRow = (walkinRes.data ?? [])[0];
@@ -63,6 +72,7 @@ function useDaily(date: string) {
         chitAmt, chitGoldG, chitSilverG, chitCount,
         smartGoldG, smartSilverG, smartCount,
         cashBonusAmt, cashBonusCount,
+        goldSoldG, silverSoldG, mrpTotal, expenseTotal,
       };
     },
   });
@@ -344,6 +354,14 @@ export default function DailySheetPage() {
             <StatCard label={t("sales_count")} value={String(data.salesCount)} color="text-gold" />
             <StatCard label={t("sales_total")} value={inr(data.salesTotal)} color="text-gold" />
             <StatCard label={t("gst_collected")} value={inr(data.gstTotal)} color="text-warn" />
+          </div>
+
+          {/* Weight sold + MRP + Expenses */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatCard label="Gold Sold" value={grams(data.goldSoldG)} color="text-gold" sub="Net wt today" />
+            <StatCard label="Silver Sold" value={grams(data.silverSoldG)} color="text-ink-mid" sub="Net wt today" />
+            <StatCard label="MRP Items" value={inr(data.mrpTotal)} color="text-info" sub="Silver MPR line total" />
+            <StatCard label="Total Expenses" value={inr(data.expenseTotal)} color="text-err" sub="All expenses today" />
           </div>
 
           {/* Cash & Bank today */}
