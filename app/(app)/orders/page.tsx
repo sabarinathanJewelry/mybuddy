@@ -56,42 +56,43 @@ async function fanoutOrderPayments(
   customerId: string | null
 ) {
   const client = supabase();
-  const promises: Promise<unknown>[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const promises: Promise<any>[] = [];
 
   for (const p of payments) {
     if (p.amount <= 0) continue;
     const desc = `Order advance — ${orderNo}`;
 
     if (p.mode === "cash") {
-      promises.push(client.from("cash_ledger").insert({
+      promises.push(Promise.resolve(client.from("cash_ledger").insert({
         tx_date: payDate, direction: "in", amount: p.amount,
         description: desc, ref_type: "order", ref_id: orderId,
-      }));
+      })));
     } else if (p.mode === "upi" || p.mode === "bank") {
-      promises.push(client.from("bank_ledger").insert({
+      promises.push(Promise.resolve(client.from("bank_ledger").insert({
         tx_date: payDate, direction: "in", amount: p.amount,
         description: desc, ref_type: "order", ref_id: orderId,
-      }));
+      })));
     } else if (p.mode === "old_gold" || p.mode === "old_silver") {
       const metal = p.mode === "old_gold" ? "gold_22k" : "silver";
-      promises.push(client.from("old_metal_intake").insert({
+      promises.push(Promise.resolve(client.from("old_metal_intake").insert({
         intake_date: payDate, metal,
         gross_wt: p.metal_wt, purity_pct: p.metal_purity || 91.6,
         pure_wt: parseFloat((p.metal_wt * ((p.metal_purity || 91.6) / 100)).toFixed(3)),
         source_type: "order", source_id: orderId, status: "pending",
         notes: p.notes || null,
-      }));
+      })));
     }
 
     if (customerId) {
-      promises.push(client.from("payments").insert({
+      promises.push(Promise.resolve(client.from("payments").insert({
         pay_date: payDate,
         direction: "in",
         mode: p.mode === "old_gold" || p.mode === "old_silver" ? "cash" : p.mode,
         amount: p.amount,
         customer_id: customerId,
         notes: p.notes || `Order advance — ${orderNo}`,
-      }));
+      })));
     }
   }
 
