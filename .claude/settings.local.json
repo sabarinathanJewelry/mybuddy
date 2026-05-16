@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(gh auth *)",
+      "Bash(for dir in \"loans\" \"expenses\" \"metal-flow\" \"walkins\" \"reports\" \"admin/users\"; do *)",
+      "Bash(git checkout *)",
+      "Bash(git merge *)",
+      "PowerShell(npm show next version)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "PowerShell(Get-Command node -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-ChildItem \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" -ErrorAction SilentlyContinue; Get-ChildItem \"$env:APPDATA\\\\npm\\\\node.exe\" -ErrorAction SilentlyContinue; Get-ChildItem \"C:\\\\Users\\\\SABARI STAFF\\\\AppData\\\\Roaming\\\\nvm\" -ErrorAction SilentlyContinue | Select-Object -First 5)",
+      "Read(//c/Program Files/**)",
+      "Bash(npx tsc *)",
+      "Read(//c/Users/SABARI STAFF/OneDrive/Documents/GitHub/mybuddy/node_modules/**)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\SABARI STAFF\\OneDrive\\Documents\\GitHub\\mybuddy\\app"
+    ]
+  }
+}

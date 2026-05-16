@@ -48,6 +48,7 @@ const REF_LABELS: Record<string, string> = {
   transfer: "Transfer",
   loan: "Loan",
   old_metal_intake: "Old Gold",
+  order: "Order Advance",
 };
 
 export default function LedgerPage() {
