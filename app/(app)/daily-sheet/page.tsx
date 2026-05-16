@@ -122,6 +122,20 @@ function usePosition() {
   });
 }
 
+function useCashCount(date: string) {
+  return useQuery({
+    queryKey: ["cash_count", date],
+    queryFn: async () => {
+      const { data } = await supabase()
+        .from("cash_counts")
+        .select("actual_amount, notes, updated_at")
+        .eq("count_date", date)
+        .maybeSingle();
+      return data ? { actual: Number(data.actual_amount), notes: data.notes ?? "", updatedAt: data.updated_at } : null;
+    },
+  });
+}
+
 interface StatCardProps { label: string; value: string; sub?: string; color?: string }
 function StatCard({ label, value, sub, color = "text-ink" }: StatCardProps) {
   return (
@@ -139,6 +153,25 @@ export default function DailySheetPage() {
   const qc = useQueryClient();
   const { data, isLoading } = useDaily(date);
   const { data: pos } = usePosition();
+  const { data: cashCount } = useCashCount(date);
+
+  // Cash reconciliation
+  const [showCountForm, setShowCountForm] = useState(false);
+  const [countAmt, setCountAmt] = useState(0);
+  const [countNotes, setCountNotes] = useState("");
+
+  const saveCashCount = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase()
+        .from("cash_counts")
+        .upsert({ count_date: date, actual_amount: countAmt, notes: countNotes || null, updated_at: new Date().toISOString() }, { onConflict: "count_date" });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["cash_count", date] });
+      setShowCountForm(false);
+    },
+  });
 
   // Cash → Bank transfer form
   const [showTransfer, setShowTransfer] = useState(false);
@@ -275,7 +308,7 @@ export default function DailySheetPage() {
 
       {/* Current position (running balance) */}
       {pos && pos.hasOpening && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-ink-dim uppercase tracking-wide">Current Position</h2>
             <div className="flex gap-2">
@@ -285,11 +318,16 @@ export default function DailySheetPage() {
                 className="text-xs bg-canvas border border-line px-3 py-1 rounded-lg2 hover:border-gold">
                 💳 Cash → Bank
               </button>
+              <button
+                onClick={() => { setShowCountForm(true); setCountAmt(cashCount?.actual ?? 0); setCountNotes(cashCount?.notes ?? ""); }}
+                className="text-xs bg-gold/10 border border-gold/30 text-gold px-3 py-1 rounded-lg2 hover:bg-gold/20">
+                🧾 Count Cash
+              </button>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <StatCard
-              label="Cash in Hand"
+              label="Cash in Hand (Calculated)"
               value={inr(pos.currentCash)}
               color={pos.currentCash >= 0 ? "text-ok" : "text-err"}
               sub={`Opening ${inr(pos.openingCash)} + all movements`}
@@ -301,6 +339,94 @@ export default function DailySheetPage() {
               sub={`Opening ${inr(pos.openingBank)} + all movements`}
             />
           </div>
+
+          {/* Cash reconciliation result — shown when a count exists for today */}
+          {cashCount && (() => {
+            const diff = cashCount.actual - pos.currentCash;
+            const matched = Math.abs(diff) < 0.01;
+            return (
+              <div className={`rounded-xl border p-4 shadow-soft ${matched ? "bg-ok/5 border-ok/30" : "bg-warn/5 border-warn/30"}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-ink">Cash Count — {date}</h3>
+                  <button
+                    onClick={() => { setShowCountForm(true); setCountAmt(cashCount.actual); setCountNotes(cashCount.notes); }}
+                    className="text-xs text-ink-dim hover:text-gold">
+                    Edit Count
+                  </button>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center">
+                    <p className="text-xs text-ink-dim mb-1">Calculated</p>
+                    <p className="text-lg font-bold text-ok">{inr(pos.currentCash)}</p>
+                    <p className="text-xs text-ink-dim">From ledger</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-ink-dim mb-1">Actual (Counted)</p>
+                    <p className="text-lg font-bold text-ink">{inr(cashCount.actual)}</p>
+                    <p className="text-xs text-ink-dim">Physical count</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-ink-dim mb-1">Difference</p>
+                    <p className={`text-lg font-bold ${matched ? "text-ok" : diff > 0 ? "text-warn" : "text-err"}`}>
+                      {diff >= 0 ? "+" : ""}{inr(diff)}
+                    </p>
+                    <p className="text-xs text-ink-dim">
+                      {matched ? "Tallied ✓" : diff > 0 ? "Extra cash (unrecorded income?)" : "Cash short (unrecorded expense?)"}
+                    </p>
+                  </div>
+                </div>
+                {cashCount.notes && (
+                  <p className="text-xs text-ink-dim mt-3 border-t border-line/50 pt-2">Note: {cashCount.notes}</p>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Cash count entry form */}
+          {showCountForm && (
+            <div className="bg-white border border-gold/30 rounded-xl p-4 shadow-soft space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Enter Actual Cash in Hand</h3>
+                <span className="text-xs text-ink-dim">Calculated: <strong className="text-ok">{inr(pos.currentCash)}</strong></span>
+              </div>
+              <p className="text-xs text-ink-dim">Count the physical cash in your drawer/counter and enter the total here.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Actual Cash in Hand (₹) *</label>
+                  <input
+                    type="number" step="0.01" value={countAmt || ""}
+                    placeholder="0.00" onFocus={(e) => e.target.select()}
+                    onChange={(e) => setCountAmt(parseFloat(e.target.value) || 0)}
+                    className={inp} autoFocus />
+                  {countAmt > 0 && (
+                    <p className={`text-xs mt-1 font-medium ${Math.abs(countAmt - pos.currentCash) < 0.01 ? "text-ok" : countAmt > pos.currentCash ? "text-warn" : "text-err"}`}>
+                      Difference: {countAmt - pos.currentCash >= 0 ? "+" : ""}{inr(countAmt - pos.currentCash)}
+                      {Math.abs(countAmt - pos.currentCash) < 0.01 ? " — Tallied ✓" : ""}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Notes (optional)</label>
+                  <input value={countNotes}
+                    onChange={(e) => setCountNotes(e.target.value)}
+                    className={inp} placeholder="e.g. ₹500 notes: 10, ₹100 notes: 20…" />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  disabled={countAmt <= 0 || saveCashCount.isPending}
+                  onClick={() => saveCashCount.mutate()}
+                  className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
+                  {saveCashCount.isPending ? "Saving…" : "Save Count"}
+                </button>
+                <button onClick={() => setShowCountForm(false)}
+                  className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
+              </div>
+              {saveCashCount.isError && (
+                <p className="text-xs text-err">Save failed — run migration 007 in Supabase SQL Editor first.</p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
