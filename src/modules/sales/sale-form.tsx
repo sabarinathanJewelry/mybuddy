@@ -245,8 +245,11 @@ export default function SaleForm({ saleId }: Props) {
     }));
   }
 
-  const grandTotal = items.reduce((s, i) => s + i.line_total, 0);
-  const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
+  const grandTotal = items.reduce((s: number, i: SaleItemDraft) => s + i.line_total, 0);
+  const totalPaid = payments.reduce((s: number, p: SalePaymentDraft) => s + p.amount, 0);
+  const chitTotal = payments
+    .filter((p: SalePaymentDraft) => p.mode === "chit_metal")
+    .reduce((s: number, p: SalePaymentDraft) => s + p.amount, 0);
   const rawBalance = grandTotal - totalPaid;
   // When payments exceed bill total, rawBalance is negative → change is owed to customer
   const changeDue = rawBalance < -0.01 ? Math.abs(rawBalance) : 0;
@@ -536,6 +539,19 @@ export default function SaleForm({ saleId }: Props) {
           ))}
         </div>
       </div>
+
+      {/* Chit Metal VA Benefit */}
+      {chitTotal > 0 && (
+        <div className="flex items-center gap-3 bg-gold/5 border border-gold/20 rounded-xl px-4 py-3">
+          <div className="flex-1 text-xs text-ink-dim">
+            {`Chit metal ${inr(chitTotal)} — zero VA for items covered left-to-right at base metal cost`}
+          </div>
+          <button type="button" onClick={applyChitVaBenefit}
+            className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 hover:opacity-90 whitespace-nowrap">
+            Apply Chit VA Benefit
+          </button>
+        </div>
+      )}
 
       {/* Notes */}
       <div>

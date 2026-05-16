@@ -150,7 +150,7 @@ export default function MetalFlowPage() {
   const saveIntake = useMutation({
     mutationFn: async (d: ReturnType<typeof defaultIntakeForm>) => {
       const client = supabase();
-      const { error } = await client.from("old_metal_intake").insert({
+      const { data: intakeRec, error } = await client.from("old_metal_intake").insert({
         intake_date: d.intake_date,
         metal: d.metal,
         gross_wt: d.gross_wt,
@@ -160,24 +160,39 @@ export default function MetalFlowPage() {
         notes: d.notes || null,
         source_type: "standalone",
         status: "pending",
-      });
+      }).select("id").single();
       if (error) throw error;
+
       if (d.payout_amount > 0) {
+        // Debit shop's cash or bank ledger (money going out to customer)
         const table = d.payout_mode === "bank" ? "bank_ledger" : "cash_ledger";
         const { error: ledgerErr } = await client.from(table).insert({
           tx_date: d.intake_date,
           direction: "out",
           amount: d.payout_amount,
-          description: "Old gold purchase",
+          description: "Old gold purchase payout",
           ref_type: "old_metal_intake",
+          ref_id: intakeRec?.id ?? null,
         });
         if (ledgerErr) throw ledgerErr;
+
+        // Credit customer balance so their account reflects the advance they're owed
+        if (d.customer_id) {
+          const { error: payErr } = await client.from("payments").insert({
+            pay_date: d.intake_date,
+            direction: "in",
+            mode: d.payout_mode === "bank" ? "bank" : "cash",
+            amount: d.payout_amount,
+            customer_id: d.customer_id,
+            notes: "Old gold purchase — cash payout to customer",
+          });
+          if (payErr) console.warn("Customer payment record failed:", payErr);
+        }
       }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["metal_intake"] });
-      qc.invalidateQueries({ queryKey: ["cash_ledger"] });
-      qc.invalidateQueries({ queryKey: ["bank_ledger"] });
+      qc.invalidateQueries({ queryKey: ["ledger_detail"] });
       setShowIntakeForm(false);
       setIntakeForm(defaultIntakeForm());
     },
