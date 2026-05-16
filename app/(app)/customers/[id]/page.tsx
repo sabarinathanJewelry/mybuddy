@@ -105,6 +105,39 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
         </div>
       )}
 
+      {/* Orders tab */}
+      {tab === "orders" && !isLoading && (
+        <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+          <table className="w-full text-sm">
+            <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+              <th className="text-left px-4 py-2.5">Order No</th>
+              <th className="text-left px-3 py-2.5">{t("date")}</th>
+              <th className="text-right px-3 py-2.5">Est. Total</th>
+              <th className="text-right px-3 py-2.5">Advance</th>
+              <th className="text-right px-3 py-2.5">Balance Due</th>
+              <th className="text-left px-3 py-2.5">{t("status")}</th>
+            </tr></thead>
+            <tbody>
+              {view?.orders.map((o) => {
+                const advancePaid = (o.order_payments ?? []).reduce((s: number, p: { amount: number }) => s + (p.amount ?? 0), 0);
+                const balanceDue = (o.total ?? 0) - advancePaid;
+                return (
+                  <tr key={o.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                    <td className="px-4 py-2.5 font-mono text-info">{o.order_no}</td>
+                    <td className="px-3 py-2.5 text-ink-dim">{shortDate(o.order_date)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono">{inr(o.total ?? 0)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-ok">{inr(advancePaid)}</td>
+                    <td className={`px-3 py-2.5 text-right font-mono ${balanceDue > 0 ? "text-err" : "text-ok"}`}>{inr(balanceDue)}</td>
+                    <td className="px-3 py-2.5 text-ink-dim capitalize">{o.status}</td>
+                  </tr>
+                );
+              })}
+              {!view?.orders.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* Payments tab */}
       {tab === "payments" && !isLoading && (
         <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">

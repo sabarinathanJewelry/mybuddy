@@ -75,7 +75,7 @@ export function useCustomer360(id: string) {
     queryFn: async () => {
       const [salesRes, ordersRes, paymentsRes, writeoffsRes] = await Promise.all([
         client.from("sales").select("id, bill_no, bill_date, total, status").eq("customer_id", id).order("bill_date", { ascending: false }).limit(20),
-        client.from("orders").select("id, order_no, order_date, status, total").eq("customer_id", id).order("order_date", { ascending: false }).limit(20),
+        client.from("orders").select("id, order_no, order_date, status, total, order_payments(amount)").eq("customer_id", id).order("order_date", { ascending: false }).limit(20),
         client.from("payments").select("id, pay_date, direction, mode, amount").eq("customer_id", id).order("pay_date", { ascending: false }).limit(20),
         client.from("scrap_entries").select("id, scrap_date, amount, notes").eq("customer_id", id).order("scrap_date", { ascending: false }).limit(20),
       ]);
