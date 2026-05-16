@@ -86,6 +86,8 @@ export default function MetalFlowPage() {
   const { data: customers = [] } = useCustomers();
   const [selectedIntake, setSelectedIntake] = useState<Set<string>>(new Set());
   const [showIntakeForm, setShowIntakeForm] = useState(false);
+  const [payoutRowId, setPayoutRowId] = useState<string | null>(null);
+  const [payoutForm, setPayoutForm] = useState({ amount: 0, mode: "cash" as "cash" | "bank" });
   const defaultIntakeForm = () => ({
     intake_date: globalDate,
     customer_id: "",
@@ -160,6 +162,8 @@ export default function MetalFlowPage() {
         notes: d.notes || null,
         source_type: "standalone",
         status: "pending",
+        payout_amount: d.payout_amount > 0 ? d.payout_amount : null,
+        payout_mode: d.payout_amount > 0 ? d.payout_mode : null,
       }).select("id").single();
       if (error) throw error;
 
@@ -195,6 +199,51 @@ export default function MetalFlowPage() {
       qc.invalidateQueries({ queryKey: ["ledger_detail"] });
       setShowIntakeForm(false);
       setIntakeForm(defaultIntakeForm());
+    },
+  });
+
+  const recordPayout = useMutation({
+    mutationFn: async ({ intakeId, customerId }: { intakeId: string; customerId: string | null }) => {
+      const client = supabase();
+      const { amount, mode } = payoutForm;
+      if (amount <= 0) throw new Error("Amount required");
+
+      // Mark the intake record as paid out
+      const { error: updErr } = await client.from("old_metal_intake")
+        .update({ payout_amount: amount, payout_mode: mode })
+        .eq("id", intakeId);
+      if (updErr) throw updErr;
+
+      // Debit shop cash/bank ledger
+      const table = mode === "bank" ? "bank_ledger" : "cash_ledger";
+      const { error: ledgerErr } = await client.from(table).insert({
+        tx_date: new Date().toISOString().slice(0, 10),
+        direction: "out",
+        amount,
+        description: "Old gold purchase payout",
+        ref_type: "old_metal_intake",
+        ref_id: intakeId,
+      });
+      if (ledgerErr) throw ledgerErr;
+
+      // Credit customer balance if linked
+      if (customerId) {
+        const { error: payErr } = await client.from("payments").insert({
+          pay_date: new Date().toISOString().slice(0, 10),
+          direction: "in",
+          mode: mode === "bank" ? "bank" : "cash",
+          amount,
+          customer_id: customerId,
+          notes: "Old gold purchase — cash payout to customer",
+        });
+        if (payErr) console.warn("Customer payment record failed:", payErr);
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["metal_intake"] });
+      qc.invalidateQueries({ queryKey: ["ledger_detail"] });
+      setPayoutRowId(null);
+      setPayoutForm({ amount: 0, mode: "cash" });
     },
   });
 
@@ -442,37 +491,87 @@ export default function MetalFlowPage() {
                     <th className="text-right px-3 py-2.5">Purity%</th>
                     <th className="text-right px-3 py-2.5">Pure Wt</th>
                     <th className="text-left px-3 py-2.5">Status</th>
+                    <th className="text-left px-3 py-2.5">Payout</th>
                   </tr>
                 </thead>
                 <tbody>
                   {intake.map((r: any) => (
-                    <tr key={r.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                      <td className="px-4 py-2.5">
-                        {r.status === "pending" && (
-                          <input type="checkbox" className="accent-gold"
-                            checked={selectedIntake.has(r.id)}
-                            onChange={(e) => {
-                              const s = new Set(selectedIntake);
-                              if (e.target.checked) s.add(r.id); else s.delete(r.id);
-                              setSelectedIntake(s);
-                            }} />
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-ink-dim">{shortDate(r.intake_date)}</td>
-                      <td className="px-3 py-2.5">{r.customers?.name ?? "—"}</td>
-                      <td className="px-3 py-2.5 capitalize text-ink-dim">{r.metal?.replace(/_/g, " ")}</td>
-                      <td className="px-3 py-2.5 text-right">{grams(r.gross_wt)}</td>
-                      <td className="px-3 py-2.5 text-right text-ink-dim">{r.purity_pct}%</td>
-                      <td className="px-3 py-2.5 text-right text-gold font-mono">{grams(r.pure_wt)}</td>
-                      <td className="px-3 py-2.5">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          r.status === "pending" ? "bg-warn/10 text-warn" :
-                          r.status === "used" ? "bg-ok/10 text-ok" : "bg-line text-ink-dim"
-                        }`}>{r.status}</span>
-                      </td>
-                    </tr>
+                    <>
+                      <tr key={r.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                        <td className="px-4 py-2.5">
+                          {r.status === "pending" && (
+                            <input type="checkbox" className="accent-gold"
+                              checked={selectedIntake.has(r.id)}
+                              onChange={(e) => {
+                                const s = new Set(selectedIntake);
+                                if (e.target.checked) s.add(r.id); else s.delete(r.id);
+                                setSelectedIntake(s);
+                              }} />
+                          )}
+                        </td>
+                        <td className="px-3 py-2.5 text-ink-dim">{shortDate(r.intake_date)}</td>
+                        <td className="px-3 py-2.5">{r.customers?.name ?? "—"}</td>
+                        <td className="px-3 py-2.5 capitalize text-ink-dim">{r.metal?.replace(/_/g, " ")}</td>
+                        <td className="px-3 py-2.5 text-right">{grams(r.gross_wt)}</td>
+                        <td className="px-3 py-2.5 text-right text-ink-dim">{r.purity_pct}%</td>
+                        <td className="px-3 py-2.5 text-right text-gold font-mono">{grams(r.pure_wt)}</td>
+                        <td className="px-3 py-2.5">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            r.status === "pending" ? "bg-warn/10 text-warn" :
+                            r.status === "used" ? "bg-ok/10 text-ok" : "bg-line text-ink-dim"
+                          }`}>{r.status}</span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {r.payout_amount > 0 ? (
+                            <span className="text-xs text-ok font-medium">
+                              ✓ {r.payout_mode === "bank" ? "Bank" : "Cash"} paid
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => { setPayoutRowId(r.id); setPayoutForm({ amount: 0, mode: "cash" }); }}
+                              className="text-xs text-gold hover:underline">
+                              + Pay Out
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {payoutRowId === r.id && (
+                        <tr className="bg-gold/5">
+                          <td colSpan={9} className="px-4 py-3">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className="text-xs font-medium text-ink">Record payout for this intake:</span>
+                              <input type="number" step="1" placeholder="Amount (₹)"
+                                value={payoutForm.amount || ""}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) => setPayoutForm({ ...payoutForm, amount: parseFloat(e.target.value) || 0 })}
+                                className="border border-line rounded-lg2 px-2 py-1 text-sm w-32 focus:outline-none focus:ring-1 focus:ring-gold" />
+                              <select value={payoutForm.mode}
+                                onChange={(e) => setPayoutForm({ ...payoutForm, mode: e.target.value as "cash" | "bank" })}
+                                className="border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                                <option value="cash">Cash</option>
+                                <option value="bank">Bank / UPI</option>
+                              </select>
+                              <button
+                                disabled={!payoutForm.amount || recordPayout.isPending}
+                                onClick={() => recordPayout.mutate({ intakeId: r.id, customerId: r.customer_id ?? null })}
+                                className="bg-gold text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                                {recordPayout.isPending ? "Saving…" : "Save Payout"}
+                              </button>
+                              <button onClick={() => setPayoutRowId(null)}
+                                className="text-xs text-ink-dim hover:underline">Cancel</button>
+                              {r.customers?.name && (
+                                <span className="text-xs text-ink-dim ml-auto">Will credit {r.customers.name}&apos;s balance</span>
+                              )}
+                            </div>
+                            {recordPayout.isError && (
+                              <p className="text-xs text-err mt-2">Save failed — try again.</p>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </>
                   ))}
-                  {!intake.length && <tr><td colSpan={8} className="px-4 py-8 text-center text-ink-dim">{t("no_data")}</td></tr>}
+                  {!intake.length && <tr><td colSpan={9} className="px-4 py-8 text-center text-ink-dim">{t("no_data")}</td></tr>}
                 </tbody>
               </table>
             </div>
