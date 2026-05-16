@@ -1,5 +1,5 @@
 export type Metal = "gold_22k" | "gold_24k" | "gold_18k" | "silver" | "silver_pure" | "silver_mpr";
-export type PaymentMode = "cash" | "upi" | "bank" | "old_gold" | "old_silver" | "advance";
+export type PaymentMode = "cash" | "upi" | "bank" | "old_gold" | "old_silver" | "advance" | "chit_metal";
 export type SaleSeries = "G22" | "G18" | "G24" | "S" | "D";
 
 export interface SaleItemDraft {
@@ -41,6 +41,7 @@ export interface SalePaymentDraft {
   amount: number;
   metal_wt: number;
   metal_purity: number;
+  rate: number; // avg deposit rate for chit_metal; 0 for other modes
   is_advance: boolean;
 }
 

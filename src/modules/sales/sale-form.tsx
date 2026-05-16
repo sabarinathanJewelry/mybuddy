@@ -56,6 +56,7 @@ const PAY_MODES: { value: PaymentMode; label: string }[] = [
   { value: "old_gold",   label: "Old Gold" },
   { value: "old_silver", label: "Old Silver" },
   { value: "advance",    label: "Advance" },
+  { value: "chit_metal", label: "Chit Metal" },
 ];
 
 function defaultMetalForSeries(series: SaleSeries): Metal {
@@ -90,7 +91,17 @@ function newItem(series: SaleSeries = "G22", boardRate: import("@/lib/sales-calc
 }
 
 function newPayment(): SalePaymentDraft {
-  return { id: crypto.randomUUID(), mode: "cash", amount: 0, metal_wt: 0, metal_purity: 91.6, is_advance: false };
+  return { id: crypto.randomUUID(), mode: "cash", amount: 0, metal_wt: 0, metal_purity: 91.6, rate: 0, is_advance: false };
+}
+
+function ChitHint({ customer, metalWt }: { customer: Customer | null; metalWt: number }) {
+  if (!customer) return <span className="text-xs text-err">Select customer</span>;
+  const avail = Number(customer.gold_balance_g) || 0;
+  return (
+    <span className={`text-xs font-medium ${metalWt > avail ? "text-err" : "text-ok"}`}>
+      Avail: {grams(avail)}
+    </span>
+  );
 }
 
 interface Props { saleId?: string }
@@ -174,6 +185,7 @@ export default function SaleForm({ saleId }: Props) {
       amount: p.amount,
       metal_wt: p.metal_wt ?? 0,
       metal_purity: p.metal_purity ?? 91.6,
+      rate: p.rate ?? 0,
       is_advance: p.is_advance,
     })));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -215,6 +227,21 @@ export default function SaleForm({ saleId }: Props) {
       const adj = adjMap.get(item.id);
       if (!adj) return item;
       return { ...item, ...adj, ...computeLine(adj) };
+    }));
+  }
+
+  function applyChitVaBenefit() {
+    const chitPayment = payments.find((p: SalePaymentDraft) => p.mode === "chit_metal");
+    if (!chitPayment || chitPayment.amount <= 0) return;
+    let remaining = chitPayment.amount;
+    setItems((prev: SaleItemDraft[]) => prev.map((item: SaleItemDraft) => {
+      if (item.is_value_entry || remaining <= 0) return item;
+      const atZeroVa = computeLine({ ...item, va_pct: 0 });
+      if (remaining >= atZeroVa.line_total) {
+        remaining -= atZeroVa.line_total;
+        return { ...item, va_pct: 0, ...atZeroVa };
+      }
+      return item;
     }));
   }
 
@@ -478,7 +505,24 @@ export default function SaleForm({ saleId }: Props) {
                     step="0.01" className="w-24 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" placeholder="Purity%" />
                 </>
               )}
-              <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+              {p.mode === "chit_metal" && (
+                <>
+                  <Num value={p.metal_wt}
+                    onChange={(v) => setPayments((prev: SalePaymentDraft[]) => prev.map((x: SalePaymentDraft, i: number) => {
+                      if (i !== idx) return x;
+                      return { ...x, metal_wt: v, amount: Math.round(v * (x.rate || 0)) };
+                    }))}
+                    step="0.001" className="w-28 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" placeholder="Grams" />
+                  <Num value={p.rate}
+                    onChange={(v) => setPayments((prev: SalePaymentDraft[]) => prev.map((x: SalePaymentDraft, i: number) => {
+                      if (i !== idx) return x;
+                      return { ...x, rate: v, amount: Math.round((x.metal_wt || 0) * v) };
+                    }))}
+                    step="0.01" className="w-28 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" placeholder="Avg Rate/g" />
+                  <ChitHint customer={customer} metalWt={p.metal_wt || 0} />
+                </>
+              )}
+              <label className={clsx("flex items-center gap-1.5 text-xs cursor-pointer", p.mode === "chit_metal" && "hidden")}>
                 <input type="checkbox" checked={p.is_advance}
                   onChange={(e) => setPayments((prev) => prev.map((x, i) => i === idx ? { ...x, is_advance: e.target.checked } : x))}
                   className="accent-gold" />

@@ -41,6 +41,7 @@ async function fanoutLedger(
         source_type: "sale", source_id: saleId, status: "pending",
       })));
     }
+    // chit_metal: no cash/bank ledger entry — it's a stored metal credit, handled below
 
     // Credit the customer's balance for all non-advance payment modes.
     // Advance is skipped — the customer's credit is already reflected in their prior deposits.
@@ -48,12 +49,13 @@ async function fanoutLedger(
       promises.push(Promise.resolve(client.from("payments").insert({
         pay_date: billDate,
         direction: "in",
-        mode: p.mode === "old_gold" || p.mode === "old_silver" ? "cash" : p.mode,
+        mode: p.mode === "old_gold" || p.mode === "old_silver" || p.mode === "chit_metal" ? "cash" : p.mode,
         amount: p.amount,
         customer_id: customerId,
         sale_id: saleId,
         notes: p.mode === "old_gold" ? "Old gold exchange"
              : p.mode === "old_silver" ? "Old silver exchange"
+             : p.mode === "chit_metal" ? `Chit metal (${p.metal_wt}g)`
              : "Sale payment",
       })));
     }
@@ -83,6 +85,20 @@ async function fanoutLedger(
       if (r.status === "rejected") console.warn("Ledger fan-out failed:", r.reason);
     });
   });
+
+  // Deduct chit metal grams from customer's gold_balance_g
+  if (customerId) {
+    const chitPayments = payments.filter((p) => p.mode === "chit_metal" && (p.metal_wt || 0) > 0);
+    if (chitPayments.length > 0) {
+      const totalGrams = chitPayments.reduce((s, p) => s + (p.metal_wt || 0), 0);
+      const { data: custData } = await client.from("customers")
+        .select("gold_balance_g").eq("id", customerId).single();
+      const current = Number(custData?.gold_balance_g) || 0;
+      await client.from("customers")
+        .update({ gold_balance_g: Math.max(0, current - totalGrams) })
+        .eq("id", customerId);
+    }
+  }
 }
 
 function itemsInsertPayload(saleId: string, items: SaleDraft["items"]) {
@@ -188,6 +204,7 @@ export function useSaveSale() {
           draft.payments.map((p) => ({
             sale_id: sale.id, mode: p.mode, amount: p.amount,
             metal_wt: p.metal_wt || null, metal_purity: p.metal_purity || null,
+            rate: p.rate || null,
             is_advance: p.is_advance,
           }))
         );
@@ -230,6 +247,22 @@ export function useUpdateSale() {
         if (itemsErr) throw itemsErr;
       }
 
+      // Restore any chit_metal gold balance before wiping (so re-fan-out doesn't double-deduct)
+      if (draft.customer_id) {
+        const { data: oldChit } = await client.from("sale_payments")
+          .select("metal_wt").eq("sale_id", id).eq("mode", "chit_metal");
+        if (oldChit && oldChit.length > 0) {
+          const restoreG = oldChit.reduce((s: number, p: { metal_wt: number | null }) => s + (Number(p.metal_wt) || 0), 0);
+          if (restoreG > 0) {
+            const { data: custData } = await client.from("customers")
+              .select("gold_balance_g").eq("id", draft.customer_id).single();
+            await client.from("customers")
+              .update({ gold_balance_g: (Number(custData?.gold_balance_g) || 0) + restoreG })
+              .eq("id", draft.customer_id);
+          }
+        }
+      }
+
       const { error: delPayErr } = await client.from("sale_payments").delete().eq("sale_id", id);
       if (delPayErr) throw delPayErr;
 
@@ -247,6 +280,7 @@ export function useUpdateSale() {
           validPay.map((p) => ({
             sale_id: id, mode: p.mode, amount: p.amount,
             metal_wt: p.metal_wt || null, metal_purity: p.metal_purity || null,
+            rate: p.rate || null,
             is_advance: p.is_advance,
           }))
         );
