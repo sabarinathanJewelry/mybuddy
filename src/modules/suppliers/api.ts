@@ -82,7 +82,7 @@ export function useSaveSupplierPayment() {
       if (data.mode === "cash") {
         const { error: e } = await client.from("cash_ledger").insert({ tx_date: data.pay_date, direction: "out", amount: data.amount, description: "Supplier payment", ref_type: "supplier_payment", ref_id: row.id });
         if (e) console.warn(e);
-      } else if (data.mode === "bank") {
+      } else if (data.mode === "bank" || data.mode === "upi") {
         const { error: e } = await client.from("bank_ledger").insert({ tx_date: data.pay_date, direction: "out", amount: data.amount, description: "Supplier payment", ref_type: "supplier_payment", ref_id: row.id });
         if (e) console.warn(e);
       }

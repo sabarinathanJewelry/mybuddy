@@ -42,6 +42,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   async function handlePaymentSave(e: React.FormEvent) {
     e.preventDefault();
     await savePayment.mutateAsync({ ...paymentForm, supplier_id: id });
+    setPaymentForm({ pay_date: globalDate, mode: "cash", amount: 0, metal_wt: 0, metal_purity: 91.6, cut_rate: 0, notes: "" });
     setShowPaymentForm(false);
   }
 
@@ -144,6 +145,24 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                 <div><label className="text-xs text-ink-dim">Amount</label>
                   <input type="number" step="0.01" value={paymentForm.amount} onChange={(e) => setPaymentForm({ ...paymentForm, amount: parseFloat(e.target.value) || 0 })}
                     className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" /></div>
+                {(paymentForm.mode === "cash" || paymentForm.mode === "bank" || paymentForm.mode === "upi") && (
+                  <>
+                    <div><label className="text-xs text-ink-dim">Metal Wt g <span className="text-ink-dim/50">(opt)</span></label>
+                      <input type="number" step="0.001" value={paymentForm.metal_wt || ""}
+                        onChange={(e) => {
+                          const wt = parseFloat(e.target.value) || 0;
+                          setPaymentForm((f) => ({ ...f, metal_wt: wt, amount: f.cut_rate > 0 && wt > 0 ? Math.round(wt * f.cut_rate * 100) / 100 : f.amount }));
+                        }}
+                        className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" /></div>
+                    <div><label className="text-xs text-ink-dim">Rate/g <span className="text-ink-dim/50">(opt)</span></label>
+                      <input type="number" step="0.01" value={paymentForm.cut_rate || ""}
+                        onChange={(e) => {
+                          const rate = parseFloat(e.target.value) || 0;
+                          setPaymentForm((f) => ({ ...f, cut_rate: rate, amount: f.metal_wt > 0 && rate > 0 ? Math.round(f.metal_wt * rate * 100) / 100 : f.amount }));
+                        }}
+                        className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" /></div>
+                  </>
+                )}
                 {(paymentForm.mode === "old_gold" || paymentForm.mode === "old_silver") && (
                   <>
                     <div><label className="text-xs text-ink-dim">Metal Wt</label>
@@ -171,6 +190,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
               <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                 <th className="text-left px-4 py-2.5">{t("date")}</th>
                 <th className="text-left px-3 py-2.5">Mode</th>
+                <th className="text-right px-3 py-2.5 hidden sm:table-cell">Metal Wt</th>
+                <th className="text-right px-3 py-2.5 hidden sm:table-cell">Rate/g</th>
                 <th className="text-right px-3 py-2.5">{t("amount")}</th>
               </tr></thead>
               <tbody>
@@ -178,10 +199,12 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                   <tr key={p.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
                     <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.pay_date)}</td>
                     <td className="px-3 py-2.5 capitalize">{p.mode}</td>
+                    <td className="px-3 py-2.5 text-right hidden sm:table-cell text-ink-dim">{p.metal_wt ? grams(p.metal_wt) : "—"}</td>
+                    <td className="px-3 py-2.5 text-right hidden sm:table-cell text-ink-dim">{p.cut_rate ? inr(p.cut_rate) : "—"}</td>
                     <td className="px-3 py-2.5 text-right font-mono text-err">{inr(p.amount)}</td>
                   </tr>
                 ))}
-                {!view?.payments.length && <tr><td colSpan={3} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
+                {!view?.payments.length && <tr><td colSpan={5} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
               </tbody>
             </table>
           </div>
