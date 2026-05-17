@@ -330,7 +330,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                         )}
                       </td>
                     </tr>
-                    {editingVa?.id === s.id && (
+                    {editingVa !== null && editingVa.id === s.id && (
                       <tr className="border-b border-line bg-canvas/50">
                         <td colSpan={6} className="px-4 py-3">
                           <form onSubmit={handleConfirmVa} className="flex items-end gap-3 flex-wrap">
