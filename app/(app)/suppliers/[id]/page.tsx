@@ -34,9 +34,9 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   // Suspense VA% editing
   const [editingVa, setEditingVa] = useState<{ id: string; gross_wt: number; purity_pct: number; va_pct: number } | null>(null);
 
-  // Cash balance
+  // Cash balance — only formal purchases vs pure cash payments (payments with metal_wt are metal settlements, tracked in metal balance)
   const totalPurchased = view?.purchases.reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
-  const totalPaid = view?.payments.reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
+  const totalPaid = view?.payments.filter((p: any) => !(p.metal_wt > 0)).reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
   const cashBalance = totalPurchased - totalPaid;
 
   // Metal balance — confirmed suspense pure wt minus metal dispatched to this supplier
