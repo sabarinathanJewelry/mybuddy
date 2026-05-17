@@ -381,9 +381,10 @@ export default function MetalFlowPage() {
       });
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: ["metal_dispatches"] });
       qc.invalidateQueries({ queryKey: ["metal_reserve"] });
+      if (vars.supplier_id) qc.invalidateQueries({ queryKey: ["supplier-360", vars.supplier_id] });
       setShowDispatch(false);
       setDispatchForm({ dispatch_date: globalDate, metal: "gold", weight_g: 0, purpose: "supplier", supplier_id: "", party_name: "", notes: "" });
     },

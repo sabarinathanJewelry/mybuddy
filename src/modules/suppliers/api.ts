@@ -45,17 +45,34 @@ export function useSupplier360(id: string) {
     queryKey: ["supplier-360", id],
     enabled: !!id,
     queryFn: async () => {
-      const [purchasesRes, paymentsRes, suspenseRes] = await Promise.all([
+      const [purchasesRes, paymentsRes, suspenseRes, dispatchesRes] = await Promise.all([
         client.from("supplier_purchases").select("*").eq("supplier_id", id).order("purchase_date", { ascending: false }).limit(30),
         client.from("supplier_payments").select("*").eq("supplier_id", id).order("pay_date", { ascending: false }).limit(30),
         client.from("supplier_suspense").select("*").eq("supplier_id", id).order("bill_date", { ascending: false }).limit(30),
+        client.from("metal_dispatches").select("id, dispatch_date, metal, weight_g, notes").eq("supplier_id", id).order("dispatch_date", { ascending: false }).limit(30),
       ]);
       return {
         purchases: purchasesRes.data ?? [],
         payments: paymentsRes.data ?? [],
         suspense: suspenseRes.data ?? [],
+        dispatches: dispatchesRes.data ?? [],
       };
     },
+  });
+}
+
+export function useConfirmSuspenseVa() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ itemId, supplierId, va_pct }: { itemId: string; supplierId: string; va_pct: number }) => {
+      const { error } = await supabase()
+        .from("sale_items")
+        .update({ supplier_va_pct: va_pct, supplier_confirmed: true })
+        .eq("id", itemId);
+      if (error) throw error;
+      return supplierId;
+    },
+    onSuccess: (supplierId) => qc.invalidateQueries({ queryKey: ["supplier-360", supplierId] }),
   });
 }
 
