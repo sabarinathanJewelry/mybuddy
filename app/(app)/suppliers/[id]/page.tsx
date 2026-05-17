@@ -43,8 +43,9 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const metalOwedG = view?.suspense
     .filter((s: any) => s.supplier_confirmed)
     .reduce((acc: number, s: any) => acc + (Number(s.supplier_pure_wt) || 0), 0) ?? 0;
-  const metalSentG = view?.dispatches
-    ?.reduce((acc: number, d: any) => acc + (Number(d.weight_g) || 0), 0) ?? 0;
+  const metalPhysicalG = view?.dispatches?.reduce((acc: number, d: any) => acc + (Number(d.weight_g) || 0), 0) ?? 0;
+  const metalCashG = view?.payments?.filter((p: any) => (p.metal_wt ?? 0) > 0).reduce((acc: number, p: any) => acc + (Number(p.metal_wt) || 0), 0) ?? 0;
+  const metalSentG = metalPhysicalG + metalCashG;
   const metalBalanceG = metalOwedG - metalSentG;
 
   async function handlePurchaseSave(e: React.FormEvent) {
@@ -93,7 +94,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
           </p>
           {metalOwedG > 0 && (
             <p className="text-xs text-ink-dim mt-0.5">
-              Owed {grams(metalOwedG)} · Sent {grams(metalSentG)}
+              Owed {grams(metalOwedG)} · Sent {grams(metalPhysicalG)} + Cash {grams(metalCashG)}
             </p>
           )}
         </div>
