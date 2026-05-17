@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useSales } from "@/modules/sales/api";
+import { useSales, useDeleteSale } from "@/modules/sales/api";
 import { useT } from "@/i18n";
 import { inr, shortDate } from "@/lib/format";
 
 export default function SalesPage() {
   const t = useT();
   const { data: sales, isLoading } = useSales();
+  const deleteSale = useDeleteSale();
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">
@@ -46,7 +47,19 @@ export default function SalesPage() {
                     </span>
                   </td>
                   <td className="px-3 py-2.5 text-right">
-                    <Link href={`/sales/${s.id}/edit`} className="text-xs text-gold hover:underline">Edit</Link>
+                    <div className="flex items-center justify-end gap-3">
+                      <Link href={`/sales/${s.id}/edit`} className="text-xs text-gold hover:underline">Edit</Link>
+                      <button
+                        disabled={deleteSale.isPending}
+                        onClick={() => {
+                          if (window.confirm(`Delete ${s.bill_no}? This will reverse all ledger entries.`)) {
+                            deleteSale.mutate(s.id);
+                          }
+                        }}
+                        className="text-xs text-err hover:underline disabled:opacity-40">
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

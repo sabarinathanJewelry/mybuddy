@@ -298,3 +298,44 @@ export function useUpdateSale() {
     },
   });
 }
+
+export function useDeleteSale() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const client = supabase();
+
+      // Restore chit_metal gold grams to customer before wiping payments
+      const { data: chitPays } = await client.from("sale_payments")
+        .select("metal_wt, sale_id")
+        .eq("sale_id", id).eq("mode", "chit_metal");
+      if (chitPays && chitPays.length > 0) {
+        const { data: saleRow } = await client.from("sales")
+          .select("customer_id").eq("id", id).single();
+        if (saleRow?.customer_id) {
+          const restoreG = chitPays.reduce((s: number, p: { metal_wt: number | null }) => s + (Number(p.metal_wt) || 0), 0);
+          if (restoreG > 0) {
+            const { data: custData } = await client.from("customers")
+              .select("gold_balance_g").eq("id", saleRow.customer_id).single();
+            await client.from("customers")
+              .update({ gold_balance_g: (Number(custData?.gold_balance_g) || 0) + restoreG })
+              .eq("id", saleRow.customer_id);
+          }
+        }
+      }
+
+      // Wipe all related rows, then the sale (sale_items cascade from sale)
+      await Promise.allSettled([
+        client.from("cash_ledger").delete().eq("ref_type", "sale").eq("ref_id", id),
+        client.from("bank_ledger").delete().eq("ref_type", "sale").eq("ref_id", id),
+        client.from("old_metal_intake").delete().eq("source_type", "sale").eq("source_id", id),
+        client.from("payments").delete().eq("sale_id", id),
+        client.from("sale_payments").delete().eq("sale_id", id),
+      ]);
+
+      const { error } = await client.from("sales").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sales"] }),
+  });
+}
