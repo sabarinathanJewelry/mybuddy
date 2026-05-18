@@ -34,15 +34,17 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   // Suspense VA% editing
   const [editingVa, setEditingVa] = useState<{ id: string; gross_wt: number; purity_pct: number; va_pct: number } | null>(null);
 
-  // Cash balance — only formal purchases vs pure cash payments (payments with metal_wt are metal settlements, tracked in metal balance)
+  // Cash balance — opening + formal purchases vs pure cash payments (payments with metal_wt are metal settlements)
+  const openingCash = Number(view?.supplier?.opening_balance) || 0;
   const totalPurchased = view?.purchases.reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
   const totalPaid = view?.payments.filter((p: any) => !(p.metal_wt > 0)).reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
-  const cashBalance = totalPurchased - totalPaid;
+  const cashBalance = openingCash + totalPurchased - totalPaid;
 
-  // Metal balance — confirmed suspense pure wt minus metal dispatched to this supplier
-  const metalOwedG = view?.suspense
+  // Metal balance — opening grams + confirmed suspense pure wt minus metal sent
+  const goldOpeningG = Number(view?.supplier?.gold_opening_g) || 0;
+  const metalOwedG = goldOpeningG + (view?.suspense
     .filter((s: any) => s.supplier_confirmed)
-    .reduce((acc: number, s: any) => acc + (Number(s.supplier_pure_wt) || 0), 0) ?? 0;
+    .reduce((acc: number, s: any) => acc + (Number(s.supplier_pure_wt) || 0), 0) ?? 0);
   const metalPhysicalG = view?.dispatches?.reduce((acc: number, d: any) => acc + (Number(d.weight_g) || 0), 0) ?? 0;
   const metalCashG = view?.payments?.filter((p: any) => (p.metal_wt ?? 0) > 0).reduce((acc: number, p: any) => acc + (Number(p.metal_wt) || 0), 0) ?? 0;
   const metalSentG = metalPhysicalG + metalCashG;
@@ -82,6 +84,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
         <div>
           <p className="text-xs text-ink-dim">{t("cash_balance")}</p>
           <p className={`text-xl font-bold ${cashBalance > 0 ? "text-err" : "text-ok"}`}>{inr(cashBalance)}</p>
+          {openingCash > 0 && <p className="text-xs text-ink-dim/60">Opening {inr(openingCash)}</p>}
         </div>
         <div>
           <p className="text-xs text-ink-dim">Total Purchased</p>
@@ -96,6 +99,9 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
             <p className="text-xs text-ink-dim mt-0.5">
               Owed {grams(metalOwedG)} · Sent {grams(metalPhysicalG)} + Cash {grams(metalCashG)}
             </p>
+          )}
+          {goldOpeningG > 0 && (
+            <p className="text-xs text-ink-dim/60">Opening {grams(goldOpeningG)}</p>
           )}
         </div>
         <div>

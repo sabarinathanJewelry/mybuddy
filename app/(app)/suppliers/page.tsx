@@ -10,7 +10,7 @@ export default function SuppliersPage() {
   const t = useT();
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: "", phone: "", address: "", opening_balance: 0, notes: "" });
+  const [form, setForm] = useState({ name: "", phone: "", address: "", opening_balance: 0, gold_opening_g: 0, silver_opening_g: 0, notes: "" });
   const { data: suppliers, isLoading } = useSuppliers(search);
   const upsert = useUpsertSupplier();
 
@@ -18,7 +18,7 @@ export default function SuppliersPage() {
     e.preventDefault();
     await upsert.mutateAsync(form);
     setShowForm(false);
-    setForm({ name: "", phone: "", address: "", opening_balance: 0, notes: "" });
+    setForm({ name: "", phone: "", address: "", opening_balance: 0, gold_opening_g: 0, silver_opening_g: 0, notes: "" });
   }
 
   return (
@@ -37,7 +37,9 @@ export default function SuppliersPage() {
             {[
               { label: t("name"), key: "name", required: true },
               { label: t("phone"), key: "phone" },
-              { label: t("opening_balance"), key: "opening_balance", type: "number" },
+              { label: t("opening_balance") + " (₹)", key: "opening_balance", type: "number" },
+              { label: "Gold Opening (g)", key: "gold_opening_g", type: "number" },
+              { label: "Silver Opening (g)", key: "silver_opening_g", type: "number" },
             ].map((f) => (
               <div key={f.key}>
                 <label className="block text-xs font-medium text-ink-dim mb-1">{f.label}</label>

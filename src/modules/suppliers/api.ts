@@ -5,7 +5,9 @@ import { supabase } from "@/lib/supabase/client";
 
 export interface Supplier {
   id: string; name: string; phone: string | null;
-  address: string | null; opening_balance: number; notes: string | null;
+  address: string | null; opening_balance: number;
+  gold_opening_g: number; silver_opening_g: number;
+  notes: string | null;
 }
 
 export function useSuppliers(search = "", limit = 50) {
@@ -45,13 +47,15 @@ export function useSupplier360(id: string) {
     queryKey: ["supplier-360", id],
     enabled: !!id,
     queryFn: async () => {
-      const [purchasesRes, paymentsRes, suspenseRes, dispatchesRes] = await Promise.all([
+      const [supplierRes, purchasesRes, paymentsRes, suspenseRes, dispatchesRes] = await Promise.all([
+        client.from("suppliers").select("opening_balance, gold_opening_g, silver_opening_g").eq("id", id).single(),
         client.from("supplier_purchases").select("*").eq("supplier_id", id).order("purchase_date", { ascending: false }).limit(30),
         client.from("supplier_payments").select("*").eq("supplier_id", id).order("pay_date", { ascending: false }).limit(30),
         client.from("supplier_suspense").select("*").eq("supplier_id", id).order("bill_date", { ascending: false }).limit(30),
         client.from("metal_dispatches").select("id, dispatch_date, metal, weight_g, notes").eq("supplier_id", id).order("dispatch_date", { ascending: false }).limit(30),
       ]);
       return {
+        supplier: supplierRes.data,
         purchases: purchasesRes.data ?? [],
         payments: paymentsRes.data ?? [],
         suspense: suspenseRes.data ?? [],
