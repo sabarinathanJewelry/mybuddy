@@ -14,7 +14,8 @@
       "PowerShell(Get-ChildItem \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" -ErrorAction SilentlyContinue; Get-ChildItem \"$env:APPDATA\\\\npm\\\\node.exe\" -ErrorAction SilentlyContinue; Get-ChildItem \"C:\\\\Users\\\\SABARI STAFF\\\\AppData\\\\Roaming\\\\nvm\" -ErrorAction SilentlyContinue | Select-Object -First 5)",
       "Read(//c/Program Files/**)",
       "Bash(npx tsc *)",
-      "Read(//c/Users/SABARI STAFF/OneDrive/Documents/GitHub/mybuddy/node_modules/**)"
+      "Read(//c/Users/SABARI STAFF/OneDrive/Documents/GitHub/mybuddy/node_modules/**)",
+      "Bash(node node_modules/typescript/bin/tsc --noEmit)"
     ],
     "additionalDirectories": [
       "c:\\Users\\SABARI STAFF\\OneDrive\\Documents\\GitHub\\mybuddy\\app"

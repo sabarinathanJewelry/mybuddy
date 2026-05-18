@@ -22,6 +22,7 @@ const en = {
   nav_gold_chit: "Gold Chit",
   nav_cash_bonus: "Cash Bonus",
   nav_bullion: "Bullion",
+  nav_kolusu: "Kolusu",
   nav_walkins: "Walk-ins",
   nav_reports: "Reports",
   nav_admin: "Admin",
