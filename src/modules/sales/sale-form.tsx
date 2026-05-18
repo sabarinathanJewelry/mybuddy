@@ -66,6 +66,16 @@ function defaultMetalForSeries(series: SaleSeries): Metal {
   return "gold_22k";
 }
 
+function seriesForMetal(metal: Metal): SaleSeries {
+  if (metal === "gold_18k")  return "G18";
+  if (metal === "gold_24k")  return "G24";
+  if (metal === "silver" || metal === "silver_pure" || metal === "silver_mpr") return "S";
+  return "G22";
+}
+
+const GOLD_METALS: Metal[] = ["gold_22k", "gold_18k", "gold_24k"];
+const SILVER_METALS: Metal[] = ["silver", "silver_pure", "silver_mpr"];
+
 function defaultPurityForMetal(metal: Metal): number {
   if (metal === "gold_22k") return 91.6;
   if (metal === "gold_24k") return 99.9;
@@ -192,6 +202,10 @@ export default function SaleForm({ saleId }: Props) {
   }, [existingSale?.sale?.id]);
 
   function updateItem(idx: number, patch: Partial<SaleItemDraft>) {
+    // Auto-update series when the first item's metal changes
+    if (patch.metal !== undefined) {
+      setSeries(seriesForMetal(patch.metal as Metal));
+    }
     setItems((prev) => prev.map((item, i) => {
       if (i !== idx) return item;
       const merged = { ...item, ...patch };
@@ -267,6 +281,10 @@ export default function SaleForm({ saleId }: Props) {
   const changeDue = rawBalance < -0.01 ? Math.abs(rawBalance) : 0;
   const balance = changeDue > 0 ? 0 : rawBalance; // balance shown to user is never negative
   const isPending = saveSale.isPending || updateSale.isPending;
+
+  const hasGold   = items.some((i) => GOLD_METALS.includes(i.metal as Metal));
+  const hasSilver = items.some((i) => SILVER_METALS.includes(i.metal as Metal));
+  const isMixed   = hasGold && hasSilver;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -634,6 +652,19 @@ export default function SaleForm({ saleId }: Props) {
         </div>
       )}
 
+      {/* Mixed metal warning */}
+      {isMixed && (
+        <div className="bg-err/5 border border-err/40 rounded-xl px-4 py-3 flex items-start gap-3">
+          <span className="text-err text-lg shrink-0">⚠</span>
+          <div>
+            <p className="text-sm font-semibold text-err">Cannot mix Gold and Silver in one bill</p>
+            <p className="text-xs text-ink-dim mt-0.5">
+              This bill has both gold and silver items. Use separate bills — one for gold (G22/G18/G24) and one for silver (S).
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Summary + Actions */}
       <div className="bg-white border border-line rounded-xl p-4 shadow-soft space-y-3">
         <div className="flex justify-between items-center flex-wrap gap-3">
@@ -654,6 +685,7 @@ export default function SaleForm({ saleId }: Props) {
             <button type="submit"
               disabled={
                 isPending ||
+                isMixed ||
                 (balance > 0.01 && !customer) ||
                 (changeDue > 0.01 && !changeDueMode) ||
                 (changeDue > 0.01 && changeDueMode === "advance" && !customer)

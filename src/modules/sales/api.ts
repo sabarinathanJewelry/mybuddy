@@ -234,7 +234,7 @@ export function useUpdateSale() {
       }, 0);
 
       const { error: saleErr } = await client.from("sales").update({
-        bill_date: draft.bill_date, customer_id: draft.customer_id,
+        series: draft.series, bill_date: draft.bill_date, customer_id: draft.customer_id,
         notes: draft.notes, subtotal, gst_amount: gstAmount, total: subtotal,
       }).eq("id", id);
       if (saleErr) throw saleErr;
