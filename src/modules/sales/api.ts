@@ -233,8 +233,20 @@ export function useUpdateSale() {
         return s + (i.line_total - before);
       }, 0);
 
+      // Fetch old series to detect a series change
+      const { data: oldSale } = await client.from("sales").select("series, bill_no").eq("id", id).single();
+      let billNo = oldSale?.bill_no as string;
+      if (oldSale?.series !== draft.series) {
+        // Series changed → generate a new bill_no in the new series
+        const fy = fyForDate(draft.bill_date);
+        const { data: serialData, error: serialErr } = await client.rpc("next_fy_serial", { _fy: fy, _series: draft.series });
+        if (serialErr) throw serialErr;
+        billNo = billNoFor(draft.series, fy, serialData as number);
+      }
+
       const { error: saleErr } = await client.from("sales").update({
-        series: draft.series, bill_date: draft.bill_date, customer_id: draft.customer_id,
+        series: draft.series, bill_no: billNo,
+        bill_date: draft.bill_date, customer_id: draft.customer_id,
         notes: draft.notes, subtotal, gst_amount: gstAmount, total: subtotal,
       }).eq("id", id);
       if (saleErr) throw saleErr;
