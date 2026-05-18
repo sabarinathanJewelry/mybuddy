@@ -67,6 +67,35 @@ export function useUpsertCustomer() {
   });
 }
 
+export function useUpdatePayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, customerId, pay_date, mode, amount, direction, notes }: {
+      id: string; customerId: string; pay_date: string; mode: string; amount: number; direction: string; notes?: string;
+    }) => {
+      const { error } = await supabase()
+        .from("payments")
+        .update({ pay_date, mode, amount, direction, notes: notes ?? null })
+        .eq("id", id);
+      if (error) throw error;
+      return customerId;
+    },
+    onSuccess: (customerId) => qc.invalidateQueries({ queryKey: ["customer-360", customerId] }),
+  });
+}
+
+export function useDeletePayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, customerId }: { id: string; customerId: string }) => {
+      const { error } = await supabase().from("payments").delete().eq("id", id);
+      if (error) throw error;
+      return customerId;
+    },
+    onSuccess: (customerId) => qc.invalidateQueries({ queryKey: ["customer-360", customerId] }),
+  });
+}
+
 export function useCustomer360(id: string) {
   const client = supabase();
   return useQuery({

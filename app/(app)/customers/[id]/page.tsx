@@ -1,8 +1,8 @@
 "use client";
 
-import { use, useState } from "react";
+import { Fragment, use, useState } from "react";
 import Link from "next/link";
-import { useCustomer, useCustomer360 } from "@/modules/customers/api";
+import { useCustomer, useCustomer360, useUpdatePayment, useDeletePayment } from "@/modules/customers/api";
 import { useT } from "@/i18n";
 import { inr, grams, shortDate } from "@/lib/format";
 
@@ -15,6 +15,9 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
   const [tab, setTab] = useState<Tab>("sales");
   const { data: customer } = useCustomer(id);
   const { data: view, isLoading } = useCustomer360(id);
+  const updatePayment = useUpdatePayment();
+  const deletePayment = useDeletePayment();
+  const [editingPayment, setEditingPayment] = useState<{ id: string; pay_date: string; mode: string; amount: number; direction: string } | null>(null);
 
   const totalSales = view?.sales.reduce((s, x) => s + (x.total ?? 0), 0) ?? 0;
   const totalPaidIn = view?.payments.filter((p) => p.direction === "in").reduce((s, x) => s + x.amount, 0) ?? 0;
@@ -146,18 +149,83 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
               <th className="text-left px-4 py-2.5">{t("date")}</th>
               <th className="text-left px-3 py-2.5">{t("type")}</th>
               <th className="text-right px-3 py-2.5">{t("amount")}</th>
+              <th className="px-3 py-2.5 w-20"></th>
             </tr></thead>
             <tbody>
               {view?.payments.map((p) => (
-                <tr key={p.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                  <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.pay_date)}</td>
-                  <td className="px-3 py-2.5 capitalize">{p.mode}</td>
-                  <td className={`px-3 py-2.5 text-right font-mono ${p.direction === "in" ? "text-ok" : "text-err"}`}>
-                    {p.direction === "in" ? "+" : "-"}{inr(p.amount)}
-                  </td>
-                </tr>
+                <Fragment key={p.id}>
+                  <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
+                    <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.pay_date)}</td>
+                    <td className="px-3 py-2.5 capitalize">{p.mode}</td>
+                    <td className={`px-3 py-2.5 text-right font-mono ${p.direction === "in" ? "text-ok" : "text-err"}`}>
+                      {p.direction === "in" ? "+" : "-"}{inr(p.amount)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => setEditingPayment({ id: p.id, pay_date: p.pay_date, mode: p.mode, amount: p.amount, direction: p.direction })}
+                          className="text-xs text-gold hover:underline">Edit</button>
+                        <button
+                          onClick={() => { if (window.confirm("Delete this payment?")) deletePayment.mutate({ id: p.id, customerId: id }); }}
+                          className="text-xs text-err hover:underline">Del</button>
+                      </div>
+                    </td>
+                  </tr>
+                  {editingPayment !== null && editingPayment.id === p.id && (
+                    <tr className="border-b border-line bg-canvas/50">
+                      <td colSpan={4} className="px-4 py-3">
+                        <form
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            await updatePayment.mutateAsync({ ...editingPayment, customerId: id });
+                            setEditingPayment(null);
+                          }}
+                          className="flex items-end gap-3 flex-wrap">
+                          <div>
+                            <label className="text-xs text-ink-dim block mb-1">Date</label>
+                            <input type="date" value={editingPayment.pay_date}
+                              onChange={(e) => setEditingPayment({ ...editingPayment, pay_date: e.target.value })}
+                              className="border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                          </div>
+                          <div>
+                            <label className="text-xs text-ink-dim block mb-1">Mode</label>
+                            <select value={editingPayment.mode}
+                              onChange={(e) => setEditingPayment({ ...editingPayment, mode: e.target.value })}
+                              className="border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                              {["cash", "upi", "bank", "old_gold", "old_silver"].map((m) => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-ink-dim block mb-1">Direction</label>
+                            <select value={editingPayment.direction}
+                              onChange={(e) => setEditingPayment({ ...editingPayment, direction: e.target.value })}
+                              className="border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                              <option value="in">In (received)</option>
+                              <option value="out">Out (paid back)</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-xs text-ink-dim block mb-1">Amount (₹)</label>
+                            <input type="number" step="0.01" value={editingPayment.amount}
+                              onChange={(e) => setEditingPayment({ ...editingPayment, amount: parseFloat(e.target.value) || 0 })}
+                              className="border border-line rounded-lg2 px-2 py-1 text-sm w-32 focus:outline-none focus:ring-1 focus:ring-gold"
+                              autoFocus />
+                          </div>
+                          <div className="flex gap-2">
+                            <button type="submit" disabled={updatePayment.isPending}
+                              className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40">Save</button>
+                            <button type="button" onClick={() => setEditingPayment(null)}
+                              className="border border-line text-xs px-3 py-1.5 rounded-lg2">Cancel</button>
+                          </div>
+                        </form>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
-              {!view?.payments.length && <tr><td colSpan={3} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
+              {!view?.payments.length && <tr><td colSpan={4} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
             </tbody>
           </table>
         </div>
