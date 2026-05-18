@@ -210,6 +210,7 @@ export default function OrdersPage() {
   const [description, setDescription] = useState("");
   const [estimatedWt, setEstimatedWt] = useState(0);
   const [estimatedTotal, setEstimatedTotal] = useState(0);
+  const [gstIncluded, setGstIncluded] = useState(false);
   const [advPayments, setAdvPayments] = useState<PaymentDraft[]>([]);
 
   // ── Per-order UI state
@@ -229,7 +230,7 @@ export default function OrdersPage() {
 
   function resetCreate() {
     setShowForm(false); setCustomer(null); setOrderDate(globalDate);
-    setDeliveryDate(""); setDescription(""); setEstimatedWt(0); setEstimatedTotal(0); setAdvPayments([]);
+    setDeliveryDate(""); setDescription(""); setEstimatedWt(0); setEstimatedTotal(0); setGstIncluded(false); setAdvPayments([]);
   }
 
   // ── Create order mutation
@@ -242,13 +243,15 @@ export default function OrdersPage() {
       const validPay = advPayments.filter((p) => p.amount > 0);
       const totalAdv = validPay.reduce((s, p) => s + p.amount, 0);
 
+      const gstAmt = gstIncluded ? parseFloat((estimatedTotal * 0.03).toFixed(2)) : 0;
       const { data: order, error } = await client.from("orders").insert({
         order_no: orderNo, order_date: orderDate,
         delivery_date: deliveryDate || null,
         customer_id: customer?.id ?? null,
         description: description || null,
         estimated_wt: estimatedWt || null,
-        total: estimatedTotal || 0,
+        total: parseFloat(((estimatedTotal || 0) + gstAmt).toFixed(2)),
+        gst_included: gstIncluded,
         advance_paid: totalAdv,
         status: "pending",
       }).select().single();
@@ -440,10 +443,21 @@ export default function OrdersPage() {
                 onChange={(e) => setEstimatedWt(parseFloat(e.target.value) || 0)} className={inp} />
             </div>
             <div>
-              <label className="block text-xs text-ink-dim mb-1">Est. Total (₹)</label>
+              <label className="block text-xs text-ink-dim mb-1">Est. Total (₹) <span className="text-ink-dim/60 font-normal">before GST</span></label>
               <input type="number" step="0.01" value={estimatedTotal || ""}
                 onFocus={(e) => e.target.select()} placeholder="0"
                 onChange={(e) => setEstimatedTotal(parseFloat(e.target.value) || 0)} className={inp} />
+            </div>
+            <div className="flex flex-col justify-end">
+              <label className="flex items-center gap-2 text-sm cursor-pointer pb-2">
+                <input type="checkbox" checked={gstIncluded} onChange={(e) => setGstIncluded(e.target.checked)} className="accent-gold w-4 h-4" />
+                <span>Include GST (3%)</span>
+              </label>
+              {gstIncluded && estimatedTotal > 0 && (
+                <p className="text-xs text-ink-dim">
+                  +{inr(estimatedTotal * 0.03)} GST = <strong className="text-gold">{inr(estimatedTotal * 1.03)}</strong>
+                </p>
+              )}
             </div>
             <div className="col-span-2 sm:col-span-4">
               <label className="block text-xs text-ink-dim mb-1">Description / Design</label>
@@ -518,7 +532,10 @@ export default function OrdersPage() {
                   {o.estimated_wt && (
                     <span className="text-xs text-ink-dim hidden sm:inline">{grams(o.estimated_wt)}</span>
                   )}
-                  <span className="text-sm font-mono">{inr(effectiveTotal)}</span>
+                  <span className="text-sm font-mono">
+                    {inr(effectiveTotal)}
+                    {o.gst_included && <span className="ml-1 text-xs bg-info/10 text-info px-1 py-0.5 rounded">GST</span>}
+                  </span>
                   <span className={clsx("text-xs px-2 py-0.5 rounded-full font-medium", STATUS_COLORS[o.status] ?? "bg-canvas text-ink-dim")}>
                     {o.status}
                   </span>
@@ -542,7 +559,10 @@ export default function OrdersPage() {
                       )}
                       <div>
                         <p className="text-xs text-ink-dim">Est. Total</p>
-                        <p className="font-medium">{inr(Number(o.total))}</p>
+                        <p className="font-medium">
+                          {inr(Number(o.total))}
+                          {o.gst_included && <span className="ml-1 text-xs bg-info/10 text-info px-1.5 py-0.5 rounded">+GST</span>}
+                        </p>
                       </div>
                       {o.final_total && (
                         <div>
@@ -572,7 +592,7 @@ export default function OrdersPage() {
                         <div className="space-y-1">
                           {(o.order_payments as any[]).map((p: any) => (
                             <div key={p.id}>
-                              {editingPayment?.id === p.id ? (
+                              {editingPayment !== null && editingPayment.id === p.id ? (
                                 /* ── Inline edit form */
                                 <div className="bg-gold/5 border border-gold/30 rounded-lg2 px-3 py-3 space-y-2">
                                   <div className="flex flex-wrap items-end gap-2">
