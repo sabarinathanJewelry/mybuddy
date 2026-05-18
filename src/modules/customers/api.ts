@@ -67,17 +67,41 @@ export function useUpsertCustomer() {
   });
 }
 
+function paymentLedgerTable(mode: string): "cash_ledger" | "bank_ledger" | null {
+  if (mode === "cash") return "cash_ledger";
+  if (mode === "upi" || mode === "bank") return "bank_ledger";
+  return null;
+}
+
 export function useUpdatePayment() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, customerId, pay_date, mode, amount, direction, notes }: {
       id: string; customerId: string; pay_date: string; mode: string; amount: number; direction: string; notes?: string;
     }) => {
-      const { error } = await supabase()
-        .from("payments")
-        .update({ pay_date, mode, amount, direction, notes: notes ?? null })
-        .eq("id", id);
+      const client = supabase();
+
+      const { data: current } = await client.from("payments").select("mode").eq("id", id).single();
+      const oldTable = paymentLedgerTable(current?.mode ?? "");
+      const newTable = paymentLedgerTable(mode);
+
+      const { error } = await client.from("payments").update({ pay_date, mode, amount, direction, notes: notes ?? null }).eq("id", id);
       if (error) throw error;
+
+      if (oldTable === newTable) {
+        if (newTable) {
+          await client.from(newTable).update({ tx_date: pay_date, direction, amount }).eq("ref_type", "payment").eq("ref_id", id);
+        }
+      } else {
+        if (oldTable) await client.from(oldTable).delete().eq("ref_type", "payment").eq("ref_id", id);
+        if (newTable) {
+          await client.from(newTable).insert({
+            tx_date: pay_date, direction, amount,
+            description: "Payment", ref_type: "payment", ref_id: id,
+          });
+        }
+      }
+
       return customerId;
     },
     onSuccess: (customerId) => qc.invalidateQueries({ queryKey: ["customer-360", customerId] }),

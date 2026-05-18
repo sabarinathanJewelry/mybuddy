@@ -59,6 +59,12 @@ export function useSavePayment() {
   });
 }
 
+function paymentLedgerTable(mode: string): "cash_ledger" | "bank_ledger" | null {
+  if (mode === "cash") return "cash_ledger";
+  if (mode === "upi" || mode === "bank") return "bank_ledger";
+  return null; // old_gold, old_silver, advance — no cash/bank ledger entry
+}
+
 export function useUpdatePayment() {
   const qc = useQueryClient();
   return useMutation({
@@ -66,13 +72,32 @@ export function useUpdatePayment() {
       id: string; pay_date: string; mode: string; direction: string; amount: number; notes?: string;
     }) => {
       const client = supabase();
+
+      // Fetch old mode so we know which ledger table to migrate from
+      const { data: current } = await client.from("payments").select("mode").eq("id", id).single();
+      const oldTable = paymentLedgerTable(current?.mode ?? "");
+      const newTable = paymentLedgerTable(mode);
+
       const { error } = await client.from("payments").update({ pay_date, mode, direction, amount, notes: notes ?? null }).eq("id", id);
       if (error) throw error;
-      // Update whichever ledger entry is linked (best-effort)
-      await Promise.allSettled([
-        client.from("cash_ledger").update({ tx_date: pay_date, direction, amount }).eq("ref_type", "payment").eq("ref_id", id),
-        client.from("bank_ledger").update({ tx_date: pay_date, direction, amount }).eq("ref_type", "payment").eq("ref_id", id),
-      ]);
+
+      if (oldTable === newTable) {
+        // Same ledger table — just update in place
+        if (newTable) {
+          await client.from(newTable).update({ tx_date: pay_date, direction, amount }).eq("ref_type", "payment").eq("ref_id", id);
+        }
+      } else {
+        // Mode changed ledger type — delete from old, insert into new
+        if (oldTable) {
+          await client.from(oldTable).delete().eq("ref_type", "payment").eq("ref_id", id);
+        }
+        if (newTable) {
+          await client.from(newTable).insert({
+            tx_date: pay_date, direction, amount,
+            description: "Payment", ref_type: "payment", ref_id: id,
+          });
+        }
+      }
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["payments"] }),
   });
