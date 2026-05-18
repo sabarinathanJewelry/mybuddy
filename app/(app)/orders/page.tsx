@@ -344,8 +344,8 @@ export default function OrdersPage() {
 
   // ── Edit order payment (with ledger rebuild)
   const editOrderPayment = useMutation({
-    mutationFn: async ({ paymentId, orderId, orderNo, pay_date, mode, amount, metal_wt, metal_purity, notes }: {
-      paymentId: string; orderId: string; orderNo: string;
+    mutationFn: async ({ id: paymentId, orderId, orderNo, pay_date, mode, amount, metal_wt, metal_purity, notes }: {
+      id: string; orderId: string; orderNo: string;
       pay_date: string; mode: PayMode; amount: number;
       metal_wt: number; metal_purity: number; notes: string;
     }) => {
