@@ -168,6 +168,8 @@ export default function MetalFlowPage() {
   const [showIntakeForm, setShowIntakeForm] = useState(false);
   const [payoutRowId, setPayoutRowId] = useState<string | null>(null);
   const [payoutForm, setPayoutForm] = useState({ amount: 0, mode: "cash" as "cash" | "bank" });
+  const [metalFilter, setMetalFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "used">("all");
   const defaultIntakeForm = () => ({
     intake_date: globalDate,
     customer_id: "",
@@ -197,6 +199,15 @@ export default function MetalFlowPage() {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const intake = (intakeData as any[]) ?? [];
+  const filteredIntake = intake.filter((r: any) => {
+    const metalOk = metalFilter === "all" || r.metal === metalFilter ||
+      (metalFilter === "gold" && r.metal?.startsWith("gold")) ||
+      (metalFilter === "silver" && r.metal?.startsWith("silver"));
+    const statusOk = statusFilter === "all" || r.status === statusFilter;
+    return metalOk && statusOk;
+  });
+  const filterTotalGross = filteredIntake.reduce((s: number, r: any) => s + (r.gross_wt ?? 0), 0);
+  const filterTotalPure  = filteredIntake.reduce((s: number, r: any) => s + (r.pure_wt ?? 0), 0);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const batches = (batchData as any[]) ?? [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -416,6 +427,49 @@ export default function MetalFlowPage() {
       {/* ── INTAKE TAB ─────────────────────────────────────────── */}
       {tab === "intake" && (
         <div className="space-y-3">
+          {/* Filter bar */}
+          <div className="bg-white rounded-xl border border-line p-3 shadow-soft space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-ink-dim font-medium w-12">Metal</span>
+              {[
+                { label: "All", value: "all" },
+                { label: "Gold", value: "gold" },
+                { label: "Gold 22K", value: "gold_22k" },
+                { label: "Gold 24K", value: "gold_24k" },
+                { label: "Gold 18K", value: "gold_18k" },
+                { label: "Silver", value: "silver" },
+              ].map((f) => (
+                <button key={f.value} onClick={() => setMetalFilter(f.value)}
+                  className={`text-xs px-3 py-1 rounded-full border transition-colors ${metalFilter === f.value ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:border-gold"}`}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-ink-dim font-medium w-12">Status</span>
+              {([["all", "All"], ["pending", "Ready to Melt"], ["used", "Used"]] as const).map(([v, l]) => (
+                <button key={v} onClick={() => setStatusFilter(v)}
+                  className={`text-xs px-3 py-1 rounded-full border transition-colors ${statusFilter === v
+                    ? v === "pending" ? "bg-warn text-white border-warn"
+                    : v === "used" ? "bg-ok text-white border-ok"
+                    : "bg-ink text-white border-ink"
+                    : "border-line text-ink-dim hover:border-gold"}`}>
+                  {l}
+                </button>
+              ))}
+              {(metalFilter !== "all" || statusFilter !== "all") && (
+                <button onClick={() => { setMetalFilter("all"); setStatusFilter("all"); }}
+                  className="text-xs text-err hover:underline ml-2">Clear filters</button>
+              )}
+            </div>
+            {/* Summary */}
+            <div className="flex items-center gap-4 pt-1 border-t border-line text-xs text-ink-dim">
+              <span><strong className="text-ink">{filteredIntake.length}</strong> items</span>
+              <span>Gross: <strong className="text-ink">{grams(filterTotalGross)}</strong></span>
+              <span>Pure: <strong className="text-gold">{grams(filterTotalPure)}</strong></span>
+            </div>
+          </div>
+
           <div className="flex justify-end">
             <button onClick={() => setShowIntakeForm(true)}
               className="bg-gold text-white text-sm px-4 py-2 rounded-lg2">
@@ -567,7 +621,7 @@ export default function MetalFlowPage() {
                     <th className="px-4 py-2.5 w-8">
                       <input type="checkbox"
                         onChange={(e) => {
-                          if (e.target.checked) setSelectedIntake(new Set(intake.filter((i: any) => i.status === "pending").map((i: any) => i.id)));
+                          if (e.target.checked) setSelectedIntake(new Set(filteredIntake.filter((i: any) => i.status === "pending").map((i: any) => i.id)));
                           else setSelectedIntake(new Set());
                         }} className="accent-gold" />
                     </th>
@@ -582,7 +636,7 @@ export default function MetalFlowPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {intake.map((r: any) => (
+                  {filteredIntake.map((r: any) => (
                     <>
                       <tr key={r.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
                         <td className="px-4 py-2.5">
@@ -658,7 +712,7 @@ export default function MetalFlowPage() {
                       )}
                     </>
                   ))}
-                  {!intake.length && <tr><td colSpan={9} className="px-4 py-8 text-center text-ink-dim">{t("no_data")}</td></tr>}
+                  {!filteredIntake.length && <tr><td colSpan={9} className="px-4 py-8 text-center text-ink-dim">{metalFilter !== "all" || statusFilter !== "all" ? "No items match the current filter." : t("no_data")}</td></tr>}
                 </tbody>
               </table>
             </div>
