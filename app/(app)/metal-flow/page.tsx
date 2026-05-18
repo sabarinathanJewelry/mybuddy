@@ -357,17 +357,22 @@ export default function MetalFlowPage() {
 
   const recordRefinery = useMutation({
     mutationFn: async (d: NonNullable<typeof refineryForm>) => {
-      const purity = d.output_purity_pct || 99.9;
+      const purity = d.output_purity_pct || 91.6;
       const pure_wt_999 = parseFloat((d.output_wt * (purity / 100)).toFixed(3));
       const { error } = await supabase().from("melt_batches").update({
-        output_wt: pure_wt_999,
+        melt_wt: parseFloat(d.output_wt.toFixed(3)),   // actual after-melt weight (46.69g)
+        output_wt: pure_wt_999,                          // 999-pure equivalent for reserve (42.511g)
         loss_wt: parseFloat(d.loss_wt.toFixed(3)),
         output_purity_pct: purity,
         status: "refined",
       }).eq("id", d.batchId);
       if (error) throw error;
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["melt_batches"] }); setRefineryForm(null); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["melt_batches"] });
+      qc.invalidateQueries({ queryKey: ["metal_reserve"] });
+      setRefineryForm(null);
+    },
   });
 
   const saveDispatch = useMutation({
@@ -762,61 +767,84 @@ export default function MetalFlowPage() {
                         )}
                         {b.status === "melted" && !refineryForm && (
                           <button
-                            onClick={() => setRefineryForm({ batchId: b.id, output_wt: b.input_wt, loss_wt: 0, output_purity_pct: 99.9 })}
+                            onClick={() => {
+                              const grossTotal = (b.melt_batch_items ?? []).reduce((s: number, i: any) => s + (Number(i.gross_wt) || 0), 0);
+                              setRefineryForm({ batchId: b.id, output_wt: grossTotal, loss_wt: 0, output_purity_pct: 91.6 });
+                            }}
                             className="text-sm bg-ok/10 text-ok border border-ok/30 px-4 py-1.5 rounded-lg2 hover:bg-ok/20">
                             ✓ Record Refinery Return
                           </button>
                         )}
                         {b.status === "refined" && (
-                          <span className="text-sm text-ok font-medium">
-                            ✓ Refined: {grams(b.output_wt)} at {b.output_purity_pct ?? 99.9}% purity
-                            {b.loss_wt > 0 && <span className="text-ink-dim ml-2">(loss: {grams(b.loss_wt)})</span>}
-                          </span>
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className="text-sm text-ok font-medium">
+                              ✓ Melt: {grams(b.melt_wt ?? b.output_wt)} @ {b.output_purity_pct ?? 91.6}%
+                              → 999 pure: {grams(b.output_wt)}
+                              {b.loss_wt > 0 && <span className="text-ink-dim ml-2">(loss: {grams(b.loss_wt)})</span>}
+                            </span>
+                            {!refineryForm && (
+                              <button
+                                onClick={() => setRefineryForm({ batchId: b.id, output_wt: b.melt_wt ?? b.output_wt, loss_wt: b.loss_wt ?? 0, output_purity_pct: b.output_purity_pct ?? 91.6 })}
+                                className="text-xs text-gold hover:underline">
+                                Edit
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
 
                       {/* Refinery return form */}
-                      {refineryForm !== null && refineryForm.batchId === b.id && (
-                        <div className="bg-ok/5 border border-ok/20 rounded-lg2 p-4 space-y-3">
-                          <h4 className="text-sm font-semibold text-ok">Refinery Return for {b.batch_no}</h4>
-                          <p className="text-xs text-ink-dim">Input weight: <strong>{grams(b.input_wt)}</strong> (pure wt sent)</p>
-                          <div className="grid grid-cols-3 gap-3">
-                            <div>
-                              <label className="block text-xs text-ink-dim mb-1">Output Weight (g) *</label>
-                              <input type="number" step="0.001" value={refineryForm.output_wt || ""}
-                                onFocus={(e) => e.target.select()}
-                                onChange={(e) => setRefineryForm({ ...refineryForm, output_wt: parseFloat(e.target.value) || 0 })}
-                                className={inp} />
+                      {refineryForm !== null && refineryForm.batchId === b.id && (() => {
+                        const grossTotal = (b.melt_batch_items ?? []).reduce((s: number, i: any) => s + (Number(i.gross_wt) || 0), 0);
+                        const pure999 = parseFloat((refineryForm.output_wt * (refineryForm.output_purity_pct / 100)).toFixed(3));
+                        return (
+                          <div className="bg-ok/5 border border-ok/20 rounded-lg2 p-4 space-y-3">
+                            <h4 className="text-sm font-semibold text-ok">Refinery Return — {b.batch_no}</h4>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                              <div>
+                                <label className="block text-xs text-ink-dim mb-1">Old Gold (Gross)</label>
+                                <p className="text-sm font-mono font-semibold">{grams(grossTotal)}</p>
+                              </div>
+                              <div>
+                                <label className="block text-xs text-ink-dim mb-1">After Melting (g) *</label>
+                                <input type="number" step="0.001" value={refineryForm.output_wt || ""}
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) => {
+                                    const melt = parseFloat(e.target.value) || 0;
+                                    setRefineryForm({ ...refineryForm, output_wt: melt, loss_wt: parseFloat(Math.max(0, grossTotal - melt).toFixed(3)) });
+                                  }}
+                                  className={inp} />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-ink-dim mb-1">Dust / Loss (g)</label>
+                                <input type="number" step="0.001" value={refineryForm.loss_wt || ""}
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) => setRefineryForm({ ...refineryForm, loss_wt: parseFloat(e.target.value) || 0 })}
+                                  className={inp} />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-ink-dim mb-1">Purity %</label>
+                                <input type="number" step="0.01" value={refineryForm.output_purity_pct || ""}
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) => setRefineryForm({ ...refineryForm, output_purity_pct: parseFloat(e.target.value) || 91.6 })}
+                                  className={inp} />
+                              </div>
                             </div>
-                            <div>
-                              <label className="block text-xs text-ink-dim mb-1">Actual Purity %</label>
-                              <input type="number" step="0.01" value={refineryForm.output_purity_pct || ""}
-                                onFocus={(e) => e.target.select()}
-                                onChange={(e) => setRefineryForm({ ...refineryForm, output_purity_pct: parseFloat(e.target.value) || 99.9 })}
-                                className={inp} placeholder="99.9" />
+                            <div className="flex items-center gap-6 text-sm">
+                              <span className="text-ink-dim">999 Pure → reserve:</span>
+                              <span className="text-ok font-bold font-mono">{grams(pure999)}</span>
+                              <span className="text-ink-dim text-xs">({refineryForm.output_wt}g × {refineryForm.output_purity_pct}%)</span>
                             </div>
-                            <div>
-                              <label className="block text-xs text-ink-dim mb-1">Loss (g)</label>
-                              <input type="number" step="0.001" value={refineryForm.loss_wt || ""}
-                                onFocus={(e) => e.target.select()}
-                                onChange={(e) => setRefineryForm({ ...refineryForm, loss_wt: parseFloat(e.target.value) || 0 })}
-                                className={inp} placeholder="0" />
+                            <div className="flex gap-2">
+                              <button disabled={!refineryForm.output_wt || recordRefinery.isPending}
+                                onClick={() => recordRefinery.mutate(refineryForm)}
+                                className="bg-ok text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">Save</button>
+                              <button onClick={() => setRefineryForm(null)}
+                                className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
                             </div>
                           </div>
-                          <div className="text-sm text-ok font-medium">
-                            999 pure gold added to reserve: <strong>
-                              {((refineryForm.output_wt * (refineryForm.output_purity_pct / 100))).toFixed(3)}g
-                            </strong>
-                          </div>
-                          <div className="flex gap-2">
-                            <button disabled={!refineryForm.output_wt || recordRefinery.isPending}
-                              onClick={() => recordRefinery.mutate(refineryForm)}
-                              className="bg-ok text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">Save</button>
-                            <button onClick={() => setRefineryForm(null)}
-                              className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
