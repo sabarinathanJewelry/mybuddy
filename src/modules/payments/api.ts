@@ -58,3 +58,38 @@ export function useSavePayment() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["payments"] }),
   });
 }
+
+export function useUpdatePayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, pay_date, mode, direction, amount, notes }: {
+      id: string; pay_date: string; mode: string; direction: string; amount: number; notes?: string;
+    }) => {
+      const client = supabase();
+      const { error } = await client.from("payments").update({ pay_date, mode, direction, amount, notes: notes ?? null }).eq("id", id);
+      if (error) throw error;
+      // Update whichever ledger entry is linked (best-effort)
+      await Promise.allSettled([
+        client.from("cash_ledger").update({ tx_date: pay_date, direction, amount }).eq("ref_type", "payment").eq("ref_id", id),
+        client.from("bank_ledger").update({ tx_date: pay_date, direction, amount }).eq("ref_type", "payment").eq("ref_id", id),
+      ]);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["payments"] }),
+  });
+}
+
+export function useDeletePayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const client = supabase();
+      await Promise.allSettled([
+        client.from("cash_ledger").delete().eq("ref_type", "payment").eq("ref_id", id),
+        client.from("bank_ledger").delete().eq("ref_type", "payment").eq("ref_id", id),
+      ]);
+      const { error } = await client.from("payments").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["payments"] }),
+  });
+}
