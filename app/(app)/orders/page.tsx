@@ -220,6 +220,11 @@ export default function OrdersPage() {
     pay_date: string; mode: PayMode; amount: number;
     metal_wt: number; metal_purity: number; notes: string;
   } | null>(null);
+  const [editOrderId, setEditOrderId] = useState<string | null>(null);
+  const [editOrderForm, setEditOrderForm] = useState<{
+    customer: Customer | null; order_date: string; delivery_date: string;
+    description: string; estimated_wt: number; estimated_total: number; gst_included: boolean;
+  }>({ customer: null, order_date: "", delivery_date: "", description: "", estimated_wt: 0, estimated_total: 0, gst_included: false });
   const [addPayOrderId, setAddPayOrderId] = useState<string | null>(null);
   const [addPayments, setAddPayments] = useState<PaymentDraft[]>([newPayment()]);
   const [addPayDate, setAddPayDate] = useState(globalDate);
@@ -340,6 +345,26 @@ export default function OrdersPage() {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["orders"] }),
+  });
+
+  // ── Update order details
+  const updateOrder = useMutation({
+    mutationFn: async ({ id }: { id: string }) => {
+      const f = editOrderForm;
+      const gstAmt = f.gst_included ? parseFloat((f.estimated_total * 0.03).toFixed(2)) : 0;
+      const total = parseFloat(((f.estimated_total || 0) + gstAmt).toFixed(2));
+      const { error } = await supabase().from("orders").update({
+        customer_id: f.customer?.id ?? null,
+        order_date: f.order_date,
+        delivery_date: f.delivery_date || null,
+        description: f.description || null,
+        estimated_wt: f.estimated_wt || null,
+        total,
+        gst_included: f.gst_included,
+      }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["orders"] }); setEditOrderId(null); },
   });
 
   // ── Edit order payment (with ledger rebuild)
@@ -689,35 +714,127 @@ export default function OrdersPage() {
                     )}
 
                     {/* Action buttons */}
-                    {o.status !== "delivered" && o.status !== "cancelled" && (
-                      <div className="flex flex-wrap gap-2 pt-1 border-t border-line">
-                        {o.status === "pending" && (
-                          <button onClick={() => updateStatus.mutate({ id: o.id, status: "ready" })}
-                            className="text-sm bg-info/10 text-info border border-info/30 px-4 py-1.5 rounded-lg2 hover:bg-info/20">
-                            ✓ Mark Ready
+                    <div className="flex flex-wrap gap-2 pt-1 border-t border-line">
+                      {o.status !== "delivered" && o.status !== "cancelled" && (
+                        <>
+                          {o.status === "pending" && (
+                            <button onClick={() => updateStatus.mutate({ id: o.id, status: "ready" })}
+                              className="text-sm bg-info/10 text-info border border-info/30 px-4 py-1.5 rounded-lg2 hover:bg-info/20">
+                              ✓ Mark Ready
+                            </button>
+                          )}
+                          {!isAddingPay && !isDelivering && editOrderId !== o.id && (
+                            <button onClick={() => { setAddPayOrderId(o.id); setAddPayDate(globalDate); setAddPayments([newPayment()]); }}
+                              className="text-sm bg-canvas border border-line px-4 py-1.5 rounded-lg2 hover:border-gold">
+                              + Add Payment
+                            </button>
+                          )}
+                          {!isDelivering && !isAddingPay && editOrderId !== o.id && (
+                            <button onClick={() => {
+                              setDeliverOrderId(o.id);
+                              setFinalWt(Number(o.estimated_wt) || 0);
+                              setFinalTotal(Number(o.total) || 0);
+                              setFinalPayments(balance > 0.01 ? [newPayment()] : []);
+                            }}
+                              className="text-sm bg-ok/10 text-ok border border-ok/30 px-4 py-1.5 rounded-lg2 hover:bg-ok/20">
+                              🚚 Deliver
+                            </button>
+                          )}
+                          <button onClick={() => updateStatus.mutate({ id: o.id, status: "cancelled" })}
+                            className="text-sm text-err border border-err/30 px-4 py-1.5 rounded-lg2 hover:bg-err/5 ml-auto">
+                            Cancel Order
                           </button>
-                        )}
-                        {!isAddingPay && !isDelivering && (
-                          <button onClick={() => { setAddPayOrderId(o.id); setAddPayDate(globalDate); setAddPayments([newPayment()]); }}
-                            className="text-sm bg-canvas border border-line px-4 py-1.5 rounded-lg2 hover:border-gold">
-                            + Add Payment
-                          </button>
-                        )}
-                        {!isDelivering && !isAddingPay && (
-                          <button onClick={() => {
-                            setDeliverOrderId(o.id);
-                            setFinalWt(Number(o.estimated_wt) || 0);
-                            setFinalTotal(Number(o.total) || 0);
-                            setFinalPayments(balance > 0.01 ? [newPayment()] : []);
+                        </>
+                      )}
+                      {/* Edit order always available */}
+                      {editOrderId !== o.id && (
+                        <button
+                          onClick={() => {
+                            setEditOrderId(o.id);
+                            setAddPayOrderId(null);
+                            setDeliverOrderId(null);
+                            setEditOrderForm({
+                              customer: o.customers ? { id: o.customer_id, name: o.customers.name, phone: o.customers.phone ?? null, address: null, opening_balance: 0, gold_balance_g: 0, silver_balance_g: 0, notes: null, created_at: "" } as Customer : null,
+                              order_date: o.order_date,
+                              delivery_date: o.delivery_date ?? "",
+                              description: o.description ?? "",
+                              estimated_wt: Number(o.estimated_wt) || 0,
+                              estimated_total: o.gst_included
+                                ? parseFloat((Number(o.total) / 1.03).toFixed(2))
+                                : Number(o.total) || 0,
+                              gst_included: o.gst_included ?? false,
+                            });
                           }}
-                            className="text-sm bg-ok/10 text-ok border border-ok/30 px-4 py-1.5 rounded-lg2 hover:bg-ok/20">
-                            🚚 Deliver
-                          </button>
-                        )}
-                        <button onClick={() => updateStatus.mutate({ id: o.id, status: "cancelled" })}
-                          className="text-sm text-err border border-err/30 px-4 py-1.5 rounded-lg2 hover:bg-err/5 ml-auto">
-                          Cancel Order
+                          className={clsx("text-sm border px-4 py-1.5 rounded-lg2", o.status === "delivered" || o.status === "cancelled" ? "ml-auto" : "", "border-gold/40 text-gold hover:bg-gold/5")}>
+                          ✏ Edit Order
                         </button>
+                      )}
+                    </div>
+
+                    {/* Edit Order inline form */}
+                    {editOrderId === o.id && (
+                      <div className="border border-gold/30 rounded-xl p-4 bg-gold/5 space-y-4">
+                        <h3 className="text-sm font-semibold">Edit Order</h3>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                          <div className="col-span-2 sm:col-span-4">
+                            <label className="block text-xs text-ink-dim mb-1">{t("customers")}</label>
+                            <CustomerPicker value={editOrderForm.customer} onChange={(c) => setEditOrderForm({ ...editOrderForm, customer: c })} />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-ink-dim mb-1">Order Date</label>
+                            <input type="date" value={editOrderForm.order_date}
+                              onChange={(e) => setEditOrderForm({ ...editOrderForm, order_date: e.target.value })}
+                              className={inp} />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-ink-dim mb-1">Delivery Date</label>
+                            <input type="date" value={editOrderForm.delivery_date}
+                              onChange={(e) => setEditOrderForm({ ...editOrderForm, delivery_date: e.target.value })}
+                              className={inp} />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-ink-dim mb-1">Est. Weight (g)</label>
+                            <input type="number" step="0.001" value={editOrderForm.estimated_wt || ""}
+                              onFocus={(e) => e.target.select()} placeholder="0.000"
+                              onChange={(e) => setEditOrderForm({ ...editOrderForm, estimated_wt: parseFloat(e.target.value) || 0 })}
+                              className={inp} />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-ink-dim mb-1">Est. Total (₹) <span className="text-ink-dim/60 font-normal">before GST</span></label>
+                            <input type="number" step="0.01" value={editOrderForm.estimated_total || ""}
+                              onFocus={(e) => e.target.select()} placeholder="0"
+                              onChange={(e) => setEditOrderForm({ ...editOrderForm, estimated_total: parseFloat(e.target.value) || 0 })}
+                              className={inp} />
+                          </div>
+                          <div className="flex flex-col justify-end">
+                            <label className="flex items-center gap-2 text-sm cursor-pointer pb-2">
+                              <input type="checkbox" checked={editOrderForm.gst_included}
+                                onChange={(e) => setEditOrderForm({ ...editOrderForm, gst_included: e.target.checked })}
+                                className="accent-gold w-4 h-4" />
+                              <span>Include GST (3%)</span>
+                            </label>
+                            {editOrderForm.gst_included && editOrderForm.estimated_total > 0 && (
+                              <p className="text-xs text-ink-dim">
+                                +{inr(editOrderForm.estimated_total * 0.03)} GST = <strong className="text-gold">{inr(editOrderForm.estimated_total * 1.03)}</strong>
+                              </p>
+                            )}
+                          </div>
+                          <div className="col-span-2 sm:col-span-4">
+                            <label className="block text-xs text-ink-dim mb-1">Description / Design</label>
+                            <textarea value={editOrderForm.description}
+                              onChange={(e) => setEditOrderForm({ ...editOrderForm, description: e.target.value })}
+                              rows={2} className={inp + " resize-none"} placeholder="What the customer wants made…" />
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button disabled={updateOrder.isPending}
+                            onClick={() => updateOrder.mutate({ id: o.id })}
+                            className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
+                            {updateOrder.isPending ? "Saving…" : "Save Changes"}
+                          </button>
+                          <button onClick={() => setEditOrderId(null)}
+                            className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
+                        </div>
                       </div>
                     )}
 
