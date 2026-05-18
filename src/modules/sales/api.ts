@@ -124,16 +124,18 @@ function itemsInsertPayload(saleId: string, items: SaleDraft["items"]) {
   }));
 }
 
-export function useSales(limit = 50) {
+export function useSales(date: string | null = null, limit = 100) {
   return useQuery({
-    queryKey: ["sales", limit],
+    queryKey: ["sales", date, limit],
     queryFn: async () => {
-      const { data, error } = await supabase()
+      let q = supabase()
         .from("sales")
         .select("id, bill_no, bill_date, total, status, series, customers(name)")
         .order("bill_date", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(limit);
+      if (date) q = q.eq("bill_date", date);
+      const { data, error } = await q;
       if (error) throw error;
       return data ?? [];
     },
