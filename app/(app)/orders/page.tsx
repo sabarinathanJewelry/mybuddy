@@ -214,6 +214,11 @@ export default function OrdersPage() {
 
   // ── Per-order UI state
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [editingPayment, setEditingPayment] = useState<{
+    id: string; orderId: string; orderNo: string;
+    pay_date: string; mode: PayMode; amount: number;
+    metal_wt: number; metal_purity: number; notes: string;
+  } | null>(null);
   const [addPayOrderId, setAddPayOrderId] = useState<string | null>(null);
   const [addPayments, setAddPayments] = useState<PaymentDraft[]>([newPayment()]);
   const [addPayDate, setAddPayDate] = useState(globalDate);
@@ -330,6 +335,68 @@ export default function OrdersPage() {
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
       const { error } = await supabase().from("orders").update({ status }).eq("id", id);
       if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["orders"] }),
+  });
+
+  // ── Edit order payment (with ledger rebuild)
+  const editOrderPayment = useMutation({
+    mutationFn: async ({ paymentId, orderId, orderNo, pay_date, mode, amount, metal_wt, metal_purity, notes }: {
+      paymentId: string; orderId: string; orderNo: string;
+      pay_date: string; mode: PayMode; amount: number;
+      metal_wt: number; metal_purity: number; notes: string;
+    }) => {
+      const client = supabase();
+      // 1. Update the order_payment row
+      await client.from("order_payments").update({
+        pay_date, mode, amount,
+        metal_wt: metal_wt || null, metal_purity: metal_purity || null,
+        notes: notes || null,
+      }).eq("id", paymentId);
+
+      // 2. Delete all ledger entries for this order and rebuild from scratch
+      await Promise.allSettled([
+        client.from("cash_ledger").delete().eq("ref_type", "order").eq("ref_id", orderId),
+        client.from("bank_ledger").delete().eq("ref_type", "order").eq("ref_id", orderId),
+      ]);
+      const { data: allPay } = await client.from("order_payments").select("*").eq("order_id", orderId);
+      const desc = `Order advance — ${orderNo}`;
+      await Promise.allSettled(
+        (allPay ?? []).filter((p) => p.amount > 0).map((p) => {
+          if (p.mode === "cash") return client.from("cash_ledger").insert({ tx_date: p.pay_date, direction: "in", amount: p.amount, description: desc, ref_type: "order", ref_id: orderId });
+          if (p.mode === "upi" || p.mode === "bank") return client.from("bank_ledger").insert({ tx_date: p.pay_date, direction: "in", amount: p.amount, description: desc, ref_type: "order", ref_id: orderId });
+          return Promise.resolve();
+        })
+      );
+
+      // 3. Recompute advance_paid from actual sum
+      const newTotal = (allPay ?? []).reduce((s, p) => s + Number(p.amount), 0);
+      await client.from("orders").update({ advance_paid: newTotal }).eq("id", orderId);
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["orders"] }); setEditingPayment(null); },
+  });
+
+  // ── Delete order payment
+  const deleteOrderPayment = useMutation({
+    mutationFn: async ({ paymentId, orderId, orderNo }: { paymentId: string; orderId: string; orderNo: string }) => {
+      const client = supabase();
+      await client.from("order_payments").delete().eq("id", paymentId);
+
+      await Promise.allSettled([
+        client.from("cash_ledger").delete().eq("ref_type", "order").eq("ref_id", orderId),
+        client.from("bank_ledger").delete().eq("ref_type", "order").eq("ref_id", orderId),
+      ]);
+      const { data: allPay } = await client.from("order_payments").select("*").eq("order_id", orderId);
+      const desc = `Order advance — ${orderNo}`;
+      await Promise.allSettled(
+        (allPay ?? []).filter((p) => p.amount > 0).map((p) => {
+          if (p.mode === "cash") return client.from("cash_ledger").insert({ tx_date: p.pay_date, direction: "in", amount: p.amount, description: desc, ref_type: "order", ref_id: orderId });
+          if (p.mode === "upi" || p.mode === "bank") return client.from("bank_ledger").insert({ tx_date: p.pay_date, direction: "in", amount: p.amount, description: desc, ref_type: "order", ref_id: orderId });
+          return Promise.resolve();
+        })
+      );
+      const newTotal = (allPay ?? []).reduce((s, p) => s + Number(p.amount), 0);
+      await client.from("orders").update({ advance_paid: newTotal }).eq("id", orderId);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["orders"] }),
   });
@@ -504,16 +571,97 @@ export default function OrdersPage() {
                         <p className="text-xs font-semibold text-ink-dim mb-2">Payment History</p>
                         <div className="space-y-1">
                           {(o.order_payments as any[]).map((p: any) => (
-                            <div key={p.id} className="flex items-center gap-3 text-sm bg-canvas rounded-lg2 px-3 py-2">
-                              <span className="text-ink-dim text-xs">{shortDate(p.pay_date)}</span>
-                              <span className="capitalize text-xs border border-line rounded px-1.5 py-0.5 text-ink-dim">
-                                {p.mode.replace("_", " ")}
-                              </span>
-                              {(p.metal_wt) && (
-                                <span className="text-xs text-ink-dim">{grams(p.metal_wt)} @ {p.metal_purity}%</span>
+                            <div key={p.id}>
+                              {editingPayment?.id === p.id ? (
+                                /* ── Inline edit form */
+                                <div className="bg-gold/5 border border-gold/30 rounded-lg2 px-3 py-3 space-y-2">
+                                  <div className="flex flex-wrap items-end gap-2">
+                                    <div>
+                                      <label className="text-xs text-ink-dim block mb-1">Date</label>
+                                      <input type="date" value={editingPayment.pay_date}
+                                        onChange={(e) => setEditingPayment({ ...editingPayment, pay_date: e.target.value })}
+                                        className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                                    </div>
+                                    <div>
+                                      <label className="text-xs text-ink-dim block mb-1">Mode</label>
+                                      <select value={editingPayment.mode}
+                                        onChange={(e) => setEditingPayment({ ...editingPayment, mode: e.target.value as PayMode })}
+                                        className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                                        {PAY_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="text-xs text-ink-dim block mb-1">Amount (₹)</label>
+                                      <input type="number" step="0.01" value={editingPayment.amount || ""}
+                                        onFocus={(e) => e.target.select()}
+                                        onChange={(e) => setEditingPayment({ ...editingPayment, amount: parseFloat(e.target.value) || 0 })}
+                                        className="w-32 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                                        autoFocus />
+                                    </div>
+                                    {(editingPayment.mode === "old_gold" || editingPayment.mode === "old_silver") && (
+                                      <>
+                                        <div>
+                                          <label className="text-xs text-ink-dim block mb-1">Weight (g)</label>
+                                          <input type="number" step="0.001" value={editingPayment.metal_wt || ""}
+                                            onFocus={(e) => e.target.select()}
+                                            onChange={(e) => setEditingPayment({ ...editingPayment, metal_wt: parseFloat(e.target.value) || 0 })}
+                                            className="w-24 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                                        </div>
+                                        <div>
+                                          <label className="text-xs text-ink-dim block mb-1">Purity %</label>
+                                          <input type="number" step="0.01" value={editingPayment.metal_purity || ""}
+                                            onFocus={(e) => e.target.select()}
+                                            onChange={(e) => setEditingPayment({ ...editingPayment, metal_purity: parseFloat(e.target.value) || 91.6 })}
+                                            className="w-20 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                                        </div>
+                                      </>
+                                    )}
+                                    <div className="flex-1 min-w-[100px]">
+                                      <label className="text-xs text-ink-dim block mb-1">Notes</label>
+                                      <input value={editingPayment.notes}
+                                        onChange={(e) => setEditingPayment({ ...editingPayment, notes: e.target.value })}
+                                        className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                                        placeholder="Optional" />
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button
+                                      disabled={editOrderPayment.isPending || editingPayment.amount <= 0}
+                                      onClick={() => editOrderPayment.mutate(editingPayment)}
+                                      className="bg-gold text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                                      {editOrderPayment.isPending ? "Saving…" : "Save"}
+                                    </button>
+                                    <button onClick={() => setEditingPayment(null)}
+                                      className="border border-line text-xs px-4 py-1.5 rounded-lg2">Cancel</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                /* ── Normal display row */
+                                <div className="flex items-center gap-3 text-sm bg-canvas rounded-lg2 px-3 py-2">
+                                  <span className="text-ink-dim text-xs">{shortDate(p.pay_date)}</span>
+                                  <span className="capitalize text-xs border border-line rounded px-1.5 py-0.5 text-ink-dim">
+                                    {p.mode.replace("_", " ")}
+                                  </span>
+                                  {p.metal_wt && (
+                                    <span className="text-xs text-ink-dim">{grams(p.metal_wt)} @ {p.metal_purity}%</span>
+                                  )}
+                                  {p.notes && <span className="text-xs text-ink-dim truncate max-w-xs">{p.notes}</span>}
+                                  <span className="font-mono font-medium text-ok ml-auto">{inr(Number(p.amount))}</span>
+                                  <button
+                                    onClick={() => setEditingPayment({
+                                      id: p.id, orderId: o.id, orderNo: o.order_no,
+                                      pay_date: p.pay_date, mode: p.mode,
+                                      amount: Number(p.amount),
+                                      metal_wt: Number(p.metal_wt) || 0,
+                                      metal_purity: Number(p.metal_purity) || 91.6,
+                                      notes: p.notes ?? "",
+                                    })}
+                                    className="text-xs text-gold hover:underline shrink-0">Edit</button>
+                                  <button
+                                    onClick={() => { if (window.confirm("Delete this payment? Ledger will be updated.")) deleteOrderPayment.mutate({ paymentId: p.id, orderId: o.id, orderNo: o.order_no }); }}
+                                    className="text-xs text-err hover:underline shrink-0">Del</button>
+                                </div>
                               )}
-                              <span className="font-mono font-medium text-ok ml-auto">{inr(Number(p.amount))}</span>
-                              {p.notes && <span className="text-xs text-ink-dim truncate max-w-xs">{p.notes}</span>}
                             </div>
                           ))}
                         </div>
