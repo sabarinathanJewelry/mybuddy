@@ -27,6 +27,7 @@ export default function PaymentsPage() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ pay_date: globalDate, mode: "cash", direction: "in", amount: 0, notes: "" });
+  const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -40,12 +41,13 @@ export default function PaymentsPage() {
   function startEdit(p: any) {
     setEditingId(p.id);
     setEditForm({ pay_date: p.pay_date, mode: p.mode, direction: p.direction, amount: p.amount, notes: p.notes ?? "" });
+    setEditCustomer(p.customers ? { id: p.customer_id, name: p.customers.name, phone: null, address: null, opening_balance: 0, gold_balance_g: 0, silver_balance_g: 0, notes: null, created_at: "" } : null);
   }
 
   async function handleUpdate(e: React.FormEvent) {
     e.preventDefault();
     if (!editingId || editForm.amount <= 0) return;
-    await update.mutateAsync({ id: editingId, ...editForm });
+    await update.mutateAsync({ id: editingId, ...editForm, customer_id: editCustomer?.id ?? null });
     setEditingId(null);
   }
 
@@ -154,6 +156,10 @@ export default function PaymentsPage() {
                     <tr className="border-b border-line bg-canvas/50">
                       <td colSpan={5} className="px-4 py-3">
                         <form onSubmit={handleUpdate} className="flex items-end gap-3 flex-wrap">
+                          <div className="w-52">
+                            <label className="text-xs text-ink-dim block mb-1">Customer</label>
+                            <CustomerPicker value={editCustomer} onChange={setEditCustomer} />
+                          </div>
                           <div>
                             <label className="text-xs text-ink-dim block mb-1">Date</label>
                             <input type="date" value={editForm.pay_date}

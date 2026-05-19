@@ -68,8 +68,8 @@ function paymentLedgerTable(mode: string): "cash_ledger" | "bank_ledger" | null 
 export function useUpdatePayment() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, pay_date, mode, direction, amount, notes }: {
-      id: string; pay_date: string; mode: string; direction: string; amount: number; notes?: string;
+    mutationFn: async ({ id, pay_date, mode, direction, amount, notes, customer_id }: {
+      id: string; pay_date: string; mode: string; direction: string; amount: number; notes?: string; customer_id?: string | null;
     }) => {
       const client = supabase();
 
@@ -78,7 +78,7 @@ export function useUpdatePayment() {
       const oldTable = paymentLedgerTable(current?.mode ?? "");
       const newTable = paymentLedgerTable(mode);
 
-      const { error } = await client.from("payments").update({ pay_date, mode, direction, amount, notes: notes ?? null }).eq("id", id);
+      const { error } = await client.from("payments").update({ pay_date, mode, direction, amount, notes: notes ?? null, ...(customer_id !== undefined && { customer_id }) }).eq("id", id);
       if (error) throw error;
 
       if (oldTable === newTable) {
