@@ -8,7 +8,7 @@ import { useT } from "@/i18n";
 import { useGlobalDate } from "@/stores/global-date";
 import { useBoardRate } from "@/stores/board-rate";
 import { computeLine, distributeTotalByVa, rateForMetal } from "@/lib/sales-calc";
-import { inr, grams } from "@/lib/format";
+import { inr, grams, shortDate } from "@/lib/format";
 import CustomerPicker from "@/modules/customers/customer-picker";
 import SupplierPicker from "@/modules/suppliers/supplier-picker";
 import type { Supplier } from "@/modules/suppliers/supplier-picker";
@@ -138,6 +138,13 @@ export default function SaleForm({ saleId }: Props) {
   const [changePayoutMode, setChangePayoutMode] = useState<"cash" | "bank">("cash");
   const [saleType, setSaleType] = useState<SaleType>("fresh");
   const [exchangeRefBill, setExchangeRefBill] = useState("");
+  const [refBillPreview, setRefBillPreview] = useState<{
+    bill_no: string; bill_date: string; customer_name: string | null;
+    items: { description: string; metal: string; gross_wt: number; net_wt: number; line_total: number }[];
+    total: number;
+  } | null>(null);
+  const [refBillError, setRefBillError] = useState<string | null>(null);
+  const [lookingUp, setLookingUp] = useState(false);
 
   // Auto-fill rates when board rate loads (form opens before boardRate is ready)
   useEffect(() => {
@@ -310,6 +317,36 @@ export default function SaleForm({ saleId }: Props) {
   const newItemsWt = items.reduce((s, i) => s + (i.gross_wt || 0), 0);
   const netToShop  = oldMetalWt - newItemsWt;
 
+  async function lookupRefBill() {
+    if (!exchangeRefBill.trim()) return;
+    setLookingUp(true);
+    setRefBillPreview(null);
+    setRefBillError(null);
+    try {
+      const { data, error } = await supabase()
+        .from("sales")
+        .select("bill_no, bill_date, total, customers(name), sale_items(description, metal, gross_wt, net_wt, line_total)")
+        .eq("bill_no", exchangeRefBill.trim())
+        .single();
+      if (error || !data) {
+        setRefBillError("Bill not found");
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        setRefBillPreview({
+          bill_no: data.bill_no,
+          bill_date: data.bill_date,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          customer_name: (data.customers as any)?.name ?? null,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          items: (data.sale_items as any[]) ?? [],
+          total: data.total,
+        });
+      }
+    } finally {
+      setLookingUp(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (balance > 0.01 && !customer) return;
@@ -387,12 +424,61 @@ export default function SaleForm({ saleId }: Props) {
 
           <div>
             <label className="block text-xs font-medium text-ink-dim mb-1">Original Bill No. (reference)</label>
-            <input
-              value={exchangeRefBill}
-              onChange={(e) => setExchangeRefBill(e.target.value)}
-              placeholder="e.g. S/2026-27/0047"
-              className={inp}
-            />
+            <div className="flex gap-2">
+              <input
+                value={exchangeRefBill}
+                onChange={(e) => { setExchangeRefBill(e.target.value); setRefBillPreview(null); setRefBillError(null); }}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); lookupRefBill(); } }}
+                placeholder="e.g. S/2026-27/0047"
+                className={clsx(inp, "flex-1")}
+              />
+              <button type="button" onClick={lookupRefBill}
+                disabled={!exchangeRefBill.trim() || lookingUp}
+                className="px-3 py-1.5 text-xs font-medium bg-gold/10 text-gold border border-gold/30 rounded-lg2 hover:bg-gold/20 disabled:opacity-40 whitespace-nowrap">
+                {lookingUp ? "Looking…" : "Lookup"}
+              </button>
+            </div>
+            {refBillError && (
+              <p className="text-xs text-err mt-1">{refBillError}</p>
+            )}
+            {refBillPreview && (
+              <div className="mt-2 bg-white border border-gold/30 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-ink">{refBillPreview.bill_no}</span>
+                  <span className="text-xs text-ink-dim">{shortDate(refBillPreview.bill_date)}</span>
+                </div>
+                {refBillPreview.customer_name && (
+                  <p className="text-xs text-ink-dim">Customer: <strong className="text-ink">{refBillPreview.customer_name}</strong></p>
+                )}
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-ink-dim border-b border-line">
+                      <th className="text-left pb-1 font-medium">Item</th>
+                      <th className="text-right pb-1 font-medium">Gross</th>
+                      <th className="text-right pb-1 font-medium">Net</th>
+                      <th className="text-right pb-1 font-medium">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {refBillPreview.items.map((item, i) => (
+                      <tr key={i} className="border-b border-line/40">
+                        <td className="py-0.5">{item.description || item.metal}</td>
+                        <td className="text-right py-0.5 font-semibold text-warn">{grams(item.gross_wt)}</td>
+                        <td className="text-right py-0.5">{grams(item.net_wt)}</td>
+                        <td className="text-right py-0.5">{inr(item.line_total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="flex items-center justify-between pt-1 border-t border-line">
+                  <span className="text-xs text-ink-dim">Bill Total</span>
+                  <span className="text-xs font-semibold text-gold">{inr(refBillPreview.total)}</span>
+                </div>
+                <p className="text-xs bg-warn/10 text-warn rounded-lg2 px-2 py-1.5 font-medium">
+                  ↓ Original items totalled {grams(refBillPreview.items.reduce((s, i) => s + (i.gross_wt || 0), 0))} — enter the weight the customer is returning in the Old Silver / Old Gold payment below
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Metal flow summary — live computed from payments + items */}
