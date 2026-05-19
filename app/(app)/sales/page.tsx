@@ -75,7 +75,17 @@ export default function SalesPage() {
             <tbody>
               {sales?.map((s: any) => (
                 <tr key={s.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                  <td className="px-4 py-2.5 font-mono text-info font-medium">{s.bill_no}</td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-info font-medium">{s.bill_no}</span>
+                      {s.sale_type === "exchange" && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-warn/15 text-warn font-medium">Exchange</span>
+                      )}
+                    </div>
+                    {s.sale_type === "exchange" && s.exchange_ref_bill && (
+                      <p className="text-xs text-ink-dim mt-0.5">ref: {s.exchange_ref_bill}</p>
+                    )}
+                  </td>
                   <td className="px-3 py-2.5 text-ink-dim">{shortDate(s.bill_date)}</td>
                   <td className="px-3 py-2.5 hidden sm:table-cell text-ink-mid">{s.customers?.name ?? "—"}</td>
                   <td className="px-3 py-2.5 text-right font-mono">{inr(s.total)}</td>

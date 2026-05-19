@@ -11,7 +11,7 @@ import CustomerPicker from "@/modules/customers/customer-picker";
 import SupplierPicker from "@/modules/suppliers/supplier-picker";
 import type { Supplier } from "@/modules/suppliers/supplier-picker";
 import { useSaveSale, useUpdateSale, useSale } from "./api";
-import type { SaleDraft, SaleItemDraft, SalePaymentDraft, Metal, PaymentMode, SaleSeries } from "./types";
+import type { SaleDraft, SaleItemDraft, SalePaymentDraft, Metal, PaymentMode, SaleSeries, SaleType } from "./types";
 import type { Customer } from "@/modules/customers/types";
 import { clsx } from "clsx";
 
@@ -134,6 +134,8 @@ export default function SaleForm({ saleId }: Props) {
   const [desiredTotal, setDesiredTotal] = useState(0);
   const [changeDueMode, setChangeDueMode] = useState<"cash_back" | "advance" | null>(null);
   const [changePayoutMode, setChangePayoutMode] = useState<"cash" | "bank">("cash");
+  const [saleType, setSaleType] = useState<SaleType>("fresh");
+  const [exchangeRefBill, setExchangeRefBill] = useState("");
 
   // Auto-fill rates when board rate loads (form opens before boardRate is ready)
   useEffect(() => {
@@ -153,6 +155,8 @@ export default function SaleForm({ saleId }: Props) {
     setSeries((sale.series as SaleSeries) || "G22");
     setBillDate(sale.bill_date);
     setNotes(sale.notes ?? "");
+    setSaleType((sale.sale_type as SaleType) ?? "fresh");
+    setExchangeRefBill(sale.exchange_ref_bill ?? "");
     if (sale.customers) {
       setCustomer({
         id: sale.customer_id, name: sale.customers.name,
@@ -286,6 +290,12 @@ export default function SaleForm({ saleId }: Props) {
   const hasSilver = items.some((i) => SILVER_METALS.includes(i.metal as Metal));
   const isMixed   = hasGold && hasSilver;
 
+  // Exchange metal flow
+  const oldMetalWt = payments.reduce((s, p) =>
+    (p.mode === "old_gold" || p.mode === "old_silver") ? s + (p.metal_wt || 0) : s, 0);
+  const newItemsWt = items.reduce((s, i) => s + (i.gross_wt || 0), 0);
+  const netToShop  = oldMetalWt - newItemsWt;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (balance > 0.01 && !customer) return;
@@ -297,6 +307,8 @@ export default function SaleForm({ saleId }: Props) {
       change_due: changeDue > 0.01 ? changeDue : undefined,
       change_mode: changeDue > 0.01 ? changeDueMode : undefined,
       change_payout_mode: changeDue > 0.01 ? changePayoutMode : undefined,
+      sale_type: saleType,
+      exchange_ref_bill: saleType === "exchange" && exchangeRefBill ? exchangeRefBill : undefined,
     };
     if (saleId) {
       await updateSale.mutateAsync({ id: saleId, draft });
@@ -330,6 +342,61 @@ export default function SaleForm({ saleId }: Props) {
           <input type="date" value={billDate} onChange={(e) => setBillDate(e.target.value)} className={inp} />
         </div>
       </div>
+
+      {/* Sale Type Toggle */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-xs font-medium text-ink-dim">Sale Type:</span>
+        {(["fresh", "exchange"] as const).map((type) => (
+          <button key={type} type="button"
+            onClick={() => setSaleType(type)}
+            className={clsx("px-3 py-1.5 text-xs font-medium rounded-lg2 border transition-colors",
+              saleType === type
+                ? type === "exchange" ? "bg-warn text-white border-warn" : "bg-gold text-white border-gold"
+                : "border-line text-ink-dim hover:border-gold")}>
+            {type === "fresh" ? "Fresh Sale" : "Exchange"}
+          </button>
+        ))}
+      </div>
+
+      {/* Exchange Details */}
+      {saleType === "exchange" && (
+        <div className="bg-warn/5 border border-warn/30 rounded-xl p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-warn">Exchange Details</h3>
+          <div>
+            <label className="block text-xs font-medium text-ink-dim mb-1">Original Bill No. (reference)</label>
+            <input
+              value={exchangeRefBill}
+              onChange={(e) => setExchangeRefBill(e.target.value)}
+              placeholder="e.g. G22/2026-27/0054"
+              className={inp}
+            />
+            <p className="text-xs text-ink-dim mt-1">Bill from which the customer is exchanging their item</p>
+          </div>
+
+          {/* Metal flow summary — live computed from payments + items */}
+          {(oldMetalWt > 0 || newItemsWt > 0) && (
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-white rounded-lg2 px-3 py-2.5 border border-line text-sm">
+                <p className="text-xs text-ink-dim mb-0.5">Old metal taken in</p>
+                <p className="font-semibold text-warn">{grams(oldMetalWt)}</p>
+                <p className="text-xs text-ink-dim">from old gold/silver payments</p>
+              </div>
+              <div className="bg-white rounded-lg2 px-3 py-2.5 border border-line text-sm">
+                <p className="text-xs text-ink-dim mb-0.5">New items sold</p>
+                <p className="font-semibold text-gold">{grams(newItemsWt)}</p>
+                <p className="text-xs text-ink-dim">total gross weight</p>
+              </div>
+              <div className="bg-white rounded-lg2 px-3 py-2.5 border border-line text-sm">
+                <p className="text-xs text-ink-dim mb-0.5">Net metal to shop</p>
+                <p className={clsx("font-semibold", netToShop >= 0 ? "text-ok" : "text-err")}>
+                  {grams(Math.abs(netToShop))} {netToShop >= 0 ? "gain" : "loss"}
+                </p>
+                <p className="text-xs text-ink-dim">{netToShop >= 0 ? "shop gained raw metal" : "shop gave out more"}</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Items */}
       <div>

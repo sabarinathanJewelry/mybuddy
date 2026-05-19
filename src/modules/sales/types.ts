@@ -45,6 +45,8 @@ export interface SalePaymentDraft {
   is_advance: boolean;
 }
 
+export type SaleType = "fresh" | "exchange";
+
 export interface SaleDraft {
   series: SaleSeries;
   customer_id: string | null;
@@ -56,4 +58,7 @@ export interface SaleDraft {
   change_due?: number;
   change_mode?: "cash_back" | "advance" | null;
   change_payout_mode?: "cash" | "bank";
+  // Exchange tracking
+  sale_type: SaleType;
+  exchange_ref_bill?: string;
 }

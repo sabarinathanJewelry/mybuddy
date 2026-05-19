@@ -130,7 +130,7 @@ export function useSales(date: string | null = null, limit = 100) {
     queryFn: async () => {
       let q = supabase()
         .from("sales")
-        .select("id, bill_no, bill_date, total, status, series, customers(name)")
+        .select("id, bill_no, bill_date, total, status, series, sale_type, exchange_ref_bill, customers(name)")
         .order("bill_date", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(limit);
@@ -190,6 +190,8 @@ export function useSaveSale() {
           customer_id: draft.customer_id, series: draft.series,
           subtotal, gst_amount: gstAmount, total: subtotal,
           notes: draft.notes, status: "confirmed",
+          sale_type: draft.sale_type ?? "fresh",
+          exchange_ref_bill: draft.exchange_ref_bill ?? null,
         })
         .select().single();
       if (saleErr) throw saleErr;
@@ -248,6 +250,8 @@ export function useUpdateSale() {
         series: draft.series, bill_no: billNo,
         bill_date: draft.bill_date, customer_id: draft.customer_id,
         notes: draft.notes, subtotal, gst_amount: gstAmount, total: subtotal,
+        sale_type: draft.sale_type ?? "fresh",
+        exchange_ref_bill: draft.exchange_ref_bill ?? null,
       }).eq("id", id);
       if (saleErr) throw saleErr;
 
