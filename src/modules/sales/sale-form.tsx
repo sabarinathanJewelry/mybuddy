@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase/client";
 import { useT } from "@/i18n";
 import { useGlobalDate } from "@/stores/global-date";
 import { useBoardRate } from "@/stores/board-rate";
@@ -290,6 +292,18 @@ export default function SaleForm({ saleId }: Props) {
   const hasSilver = items.some((i) => SILVER_METALS.includes(i.metal as Metal));
   const isMixed   = hasGold && hasSilver;
 
+  // Kolusu boxes — only fetched for exchange bills
+  const { data: kolusuBoxes = [] } = useQuery({
+    queryKey: ["kolusu_boxes"],
+    enabled: saleType === "exchange",
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("kolusu_boxes").select("id, box_no, color, size, current_gross_wt_g").order("box_no");
+      if (error) throw error;
+      return (data ?? []) as { id: string; box_no: string; color: string; size: string; current_gross_wt_g: number }[];
+    },
+  });
+
   // Exchange metal flow
   const oldMetalWt = payments.reduce((s, p) =>
     (p.mode === "old_gold" || p.mode === "old_silver") ? s + (p.metal_wt || 0) : s, 0);
@@ -362,27 +376,35 @@ export default function SaleForm({ saleId }: Props) {
       {saleType === "exchange" && (
         <div className="bg-warn/5 border border-warn/30 rounded-xl p-4 space-y-3">
           <h3 className="text-sm font-semibold text-warn">Exchange Details</h3>
+
+          {/* How-to guide */}
+          <div className="bg-white rounded-lg2 border border-warn/20 px-3 py-2.5 text-xs text-ink-dim space-y-0.5">
+            <p className="font-medium text-ink">How to enter an exchange bill:</p>
+            <p>• <strong>Items section below</strong> = new pieces the customer is <strong>taking home</strong> (rings, chains, etc.)</p>
+            <p>• <strong>Payments section below</strong> = add <strong>Old Silver / Old Gold</strong> row for the <em>returned piece</em> — enter its weight and the condition (good/damaged) will determine where it goes</p>
+            <p>• Any remaining balance the customer pays in cash goes as a normal Cash payment</p>
+          </div>
+
           <div>
             <label className="block text-xs font-medium text-ink-dim mb-1">Original Bill No. (reference)</label>
             <input
               value={exchangeRefBill}
               onChange={(e) => setExchangeRefBill(e.target.value)}
-              placeholder="e.g. G22/2026-27/0054"
+              placeholder="e.g. S/2026-27/0047"
               className={inp}
             />
-            <p className="text-xs text-ink-dim mt-1">Bill from which the customer is exchanging their item</p>
           </div>
 
           {/* Metal flow summary — live computed from payments + items */}
           {(oldMetalWt > 0 || newItemsWt > 0) && (
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-white rounded-lg2 px-3 py-2.5 border border-line text-sm">
-                <p className="text-xs text-ink-dim mb-0.5">Old metal taken in</p>
+                <p className="text-xs text-ink-dim mb-0.5">Returned metal (taken in)</p>
                 <p className="font-semibold text-warn">{grams(oldMetalWt)}</p>
                 <p className="text-xs text-ink-dim">from old gold/silver payments</p>
               </div>
               <div className="bg-white rounded-lg2 px-3 py-2.5 border border-line text-sm">
-                <p className="text-xs text-ink-dim mb-0.5">New items sold</p>
+                <p className="text-xs text-ink-dim mb-0.5">New items going out</p>
                 <p className="font-semibold text-gold">{grams(newItemsWt)}</p>
                 <p className="text-xs text-ink-dim">total gross weight</p>
               </div>
@@ -391,9 +413,14 @@ export default function SaleForm({ saleId }: Props) {
                 <p className={clsx("font-semibold", netToShop >= 0 ? "text-ok" : "text-err")}>
                   {grams(Math.abs(netToShop))} {netToShop >= 0 ? "gain" : "loss"}
                 </p>
-                <p className="text-xs text-ink-dim">{netToShop >= 0 ? "shop gained raw metal" : "shop gave out more"}</p>
+                <p className="text-xs text-ink-dim">{netToShop >= 0 ? "shop keeps this metal" : "shop gave out more"}</p>
               </div>
             </div>
+          )}
+          {oldMetalWt === 0 && (
+            <p className="text-xs text-warn font-medium">
+              ↓ Add an Old Silver or Old Gold payment row below and enter the returned item&apos;s weight.
+            </p>
           )}
         </div>
       )}
@@ -631,6 +658,61 @@ export default function SaleForm({ saleId }: Props) {
               {payments.length > 1 && (
                 <button type="button" onClick={() => setPayments((prev) => prev.filter((_, i) => i !== idx))}
                   className="text-xs text-err hover:underline ml-auto">×</button>
+              )}
+
+              {/* Exchange return routing — shown for old_gold/old_silver in exchange bills */}
+              {saleType === "exchange" && (p.mode === "old_gold" || p.mode === "old_silver") && p.metal_wt > 0 && (
+                <div className="w-full flex flex-wrap items-center gap-2 pt-2 mt-1 border-t border-line/50">
+                  <span className="text-xs font-medium text-ink-dim">Returned item condition:</span>
+                  {(["good", "damaged"] as const).map((c) => (
+                    <button key={c} type="button"
+                      onClick={() => setPayments((prev) => prev.map((x, i) =>
+                        i === idx ? { ...x, return_condition: c, kolusu_box_id: c === "damaged" ? undefined : x.kolusu_box_id } : x
+                      ))}
+                      className={clsx("text-xs px-2.5 py-1 rounded-lg2 border font-medium transition-colors",
+                        (p.return_condition ?? "good") === c
+                          ? c === "good" ? "bg-ok/15 border-ok text-ok" : "bg-err/15 border-err text-err"
+                          : "border-line text-ink-dim hover:border-gold")}>
+                      {c === "good" ? "Good condition" : "Damaged / for melt"}
+                    </button>
+                  ))}
+                  {(p.return_condition ?? "good") === "good" && (
+                    <div className="flex items-center gap-2 ml-2">
+                      <span className="text-xs text-ink-dim">Send to:</span>
+                      <button type="button"
+                        onClick={() => setPayments((prev) => prev.map((x, i) =>
+                          i === idx ? { ...x, kolusu_box_id: undefined } : x
+                        ))}
+                        className={clsx("text-xs px-2.5 py-1 rounded-lg2 border transition-colors",
+                          !p.kolusu_box_id ? "bg-warn/15 border-warn text-warn font-medium" : "border-line text-ink-dim hover:border-gold")}>
+                        Metal Flow
+                      </button>
+                      {p.mode === "old_silver" && kolusuBoxes.length > 0 && (
+                        <select value={p.kolusu_box_id || ""}
+                          onChange={(e) => setPayments((prev) => prev.map((x, i) =>
+                            i === idx ? { ...x, kolusu_box_id: e.target.value || undefined } : x
+                          ))}
+                          className={clsx("border rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold",
+                            p.kolusu_box_id ? "border-ok bg-ok/5 text-ink font-medium" : "border-line text-ink-dim")}>
+                          <option value="">— or return to Kolusu Box —</option>
+                          {kolusuBoxes.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.box_no} {b.color} {b.size} ({grams(b.current_gross_wt_g)} stock)
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      {p.kolusu_box_id && (
+                        <span className="text-xs text-ok font-medium">
+                          ✓ Will be added back to kolusu stock
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {(p.return_condition ?? "good") === "damaged" && (
+                    <span className="text-xs text-err font-medium ml-2">→ Goes to Metal Flow for melting</span>
+                  )}
+                </div>
               )}
             </div>
           ))}

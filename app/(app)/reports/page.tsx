@@ -87,6 +87,43 @@ function useSalesDetail(from: string, to: string) {
   });
 }
 
+// Cash paid to customers for old gold/silver bought standalone (Metal Flow → Intake page)
+function useOldMetalPurchases(from: string, to: string) {
+  return useQuery({
+    queryKey: ["pnl-old-metal", from, to],
+    enabled: !!from && !!to,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("old_metal_intake")
+        .select("metal, gross_wt, pure_wt, payout_amount, source_type")
+        .gte("intake_date", from)
+        .lte("intake_date", to)
+        .gt("payout_amount", 0);
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
+// Old gold/silver received as exchange payment inside sales
+function useSaleExchangePayments(from: string, to: string) {
+  return useQuery({
+    queryKey: ["pnl-exchange-pay", from, to],
+    enabled: !!from && !!to,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("sale_payments")
+        .select("mode, amount, metal_wt, sales!inner(bill_date, status)")
+        .in("mode", ["old_gold", "old_silver"])
+        .gte("sales.bill_date", from)
+        .lte("sales.bill_date", to)
+        .eq("sales.status", "confirmed");
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
 // ── metric helpers ────────────────────────────────────────────────────────────
 
 function metalSection(items: any[], metals: string[]) {
@@ -222,12 +259,27 @@ export default function ReportsPage() {
     ? { from: customFrom, to: customTo }
     : monthRange(year, month);
 
-  const { data: items = [],     isLoading: loadingItems }     = usePnlItems(range.from, range.to);
-  const { data: purchases = [], isLoading: loadingPurchases } = usePnlPurchases(range.from, range.to);
-  const { data: expenses = [],  isLoading: loadingExpenses }  = usePnlExpenses(range.from, range.to);
-  const { data: salesDetail = [] } = useSalesDetail(range.from, range.to);
+  const { data: items = [],           isLoading: loadingItems }     = usePnlItems(range.from, range.to);
+  const { data: purchases = [],       isLoading: loadingPurchases } = usePnlPurchases(range.from, range.to);
+  const { data: expenses = [],        isLoading: loadingExpenses }  = usePnlExpenses(range.from, range.to);
+  const { data: salesDetail = [] }                                  = useSalesDetail(range.from, range.to);
+  const { data: oldMetalBuys = [] }                                 = useOldMetalPurchases(range.from, range.to);
+  const { data: exchangePayments = [] }                             = useSaleExchangePayments(range.from, range.to);
 
   const isLoading = loadingItems || loadingPurchases || loadingExpenses;
+
+  // Old metal purchase totals (cash paid to buy old gold/silver from public)
+  const oldGoldBuyAmt    = (oldMetalBuys as any[]).filter(x => (x.metal ?? "").startsWith("gold")).reduce((s, x) => s + Number(x.payout_amount || 0), 0);
+  const oldSilverBuyAmt  = (oldMetalBuys as any[]).filter(x => (x.metal ?? "").startsWith("silver")).reduce((s, x) => s + Number(x.payout_amount || 0), 0);
+  const oldGoldBuyWt     = (oldMetalBuys as any[]).filter(x => (x.metal ?? "").startsWith("gold")).reduce((s, x) => s + Number(x.gross_wt || 0), 0);
+  const oldSilverBuyWt   = (oldMetalBuys as any[]).filter(x => (x.metal ?? "").startsWith("silver")).reduce((s, x) => s + Number(x.gross_wt || 0), 0);
+  const totalOldMetalCost = oldGoldBuyAmt + oldSilverBuyAmt;
+
+  // Exchange metal received in sales (ASSETS — not a cost in this period)
+  const exchGoldWt  = (exchangePayments as any[]).filter(x => x.mode === "old_gold").reduce((s, x) => s + Number(x.metal_wt || 0), 0);
+  const exchSilvWt  = (exchangePayments as any[]).filter(x => x.mode === "old_silver").reduce((s, x) => s + Number(x.metal_wt || 0), 0);
+  const exchGoldVal = (exchangePayments as any[]).filter(x => x.mode === "old_gold").reduce((s, x) => s + Number(x.amount || 0), 0);
+  const exchSilvVal = (exchangePayments as any[]).filter(x => x.mode === "old_silver").reduce((s, x) => s + Number(x.amount || 0), 0);
 
   // Computed sections
   const gold   = metalSection(items, GOLD_METALS);
@@ -240,13 +292,14 @@ export default function ReportsPage() {
 
   const totalExpenses = expenses.reduce((s: number, e: any) => s + Number(e.amount||0), 0);
 
-  const totalRevenue = gold.revenueExGst + silver.revenueExGst + mprRevenue;
-  const totalGst     = gold.gstAmt + silver.gstAmt;
-  const totalCogs    = goldPurchases.amount + silverPurchases.amount;
-  const totalService = gold.makingAmt + gold.vaAmt + gold.stoneAmt +
-                       silver.makingAmt + silver.vaAmt + silver.stoneAmt;
-  const grossProfit  = totalRevenue - totalCogs;
-  const netProfit    = grossProfit - totalExpenses;
+  const totalRevenue  = gold.revenueExGst + silver.revenueExGst + mprRevenue;
+  const totalGst      = gold.gstAmt + silver.gstAmt;
+  const supplierCogs  = goldPurchases.amount + silverPurchases.amount;
+  const totalCogs     = supplierCogs + totalOldMetalCost;
+  const totalService  = gold.makingAmt + gold.vaAmt + gold.stoneAmt +
+                        silver.makingAmt + silver.vaAmt + silver.stoneAmt;
+  const grossProfit   = totalRevenue - totalCogs;
+  const netProfit     = grossProfit - totalExpenses;
 
   return (
     <div className="max-w-5xl mx-auto space-y-5">
@@ -304,13 +357,14 @@ export default function ReportsPage() {
         <div className="space-y-5">
 
           {/* Summary strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {[
-              { label: "Total Revenue (excl GST)", value: inr(totalRevenue), color: "text-ink" },
-              { label: "Total GST Collected",      value: inr(totalGst),     color: "text-warn" },
-              { label: "Total Purchases (COGS)",   value: inr(totalCogs),    color: "text-err" },
-              { label: "Gross Profit",             value: inr(grossProfit),  color: grossProfit >= 0 ? "text-ok" : "text-err" },
-              { label: "Net Profit (after exp.)",  value: inr(netProfit),    color: netProfit >= 0 ? "text-ok" : "text-err" },
+              { label: "Revenue (excl GST)",       value: inr(totalRevenue),       color: "text-ink" },
+              { label: "GST Collected",             value: inr(totalGst),           color: "text-warn" },
+              { label: "Supplier Purchases",        value: inr(supplierCogs),       color: "text-err" },
+              { label: "Old Metal Bought (cash)",   value: inr(totalOldMetalCost),  color: "text-err" },
+              { label: "Gross Profit",              value: inr(grossProfit),        color: grossProfit >= 0 ? "text-ok" : "text-err" },
+              { label: "Net Profit",                value: inr(netProfit),          color: netProfit >= 0 ? "text-ok" : "text-err" },
             ].map(s => (
               <div key={s.label} className="bg-white rounded-xl border border-line p-4 shadow-soft">
                 <p className="text-xs text-ink-dim">{s.label}</p>
@@ -413,18 +467,66 @@ export default function ReportsPage() {
             </div>
           </div>
 
+          {/* Old Metal Flow — exchange (assets) vs purchased (costs) */}
+          {(exchGoldWt > 0 || exchSilvWt > 0 || oldGoldBuyWt > 0 || oldSilverBuyWt > 0) && (
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-warn bg-warn/5">
+                Old Metal Acquired this Period
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-line">
+                {/* Purchased for cash */}
+                <div className="px-4 py-4 space-y-2">
+                  <p className="text-xs font-semibold text-err">Bought for Cash (COST — included in COGS)</p>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-xs text-ink-dim">Gold bought</p>
+                      <p className="font-semibold text-gold">{grams(oldGoldBuyWt)}</p>
+                      <p className="text-xs text-err font-medium">{inr(oldGoldBuyAmt)} paid</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-ink-dim">Silver bought</p>
+                      <p className="font-semibold text-ink-mid">{grams(oldSilverBuyWt)}</p>
+                      <p className="text-xs text-err font-medium">{inr(oldSilverBuyAmt)} paid</p>
+                    </div>
+                  </div>
+                  {totalOldMetalCost === 0 && (
+                    <p className="text-xs text-ink-dim italic">No standalone old metal purchases recorded via Metal Flow → Intake this period.</p>
+                  )}
+                </div>
+                {/* Received in exchange */}
+                <div className="px-4 py-4 space-y-2">
+                  <p className="text-xs font-semibold text-ok">Received in Exchange (ASSET — not a P&L cost yet)</p>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-xs text-ink-dim">Gold from exchanges</p>
+                      <p className="font-semibold text-gold">{grams(exchGoldWt)}</p>
+                      <p className="text-xs text-ok font-medium">{inr(exchGoldVal)} credited to customers</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-ink-dim">Silver from exchanges</p>
+                      <p className="font-semibold text-ink-mid">{grams(exchSilvWt)}</p>
+                      <p className="text-xs text-ok font-medium">{inr(exchSilvVal)} credited to customers</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-ink-dim">This metal is now your raw material stock. When sold to supplier or refined+used, it will offset future COGS.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Final P&L summary */}
           <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
             <div className="px-4 py-2.5 border-b border-line font-semibold text-sm">Profit & Loss Summary</div>
             <div className="divide-y divide-line text-sm">
               {[
-                { label: "Total Revenue (incl GST)",        value: gold.revenueInclGst + silver.revenueInclGst + mprRevenue, indent: false, bold: false, color: "" },
-                { label: "  Less: GST Collected",           value: -totalGst, indent: true, bold: false, color: "text-warn" },
-                { label: "Net Revenue (excl GST)",          value: totalRevenue, indent: false, bold: true, color: "text-ink" },
-                { label: "  Less: Supplier Purchases (COGS)", value: -totalCogs, indent: true, bold: false, color: "text-err" },
-                { label: "Gross Profit",                    value: grossProfit, indent: false, bold: true, color: grossProfit >= 0 ? "text-ok" : "text-err" },
-                { label: "  Less: Operating Expenses",      value: -totalExpenses, indent: true, bold: false, color: "text-err" },
-                { label: "Net Profit",                      value: netProfit, indent: false, bold: true, color: netProfit >= 0 ? "text-ok" : "text-err" },
+                { label: "Total Revenue (incl GST)",             value: gold.revenueInclGst + silver.revenueInclGst + mprRevenue, indent: false, bold: false, color: "" },
+                { label: "  Less: GST Collected",                value: -totalGst,           indent: true,  bold: false, color: "text-warn" },
+                { label: "Net Revenue (excl GST)",               value: totalRevenue,         indent: false, bold: true,  color: "text-ink" },
+                { label: "  Less: Supplier Purchases",           value: -supplierCogs,        indent: true,  bold: false, color: "text-err" },
+                { label: "  Less: Old Metal Purchased (cash)",   value: -totalOldMetalCost,   indent: true,  bold: false, color: "text-err" },
+                { label: "Gross Profit",                         value: grossProfit,          indent: false, bold: true,  color: grossProfit >= 0 ? "text-ok" : "text-err" },
+                { label: "  Less: Operating Expenses",           value: -totalExpenses,       indent: true,  bold: false, color: "text-err" },
+                { label: "Net Profit",                           value: netProfit,            indent: false, bold: true,  color: netProfit >= 0 ? "text-ok" : "text-err" },
               ].map((row, i) => (
                 <div key={i} className={clsx("flex items-center justify-between px-4 py-3", row.bold && "bg-canvas/50")}>
                   <span className={clsx(row.indent && "pl-4 text-ink-dim", row.bold && "font-semibold")}>{row.label}</span>
@@ -439,9 +541,10 @@ export default function ReportsPage() {
           {/* Note about accuracy */}
           <div className="bg-canvas border border-line rounded-xl px-4 py-3 text-xs text-ink-dim space-y-1">
             <p><strong>Notes on accuracy:</strong></p>
-            <p>• <strong>Gross Profit</strong> = Revenue − supplier purchases in this period. If you bought stock in a previous month and sold this month, COGS may appear lower than actual.</p>
-            <p>• <strong>Making + VA income</strong> is the most reliable metric — it's the service margin earned this period regardless of metal prices.</p>
-            <p>• Old gold/silver taken in exchange reduces actual COGS but is not counted here (it was reflected in the sale price adjustment).</p>
+            <p>• <strong>COGS now includes:</strong> supplier purchases + cash paid for old gold/silver bought from public (via Metal Flow → Intake).</p>
+            <p>• <strong>Exchange gold is NOT a cost</strong> — when a customer exchanges old jewelry, you gave them credit (already embedded in the sale amount). The old gold you received is a raw material asset. Record it using Metal Flow → Intake so the stock is tracked.</p>
+            <p>• <strong>Making + VA income</strong> is the most reliable profitability metric — it reflects your service margin regardless of metal price movements.</p>
+            <p>• <strong>Metal rate profit/loss</strong> (buying old gold cheap, selling at higher rate) is not shown here — it appears when the metal is dispatched to a supplier and their payment is reconciled.</p>
           </div>
         </div>
       )}

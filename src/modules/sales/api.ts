@@ -33,13 +33,16 @@ async function fanoutLedger(
         description: "Sale payment", ref_type: "sale", ref_id: saleId,
       })));
     } else if (p.mode === "old_gold" || p.mode === "old_silver") {
-      const metal = p.mode === "old_gold" ? "gold_22k" : "silver";
-      promises.push(Promise.resolve(client.from("old_metal_intake").insert({
-        intake_date: billDate, metal,
-        gross_wt: p.metal_wt, purity_pct: p.metal_purity || 91.6,
-        pure_wt: p.metal_wt * ((p.metal_purity || 91.6) / 100),
-        source_type: "sale", source_id: saleId, status: "pending",
-      })));
+      // Skip old_metal_intake for kolusu returns — they go to kolusu stock instead (handled in save/update)
+      if (!p.kolusu_box_id) {
+        const metal = p.mode === "old_gold" ? "gold_22k" : "silver";
+        promises.push(Promise.resolve(client.from("old_metal_intake").insert({
+          intake_date: billDate, metal,
+          gross_wt: p.metal_wt, purity_pct: p.metal_purity || 91.6,
+          pure_wt: p.metal_wt * ((p.metal_purity || 91.6) / 100),
+          source_type: "sale", source_id: saleId, status: "pending",
+        })));
+      }
     }
     // chit_metal: no cash/bank ledger entry — it's a stored metal credit, handled below
 
@@ -99,6 +102,72 @@ async function fanoutLedger(
         .eq("id", customerId);
     }
   }
+}
+
+// Add kolusu return transactions when returned item goes back to a kolusu box
+async function applyKolusuReturns(
+  client: ReturnType<typeof import("@/lib/supabase/client").supabase>,
+  saleId: string,
+  billNo: string,
+  billDate: string,
+  payments: SaleDraft["payments"],
+  exchangeRefBill?: string,
+) {
+  const returns = payments.filter((p) =>
+    (p.mode === "old_gold" || p.mode === "old_silver") && p.kolusu_box_id && (p.metal_wt || 0) > 0
+  );
+  for (const p of returns) {
+    const rawWt = p.metal_wt || 0;
+    await client.from("kolusu_transactions").insert({
+      tx_date: billDate,
+      box_id: p.kolusu_box_id,
+      qty_change: 1,
+      raw_wt_g: rawWt,
+      cover_wt_g: 0,
+      total_wt_g: rawWt,
+      bill_no: billNo,
+      source_type: "exchange_return",
+      source_id: saleId,
+      notes: `Exchange return${exchangeRefBill ? ` — ref ${exchangeRefBill}` : ""}`,
+    });
+    const { data: box } = await client.from("kolusu_boxes")
+      .select("current_gross_wt_g, current_qty").eq("id", p.kolusu_box_id!).single();
+    await client.from("kolusu_boxes").update({
+      current_gross_wt_g: (Number(box?.current_gross_wt_g) || 0) + rawWt,
+      current_qty: (Number(box?.current_qty) || 0) + 1,
+    }).eq("id", p.kolusu_box_id!);
+  }
+}
+
+// Reverse kolusu returns when a sale is edited or deleted
+async function cleanupKolusuReturns(
+  client: ReturnType<typeof import("@/lib/supabase/client").supabase>,
+  saleId: string,
+) {
+  const { data: ktxns } = await client.from("kolusu_transactions")
+    .select("id, box_id, total_wt_g, qty_change")
+    .eq("source_type", "exchange_return")
+    .eq("source_id", saleId);
+  if (!ktxns || ktxns.length === 0) return;
+
+  // Group by box and reverse stock
+  const byBox = new Map<string, { wt: number; qty: number }>();
+  for (const t of ktxns) {
+    const cur = byBox.get(t.box_id) || { wt: 0, qty: 0 };
+    byBox.set(t.box_id, { wt: cur.wt + Number(t.total_wt_g || 0), qty: cur.qty + Number(t.qty_change || 0) });
+  }
+  for (const [boxId, delta] of byBox) {
+    const { data: box } = await client.from("kolusu_boxes")
+      .select("current_gross_wt_g, current_qty").eq("id", boxId).single();
+    if (box) {
+      await client.from("kolusu_boxes").update({
+        current_gross_wt_g: Math.max(0, (Number(box.current_gross_wt_g) || 0) - delta.wt),
+        current_qty: Math.max(0, (Number(box.current_qty) || 0) - delta.qty),
+      }).eq("id", boxId);
+    }
+  }
+  await client.from("kolusu_transactions")
+    .delete().eq("source_type", "exchange_return").eq("source_id", saleId);
 }
 
 function itemsInsertPayload(saleId: string, items: SaleDraft["items"]) {
@@ -216,6 +285,9 @@ export function useSaveSale() {
       }
 
       await fanoutLedger(sale.id, draft.bill_date, draft.items, draft.payments, draft.customer_id, draft.change_due, draft.change_mode, draft.change_payout_mode);
+      if (draft.sale_type === "exchange") {
+        await applyKolusuReturns(client, sale.id, sale.bill_no, draft.bill_date, draft.payments, draft.exchange_ref_bill);
+      }
       return sale;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["sales"] }),
@@ -284,6 +356,9 @@ export function useUpdateSale() {
       const { error: delPayErr } = await client.from("sale_payments").delete().eq("sale_id", id);
       if (delPayErr) throw delPayErr;
 
+      // Reverse any kolusu returns from the previous version of this sale
+      await cleanupKolusuReturns(client, id);
+
       // Wipe stale ledger + metal intake + customer payment rows so they can be re-inserted fresh
       await Promise.allSettled([
         client.from("cash_ledger").delete().eq("ref_type", "sale").eq("ref_id", id),
@@ -307,6 +382,12 @@ export function useUpdateSale() {
 
       // Re-write fresh ledger + metal intake + customer payment entries
       await fanoutLedger(id, draft.bill_date, draft.items, validPay, draft.customer_id, draft.change_due, draft.change_mode, draft.change_payout_mode);
+
+      // Re-apply kolusu returns with the updated bill_no
+      if (draft.sale_type === "exchange") {
+        const { data: updatedSale } = await client.from("sales").select("bill_no").eq("id", id).single();
+        await applyKolusuReturns(client, id, updatedSale?.bill_no ?? "", draft.bill_date, validPay, draft.exchange_ref_bill);
+      }
 
       return id;
     },
@@ -341,6 +422,9 @@ export function useDeleteSale() {
           }
         }
       }
+
+      // Reverse kolusu returns (before wiping the sale)
+      await cleanupKolusuReturns(client, id);
 
       // Wipe all related rows, then the sale (sale_items cascade from sale)
       await Promise.allSettled([
