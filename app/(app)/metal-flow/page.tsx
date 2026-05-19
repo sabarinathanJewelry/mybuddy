@@ -369,6 +369,20 @@ export default function MetalFlowPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["melt_batches"] }),
   });
 
+  const removeBatchItem = useMutation({
+    mutationFn: async ({ batchId, itemId, intakeId, pureWt }: { batchId: string; itemId: string; intakeId: string; pureWt: number }) => {
+      const client = supabase();
+      const { data: batch } = await client.from("melt_batches").select("input_wt").eq("id", batchId).single();
+      await client.from("melt_batch_items").delete().eq("id", itemId);
+      await client.from("old_metal_intake").update({ status: "pending" }).eq("id", intakeId);
+      await client.from("melt_batches").update({ input_wt: Math.max(0, ((batch as any)?.input_wt ?? 0) - pureWt) }).eq("id", batchId);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["melt_batches"] });
+      qc.invalidateQueries({ queryKey: ["metal_intake"] });
+    },
+  });
+
   const recordRefinery = useMutation({
     mutationFn: async (d: NonNullable<typeof refineryForm>) => {
       const purity = d.output_purity_pct || 91.6;
@@ -804,6 +818,7 @@ export default function MetalFlowPage() {
                             <th className="text-right pb-2">Gross</th>
                             <th className="text-right pb-2">Purity%</th>
                             <th className="text-right pb-2">Pure Wt</th>
+                            {b.status !== "refined" && <th className="pb-2 w-16"></th>}
                           </tr></thead>
                           <tbody>
                             {(b.melt_batch_items ?? []).map((item: any) => (
@@ -811,6 +826,16 @@ export default function MetalFlowPage() {
                                 <td className="py-1.5 text-right">{grams(item.gross_wt)}</td>
                                 <td className="py-1.5 text-right text-ink-dim">{item.purity_pct}%</td>
                                 <td className="py-1.5 text-right text-gold">{grams(item.pure_wt)}</td>
+                                {b.status !== "refined" && (
+                                  <td className="py-1.5 text-right">
+                                    <button
+                                      onClick={() => {
+                                        if (window.confirm("Remove this item from the batch? It will return to pending intake."))
+                                          removeBatchItem.mutate({ batchId: b.id, itemId: item.id, intakeId: item.intake_id, pureWt: item.pure_wt });
+                                      }}
+                                      className="text-xs text-err hover:underline">Remove</button>
+                                  </td>
+                                )}
                               </tr>
                             ))}
                           </tbody>
@@ -827,14 +852,21 @@ export default function MetalFlowPage() {
                           </button>
                         )}
                         {b.status === "melted" && !refineryForm && (
-                          <button
-                            onClick={() => {
-                              const grossTotal = (b.melt_batch_items ?? []).reduce((s: number, i: any) => s + (Number(i.gross_wt) || 0), 0);
-                              setRefineryForm({ batchId: b.id, output_wt: grossTotal, loss_wt: 0, output_purity_pct: 91.6 });
-                            }}
-                            className="text-sm bg-ok/10 text-ok border border-ok/30 px-4 py-1.5 rounded-lg2 hover:bg-ok/20">
-                            ✓ Record Refinery Return
-                          </button>
+                          <>
+                            <button
+                              onClick={() => {
+                                const grossTotal = (b.melt_batch_items ?? []).reduce((s: number, i: any) => s + (Number(i.gross_wt) || 0), 0);
+                                setRefineryForm({ batchId: b.id, output_wt: grossTotal, loss_wt: 0, output_purity_pct: 91.6 });
+                              }}
+                              className="text-sm bg-ok/10 text-ok border border-ok/30 px-4 py-1.5 rounded-lg2 hover:bg-ok/20">
+                              ✓ Record Refinery Return
+                            </button>
+                            <button
+                              onClick={() => { if (window.confirm("Revert this batch to Open so you can add/remove items?")) updateBatchStatus.mutate({ id: b.id, status: "open" }); }}
+                              className="text-sm bg-canvas text-ink-dim border border-line px-4 py-1.5 rounded-lg2 hover:border-gold hover:text-gold">
+                              ← Revert to Open
+                            </button>
+                          </>
                         )}
                         {b.status === "refined" && (
                           <div className="flex items-center gap-3 flex-wrap">
