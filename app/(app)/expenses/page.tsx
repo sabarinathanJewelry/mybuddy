@@ -204,7 +204,7 @@ export default function ExpensesPage() {
                   {editingId === exp.id && (
                     <tr className="border-b border-line bg-canvas/50">
                       <td colSpan={6} className="px-4 py-3">
-                        <form onSubmit={(e) => { e.preventDefault(); update.mutate({ id: editingId, ...editForm }); }}
+                        <form onSubmit={(e) => { e.preventDefault(); if (editingId) update.mutate({ id: editingId, ...editForm }); }}
                           className="flex items-end gap-3 flex-wrap">
                           <div>
                             <label className="text-xs text-ink-dim block mb-1">Date</label>
