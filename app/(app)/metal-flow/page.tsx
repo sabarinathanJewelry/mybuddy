@@ -208,6 +208,9 @@ export default function MetalFlowPage() {
   });
   const filterTotalGross = filteredIntake.reduce((s: number, r: any) => s + (r.gross_wt ?? 0), 0);
   const filterTotalPure  = filteredIntake.reduce((s: number, r: any) => s + (r.pure_wt ?? 0), 0);
+  const selectedItems    = intake.filter((i: any) => selectedIntake.has(i.id));
+  const selectedGross    = selectedItems.reduce((s: number, i: any) => s + (i.gross_wt ?? 0), 0);
+  const selectedPure     = selectedItems.reduce((s: number, i: any) => s + (i.pure_wt ?? 0), 0);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const batches = (batchData as any[]) ?? [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -596,8 +599,12 @@ export default function MetalFlowPage() {
           )}
 
           {selectedIntake.size > 0 && (
-            <div className="bg-gold/5 border border-gold/20 rounded-xl p-4 flex items-center justify-between">
-              <span className="text-sm"><strong>{selectedIntake.size}</strong> item(s) selected</span>
+            <div className="bg-gold/5 border border-gold/20 rounded-xl p-4 flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-4">
+                <span className="text-sm font-semibold"><strong>{selectedIntake.size}</strong> item(s) selected</span>
+                <span className="text-xs text-ink-dim">Gross: <strong className="text-ink">{grams(selectedGross)}</strong></span>
+                <span className="text-xs text-ink-dim">Pure: <strong className="text-gold">{grams(selectedPure)}</strong></span>
+              </div>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-ink-dim">Add to batch:</span>
                 <select
