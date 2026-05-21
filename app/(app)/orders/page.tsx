@@ -14,7 +14,7 @@ import { fyForDate, billNoFor } from "@/lib/fy";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-type PayMode = "cash" | "upi" | "bank" | "old_gold" | "old_silver";
+type PayMode = "cash" | "upi" | "bank" | "old_gold" | "old_silver" | "advance";
 
 interface PaymentDraft {
   id: string;
@@ -25,12 +25,31 @@ interface PaymentDraft {
   notes: string;
 }
 
+interface OrderItemDraft {
+  id: string;
+  description: string;
+  metal: string;
+  estimated_wt: number;
+  amount: number;
+  notes: string;
+}
+
 const PAY_MODES: { value: PayMode; label: string }[] = [
   { value: "cash",       label: "Cash" },
   { value: "upi",        label: "UPI / GPay" },
   { value: "bank",       label: "Bank Transfer" },
   { value: "old_gold",   label: "Old Gold" },
   { value: "old_silver", label: "Old Silver" },
+  { value: "advance",    label: "From Advance Balance" },
+];
+
+const METALS = [
+  { value: "gold_22k",    label: "Gold 22K" },
+  { value: "gold_18k",    label: "Gold 18K" },
+  { value: "gold_24k",    label: "Gold 24K" },
+  { value: "silver",      label: "Silver" },
+  { value: "silver_mpr",  label: "Silver MPR" },
+  { value: "other",       label: "Other / Diamond" },
 ];
 
 const STATUS_COLORS: Record<string, string> = {
@@ -44,6 +63,10 @@ const inp = "w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outli
 
 function newPayment(): PaymentDraft {
   return { id: crypto.randomUUID(), mode: "cash", amount: 0, metal_wt: 0, metal_purity: 91.6, notes: "" };
+}
+
+function newOrderItem(): OrderItemDraft {
+  return { id: crypto.randomUUID(), description: "", metal: "gold_22k", estimated_wt: 0, amount: 0, notes: "" };
 }
 
 // ─── Fan-out helper ─────────────────────────────────────────────────────────
@@ -84,6 +107,18 @@ async function fanoutOrderPayments(
       })));
     }
 
+    if (p.mode === "advance") {
+      // Debit customer's advance balance
+      if (customerId) {
+        promises.push(Promise.resolve(client.from("payments").insert({
+          pay_date: payDate, direction: "out", mode: "advance",
+          amount: p.amount, customer_id: customerId, is_advance: true,
+          notes: p.notes || `Order advance used — ${orderNo}`,
+        })));
+      }
+      continue;
+    }
+
     if (customerId) {
       promises.push(Promise.resolve(client.from("payments").insert({
         pay_date: payDate,
@@ -107,7 +142,7 @@ function useOrders() {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("orders")
-        .select("*, customers(name, phone), order_payments(*)")
+        .select("*, customers(name, phone), order_payments(*), order_items(id, description, metal, estimated_wt, amount, notes, sort_order)")
         .order("order_date", { ascending: false })
         .limit(100);
       if (error) throw error;
@@ -119,7 +154,7 @@ function useOrders() {
 // ─── Payment entry row component ─────────────────────────────────────────────
 
 function PaymentRow({
-  p, idx, payments, setPayments, boardRate, canRemove,
+  p, idx, payments, setPayments, boardRate, canRemove, advanceBalance,
 }: {
   p: PaymentDraft;
   idx: number;
@@ -127,6 +162,7 @@ function PaymentRow({
   setPayments: (v: PaymentDraft[]) => void;
   boardRate: any;
   canRemove: boolean;
+  advanceBalance?: number;
 }) {
   function update(patch: Partial<PaymentDraft>) {
     setPayments(payments.map((x, i) => (i === idx ? { ...x, ...patch } : x)));
@@ -185,6 +221,16 @@ function PaymentRow({
         <input value={p.notes} onChange={(e) => update({ notes: e.target.value })} placeholder="Optional"
           className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
       </div>
+      {p.mode === "advance" && (
+        <div className="self-end pb-2">
+          {advanceBalance === undefined
+            ? <span className="text-xs text-ink-dim">Select customer to check balance</span>
+            : advanceBalance > 0
+              ? <span className="text-xs text-ok font-medium">Available: {inr(advanceBalance)}</span>
+              : <span className="text-xs text-err font-medium">No advance balance</span>
+          }
+        </div>
+      )}
       {canRemove && (
         <button type="button" onClick={() => setPayments(payments.filter((_, i) => i !== idx))}
           className="text-xs text-err hover:underline pb-1.5">× Remove</button>
@@ -212,6 +258,22 @@ export default function OrdersPage() {
   const [estimatedTotal, setEstimatedTotal] = useState(0);
   const [gstIncluded, setGstIncluded] = useState(false);
   const [advPayments, setAdvPayments] = useState<PaymentDraft[]>([]);
+  const [orderItems, setOrderItems] = useState<OrderItemDraft[]>([]);
+
+  // Customer advance balance (for advance payment mode)
+  const { data: advanceBalance } = useQuery({
+    queryKey: ["customer_advance", customer?.id ?? null],
+    enabled: !!customer?.id,
+    queryFn: async () => {
+      const { data } = await supabase()
+        .from("payments")
+        .select("amount, direction")
+        .eq("customer_id", customer!.id)
+        .eq("is_advance", true);
+      return (data ?? []).reduce((s, p) =>
+        s + (p.direction === "in" ? Number(p.amount) : -Number(p.amount)), 0);
+    },
+  });
 
   // ── Per-order UI state
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -235,7 +297,7 @@ export default function OrdersPage() {
 
   function resetCreate() {
     setShowForm(false); setCustomer(null); setOrderDate(globalDate);
-    setDeliveryDate(""); setDescription(""); setEstimatedWt(0); setEstimatedTotal(0); setGstIncluded(false); setAdvPayments([]);
+    setDeliveryDate(""); setDescription(""); setEstimatedWt(0); setEstimatedTotal(0); setGstIncluded(false); setAdvPayments([]); setOrderItems([]);
   }
 
   // ── Create order mutation
@@ -248,19 +310,33 @@ export default function OrdersPage() {
       const validPay = advPayments.filter((p) => p.amount > 0);
       const totalAdv = validPay.reduce((s, p) => s + p.amount, 0);
 
-      const gstAmt = gstIncluded ? parseFloat((estimatedTotal * 0.03).toFixed(2)) : 0;
+      // If line items exist, use their sum as the estimated total
+      const itemsTotal = orderItems.reduce((s, i) => s + (i.amount || 0), 0);
+      const baseTotal = itemsTotal > 0 ? itemsTotal : (estimatedTotal || 0);
+      const totalGrossWt = orderItems.reduce((s, i) => s + (i.estimated_wt || 0), 0) || estimatedWt || null;
+      const gstAmt = gstIncluded ? parseFloat((baseTotal * 0.03).toFixed(2)) : 0;
       const { data: order, error } = await client.from("orders").insert({
         order_no: orderNo, order_date: orderDate,
         delivery_date: deliveryDate || null,
         customer_id: customer?.id ?? null,
         description: description || null,
-        estimated_wt: estimatedWt || null,
-        total: parseFloat(((estimatedTotal || 0) + gstAmt).toFixed(2)),
+        estimated_wt: totalGrossWt,
+        total: parseFloat((baseTotal + gstAmt).toFixed(2)),
         gst_included: gstIncluded,
         advance_paid: totalAdv,
         status: "pending",
       }).select().single();
       if (error) throw error;
+
+      if (orderItems.length > 0) {
+        await client.from("order_items").insert(
+          orderItems.map((item, idx) => ({
+            order_id: order.id, description: item.description || null,
+            metal: item.metal || null, estimated_wt: item.estimated_wt || 0,
+            amount: item.amount || 0, notes: item.notes || null, sort_order: idx,
+          }))
+        );
+      }
 
       if (validPay.length) {
         await client.from("order_payments").insert(
@@ -492,6 +568,65 @@ export default function OrdersPage() {
             </div>
           </div>
 
+          {/* Line Items */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold text-ink-dim uppercase tracking-wide">Items / Work Details</h3>
+              <button type="button" onClick={() => setOrderItems((p) => [...p, newOrderItem()])}
+                className="text-xs text-gold hover:underline">+ Add Item</button>
+            </div>
+            {orderItems.length === 0 && (
+              <p className="text-xs text-ink-dim italic">No items — or describe everything in the notes above.</p>
+            )}
+            {orderItems.map((item, idx) => (
+              <div key={item.id} className="bg-canvas border border-line rounded-lg2 p-3 grid grid-cols-2 sm:grid-cols-5 gap-2 items-end">
+                <div className="col-span-2">
+                  <label className="block text-xs text-ink-dim mb-1">Description</label>
+                  <input value={item.description}
+                    onChange={(e) => setOrderItems((prev) => prev.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))}
+                    placeholder="Ring, chain, kolusu…"
+                    className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Metal</label>
+                  <select value={item.metal}
+                    onChange={(e) => setOrderItems((prev) => prev.map((x, i) => i === idx ? { ...x, metal: e.target.value } : x))}
+                    className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                    {METALS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Est. Wt (g)</label>
+                  <input type="number" step="0.001" value={item.estimated_wt || ""}
+                    onFocus={(e) => e.target.select()} placeholder="0.000"
+                    onChange={(e) => setOrderItems((prev) => prev.map((x, i) => i === idx ? { ...x, estimated_wt: parseFloat(e.target.value) || 0 } : x))}
+                    className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Est. Amount (₹)</label>
+                  <div className="flex gap-1">
+                    <input type="number" step="0.01" value={item.amount || ""}
+                      onFocus={(e) => e.target.select()} placeholder="0"
+                      onChange={(e) => setOrderItems((prev) => prev.map((x, i) => i === idx ? { ...x, amount: parseFloat(e.target.value) || 0 } : x))}
+                      className="flex-1 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                    <button type="button" onClick={() => setOrderItems((prev) => prev.filter((_, i) => i !== idx))}
+                      className="text-err text-xs px-2 hover:underline">×</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {orderItems.length > 0 && (
+              <div className="flex items-center justify-between text-xs px-1">
+                <span className="text-ink-dim">
+                  {orderItems.reduce((s, i) => s + (i.estimated_wt || 0), 0) > 0
+                    ? `Total est. wt: ${grams(orderItems.reduce((s, i) => s + (i.estimated_wt || 0), 0))}`
+                    : ""}
+                </span>
+                <span>Items total: <strong className="text-gold">{inr(orderItems.reduce((s, i) => s + (i.amount || 0), 0))}</strong></span>
+              </div>
+            )}
+          </div>
+
           {/* Advance payments */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -504,7 +639,8 @@ export default function OrdersPage() {
             )}
             {advPayments.map((p, idx) => (
               <PaymentRow key={p.id} p={p} idx={idx} payments={advPayments}
-                setPayments={setAdvPayments} boardRate={boardRate} canRemove={true} />
+                setPayments={setAdvPayments} boardRate={boardRate} canRemove={true}
+                advanceBalance={customer ? (advanceBalance ?? undefined) : undefined} />
             ))}
             {advPayments.length > 0 && (
               <p className="text-xs text-ink-dim text-right">
@@ -608,6 +744,43 @@ export default function OrdersPage() {
                     </div>
                     {o.description && (
                       <p className="text-sm text-ink-dim bg-canvas rounded-lg2 px-3 py-2">{o.description}</p>
+                    )}
+
+                    {/* Line items */}
+                    {(o.order_items ?? []).length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-ink-dim mb-2">Items</p>
+                        <div className="rounded-xl border border-line overflow-hidden">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                                <th className="text-left px-3 py-2">Description</th>
+                                <th className="text-left px-2 py-2">Metal</th>
+                                <th className="text-right px-2 py-2">Est. Wt</th>
+                                <th className="text-right px-3 py-2">Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(o.order_items as any[]).sort((a: any, b: any) => a.sort_order - b.sort_order).map((item: any) => (
+                                <tr key={item.id} className="border-b border-line last:border-0">
+                                  <td className="px-3 py-2">{item.description || "—"}</td>
+                                  <td className="px-2 py-2 text-ink-dim capitalize text-xs">{item.metal?.replace(/_/g, " ") || "—"}</td>
+                                  <td className="px-2 py-2 text-right text-ink-dim">{item.estimated_wt > 0 ? grams(item.estimated_wt) : "—"}</td>
+                                  <td className="px-3 py-2 text-right font-medium text-gold">{item.amount > 0 ? inr(item.amount) : "—"}</td>
+                                </tr>
+                              ))}
+                              {(o.order_items as any[]).some((i: any) => i.amount > 0) && (
+                                <tr className="bg-canvas border-t border-line">
+                                  <td colSpan={3} className="px-3 py-1.5 text-xs text-ink-dim text-right">Items Total</td>
+                                  <td className="px-3 py-1.5 text-right text-sm font-bold text-gold">
+                                    {inr((o.order_items as any[]).reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0))}
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     )}
 
                     {/* Payment history */}
@@ -853,7 +1026,8 @@ export default function OrdersPage() {
                           {addPayments.map((p, idx) => (
                             <PaymentRow key={p.id} p={p} idx={idx} payments={addPayments}
                               setPayments={setAddPayments} boardRate={boardRate}
-                              canRemove={addPayments.length > 1} />
+                              canRemove={addPayments.length > 1}
+                              advanceBalance={o.customer_id ? (advanceBalance ?? undefined) : undefined} />
                           ))}
                         </div>
                         <button type="button" onClick={() => setAddPayments((p) => [...p, newPayment()])}
