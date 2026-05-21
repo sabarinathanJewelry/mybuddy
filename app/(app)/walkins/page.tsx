@@ -105,12 +105,25 @@ export default function WalkinsPage() {
           <h1 className="text-xl font-bold">Walk-in Counter</h1>
           <p className="text-sm text-ink-dim mt-0.5">{globalDate}</p>
         </div>
-        <button
-          onClick={() => { setFormDate(globalDate); setShowForm(true); }}
-          className="bg-gold text-white text-sm px-4 py-2 rounded-lg2"
-        >
-          {today ? "Edit Today" : "+ Add Today"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setFormDate(globalDate); setShowForm(true); }}
+            className="bg-gold text-white text-sm px-4 py-2 rounded-lg2"
+          >
+            {today ? "Edit Today" : "+ Add Today"}
+          </button>
+          <button
+            onClick={() => {
+              const yesterday = new Date(globalDate);
+              yesterday.setDate(yesterday.getDate() - 1);
+              setFormDate(yesterday.toISOString().slice(0, 10));
+              setShowForm(true);
+            }}
+            className="border border-gold text-gold text-sm px-4 py-2 rounded-lg2 hover:bg-gold/10"
+          >
+            + Past Date
+          </button>
+        </div>
       </div>
 
       {/* Today quick stats */}
