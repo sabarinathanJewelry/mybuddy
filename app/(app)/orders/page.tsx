@@ -142,13 +142,68 @@ function useOrders() {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("orders")
-        .select("*, customers(name, phone), order_payments(*), order_items(id, description, metal, estimated_wt, amount, notes, sort_order)")
+        .select("*, customers(name, phone), order_payments(*)")
         .order("order_date", { ascending: false })
         .limit(100);
       if (error) throw error;
       return (data ?? []) as any[];
     },
   });
+}
+
+function useOrderItems(orderId: string | null) {
+  return useQuery({
+    queryKey: ["order_items", orderId],
+    enabled: !!orderId,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("order_items").select("*").eq("order_id", orderId!).order("sort_order");
+      if (error) return []; // gracefully handle if table not yet migrated
+      return (data ?? []) as any[];
+    },
+  });
+}
+
+// ─── Order items table (lazy — only loads when order is expanded) ────────────
+
+function OrderItemsView({ orderId }: { orderId: string }) {
+  const { data: items = [] } = useOrderItems(orderId);
+  if (!items.length) return null;
+  return (
+    <div>
+      <p className="text-xs font-semibold text-ink-dim mb-2">Items</p>
+      <div className="rounded-xl border border-line overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+              <th className="text-left px-3 py-2">Description</th>
+              <th className="text-left px-2 py-2">Metal</th>
+              <th className="text-right px-2 py-2">Est. Wt</th>
+              <th className="text-right px-3 py-2">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item: any) => (
+              <tr key={item.id} className="border-b border-line last:border-0">
+                <td className="px-3 py-2">{item.description || "—"}</td>
+                <td className="px-2 py-2 text-ink-dim capitalize text-xs">{item.metal?.replace(/_/g, " ") || "—"}</td>
+                <td className="px-2 py-2 text-right text-ink-dim">{item.estimated_wt > 0 ? `${Number(item.estimated_wt).toFixed(3)}g` : "—"}</td>
+                <td className="px-3 py-2 text-right font-medium text-gold">{item.amount > 0 ? `₹${Number(item.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "—"}</td>
+              </tr>
+            ))}
+            {items.some((i: any) => i.amount > 0) && (
+              <tr className="bg-canvas border-t border-line">
+                <td colSpan={3} className="px-3 py-1.5 text-xs text-ink-dim text-right font-medium">Items Total</td>
+                <td className="px-3 py-1.5 text-right text-sm font-bold text-gold">
+                  ₹{items.reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 // ─── Payment entry row component ─────────────────────────────────────────────
@@ -746,42 +801,8 @@ export default function OrdersPage() {
                       <p className="text-sm text-ink-dim bg-canvas rounded-lg2 px-3 py-2">{o.description}</p>
                     )}
 
-                    {/* Line items */}
-                    {(o.order_items ?? []).length > 0 && (
-                      <div>
-                        <p className="text-xs font-semibold text-ink-dim mb-2">Items</p>
-                        <div className="rounded-xl border border-line overflow-hidden">
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
-                                <th className="text-left px-3 py-2">Description</th>
-                                <th className="text-left px-2 py-2">Metal</th>
-                                <th className="text-right px-2 py-2">Est. Wt</th>
-                                <th className="text-right px-3 py-2">Amount</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {(o.order_items as any[]).sort((a: any, b: any) => a.sort_order - b.sort_order).map((item: any) => (
-                                <tr key={item.id} className="border-b border-line last:border-0">
-                                  <td className="px-3 py-2">{item.description || "—"}</td>
-                                  <td className="px-2 py-2 text-ink-dim capitalize text-xs">{item.metal?.replace(/_/g, " ") || "—"}</td>
-                                  <td className="px-2 py-2 text-right text-ink-dim">{item.estimated_wt > 0 ? grams(item.estimated_wt) : "—"}</td>
-                                  <td className="px-3 py-2 text-right font-medium text-gold">{item.amount > 0 ? inr(item.amount) : "—"}</td>
-                                </tr>
-                              ))}
-                              {(o.order_items as any[]).some((i: any) => i.amount > 0) && (
-                                <tr className="bg-canvas border-t border-line">
-                                  <td colSpan={3} className="px-3 py-1.5 text-xs text-ink-dim text-right">Items Total</td>
-                                  <td className="px-3 py-1.5 text-right text-sm font-bold text-gold">
-                                    {inr((o.order_items as any[]).reduce((s: number, i: any) => s + (Number(i.amount) || 0), 0))}
-                                  </td>
-                                </tr>
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
+                    {/* Line items — lazy loaded, safe if table not yet migrated */}
+                    <OrderItemsView orderId={o.id} />
 
                     {/* Payment history */}
                     {(o.order_payments ?? []).length > 0 && (
