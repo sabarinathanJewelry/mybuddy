@@ -36,13 +36,32 @@ function equivalentRates(rate: number, period: InterestPeriod) {
   };
 }
 
+// Segment-based interest: each principal repayment resets the accrual on the reduced balance
 function accruedInterest(loan: any, today: string): number {
-  if (!loan.loan_date || !loan.outstanding) return 0;
-  const start = new Date(loan.loan_date);
-  const end = new Date(today);
-  const days = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 86400000));
+  if (!loan.loan_date || !loan.principal) return 0;
   const dailyRate = toDailyRate(Number(loan.interest_rate), (loan.interest_period ?? "monthly") as InterestPeriod);
-  return parseFloat((Number(loan.outstanding) * dailyRate * days).toFixed(2));
+  const payments: any[] = [...(loan.loan_payments ?? [])].sort((a, b) => a.pay_date.localeCompare(b.pay_date));
+
+  let segStart = loan.loan_date;
+  let segOutstanding = Number(loan.principal);
+  let totalAccrued = 0;
+
+  for (const p of payments) {
+    const payDate = p.pay_date > today ? today : p.pay_date;
+    const days = Math.max(0, Math.floor((new Date(payDate).getTime() - new Date(segStart).getTime()) / 86400000));
+    totalAccrued += segOutstanding * dailyRate * days;
+    if (p.pay_date > today) break;
+    segOutstanding = Math.max(0, segOutstanding - Number(p.principal));
+    segStart = p.pay_date;
+  }
+
+  // Final segment: last payment date (or loan_date) → today
+  const finalDays = Math.max(0, Math.floor((new Date(today).getTime() - new Date(segStart).getTime()) / 86400000));
+  totalAccrued += segOutstanding * dailyRate * finalDays;
+
+  // Subtract interest already paid in payments
+  const interestPaid = payments.filter(p => p.pay_date <= today).reduce((s, p) => s + Number(p.interest), 0);
+  return parseFloat(Math.max(0, totalAccrued - interestPaid).toFixed(2));
 }
 
 function rateLabel(rate: number, period: InterestPeriod): string {
@@ -71,6 +90,9 @@ export default function LoansPage() {
 
   const [showForm, setShowForm] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [payLoanId, setPayLoanId] = useState<string | null>(null);
+  const [payForm, setPayForm] = useState({ pay_date: globalDate, principal: 0, interest: 0, mode: "cash", notes: "" });
+
   const [form, setForm] = useState({
     loan_date: globalDate, kind: "local", lender: "",
     principal: 0, interest_rate: 0, interest_period: "daily" as InterestPeriod,
@@ -101,6 +123,37 @@ export default function LoansPage() {
       qc.invalidateQueries({ queryKey: ["loans"] });
       setShowForm(false);
       setForm({ loan_date: globalDate, kind: "local", lender: "", principal: 0, interest_rate: 0, interest_period: "daily", tenure_months: 1, affects_cash: true, notes: "" });
+    },
+  });
+
+  const addPayment = useMutation({
+    mutationFn: async ({ loan, pf }: { loan: any; pf: typeof payForm }) => {
+      const client = supabase();
+      const total = parseFloat((pf.principal + pf.interest).toFixed(2));
+      const { data: row, error } = await client.from("loan_payments").insert({
+        loan_id: loan.id, pay_date: pf.pay_date,
+        principal: pf.principal, interest: pf.interest, total,
+        mode: pf.mode, notes: pf.notes || null,
+      }).select().single();
+      if (error) throw error;
+      if (pf.principal > 0) {
+        await client.from("loans").update({
+          outstanding: Math.max(0, Number(loan.outstanding) - pf.principal),
+        }).eq("id", loan.id);
+      }
+      if (total > 0) {
+        const desc = `Loan repayment — ${loan.lender}`;
+        if (pf.mode === "cash") {
+          await client.from("cash_ledger").insert({ tx_date: pf.pay_date, direction: "out", amount: total, description: desc, ref_type: "loan_payment", ref_id: row.id });
+        } else if (pf.mode === "bank" || pf.mode === "upi") {
+          await client.from("bank_ledger").insert({ tx_date: pf.pay_date, direction: "out", amount: total, description: desc, ref_type: "loan_payment", ref_id: row.id });
+        }
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["loans"] });
+      setPayLoanId(null);
+      setPayForm({ pay_date: globalDate, principal: 0, interest: 0, mode: "cash", notes: "" });
     },
   });
 
@@ -307,20 +360,113 @@ export default function LoansPage() {
                       </div>
                     </div>
 
+                    {/* Record Payment */}
+                    {l.outstanding > 0 && (
+                      <div>
+                        {payLoanId !== l.id ? (
+                          <button
+                            onClick={() => {
+                              setPayLoanId(l.id);
+                              setPayForm({ pay_date: globalDate, principal: 0, interest: parseFloat(accrued.toFixed(2)), mode: "cash", notes: "" });
+                            }}
+                            className="text-sm bg-ok/10 text-ok border border-ok/30 px-4 py-1.5 rounded-lg2 hover:bg-ok/20"
+                          >
+                            + Record Payment
+                          </button>
+                        ) : (
+                          <div className="border border-ok/30 rounded-xl p-4 bg-ok/5 space-y-3">
+                            <h3 className="text-sm font-semibold text-ok">Record Repayment</h3>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-xs text-ink-dim mb-1">Date</label>
+                                <input type="date" value={payForm.pay_date}
+                                  onChange={(e) => setPayForm({ ...payForm, pay_date: e.target.value })}
+                                  className={inp} />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-ink-dim mb-1">Mode</label>
+                                <select value={payForm.mode} onChange={(e) => setPayForm({ ...payForm, mode: e.target.value })} className={inp}>
+                                  <option value="cash">Cash</option>
+                                  <option value="bank">Bank Transfer</option>
+                                  <option value="upi">UPI</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-xs text-ink-dim mb-1">
+                                  Principal Paid (₹)
+                                  <span className="ml-1 text-ink-dim/60 font-normal">outstanding: {inr(l.outstanding)}</span>
+                                </label>
+                                <input type="number" step="0.01" value={payForm.principal || ""}
+                                  onFocus={(e) => e.target.select()} placeholder="0"
+                                  onChange={(e) => setPayForm({ ...payForm, principal: parseFloat(e.target.value) || 0 })}
+                                  className={inp} />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-ink-dim mb-1">
+                                  Interest Paid (₹)
+                                  <span className="ml-1 text-ink-dim/60 font-normal">accrued: {inr(accrued)}</span>
+                                </label>
+                                <input type="number" step="0.01" value={payForm.interest || ""}
+                                  onFocus={(e) => e.target.select()} placeholder="0"
+                                  onChange={(e) => setPayForm({ ...payForm, interest: parseFloat(e.target.value) || 0 })}
+                                  className={inp} />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-ink-dim mb-1">Notes</label>
+                                <input value={payForm.notes}
+                                  onChange={(e) => setPayForm({ ...payForm, notes: e.target.value })}
+                                  placeholder="Optional" className={inp} />
+                              </div>
+                            </div>
+                            {/* Total preview */}
+                            {(payForm.principal + payForm.interest) > 0 && (
+                              <div className="flex gap-4 text-xs bg-canvas rounded-lg px-3 py-2">
+                                {payForm.principal > 0 && <span>Principal: <strong className="text-ok">{inr(payForm.principal)}</strong></span>}
+                                {payForm.interest > 0 && <span>Interest: <strong className="text-warn">{inr(payForm.interest)}</strong></span>}
+                                <span className="ml-auto font-semibold">Total: {inr(payForm.principal + payForm.interest)}</span>
+                                {payForm.principal > 0 && (
+                                  <span className="text-ink-dim">New outstanding: <strong className="text-ok">{inr(Math.max(0, Number(l.outstanding) - payForm.principal))}</strong></span>
+                                )}
+                              </div>
+                            )}
+                            <div className="flex gap-2">
+                              <button
+                                disabled={addPayment.isPending || (payForm.principal <= 0 && payForm.interest <= 0)}
+                                onClick={() => addPayment.mutate({ loan: l, pf: payForm })}
+                                className="bg-ok text-white text-sm px-4 py-1.5 rounded-lg2 disabled:opacity-50"
+                              >
+                                {addPayment.isPending ? "Saving…" : "Save Payment"}
+                              </button>
+                              <button onClick={() => setPayLoanId(null)}
+                                className="border border-line text-sm px-4 py-1.5 rounded-lg2">Cancel</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Payment history */}
                     {l.loan_payments?.length > 0 && (
                       <div>
                         <p className="text-xs font-semibold text-ink-dim mb-2">Payment History</p>
                         <div className="space-y-1">
-                          {l.loan_payments.map((p: any) => (
+                          {[...l.loan_payments].sort((a: any, b: any) => b.pay_date.localeCompare(a.pay_date)).map((p: any) => (
                             <div key={p.id} className="flex items-center gap-3 text-sm bg-canvas rounded-lg2 px-3 py-2">
                               <span className="text-ink-dim text-xs">{shortDate(p.pay_date)}</span>
                               <span className="capitalize text-xs border border-line rounded px-1.5 py-0.5 text-ink-dim">{p.mode}</span>
-                              {p.interest > 0 && <span className="text-xs text-warn">Int: {inr(p.interest)}</span>}
                               {p.principal > 0 && <span className="text-xs text-ok">Principal: {inr(p.principal)}</span>}
+                              {p.interest > 0 && <span className="text-xs text-warn">Interest: {inr(p.interest)}</span>}
                               <span className="font-mono font-medium ml-auto">{inr(p.total)}</span>
                             </div>
                           ))}
+                        </div>
+                        <div className="flex justify-between text-xs px-3 py-1.5 bg-canvas/50 rounded-b-lg border-t border-line mt-1">
+                          <span className="text-ink-dim">Total paid</span>
+                          <span>
+                            Principal: <strong className="text-ok">{inr(l.loan_payments.reduce((s: number, p: any) => s + Number(p.principal), 0))}</strong>
+                            <span className="mx-2 text-ink-dim">·</span>
+                            Interest: <strong className="text-warn">{inr(l.loan_payments.reduce((s: number, p: any) => s + Number(p.interest), 0))}</strong>
+                          </span>
                         </div>
                       </div>
                     )}
