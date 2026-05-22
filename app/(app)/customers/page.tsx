@@ -2,10 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { useCustomers, useUpsertCustomer } from "@/modules/customers/api";
+import { supabase } from "@/lib/supabase/client";
 import { useT } from "@/i18n";
 import { inr, grams } from "@/lib/format";
 import type { Customer, CustomerFormData } from "@/modules/customers/types";
+
+type Tab = "customers" | "balances";
 
 function CustomerForm({ initial, onSave, onCancel }: {
   initial?: Partial<Customer>;
@@ -74,12 +78,28 @@ function CustomerForm({ initial, onSave, onCancel }: {
   );
 }
 
+function useCustomerBalances() {
+  return useQuery({
+    queryKey: ["customer_balances"],
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("customer_balances")
+        .select("*")
+        .order("balance", { ascending: true }); // most negative (most owed) first
+      if (error) return []; // graceful if migration 023 not yet run
+      return (data ?? []) as any[];
+    },
+  });
+}
+
 export default function CustomersPage() {
   const t = useT();
+  const [tab, setTab] = useState<Tab>("customers");
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const { data: customers, isLoading } = useCustomers(search);
+  const { data: balances = [], isLoading: balLoading } = useCustomerBalances();
   const upsert = useUpsertCustomer();
 
   async function handleSave(data: CustomerFormData & { id?: string }) {
@@ -88,16 +108,28 @@ export default function CustomersPage() {
     setEditing(null);
   }
 
+  // Split into "owe us" (negative balance) and "has credit" (positive)
+  const owingRows = balances.filter((r: any) => Number(r.balance) < -0.01)
+    .sort((a: any, b: any) => Number(a.balance) - Number(b.balance));
+  const creditRows = balances.filter((r: any) => Number(r.balance) > 0.01)
+    .sort((a: any, b: any) => Number(b.balance) - Number(a.balance));
+  const totalOwed    = owingRows.reduce((s: number, r: any) => s + Math.abs(Number(r.balance)), 0);
+  const totalCredit  = creditRows.reduce((s: number, r: any) => s + Number(r.balance), 0);
+
   return (
     <div className="max-w-3xl mx-auto space-y-5">
+      {/* Header row */}
       <div className="flex items-center gap-3">
-        <input
-          type="search"
-          placeholder={`${t("search")} customers…`}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
-        />
+        {tab === "customers" && (
+          <input
+            type="search"
+            placeholder={`${t("search")} customers…`}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="flex-1 border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
+          />
+        )}
+        {tab === "balances" && <div className="flex-1" />}
         <button
           onClick={() => { setAdding(true); setEditing(null); }}
           className="bg-gold hover:bg-gold-dark text-white text-sm font-medium px-4 py-2 rounded-lg2 shrink-0"
@@ -106,49 +138,175 @@ export default function CustomersPage() {
         </button>
       </div>
 
-      {adding && (
-        <CustomerForm onSave={handleSave} onCancel={() => setAdding(false)} />
-      )}
+      {/* Tabs */}
+      <div className="flex border-b border-line gap-1">
+        {(["customers", "balances"] as Tab[]).map((tb) => (
+          <button key={tb} onClick={() => setTab(tb)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors capitalize ${
+              tab === tb ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"
+            }`}>
+            {tb === "customers" ? "Customers" : "Customer Balances"}
+            {tb === "balances" && owingRows.length > 0 && (
+              <span className="ml-1.5 bg-err/10 text-err text-[10px] px-1.5 py-0.5 rounded-full font-semibold">
+                {owingRows.length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
 
-      {editing && (
-        <CustomerForm initial={editing} onSave={handleSave} onCancel={() => setEditing(null)} />
-      )}
+      {/* Add / Edit forms */}
+      {adding && <CustomerForm onSave={handleSave} onCancel={() => setAdding(false)} />}
+      {editing && <CustomerForm initial={editing} onSave={handleSave} onCancel={() => setEditing(null)} />}
 
-      {isLoading ? (
-        <p className="text-ink-dim text-sm">{t("loading")}</p>
-      ) : (
-        <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
-                <th className="text-left px-4 py-2.5">{t("name")}</th>
-                <th className="text-left px-3 py-2.5 hidden sm:table-cell">{t("phone")}</th>
-                <th className="text-right px-3 py-2.5">{t("balance")}</th>
-                <th className="text-right px-3 py-2.5 hidden sm:table-cell">{t("gold_balance")}</th>
-                <th className="px-3 py-2.5" />
-              </tr>
-            </thead>
-            <tbody>
-              {customers?.map((c) => (
-                <tr key={c.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                  <td className="px-4 py-2.5 font-medium">{c.name}</td>
-                  <td className="px-3 py-2.5 text-ink-dim hidden sm:table-cell">{c.phone}</td>
-                  <td className="px-3 py-2.5 text-right font-mono">{inr(c.opening_balance)}</td>
-                  <td className="px-3 py-2.5 text-right text-ink-dim hidden sm:table-cell">{grams(c.gold_balance_g)}</td>
-                  <td className="px-3 py-2.5 text-right">
-                    <div className="flex gap-2 justify-end">
-                      <Link href={`/customers/${c.id}`} className="text-xs text-info hover:underline">{t("view")}</Link>
-                      <button onClick={() => { setEditing(c); setAdding(false); }} className="text-xs text-gold hover:underline">{t("edit")}</button>
-                    </div>
-                  </td>
+      {/* ── Customers list tab ─────────────────────────────── */}
+      {tab === "customers" && (
+        isLoading ? (
+          <p className="text-ink-dim text-sm">{t("loading")}</p>
+        ) : (
+          <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                  <th className="text-left px-4 py-2.5">{t("name")}</th>
+                  <th className="text-left px-3 py-2.5 hidden sm:table-cell">{t("phone")}</th>
+                  <th className="text-right px-3 py-2.5">{t("balance")}</th>
+                  <th className="text-right px-3 py-2.5 hidden sm:table-cell">{t("gold_balance")}</th>
+                  <th className="px-3 py-2.5" />
                 </tr>
-              ))}
-              {!customers?.length && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-ink-dim">{t("no_customers")}</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {customers?.map((c) => (
+                  <tr key={c.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                    <td className="px-4 py-2.5 font-medium">{c.name}</td>
+                    <td className="px-3 py-2.5 text-ink-dim hidden sm:table-cell">{c.phone}</td>
+                    <td className="px-3 py-2.5 text-right font-mono">{inr(c.opening_balance)}</td>
+                    <td className="px-3 py-2.5 text-right text-ink-dim hidden sm:table-cell">{grams(c.gold_balance_g)}</td>
+                    <td className="px-3 py-2.5 text-right">
+                      <div className="flex gap-2 justify-end">
+                        <Link href={`/customers/${c.id}`} className="text-xs text-info hover:underline">{t("view")}</Link>
+                        <button onClick={() => { setEditing(c); setAdding(false); }} className="text-xs text-gold hover:underline">{t("edit")}</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {!customers?.length && (
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-ink-dim">{t("no_customers")}</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )
+      )}
+
+      {/* ── Balances tab ───────────────────────────────────── */}
+      {tab === "balances" && (
+        balLoading ? (
+          <p className="text-ink-dim text-sm">{t("loading")}</p>
+        ) : (
+          <div className="space-y-4">
+            {/* Summary cards */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white rounded-xl border border-line p-4 shadow-soft">
+                <p className="text-xs text-ink-dim">Total Receivable</p>
+                <p className="text-xl font-bold text-err">{inr(totalOwed)}</p>
+                <p className="text-xs text-ink-dim mt-0.5">{owingRows.length} customer{owingRows.length !== 1 ? "s" : ""} owe us</p>
+              </div>
+              <div className="bg-white rounded-xl border border-line p-4 shadow-soft">
+                <p className="text-xs text-ink-dim">Total Advance Credit</p>
+                <p className="text-xl font-bold text-ok">{inr(totalCredit)}</p>
+                <p className="text-xs text-ink-dim mt-0.5">{creditRows.length} customer{creditRows.length !== 1 ? "s" : ""} have credit</p>
+              </div>
+            </div>
+
+            {/* Customers who owe us */}
+            {owingRows.length > 0 && (
+              <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+                <div className="px-4 py-2.5 bg-err/5 border-b border-line">
+                  <p className="text-xs font-semibold text-err uppercase tracking-wide">Amount Due to Company</p>
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                      <th className="text-left px-4 py-2">#</th>
+                      <th className="text-left px-3 py-2">Name</th>
+                      <th className="text-left px-3 py-2 hidden sm:table-cell">Phone</th>
+                      <th className="text-right px-3 py-2 hidden sm:table-cell">Sales</th>
+                      <th className="text-right px-3 py-2 hidden sm:table-cell">Paid</th>
+                      <th className="text-right px-3 py-2">Amount Due</th>
+                      <th className="px-3 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {owingRows.map((r: any, idx: number) => (
+                      <tr key={r.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                        <td className="px-4 py-2.5 text-ink-dim text-xs">{idx + 1}</td>
+                        <td className="px-3 py-2.5 font-medium">{r.name}</td>
+                        <td className="px-3 py-2.5 text-ink-dim hidden sm:table-cell">{r.phone ?? "—"}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-ink-dim hidden sm:table-cell">{inr(r.total_sales)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-ok hidden sm:table-cell">{inr(Number(r.total_paid_in) - Number(r.total_paid_out))}</td>
+                        <td className="px-3 py-2.5 text-right font-mono font-bold text-err">
+                          {inr(Math.abs(Number(r.balance)))}
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <Link href={`/customers/${r.id}`} className="text-xs text-info hover:underline">View</Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-err/5 border-t border-line">
+                      <td colSpan={5} className="px-4 py-2 text-xs font-semibold text-err text-right hidden sm:table-cell">Total Receivable</td>
+                      <td colSpan={4} className="px-4 py-2 text-xs font-semibold text-err text-right sm:hidden">Total Receivable</td>
+                      <td className="px-3 py-2 text-right font-mono font-bold text-err">{inr(totalOwed)}</td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+
+            {/* Customers with advance credit */}
+            {creditRows.length > 0 && (
+              <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+                <div className="px-4 py-2.5 bg-ok/5 border-b border-line">
+                  <p className="text-xs font-semibold text-ok uppercase tracking-wide">Advance Credit (Company Owes Them)</p>
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                      <th className="text-left px-4 py-2">#</th>
+                      <th className="text-left px-3 py-2">Name</th>
+                      <th className="text-left px-3 py-2 hidden sm:table-cell">Phone</th>
+                      <th className="text-right px-3 py-2">Credit Balance</th>
+                      <th className="px-3 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {creditRows.map((r: any, idx: number) => (
+                      <tr key={r.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                        <td className="px-4 py-2.5 text-ink-dim text-xs">{idx + 1}</td>
+                        <td className="px-3 py-2.5 font-medium">{r.name}</td>
+                        <td className="px-3 py-2.5 text-ink-dim hidden sm:table-cell">{r.phone ?? "—"}</td>
+                        <td className="px-3 py-2.5 text-right font-mono font-bold text-ok">{inr(Number(r.balance))}</td>
+                        <td className="px-3 py-2.5 text-right">
+                          <Link href={`/customers/${r.id}`} className="text-xs text-info hover:underline">View</Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {owingRows.length === 0 && creditRows.length === 0 && (
+              <div className="bg-white rounded-xl border border-line p-10 text-center text-ink-dim shadow-soft">
+                <p className="font-medium">All balances are settled</p>
+                <p className="text-xs mt-1">Run migration 023 in Supabase SQL Editor if balances are not showing.</p>
+              </div>
+            )}
+          </div>
+        )
       )}
     </div>
   );
