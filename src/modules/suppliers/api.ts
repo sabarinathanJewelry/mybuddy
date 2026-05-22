@@ -37,7 +37,10 @@ export function useUpsertSupplier() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["suppliers"] }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["suppliers"] });
+      if (vars.id) qc.invalidateQueries({ queryKey: ["supplier-360", vars.id] });
+    },
   });
 }
 
@@ -48,7 +51,7 @@ export function useSupplier360(id: string) {
     enabled: !!id,
     queryFn: async () => {
       const [supplierRes, purchasesRes, paymentsRes, suspenseRes, dispatchesRes] = await Promise.all([
-        client.from("suppliers").select("opening_balance, gold_opening_g, silver_opening_g").eq("id", id).single(),
+        client.from("suppliers").select("*").eq("id", id).single(),
         client.from("supplier_purchases").select("*").eq("supplier_id", id).order("purchase_date", { ascending: false }).limit(30),
         client.from("supplier_payments").select("*").eq("supplier_id", id).order("pay_date", { ascending: false }).limit(30),
         client.from("supplier_suspense").select("*").eq("supplier_id", id).order("bill_date", { ascending: false }).limit(30),

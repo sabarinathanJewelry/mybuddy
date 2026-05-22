@@ -2,7 +2,7 @@
 
 import { Fragment, use, useState } from "react";
 import Link from "next/link";
-import { useSupplier360, useSaveSupplierPurchase, useSaveSupplierPayment, useConfirmSuspenseVa } from "@/modules/suppliers/api";
+import { useSupplier360, useSaveSupplierPurchase, useSaveSupplierPayment, useConfirmSuspenseVa, useUpsertSupplier } from "@/modules/suppliers/api";
 import { useGlobalDate } from "@/stores/global-date";
 import { useT } from "@/i18n";
 import { inr, grams, shortDate } from "@/lib/format";
@@ -24,6 +24,10 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const savePurchase = useSaveSupplierPurchase();
   const savePayment = useSaveSupplierPayment();
   const confirmVa = useConfirmSuspenseVa();
+  const upsertSupplier = useUpsertSupplier();
+
+  const [showEditOpening, setShowEditOpening] = useState(false);
+  const [editOpening, setEditOpening] = useState({ opening_balance: 0, gold_opening_g: 0, silver_opening_g: 0 });
 
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
   const [purchaseForm, setPurchaseForm] = useState({ purchase_date: globalDate, bill_no: "", metal: "gold_22k", gross_wt: 0, purity_pct: 91.6, rate: 0, amount: 0, notes: "" });
@@ -42,7 +46,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
 
   // Metal balance — opening grams + confirmed suspense pure wt minus metal sent
   const goldOpeningG = Number(view?.supplier?.gold_opening_g) || 0;
-  const metalOwedG = goldOpeningG + (view?.suspense
+  const silverOpeningG = Number(view?.supplier?.silver_opening_g) || 0;
+  const metalOwedG = goldOpeningG + silverOpeningG + (view?.suspense
     .filter((s: any) => s.supplier_confirmed)
     .reduce((acc: number, s: any) => acc + (Number(s.supplier_pure_wt) || 0), 0) ?? 0);
   const metalPhysicalG = view?.dispatches?.reduce((acc: number, d: any) => acc + (Number(d.weight_g) || 0), 0) ?? 0;
@@ -80,34 +85,94 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       <Link href="/suppliers" className="text-gold hover:underline text-sm">← {t("suppliers")}</Link>
 
       {/* Summary */}
-      <div className="bg-white rounded-xl border border-line p-5 shadow-soft grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div>
-          <p className="text-xs text-ink-dim">{t("cash_balance")}</p>
-          <p className={`text-xl font-bold ${cashBalance > 0 ? "text-err" : "text-ok"}`}>{inr(cashBalance)}</p>
-          {openingCash > 0 && <p className="text-xs text-ink-dim/60">Opening {inr(openingCash)}</p>}
-        </div>
-        <div>
-          <p className="text-xs text-ink-dim">Total Purchased</p>
-          <p className="text-xl font-bold text-ink">{inr(totalPurchased)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-ink-dim">Metal Balance</p>
-          <p className={`text-xl font-bold font-mono ${metalBalanceG > 0 ? "text-err" : metalBalanceG < 0 ? "text-ok" : "text-ink"}`}>
-            {grams(Math.abs(metalBalanceG))}
-          </p>
-          {metalOwedG > 0 && (
-            <p className="text-xs text-ink-dim mt-0.5">
-              Owed {grams(metalOwedG)} · Sent {grams(metalPhysicalG)} + Cash {grams(metalCashG)}
+      <div className="bg-white rounded-xl border border-line p-5 shadow-soft space-y-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div>
+            <p className="text-xs text-ink-dim">{t("cash_balance")}</p>
+            <p className={`text-xl font-bold ${cashBalance > 0 ? "text-err" : "text-ok"}`}>{inr(cashBalance)}</p>
+            <p className="text-xs text-ink-dim/60">
+              Opening {inr(openingCash)} + Purchased {inr(totalPurchased)} − Paid {inr(totalPaid)}
             </p>
-          )}
-          {goldOpeningG > 0 && (
-            <p className="text-xs text-ink-dim/60">Opening {grams(goldOpeningG)}</p>
-          )}
+          </div>
+          <div>
+            <p className="text-xs text-ink-dim">Total Purchased</p>
+            <p className="text-xl font-bold text-ink">{inr(totalPurchased)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-ink-dim">Metal Balance</p>
+            <p className={`text-xl font-bold font-mono ${metalBalanceG > 0 ? "text-err" : metalBalanceG < 0 ? "text-ok" : "text-ink"}`}>
+              {grams(Math.abs(metalBalanceG))}
+            </p>
+            {(goldOpeningG > 0 || silverOpeningG > 0) && (
+              <p className="text-xs text-ink-dim/60">
+                Opening {goldOpeningG > 0 ? `Gold ${grams(goldOpeningG)}` : ""}{goldOpeningG > 0 && silverOpeningG > 0 ? " + " : ""}{silverOpeningG > 0 ? `Silver ${grams(silverOpeningG)}` : ""}
+              </p>
+            )}
+            {metalOwedG > 0 && (
+              <p className="text-xs text-ink-dim mt-0.5">
+                Owed {grams(metalOwedG)} · Sent {grams(metalSentG)}
+              </p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs text-ink-dim">Suspense Items</p>
+            <p className="text-xl font-bold text-warn">{view?.suspense.length ?? 0}</p>
+          </div>
         </div>
-        <div>
-          <p className="text-xs text-ink-dim">Suspense Items</p>
-          <p className="text-xl font-bold text-warn">{view?.suspense.length ?? 0}</p>
-        </div>
+
+        {/* Edit opening balance */}
+        {!showEditOpening ? (
+          <button
+            onClick={() => {
+              setEditOpening({ opening_balance: openingCash, gold_opening_g: goldOpeningG, silver_opening_g: silverOpeningG });
+              setShowEditOpening(true);
+            }}
+            className="text-xs text-gold hover:underline"
+          >
+            ✏ Edit Opening Balances
+          </button>
+        ) : (
+          <div className="border border-gold/30 rounded-xl p-4 bg-gold/5 space-y-3">
+            <h3 className="text-sm font-semibold">Edit Opening Balances</h3>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs text-ink-dim mb-1">Opening Balance (₹)</label>
+                <input type="number" step="0.01" value={editOpening.opening_balance || ""}
+                  onFocus={(e) => e.target.select()} placeholder="0"
+                  onChange={(e) => setEditOpening({ ...editOpening, opening_balance: parseFloat(e.target.value) || 0 })}
+                  className={inp} />
+              </div>
+              <div>
+                <label className="block text-xs text-ink-dim mb-1">Gold Opening (g)</label>
+                <input type="number" step="0.001" value={editOpening.gold_opening_g || ""}
+                  onFocus={(e) => e.target.select()} placeholder="0.000"
+                  onChange={(e) => setEditOpening({ ...editOpening, gold_opening_g: parseFloat(e.target.value) || 0 })}
+                  className={inp} />
+              </div>
+              <div>
+                <label className="block text-xs text-ink-dim mb-1">Silver Opening (g)</label>
+                <input type="number" step="0.001" value={editOpening.silver_opening_g || ""}
+                  onFocus={(e) => e.target.select()} placeholder="0.000"
+                  onChange={(e) => setEditOpening({ ...editOpening, silver_opening_g: parseFloat(e.target.value) || 0 })}
+                  className={inp} />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                disabled={upsertSupplier.isPending}
+                onClick={async () => {
+                  await upsertSupplier.mutateAsync({ id, ...editOpening });
+                  setShowEditOpening(false);
+                }}
+                className="bg-gold text-white text-sm px-4 py-1.5 rounded-lg2 disabled:opacity-50"
+              >
+                {upsertSupplier.isPending ? "Saving…" : "Save"}
+              </button>
+              <button onClick={() => setShowEditOpening(false)}
+                className="border border-line text-sm px-4 py-1.5 rounded-lg2">Cancel</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
