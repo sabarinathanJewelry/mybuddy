@@ -384,15 +384,17 @@ export default function OrdersPage() {
       const itemsTotal = orderItems.reduce((s, i) => s + (i.amount || 0), 0);
       const baseTotal = itemsTotal > 0 ? itemsTotal : (estimatedTotal || 0);
       const totalGrossWt = orderItems.reduce((s, i) => s + (i.estimated_wt || 0), 0) || estimatedWt || null;
-      const gstAmt = gstIncluded ? parseFloat((baseTotal * 0.03).toFixed(2)) : 0;
+      // GST is INCLUSIVE: the value entered already contains GST — no addition needed
+      const hasSilverMpr = orderItems.some((i) => i.metal === "silver_mpr");
+      const effectiveGst = gstIncluded || hasSilverMpr;
       const { data: order, error } = await client.from("orders").insert({
         order_no: orderNo, order_date: orderDate,
         delivery_date: deliveryDate || null,
         customer_id: customer?.id ?? null,
         description: description || null,
         estimated_wt: totalGrossWt,
-        total: parseFloat((baseTotal + gstAmt).toFixed(2)),
-        gst_included: gstIncluded,
+        total: parseFloat(baseTotal.toFixed(2)),
+        gst_included: effectiveGst,
         advance_paid: totalAdv,
         status: "pending",
       }).select().single();
@@ -498,8 +500,8 @@ export default function OrdersPage() {
   const updateOrder = useMutation({
     mutationFn: async ({ id }: { id: string }) => {
       const f = editOrderForm;
-      const gstAmt = f.gst_included ? parseFloat((f.estimated_total * 0.03).toFixed(2)) : 0;
-      const total = parseFloat(((f.estimated_total || 0) + gstAmt).toFixed(2));
+      // GST is inclusive — the entered value already contains GST
+      const total = parseFloat((f.estimated_total || 0).toFixed(2));
       const { error } = await supabase().from("orders").update({
         customer_id: f.customer?.id ?? null,
         order_date: f.order_date,
@@ -618,7 +620,7 @@ export default function OrdersPage() {
                 onChange={(e) => setEstimatedWt(parseFloat(e.target.value) || 0)} className={inp} />
             </div>
             <div>
-              <label className="block text-xs text-ink-dim mb-1">Est. Total (₹) <span className="text-ink-dim/60 font-normal">before GST</span></label>
+              <label className="block text-xs text-ink-dim mb-1">Est. Total (₹) <span className="text-ink-dim/60 font-normal">{gstIncluded ? "incl. GST" : "excl. GST"}</span></label>
               <input type="number" step="0.01" value={estimatedTotal || ""}
                 onFocus={(e) => e.target.select()} placeholder="0"
                 onChange={(e) => setEstimatedTotal(parseFloat(e.target.value) || 0)} className={inp} />
@@ -626,11 +628,11 @@ export default function OrdersPage() {
             <div className="flex flex-col justify-end">
               <label className="flex items-center gap-2 text-sm cursor-pointer pb-2">
                 <input type="checkbox" checked={gstIncluded} onChange={(e) => setGstIncluded(e.target.checked)} className="accent-gold w-4 h-4" />
-                <span>Include GST (3%)</span>
+                <span>GST 3% included</span>
               </label>
               {gstIncluded && estimatedTotal > 0 && (
                 <p className="text-xs text-ink-dim">
-                  +{inr(estimatedTotal * 0.03)} GST = <strong className="text-gold">{inr(estimatedTotal * 1.03)}</strong>
+                  GST: <strong className="text-ok">{inr(estimatedTotal * 3 / 103)}</strong> · base: {inr(estimatedTotal * 100 / 103)}
                 </p>
               )}
             </div>
@@ -664,7 +666,11 @@ export default function OrdersPage() {
                 <div>
                   <label className="block text-xs text-ink-dim mb-1">Metal</label>
                   <select value={item.metal}
-                    onChange={(e) => setOrderItems((prev) => prev.map((x, i) => i === idx ? { ...x, metal: e.target.value } : x))}
+                    onChange={(e) => {
+                      const metal = e.target.value;
+                      setOrderItems((prev) => prev.map((x, i) => i === idx ? { ...x, metal } : x));
+                      if (metal === "silver_mpr") setGstIncluded(true);
+                    }}
                     className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
                     {METALS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                   </select>
@@ -677,7 +683,12 @@ export default function OrdersPage() {
                     className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
                 </div>
                 <div>
-                  <label className="block text-xs text-ink-dim mb-1">Est. Amount (₹)</label>
+                  <label className="block text-xs text-ink-dim mb-1 flex items-center gap-1">
+                    Est. Amount (₹)
+                    {item.metal === "silver_mpr" && (
+                      <span className="bg-ok/10 text-ok text-[10px] px-1.5 py-0.5 rounded font-medium">GST incl.</span>
+                    )}
+                  </label>
                   <div className="flex gap-1">
                     <input type="number" step="0.01" value={item.amount || ""}
                       onFocus={(e) => e.target.select()} placeholder="0"
@@ -686,6 +697,9 @@ export default function OrdersPage() {
                     <button type="button" onClick={() => setOrderItems((prev) => prev.filter((_, i) => i !== idx))}
                       className="text-err text-xs px-2 hover:underline">×</button>
                   </div>
+                  {item.metal === "silver_mpr" && item.amount > 0 && (
+                    <p className="text-[10px] text-ink-dim mt-0.5">GST: {inr(item.amount * 3 / 103)} · base: {inr(item.amount * 100 / 103)}</p>
+                  )}
                 </div>
               </div>
             ))}
@@ -696,7 +710,12 @@ export default function OrdersPage() {
                     ? `Total est. wt: ${grams(orderItems.reduce((s, i) => s + (i.estimated_wt || 0), 0))}`
                     : ""}
                 </span>
-                <span>Items total: <strong className="text-gold">{inr(orderItems.reduce((s, i) => s + (i.amount || 0), 0))}</strong></span>
+                <span>
+                  Items total: <strong className="text-gold">{inr(orderItems.reduce((s, i) => s + (i.amount || 0), 0))}</strong>
+                  {(gstIncluded || orderItems.some(i => i.metal === "silver_mpr")) && (
+                    <span className="ml-1 text-ok">(GST incl.)</span>
+                  )}
+                </span>
               </div>
             )}
           </div>
@@ -974,9 +993,7 @@ export default function OrdersPage() {
                               delivery_date: o.delivery_date ?? "",
                               description: o.description ?? "",
                               estimated_wt: Number(o.estimated_wt) || 0,
-                              estimated_total: o.gst_included
-                                ? parseFloat((Number(o.total) / 1.03).toFixed(2))
-                                : Number(o.total) || 0,
+                              estimated_total: Number(o.total) || 0,
                               gst_included: o.gst_included ?? false,
                             });
                           }}
@@ -1015,7 +1032,7 @@ export default function OrdersPage() {
                               className={inp} />
                           </div>
                           <div>
-                            <label className="block text-xs text-ink-dim mb-1">Est. Total (₹) <span className="text-ink-dim/60 font-normal">before GST</span></label>
+                            <label className="block text-xs text-ink-dim mb-1">Est. Total (₹) <span className="text-ink-dim/60 font-normal">{editOrderForm.gst_included ? "incl. GST" : "excl. GST"}</span></label>
                             <input type="number" step="0.01" value={editOrderForm.estimated_total || ""}
                               onFocus={(e) => e.target.select()} placeholder="0"
                               onChange={(e) => setEditOrderForm({ ...editOrderForm, estimated_total: parseFloat(e.target.value) || 0 })}
@@ -1026,11 +1043,11 @@ export default function OrdersPage() {
                               <input type="checkbox" checked={editOrderForm.gst_included}
                                 onChange={(e) => setEditOrderForm({ ...editOrderForm, gst_included: e.target.checked })}
                                 className="accent-gold w-4 h-4" />
-                              <span>Include GST (3%)</span>
+                              <span>GST 3% included</span>
                             </label>
                             {editOrderForm.gst_included && editOrderForm.estimated_total > 0 && (
                               <p className="text-xs text-ink-dim">
-                                +{inr(editOrderForm.estimated_total * 0.03)} GST = <strong className="text-gold">{inr(editOrderForm.estimated_total * 1.03)}</strong>
+                                GST: <strong className="text-ok">{inr(editOrderForm.estimated_total * 3 / 103)}</strong> · base: {inr(editOrderForm.estimated_total * 100 / 103)}
                               </p>
                             )}
                           </div>
