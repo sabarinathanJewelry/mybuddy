@@ -28,7 +28,10 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- 2. Insert one order_item for each order that has no items yet
+-- 2. Add sort_order column if it doesn't exist
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS sort_order int default 0;
+
+-- 3. Insert one order_item for each order that has no items yet
 INSERT INTO order_items (order_id, description, estimated_wt, amount, sort_order)
 SELECT
   o.id,
