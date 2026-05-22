@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import CustomerPicker from "@/modules/customers/customer-picker";
@@ -142,10 +142,24 @@ function useOrders() {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("orders")
-        .select("*, customers(name, phone), order_payments(*)")
+        .select("*, customers(name, phone)")
         .order("order_date", { ascending: false })
         .limit(100);
       if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
+// Lazy-load payments only for the currently-expanded order
+function useOrderPayments(orderId: string | null) {
+  return useQuery({
+    queryKey: ["order_payments_expanded", orderId],
+    enabled: !!orderId,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("order_payments").select("*").eq("order_id", orderId!).order("pay_date");
+      if (error) return [];
       return (data ?? []) as any[];
     },
   });
@@ -158,7 +172,7 @@ function useOrderItems(orderId: string | null) {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("order_items").select("*").eq("order_id", orderId!).order("sort_order");
-      if (error) return []; // gracefully handle if table not yet migrated
+      if (error) return [];
       return (data ?? []) as any[];
     },
   });
@@ -332,6 +346,7 @@ export default function OrdersPage() {
 
   // ── Per-order UI state
   const [expanded, setExpanded] = useState<string | null>(null);
+  const { data: expandedPayments = [] } = useOrderPayments(expanded);
   const [editingPayment, setEditingPayment] = useState<{
     id: string; orderId: string; orderNo: string;
     pay_date: string; mode: PayMode; amount: number;
@@ -432,6 +447,7 @@ export default function OrdersPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["order_payments_expanded", expanded] });
       setAddPayOrderId(null); setAddPayments([newPayment()]);
     },
   });
@@ -532,7 +548,11 @@ export default function OrdersPage() {
       const newTotal = (allPay ?? []).reduce((s, p) => s + Number(p.amount), 0);
       await client.from("orders").update({ advance_paid: newTotal }).eq("id", orderId);
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["orders"] }); setEditingPayment(null); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["order_payments_expanded", expanded] });
+      setEditingPayment(null);
+    },
   });
 
   // ── Delete order payment
@@ -557,12 +577,11 @@ export default function OrdersPage() {
       const newTotal = (allPay ?? []).reduce((s, p) => s + Number(p.amount), 0);
       await client.from("orders").update({ advance_paid: newTotal }).eq("id", orderId);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["orders"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["order_payments_expanded", expanded] });
+    },
   });
-
-  const totalAdvPaid = useCallback((order: any) =>
-    (order.order_payments ?? []).reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0),
-  []);
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">
@@ -727,10 +746,12 @@ export default function OrdersPage() {
             </div>
           )}
           {orders.map((o: any) => {
-            const paidSoFar = totalAdvPaid(o);
+            const isExpanded = expanded === o.id;
+            const paidSoFar = isExpanded
+              ? expandedPayments.reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0)
+              : (Number(o.advance_paid) || 0);
             const effectiveTotal = Number(o.final_total) || Number(o.total) || 0;
             const balance = effectiveTotal - paidSoFar;
-            const isExpanded = expanded === o.id;
             const isAddingPay = addPayOrderId === o.id;
             const isDelivering = deliverOrderId === o.id;
 
@@ -805,11 +826,11 @@ export default function OrdersPage() {
                     <OrderItemsView orderId={o.id} />
 
                     {/* Payment history */}
-                    {(o.order_payments ?? []).length > 0 && (
+                    {expandedPayments.length > 0 && (
                       <div>
                         <p className="text-xs font-semibold text-ink-dim mb-2">Payment History</p>
                         <div className="space-y-1">
-                          {(o.order_payments as any[]).map((p: any) => (
+                          {expandedPayments.map((p: any) => (
                             <div key={p.id}>
                               {editingPayment !== null && editingPayment.id === p.id ? (
                                 /* ── Inline edit form */
