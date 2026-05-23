@@ -693,30 +693,46 @@ export default function SaleForm({ saleId }: Props) {
                 className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
                 {PAY_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
               </select>
-              <Num value={p.amount}
-                onChange={(v) => setPayments((prev) => prev.map((x, i) => i === idx ? { ...x, amount: v } : x))}
-                step="0.01" className="w-32 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-              {(p.mode === "old_gold" || p.mode === "old_silver") && (
+              {(p.mode === "old_gold" || p.mode === "old_silver") ? (
                 <>
-                  <Num value={p.metal_wt}
-                    onChange={(v) => setPayments((prev) => prev.map((x, i) => {
-                      if (i !== idx) return x;
-                      const amt = boardRate
-                        ? v * (x.metal_purity / 100) * (x.mode === "old_gold" ? boardRate.gold_24k : boardRate.silver_pure)
-                        : x.amount;
-                      return { ...x, metal_wt: v, amount: Math.round(amt) };
-                    }))}
-                    step="0.001" className="w-28 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" placeholder="Weight (g)" />
-                  <Num value={p.metal_purity}
-                    onChange={(v) => setPayments((prev) => prev.map((x, i) => {
-                      if (i !== idx) return x;
-                      const amt = boardRate
-                        ? x.metal_wt * (v / 100) * (x.mode === "old_gold" ? boardRate.gold_24k : boardRate.silver_pure)
-                        : x.amount;
-                      return { ...x, metal_purity: v, amount: Math.round(amt) };
-                    }))}
-                    step="0.01" className="w-24 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" placeholder="Purity%" />
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs text-ink-dim">Weight (g)</span>
+                    <Num value={p.metal_wt}
+                      onChange={(v) => setPayments((prev) => prev.map((x, i) => {
+                        if (i !== idx) return x;
+                        const pureRate = boardRate ? (x.mode === "old_gold" ? boardRate.gold_24k : boardRate.silver_pure) : 0;
+                        const amt = pureRate ? v * (x.metal_purity / 100) * pureRate : x.amount;
+                        return { ...x, metal_wt: v, amount: Math.round(amt) };
+                      }))}
+                      step="0.001" className="w-28 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs text-ink-dim">Total (₹)</span>
+                    <Num value={p.amount}
+                      onChange={(v) => setPayments((prev) => prev.map((x, i) => {
+                        if (i !== idx) return x;
+                        const pureRate = boardRate ? (x.mode === "old_gold" ? boardRate.gold_24k : boardRate.silver_pure) : 0;
+                        const purity = (pureRate && x.metal_wt) ? (v / (x.metal_wt * pureRate)) * 100 : x.metal_purity;
+                        return { ...x, amount: v, metal_purity: Math.round(purity * 10) / 10 };
+                      }))}
+                      step="0.01" className="w-32 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-xs text-ink-dim">Purity %</span>
+                    <Num value={p.metal_purity}
+                      onChange={(v) => setPayments((prev) => prev.map((x, i) => {
+                        if (i !== idx) return x;
+                        const pureRate = boardRate ? (x.mode === "old_gold" ? boardRate.gold_24k : boardRate.silver_pure) : 0;
+                        const amt = pureRate ? x.metal_wt * (v / 100) * pureRate : x.amount;
+                        return { ...x, metal_purity: v, amount: Math.round(amt) };
+                      }))}
+                      step="0.01" className="w-24 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
                 </>
+              ) : (
+                <Num value={p.amount}
+                  onChange={(v) => setPayments((prev) => prev.map((x, i) => i === idx ? { ...x, amount: v } : x))}
+                  step="0.01" className="w-32 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
               )}
               {p.mode === "chit_metal" && (
                 <>
