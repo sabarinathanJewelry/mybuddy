@@ -15,7 +15,11 @@
       "Read(//c/Program Files/**)",
       "Bash(npx tsc *)",
       "Read(//c/Users/SABARI STAFF/OneDrive/Documents/GitHub/mybuddy/node_modules/**)",
-      "Bash(node node_modules/typescript/bin/tsc --noEmit)"
+      "Bash(node node_modules/typescript/bin/tsc --noEmit)",
+      "Bash(git commit *)",
+      "PowerShell(& \"C:\\\\Users\\\\SABARI STAFF\\\\OneDrive\\\\Documents\\\\GitHub\\\\mybuddy\\\\node_modules\\\\.bin\\\\tsc.cmd\" --noEmit 2>&1)",
+      "Bash(cd \"/c/Users/SABARI STAFF/OneDrive/Documents/GitHub/mybuddy\" && ls node_modules 2>/dev/null | head -5 || echo \"node_modules missing\")",
+      "Read(//c/c/Users/SABARI STAFF/OneDrive/Documents/GitHub/mybuddy/**)"
     ],
     "additionalDirectories": [
       "c:\\Users\\SABARI STAFF\\OneDrive\\Documents\\GitHub\\mybuddy\\app"
