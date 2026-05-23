@@ -19,7 +19,12 @@
       "Bash(git commit *)",
       "PowerShell(& \"C:\\\\Users\\\\SABARI STAFF\\\\OneDrive\\\\Documents\\\\GitHub\\\\mybuddy\\\\node_modules\\\\.bin\\\\tsc.cmd\" --noEmit 2>&1)",
       "Bash(cd \"/c/Users/SABARI STAFF/OneDrive/Documents/GitHub/mybuddy\" && ls node_modules 2>/dev/null | head -5 || echo \"node_modules missing\")",
-      "Read(//c/c/Users/SABARI STAFF/OneDrive/Documents/GitHub/mybuddy/**)"
+      "Read(//c/c/Users/SABARI STAFF/OneDrive/Documents/GitHub/mybuddy/**)",
+      "PowerShell($gitPath = @\\(\"C:\\\\Program Files\\\\Git\\\\bin\\\\git.exe\", \"C:\\\\Program Files \\(x86\\)\\\\Git\\\\bin\\\\git.exe\"\\) | Where-Object { Test-Path $_ } | Select-Object -First 1; if \\($gitPath\\) { & $gitPath -C \"C:\\\\Users\\\\PC\\\\Documents\\\\GitHub\\\\mybuddy\" log --oneline -20 } else { \"Git not found at common locations\" })",
+      "PowerShell(winget --version)",
+      "PowerShell(choco --version)",
+      "PowerShell(node --version)",
+      "PowerShell(npm --version)"
     ],
     "additionalDirectories": [
       "c:\\Users\\SABARI STAFF\\OneDrive\\Documents\\GitHub\\mybuddy\\app"

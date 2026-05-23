@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useT } from "@/i18n";
 import { inr, shortDate, grams } from "@/lib/format";
@@ -69,6 +69,36 @@ function usePnlExpenses(from: string, to: string) {
       if (error) throw error;
       return (data ?? []) as any[];
     },
+  });
+}
+
+function useRenameProduct() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ key, newName }: { key: string; newName: string }) => {
+      const { error } = await supabase()
+        .from("sale_items")
+        .update({ description: newName })
+        .ilike("description", key);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["product-items"] }),
+  });
+}
+
+function useMergeProducts() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ keys, targetName }: { keys: string[]; targetName: string }) => {
+      for (const key of keys) {
+        const { error } = await supabase()
+          .from("sale_items")
+          .update({ description: targetName })
+          .ilike("description", key);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["product-items"] }),
   });
 }
 
@@ -263,7 +293,7 @@ function MetalCard({ title, color, data, purchases }: {
 function groupByDescription(items: any[]) {
   const map = new Map<string, { count: number; grossWt: number; netWt: number; makingAmt: number; diamondAmt: number; stoneAmt: number; revenue: number }>();
   for (const item of items) {
-    const key = (item.description || "Unknown").trim();
+    const key = (item.description || "unknown").trim().toLowerCase();
     const cur = map.get(key) ?? { count: 0, grossWt: 0, netWt: 0, makingAmt: 0, diamondAmt: 0, stoneAmt: 0, revenue: 0 };
     map.set(key, {
       count: cur.count + 1,
@@ -288,12 +318,32 @@ function groupExpensesByCategory(expenses: any[]) {
   return Array.from(map.entries()).sort((a, b) => b[1].total - a[1].total);
 }
 
-function ProductTable({ title, color, items, showGrams = true }: {
+function ProductTable({ title, color, items, showGrams = true, mergeMode, mergeSelected, onToggleMerge, onRename }: {
   title: string; color: string; items: any[]; showGrams?: boolean;
+  mergeMode: boolean;
+  mergeSelected: Set<string>;
+  onToggleMerge: (key: string) => void;
+  onRename: (key: string, newName: string) => void;
 }) {
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editVal, setEditVal] = useState("");
+
   const grouped = groupByDescription(items);
   const totalRevenue = items.reduce((s, i) => s + Number(i.line_total || 0), 0);
   if (!grouped.length) return null;
+
+  function startEdit(key: string) {
+    setEditingKey(key);
+    setEditVal(key);
+  }
+
+  function commitEdit() {
+    if (editingKey && editVal.trim() && editVal.trim().toLowerCase() !== editingKey) {
+      onRename(editingKey, editVal.trim().toLowerCase());
+    }
+    setEditingKey(null);
+  }
+
   return (
     <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
       <div className={clsx("px-4 py-2.5 border-b border-line font-semibold text-sm flex items-center justify-between", color)}>
@@ -303,6 +353,7 @@ function ProductTable({ title, color, items, showGrams = true }: {
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+            {mergeMode && <th className="px-3 py-2 w-8" />}
             <th className="text-left px-4 py-2">Product</th>
             <th className="text-right px-3 py-2">Qty</th>
             {showGrams && <th className="text-right px-3 py-2">Gross Wt</th>}
@@ -310,23 +361,51 @@ function ProductTable({ title, color, items, showGrams = true }: {
             <th className="text-right px-3 py-2">Making</th>
             <th className="text-right px-3 py-2">Diamond/Stone</th>
             <th className="text-right px-4 py-2">Revenue</th>
+            {!mergeMode && <th className="w-8" />}
           </tr>
         </thead>
         <tbody>
-          {grouped.map(([desc, d]) => (
-            <tr key={desc} className="border-b border-line last:border-0 hover:bg-canvas/50">
-              <td className="px-4 py-2.5 font-medium">{desc}</td>
+          {grouped.map(([key, d]) => (
+            <tr key={key} className={clsx("border-b border-line last:border-0 hover:bg-canvas/50", mergeSelected.has(key) && "bg-gold/5")}>
+              {mergeMode && (
+                <td className="px-3 py-2.5 text-center">
+                  <input type="checkbox" checked={mergeSelected.has(key)} onChange={() => onToggleMerge(key)} className="accent-gold cursor-pointer" />
+                </td>
+              )}
+              <td className="px-4 py-2.5 font-medium">
+                {editingKey === key ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      autoFocus
+                      value={editVal}
+                      onChange={e => setEditVal(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditingKey(null); }}
+                      className="border border-line rounded px-2 py-1 text-sm w-44 focus:outline-none focus:ring-1 focus:ring-gold"
+                    />
+                    <button onClick={commitEdit} className="text-xs text-ok font-medium hover:underline">Save</button>
+                    <button onClick={() => setEditingKey(null)} className="text-xs text-ink-dim hover:underline">Cancel</button>
+                  </div>
+                ) : key}
+              </td>
               <td className="px-3 py-2.5 text-right text-ink-dim">{d.count}</td>
               {showGrams && <td className="px-3 py-2.5 text-right font-mono text-xs">{d.grossWt > 0 ? grams(d.grossWt) : "—"}</td>}
               {showGrams && <td className="px-3 py-2.5 text-right font-mono text-xs">{d.netWt > 0 ? grams(d.netWt) : "—"}</td>}
               <td className="px-3 py-2.5 text-right font-mono text-ok">{d.makingAmt > 0 ? inr(d.makingAmt) : "—"}</td>
               <td className="px-3 py-2.5 text-right font-mono text-info">{(d.diamondAmt + d.stoneAmt) > 0 ? inr(d.diamondAmt + d.stoneAmt) : "—"}</td>
               <td className="px-4 py-2.5 text-right font-mono font-semibold">{inr(d.revenue)}</td>
+              {!mergeMode && (
+                <td className="px-2 py-2.5 text-center">
+                  {editingKey !== key && (
+                    <button onClick={() => startEdit(key)} className="text-ink-dim hover:text-gold text-sm leading-none" title="Rename">✎</button>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
         <tfoot>
           <tr className="bg-canvas/50 border-t border-line font-semibold text-sm">
+            {mergeMode && <td />}
             <td className="px-4 py-2.5">Total</td>
             <td className="px-3 py-2.5 text-right text-ink-dim">{items.length}</td>
             {showGrams && <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(items.reduce((s, i) => s + Number(i.gross_wt || 0), 0))}</td>}
@@ -334,6 +413,7 @@ function ProductTable({ title, color, items, showGrams = true }: {
             <td className="px-3 py-2.5 text-right font-mono text-ok">{inr(items.reduce((s, i) => s + Number(i.making_amt || 0), 0))}</td>
             <td className="px-3 py-2.5 text-right font-mono text-info">{inr(items.reduce((s, i) => s + Number(i.diamond_amt || 0) + Number(i.stone_amt || 0), 0))}</td>
             <td className="px-4 py-2.5 text-right font-mono font-bold">{inr(totalRevenue)}</td>
+            {!mergeMode && <td />}
           </tr>
         </tfoot>
       </table>
@@ -352,6 +432,32 @@ export default function ReportsPage() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo]     = useState("");
   const [useCustom, setUseCustom]   = useState(false);
+  const [mergeMode, setMergeMode]   = useState(false);
+  const [mergeSelected, setMergeSelected] = useState<Set<string>>(new Set());
+  const [mergeTo, setMergeTo]       = useState("");
+
+  const renameProduct = useRenameProduct();
+  const mergeProducts = useMergeProducts();
+
+  function toggleMergeSelect(key: string) {
+    setMergeSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  function handleRename(key: string, newName: string) {
+    renameProduct.mutate({ key, newName });
+  }
+
+  function handleMerge() {
+    if (!mergeTo.trim() || mergeSelected.size < 2) return;
+    mergeProducts.mutate(
+      { keys: Array.from(mergeSelected), targetName: mergeTo.trim().toLowerCase() },
+      { onSuccess: () => { setMergeMode(false); setMergeSelected(new Set()); setMergeTo(""); } }
+    );
+  }
 
   const range = useCustom && customFrom && customTo
     ? { from: customFrom, to: customTo }
@@ -651,6 +757,36 @@ export default function ReportsPage() {
       {/* ── PRODUCT MIX TAB ─────────────────────────────────────── */}
       {tab === "products" && (
         <div className="space-y-5">
+          {/* Merge / manage bar */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={() => { setMergeMode(m => !m); setMergeSelected(new Set()); setMergeTo(""); }}
+              className={clsx("px-3 py-1.5 text-sm rounded-lg2 border transition-colors",
+                mergeMode ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:border-gold")}>
+              {mergeMode ? "Cancel" : "Merge Products"}
+            </button>
+            {mergeMode && mergeSelected.size >= 2 && (
+              <>
+                <span className="text-sm text-ink-dim">{mergeSelected.size} selected →</span>
+                <input
+                  value={mergeTo}
+                  onChange={e => setMergeTo(e.target.value)}
+                  placeholder="merged product name"
+                  className="border border-line rounded-lg2 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold w-52"
+                />
+                <button
+                  onClick={handleMerge}
+                  disabled={!mergeTo.trim() || mergeProducts.isPending}
+                  className="px-3 py-1.5 text-sm bg-gold text-white rounded-lg2 disabled:opacity-50 hover:bg-gold/90">
+                  {mergeProducts.isPending ? "Merging..." : "Merge"}
+                </button>
+              </>
+            )}
+            {mergeMode && mergeSelected.size < 2 && (
+              <span className="text-xs text-ink-dim">Check 2 or more products to merge them</span>
+            )}
+          </div>
+
           {productItems.length === 0 ? (
             <p className="text-ink-dim text-sm text-center py-10">No confirmed sales in this period.</p>
           ) : (
@@ -659,22 +795,38 @@ export default function ReportsPage() {
                 title="Gold Items"
                 color="text-gold bg-gold/5"
                 items={productItems.filter((i: any) => GOLD_METALS.includes(i.metal))}
+                mergeMode={mergeMode}
+                mergeSelected={mergeSelected}
+                onToggleMerge={toggleMergeSelect}
+                onRename={handleRename}
               />
               <ProductTable
                 title="Silver Items"
                 color="text-ink-mid bg-canvas"
                 items={productItems.filter((i: any) => SILVER_METALS.includes(i.metal))}
+                mergeMode={mergeMode}
+                mergeSelected={mergeSelected}
+                onToggleMerge={toggleMergeSelect}
+                onRename={handleRename}
               />
               <ProductTable
                 title="Silver MPR (Fixed Price)"
                 color="text-info bg-info/5"
                 showGrams={false}
                 items={productItems.filter((i: any) => i.metal === "silver_mpr")}
+                mergeMode={mergeMode}
+                mergeSelected={mergeSelected}
+                onToggleMerge={toggleMergeSelect}
+                onRename={handleRename}
               />
               <ProductTable
                 title="Diamond Items (all metals)"
                 color="text-purple-600 bg-purple-50"
                 items={productItems.filter((i: any) => Number(i.diamond_amt) > 0)}
+                mergeMode={mergeMode}
+                mergeSelected={mergeSelected}
+                onToggleMerge={toggleMergeSelect}
+                onRename={handleRename}
               />
             </>
           )}
