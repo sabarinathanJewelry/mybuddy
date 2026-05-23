@@ -72,6 +72,23 @@ function usePnlExpenses(from: string, to: string) {
   });
 }
 
+function useProductItems(from: string, to: string) {
+  return useQuery({
+    queryKey: ["product-items", from, to],
+    enabled: !!from && !!to,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("sale_items")
+        .select("description, metal, gross_wt, net_wt, making_amt, stone_amt, diamond_amt, line_total, gst_pct, sales!inner(bill_date, status)")
+        .gte("sales.bill_date", from)
+        .lte("sales.bill_date", to)
+        .eq("sales.status", "confirmed");
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
 function useSalesDetail(from: string, to: string) {
   return useQuery({
     queryKey: ["report-sales", from, to],
@@ -243,6 +260,87 @@ function MetalCard({ title, color, data, purchases }: {
   );
 }
 
+function groupByDescription(items: any[]) {
+  const map = new Map<string, { count: number; grossWt: number; netWt: number; makingAmt: number; diamondAmt: number; stoneAmt: number; revenue: number }>();
+  for (const item of items) {
+    const key = (item.description || "Unknown").trim();
+    const cur = map.get(key) ?? { count: 0, grossWt: 0, netWt: 0, makingAmt: 0, diamondAmt: 0, stoneAmt: 0, revenue: 0 };
+    map.set(key, {
+      count: cur.count + 1,
+      grossWt: cur.grossWt + Number(item.gross_wt || 0),
+      netWt: cur.netWt + Number(item.net_wt || 0),
+      makingAmt: cur.makingAmt + Number(item.making_amt || 0),
+      diamondAmt: cur.diamondAmt + Number(item.diamond_amt || 0),
+      stoneAmt: cur.stoneAmt + Number(item.stone_amt || 0),
+      revenue: cur.revenue + Number(item.line_total || 0),
+    });
+  }
+  return Array.from(map.entries()).sort((a, b) => b[1].count - a[1].count);
+}
+
+function groupExpensesByCategory(expenses: any[]) {
+  const map = new Map<string, { count: number; total: number; items: any[] }>();
+  for (const exp of expenses) {
+    const key = exp.expense_categories?.name || "Uncategorized";
+    const cur = map.get(key) ?? { count: 0, total: 0, items: [] };
+    map.set(key, { count: cur.count + 1, total: cur.total + Number(exp.amount || 0), items: [...cur.items, exp] });
+  }
+  return Array.from(map.entries()).sort((a, b) => b[1].total - a[1].total);
+}
+
+function ProductTable({ title, color, items, showGrams = true }: {
+  title: string; color: string; items: any[]; showGrams?: boolean;
+}) {
+  const grouped = groupByDescription(items);
+  const totalRevenue = items.reduce((s, i) => s + Number(i.line_total || 0), 0);
+  if (!grouped.length) return null;
+  return (
+    <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+      <div className={clsx("px-4 py-2.5 border-b border-line font-semibold text-sm flex items-center justify-between", color)}>
+        <span>{title} <span className="ml-1 text-xs font-normal text-ink-dim">{items.length} item{items.length !== 1 ? "s" : ""}</span></span>
+        <span className="font-bold">{inr(totalRevenue)}</span>
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+            <th className="text-left px-4 py-2">Product</th>
+            <th className="text-right px-3 py-2">Qty</th>
+            {showGrams && <th className="text-right px-3 py-2">Gross Wt</th>}
+            {showGrams && <th className="text-right px-3 py-2">Net Wt</th>}
+            <th className="text-right px-3 py-2">Making</th>
+            <th className="text-right px-3 py-2">Diamond/Stone</th>
+            <th className="text-right px-4 py-2">Revenue</th>
+          </tr>
+        </thead>
+        <tbody>
+          {grouped.map(([desc, d]) => (
+            <tr key={desc} className="border-b border-line last:border-0 hover:bg-canvas/50">
+              <td className="px-4 py-2.5 font-medium">{desc}</td>
+              <td className="px-3 py-2.5 text-right text-ink-dim">{d.count}</td>
+              {showGrams && <td className="px-3 py-2.5 text-right font-mono text-xs">{d.grossWt > 0 ? grams(d.grossWt) : "—"}</td>}
+              {showGrams && <td className="px-3 py-2.5 text-right font-mono text-xs">{d.netWt > 0 ? grams(d.netWt) : "—"}</td>}
+              <td className="px-3 py-2.5 text-right font-mono text-ok">{d.makingAmt > 0 ? inr(d.makingAmt) : "—"}</td>
+              <td className="px-3 py-2.5 text-right font-mono text-info">{(d.diamondAmt + d.stoneAmt) > 0 ? inr(d.diamondAmt + d.stoneAmt) : "—"}</td>
+              <td className="px-4 py-2.5 text-right font-mono font-semibold">{inr(d.revenue)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="bg-canvas/50 border-t border-line font-semibold text-sm">
+            <td className="px-4 py-2.5">Total</td>
+            <td className="px-3 py-2.5 text-right text-ink-dim">{items.length}</td>
+            {showGrams && <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(items.reduce((s, i) => s + Number(i.gross_wt || 0), 0))}</td>}
+            {showGrams && <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(items.reduce((s, i) => s + Number(i.net_wt || 0), 0))}</td>}
+            <td className="px-3 py-2.5 text-right font-mono text-ok">{inr(items.reduce((s, i) => s + Number(i.making_amt || 0), 0))}</td>
+            <td className="px-3 py-2.5 text-right font-mono text-info">{inr(items.reduce((s, i) => s + Number(i.diamond_amt || 0) + Number(i.stone_amt || 0), 0))}</td>
+            <td className="px-4 py-2.5 text-right font-mono font-bold">{inr(totalRevenue)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
 // ── main page ─────────────────────────────────────────────────────────────────
 
 export default function ReportsPage() {
@@ -250,7 +348,7 @@ export default function ReportsPage() {
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [tab, setTab]     = useState<"pnl" | "detail">("pnl");
+  const [tab, setTab]     = useState<"pnl" | "detail" | "products" | "expenses">("pnl");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo]     = useState("");
   const [useCustom, setUseCustom]   = useState(false);
@@ -265,6 +363,7 @@ export default function ReportsPage() {
   const { data: salesDetail = [] }                                  = useSalesDetail(range.from, range.to);
   const { data: oldMetalBuys = [] }                                 = useOldMetalPurchases(range.from, range.to);
   const { data: exchangePayments = [] }                             = useSaleExchangePayments(range.from, range.to);
+  const { data: productItems = [] }                                 = useProductItems(range.from, range.to);
 
   const isLoading = loadingItems || loadingPurchases || loadingExpenses;
 
@@ -341,7 +440,7 @@ export default function ReportsPage() {
 
       {/* Tabs */}
       <div className="flex border-b border-line gap-1">
-        {([["pnl", "P&L Report"], ["detail", "Sales Detail"]] as const).map(([k, label]) => (
+        {([["pnl", "P&L Report"], ["detail", "Sales Detail"], ["products", "Product Mix"], ["expenses", "Expenses"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={clsx("px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
               tab === k ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink")}>
@@ -546,6 +645,99 @@ export default function ReportsPage() {
             <p>• <strong>Making + VA income</strong> is the most reliable profitability metric — it reflects your service margin regardless of metal price movements.</p>
             <p>• <strong>Metal rate profit/loss</strong> (buying old gold cheap, selling at higher rate) is not shown here — it appears when the metal is dispatched to a supplier and their payment is reconciled.</p>
           </div>
+        </div>
+      )}
+
+      {/* ── PRODUCT MIX TAB ─────────────────────────────────────── */}
+      {tab === "products" && (
+        <div className="space-y-5">
+          {productItems.length === 0 ? (
+            <p className="text-ink-dim text-sm text-center py-10">No confirmed sales in this period.</p>
+          ) : (
+            <>
+              <ProductTable
+                title="Gold Items"
+                color="text-gold bg-gold/5"
+                items={productItems.filter((i: any) => GOLD_METALS.includes(i.metal))}
+              />
+              <ProductTable
+                title="Silver Items"
+                color="text-ink-mid bg-canvas"
+                items={productItems.filter((i: any) => SILVER_METALS.includes(i.metal))}
+              />
+              <ProductTable
+                title="Silver MPR (Fixed Price)"
+                color="text-info bg-info/5"
+                showGrams={false}
+                items={productItems.filter((i: any) => i.metal === "silver_mpr")}
+              />
+              <ProductTable
+                title="Diamond Items (all metals)"
+                color="text-purple-600 bg-purple-50"
+                items={productItems.filter((i: any) => Number(i.diamond_amt) > 0)}
+              />
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── EXPENSES TAB ────────────────────────────────────────── */}
+      {tab === "expenses" && (
+        <div className="space-y-5">
+          {/* Category summary cards */}
+          {(() => {
+            const cats = groupExpensesByCategory(expenses as any[]);
+            const total = (expenses as any[]).reduce((s: number, e: any) => s + Number(e.amount || 0), 0);
+            return (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {cats.map(([cat, d]) => (
+                    <div key={cat} className="bg-white rounded-xl border border-line p-4 shadow-soft">
+                      <p className="text-xs text-ink-dim">{cat}</p>
+                      <p className="text-lg font-bold text-err mt-0.5">{inr(d.total)}</p>
+                      <p className="text-xs text-ink-dim mt-0.5">{d.count} entry{d.count !== 1 ? "ies" : "y"}</p>
+                    </div>
+                  ))}
+                  <div className="bg-white rounded-xl border border-gold/30 p-4 shadow-soft">
+                    <p className="text-xs text-ink-dim">Total Expenses</p>
+                    <p className="text-lg font-bold text-err mt-0.5">{inr(total)}</p>
+                    <p className="text-xs text-ink-dim mt-0.5">{(expenses as any[]).length} entries</p>
+                  </div>
+                </div>
+
+                {/* Category-wise detail tables */}
+                {cats.map(([cat, d]) => (
+                  <div key={cat} className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+                    <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-err bg-err/5 flex justify-between">
+                      <span>{cat}</span>
+                      <span>{inr(d.total)}</span>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                          <th className="text-left px-4 py-2">Date</th>
+                          <th className="text-left px-3 py-2">Description</th>
+                          <th className="text-right px-4 py-2">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {d.items.map((e: any, i: number) => (
+                          <tr key={i} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                            <td className="px-4 py-2.5 text-ink-dim">{shortDate(e.exp_date)}</td>
+                            <td className="px-3 py-2.5">{e.description || "—"}</td>
+                            <td className="px-4 py-2.5 text-right font-mono text-err">{inr(e.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+                {cats.length === 0 && (
+                  <p className="text-ink-dim text-sm text-center py-10">No expenses in this period.</p>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 
