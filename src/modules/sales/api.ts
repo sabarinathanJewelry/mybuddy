@@ -48,7 +48,7 @@ async function fanoutLedger(
 
     // Credit the customer's balance for all non-advance payment modes.
     // Advance is skipped — the customer's credit is already reflected in their prior deposits.
-    if (customerId && !p.is_advance) {
+    if (customerId && p.mode !== "advance") {
       promises.push(Promise.resolve(client.from("payments").insert({
         pay_date: billDate,
         direction: "in",
