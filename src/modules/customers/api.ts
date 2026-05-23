@@ -42,8 +42,17 @@ export function useUpsertCustomer() {
   return useMutation({
     mutationFn: async (payload: Partial<CustomerFormData> & { id?: string }) => {
       const { id, ...rest } = payload;
+      const client = supabase();
+
+      if (rest.phone) {
+        let q = client.from("customers").select("id").eq("phone", rest.phone);
+        if (id) q = q.neq("id", id);
+        const { data: dups } = await q.limit(1);
+        if (dups && dups.length > 0) throw new Error("A customer with this phone number already exists.");
+      }
+
       if (id) {
-        const { data, error } = await supabase()
+        const { data, error } = await client
           .from("customers")
           .update({ ...rest, updated_at: new Date().toISOString() })
           .eq("id", id)
@@ -52,7 +61,7 @@ export function useUpsertCustomer() {
         if (error) throw error;
         return data;
       } else {
-        const { data, error } = await supabase()
+        const { data, error } = await client
           .from("customers")
           .insert(rest)
           .select()
@@ -64,6 +73,32 @@ export function useUpsertCustomer() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["customers"] });
     },
+  });
+}
+
+export function useDeleteCustomer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const client = supabase();
+      const [sales, orders, payments, writeoffs] = await Promise.all([
+        client.from("sales").select("id").eq("customer_id", id).limit(1),
+        client.from("orders").select("id").eq("customer_id", id).limit(1),
+        client.from("payments").select("id").eq("customer_id", id).limit(1),
+        client.from("scrap_entries").select("id").eq("customer_id", id).limit(1),
+      ]);
+      if (
+        (sales.data?.length ?? 0) > 0 ||
+        (orders.data?.length ?? 0) > 0 ||
+        (payments.data?.length ?? 0) > 0 ||
+        (writeoffs.data?.length ?? 0) > 0
+      ) {
+        throw new Error("Cannot delete — customer has existing transactions.");
+      }
+      const { error } = await client.from("customers").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["customers"] }),
   });
 }
 

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { useCustomers, useUpsertCustomer } from "@/modules/customers/api";
+import { useCustomers, useUpsertCustomer, useDeleteCustomer } from "@/modules/customers/api";
 import { supabase } from "@/lib/supabase/client";
 import { useT } from "@/i18n";
 import { inr, grams } from "@/lib/format";
@@ -17,6 +17,7 @@ function CustomerForm({ initial, onSave, onCancel }: {
   onCancel: () => void;
 }) {
   const t = useT();
+  const [err, setErr] = useState<string | null>(null);
   const [form, setForm] = useState<CustomerFormData>({
     name: initial?.name ?? "",
     phone: initial?.phone ?? "",
@@ -33,7 +34,12 @@ function CustomerForm({ initial, onSave, onCancel }: {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await onSave({ ...form, id: initial?.id });
+    setErr(null);
+    try {
+      await onSave({ ...form, id: initial?.id });
+    } catch (e: any) {
+      setErr(e?.message ?? "Failed to save customer.");
+    }
   }
 
   return (
@@ -70,6 +76,7 @@ function CustomerForm({ initial, onSave, onCancel }: {
             className="w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
         </div>
       </div>
+      {err && <p className="text-xs text-err">{err}</p>}
       <div className="flex gap-2 pt-1">
         <button type="submit" className="bg-gold hover:bg-gold-dark text-white text-sm font-medium px-5 py-2 rounded-lg2">{t("save")}</button>
         <button type="button" onClick={onCancel} className="border border-line text-ink-mid text-sm px-5 py-2 rounded-lg2 hover:bg-canvas">{t("cancel")}</button>
@@ -101,11 +108,21 @@ export default function CustomersPage() {
   const { data: customers, isLoading } = useCustomers(search);
   const { data: balances = [], isLoading: balLoading } = useCustomerBalances();
   const upsert = useUpsertCustomer();
+  const deleteMut = useDeleteCustomer();
 
   async function handleSave(data: CustomerFormData & { id?: string }) {
     await upsert.mutateAsync(data);
     setAdding(false);
     setEditing(null);
+  }
+
+  async function handleDelete(c: Customer) {
+    if (!confirm(`Delete "${c.name}"? This cannot be undone.`)) return;
+    try {
+      await deleteMut.mutateAsync(c.id);
+    } catch (e: any) {
+      alert(e?.message ?? "Failed to delete customer.");
+    }
   }
 
   // Split into "owe us" (negative balance) and "has credit" (positive)
@@ -186,6 +203,7 @@ export default function CustomersPage() {
                       <div className="flex gap-2 justify-end">
                         <Link href={`/customers/${c.id}`} className="text-xs text-info hover:underline">{t("view")}</Link>
                         <button onClick={() => { setEditing(c); setAdding(false); }} className="text-xs text-gold hover:underline">{t("edit")}</button>
+                        <button onClick={() => handleDelete(c)} className="text-xs text-err hover:underline">Delete</button>
                       </div>
                     </td>
                   </tr>
