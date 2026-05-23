@@ -794,7 +794,7 @@ export default function ReportsPage() {
               <ProductTable
                 title="Gold Items"
                 color="text-gold bg-gold/5"
-                items={productItems.filter((i: any) => GOLD_METALS.includes(i.metal))}
+                items={productItems.filter((i: any) => GOLD_METALS.includes(i.metal) && !Number(i.diamond_amt))}
                 mergeMode={mergeMode}
                 mergeSelected={mergeSelected}
                 onToggleMerge={toggleMergeSelect}
@@ -803,7 +803,7 @@ export default function ReportsPage() {
               <ProductTable
                 title="Silver Items"
                 color="text-ink-mid bg-canvas"
-                items={productItems.filter((i: any) => SILVER_METALS.includes(i.metal))}
+                items={productItems.filter((i: any) => SILVER_METALS.includes(i.metal) && !Number(i.diamond_amt))}
                 mergeMode={mergeMode}
                 mergeSelected={mergeSelected}
                 onToggleMerge={toggleMergeSelect}
@@ -813,14 +813,14 @@ export default function ReportsPage() {
                 title="Silver MPR (Fixed Price)"
                 color="text-info bg-info/5"
                 showGrams={false}
-                items={productItems.filter((i: any) => i.metal === "silver_mpr")}
+                items={productItems.filter((i: any) => i.metal === "silver_mpr" && !Number(i.diamond_amt))}
                 mergeMode={mergeMode}
                 mergeSelected={mergeSelected}
                 onToggleMerge={toggleMergeSelect}
                 onRename={handleRename}
               />
               <ProductTable
-                title="Diamond Items (all metals)"
+                title="Diamond Items"
                 color="text-purple-600 bg-purple-50"
                 items={productItems.filter((i: any) => Number(i.diamond_amt) > 0)}
                 mergeMode={mergeMode}

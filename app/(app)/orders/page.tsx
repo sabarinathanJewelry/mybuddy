@@ -246,14 +246,7 @@ function PaymentRow({
           {PAY_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
         </select>
       </div>
-      <div>
-        <label className="block text-xs text-ink-dim mb-1">Amount (₹)</label>
-        <input type="number" step="0.01" value={p.amount || ""}
-          onFocus={(e) => e.target.select()} placeholder="0"
-          onChange={(e) => update({ amount: parseFloat(e.target.value) || 0 })}
-          className="w-32 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-      </div>
-      {(p.mode === "old_gold" || p.mode === "old_silver") && (
+      {(p.mode === "old_gold" || p.mode === "old_silver") ? (
         <>
           <div>
             <label className="block text-xs text-ink-dim mb-1">Weight (g)</label>
@@ -261,13 +254,23 @@ function PaymentRow({
               onFocus={(e) => e.target.select()} placeholder="0.000"
               onChange={(e) => {
                 const wt = parseFloat(e.target.value) || 0;
-                const rate = boardRate
-                  ? (p.mode === "old_gold" ? boardRate.gold_24k : boardRate.silver_pure)
-                  : 0;
-                const amt = rate ? Math.round(wt * (p.metal_purity / 100) * rate) : p.amount;
+                const pureRate = boardRate ? (p.mode === "old_gold" ? boardRate.gold_22k / 0.916 : boardRate.silver / 0.925) : 0;
+                const amt = pureRate ? Math.round(wt * (p.metal_purity / 100) * pureRate) : p.amount;
                 update({ metal_wt: wt, amount: amt });
               }}
               className="w-28 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+          </div>
+          <div>
+            <label className="block text-xs text-ink-dim mb-1">Total (₹)</label>
+            <input type="number" step="0.01" value={p.amount || ""}
+              onFocus={(e) => e.target.select()} placeholder="0"
+              onChange={(e) => {
+                const amt = parseFloat(e.target.value) || 0;
+                const pureRate = boardRate ? (p.mode === "old_gold" ? boardRate.gold_22k / 0.916 : boardRate.silver / 0.925) : 0;
+                const purity = (pureRate && p.metal_wt) ? Math.round((amt / (p.metal_wt * pureRate)) * 1000) / 10 : p.metal_purity;
+                update({ amount: amt, metal_purity: purity });
+              }}
+              className="w-32 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
           </div>
           <div>
             <label className="block text-xs text-ink-dim mb-1">Purity %</label>
@@ -275,15 +278,21 @@ function PaymentRow({
               onFocus={(e) => e.target.select()} placeholder="91.6"
               onChange={(e) => {
                 const purity = parseFloat(e.target.value) || 91.6;
-                const rate = boardRate
-                  ? (p.mode === "old_gold" ? boardRate.gold_24k : boardRate.silver_pure)
-                  : 0;
-                const amt = rate ? Math.round(p.metal_wt * (purity / 100) * rate) : p.amount;
+                const pureRate = boardRate ? (p.mode === "old_gold" ? boardRate.gold_22k / 0.916 : boardRate.silver / 0.925) : 0;
+                const amt = pureRate ? Math.round(p.metal_wt * (purity / 100) * pureRate) : p.amount;
                 update({ metal_purity: purity, amount: amt });
               }}
               className="w-24 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
           </div>
         </>
+      ) : (
+        <div>
+          <label className="block text-xs text-ink-dim mb-1">Amount (₹)</label>
+          <input type="number" step="0.01" value={p.amount || ""}
+            onFocus={(e) => e.target.select()} placeholder="0"
+            onChange={(e) => update({ amount: parseFloat(e.target.value) || 0 })}
+            className="w-32 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+        </div>
       )}
       <div className="flex-1 min-w-[100px]">
         <label className="block text-xs text-ink-dim mb-1">Notes</label>
@@ -869,31 +878,54 @@ export default function OrdersPage() {
                                         {PAY_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                                       </select>
                                     </div>
-                                    <div>
-                                      <label className="text-xs text-ink-dim block mb-1">Amount (₹)</label>
-                                      <input type="number" step="0.01" value={editingPayment.amount || ""}
-                                        onFocus={(e) => e.target.select()}
-                                        onChange={(e) => setEditingPayment({ ...editingPayment, amount: parseFloat(e.target.value) || 0 })}
-                                        className="w-32 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
-                                        autoFocus />
-                                    </div>
-                                    {(editingPayment.mode === "old_gold" || editingPayment.mode === "old_silver") && (
+                                    {(editingPayment.mode === "old_gold" || editingPayment.mode === "old_silver") ? (
                                       <>
                                         <div>
                                           <label className="text-xs text-ink-dim block mb-1">Weight (g)</label>
                                           <input type="number" step="0.001" value={editingPayment.metal_wt || ""}
                                             onFocus={(e) => e.target.select()}
-                                            onChange={(e) => setEditingPayment({ ...editingPayment, metal_wt: parseFloat(e.target.value) || 0 })}
-                                            className="w-24 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                                            onChange={(e) => {
+                                              const wt = parseFloat(e.target.value) || 0;
+                                              const pureRate = boardRate ? (editingPayment.mode === "old_gold" ? boardRate.gold_22k / 0.916 : boardRate.silver / 0.925) : 0;
+                                              const amt = pureRate ? Math.round(wt * (editingPayment.metal_purity / 100) * pureRate) : editingPayment.amount;
+                                              setEditingPayment({ ...editingPayment, metal_wt: wt, amount: amt });
+                                            }}
+                                            className="w-24 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" autoFocus />
+                                        </div>
+                                        <div>
+                                          <label className="text-xs text-ink-dim block mb-1">Total (₹)</label>
+                                          <input type="number" step="0.01" value={editingPayment.amount || ""}
+                                            onFocus={(e) => e.target.select()}
+                                            onChange={(e) => {
+                                              const amt = parseFloat(e.target.value) || 0;
+                                              const pureRate = boardRate ? (editingPayment.mode === "old_gold" ? boardRate.gold_22k / 0.916 : boardRate.silver / 0.925) : 0;
+                                              const purity = (pureRate && editingPayment.metal_wt) ? Math.round((amt / (editingPayment.metal_wt * pureRate)) * 1000) / 10 : editingPayment.metal_purity;
+                                              setEditingPayment({ ...editingPayment, amount: amt, metal_purity: purity });
+                                            }}
+                                            className="w-32 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
                                         </div>
                                         <div>
                                           <label className="text-xs text-ink-dim block mb-1">Purity %</label>
                                           <input type="number" step="0.01" value={editingPayment.metal_purity || ""}
                                             onFocus={(e) => e.target.select()}
-                                            onChange={(e) => setEditingPayment({ ...editingPayment, metal_purity: parseFloat(e.target.value) || 91.6 })}
+                                            onChange={(e) => {
+                                              const purity = parseFloat(e.target.value) || 91.6;
+                                              const pureRate = boardRate ? (editingPayment.mode === "old_gold" ? boardRate.gold_22k / 0.916 : boardRate.silver / 0.925) : 0;
+                                              const amt = pureRate ? Math.round(editingPayment.metal_wt * (purity / 100) * pureRate) : editingPayment.amount;
+                                              setEditingPayment({ ...editingPayment, metal_purity: purity, amount: amt });
+                                            }}
                                             className="w-20 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
                                         </div>
                                       </>
+                                    ) : (
+                                      <div>
+                                        <label className="text-xs text-ink-dim block mb-1">Amount (₹)</label>
+                                        <input type="number" step="0.01" value={editingPayment.amount || ""}
+                                          onFocus={(e) => e.target.select()}
+                                          onChange={(e) => setEditingPayment({ ...editingPayment, amount: parseFloat(e.target.value) || 0 })}
+                                          className="w-32 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                                          autoFocus />
+                                      </div>
                                     )}
                                     <div className="flex-1 min-w-[100px]">
                                       <label className="text-xs text-ink-dim block mb-1">Notes</label>

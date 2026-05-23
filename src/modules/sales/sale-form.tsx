@@ -700,7 +700,7 @@ export default function SaleForm({ saleId }: Props) {
                     <Num value={p.metal_wt}
                       onChange={(v) => setPayments((prev) => prev.map((x, i) => {
                         if (i !== idx) return x;
-                        const pureRate = boardRate ? (x.mode === "old_gold" ? boardRate.gold_24k : boardRate.silver_pure) : 0;
+                        const pureRate = boardRate ? (x.mode === "old_gold" ? boardRate.gold_22k / 0.916 : boardRate.silver / 0.925) : 0;
                         const amt = pureRate ? v * (x.metal_purity / 100) * pureRate : x.amount;
                         return { ...x, metal_wt: v, amount: Math.round(amt) };
                       }))}
@@ -711,7 +711,7 @@ export default function SaleForm({ saleId }: Props) {
                     <Num value={p.amount}
                       onChange={(v) => setPayments((prev) => prev.map((x, i) => {
                         if (i !== idx) return x;
-                        const pureRate = boardRate ? (x.mode === "old_gold" ? boardRate.gold_24k : boardRate.silver_pure) : 0;
+                        const pureRate = boardRate ? (x.mode === "old_gold" ? boardRate.gold_22k / 0.916 : boardRate.silver / 0.925) : 0;
                         const purity = (pureRate && x.metal_wt) ? (v / (x.metal_wt * pureRate)) * 100 : x.metal_purity;
                         return { ...x, amount: v, metal_purity: Math.round(purity * 10) / 10 };
                       }))}
@@ -722,7 +722,7 @@ export default function SaleForm({ saleId }: Props) {
                     <Num value={p.metal_purity}
                       onChange={(v) => setPayments((prev) => prev.map((x, i) => {
                         if (i !== idx) return x;
-                        const pureRate = boardRate ? (x.mode === "old_gold" ? boardRate.gold_24k : boardRate.silver_pure) : 0;
+                        const pureRate = boardRate ? (x.mode === "old_gold" ? boardRate.gold_22k / 0.916 : boardRate.silver / 0.925) : 0;
                         const amt = pureRate ? x.metal_wt * (v / 100) * pureRate : x.amount;
                         return { ...x, metal_purity: v, amount: Math.round(amt) };
                       }))}
