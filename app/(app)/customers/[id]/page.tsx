@@ -6,13 +6,13 @@ import { useCustomer, useCustomer360, useUpdatePayment, useDeletePayment } from 
 import { useT } from "@/i18n";
 import { inr, grams, shortDate } from "@/lib/format";
 
-const TABS = ["sales", "orders", "payments", "writeoffs", "info"] as const;
+const TABS = ["statement", "sales", "orders", "payments", "writeoffs", "info"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function Customer360Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const t = useT();
-  const [tab, setTab] = useState<Tab>("sales");
+  const [tab, setTab] = useState<Tab>("statement");
   const { data: customer } = useCustomer(id);
   const { data: view, isLoading } = useCustomer360(id);
   const updatePayment = useUpdatePayment();
@@ -76,12 +76,81 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
                 : "border-transparent text-ink-dim hover:text-ink"
             }`}
           >
-            {tab_ === "writeoffs" ? t("writeoff") : t(`nav_${tab_}` as any) || tab_}
+            {tab_ === "statement" ? "Statement" : tab_ === "writeoffs" ? t("writeoff") : t(`nav_${tab_}` as any) || tab_}
           </button>
         ))}
       </div>
 
       {isLoading && <p className="text-ink-dim text-sm">{t("loading")}</p>}
+
+      {/* Statement tab */}
+      {tab === "statement" && !isLoading && (() => {
+        type StmtRow = { date: string; description: string; dr: number; cr: number; balance: number };
+        const entries: Omit<StmtRow, "balance">[] = [];
+
+        for (const s of view?.sales ?? []) {
+          entries.push({ date: s.bill_date, description: `Sale ${s.bill_no}`, dr: s.total ?? 0, cr: 0 });
+        }
+        for (const p of view?.payments ?? []) {
+          const label = p.mode === "advance" ? "Advance used" : `${p.mode.charAt(0).toUpperCase() + p.mode.slice(1)} payment`;
+          if (p.direction === "in") entries.push({ date: p.pay_date, description: label, dr: 0, cr: p.amount });
+          else entries.push({ date: p.pay_date, description: label, dr: p.amount, cr: 0 });
+        }
+        for (const w of view?.writeoffs ?? []) {
+          entries.push({ date: w.scrap_date, description: `Write-off${w.notes ? ": " + w.notes : ""}`, dr: 0, cr: w.amount });
+        }
+        entries.sort((a, b) => a.date.localeCompare(b.date));
+
+        const ob = customer?.opening_balance ?? 0;
+        let running = ob;
+        const rows: StmtRow[] = entries.map((e) => {
+          running = running - e.dr + e.cr;
+          return { ...e, balance: running };
+        });
+
+        return (
+          <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                  <th className="text-left px-4 py-2.5">Date</th>
+                  <th className="text-left px-3 py-2.5">Description</th>
+                  <th className="text-right px-3 py-2.5">Dr (Debit)</th>
+                  <th className="text-right px-3 py-2.5">Cr (Credit)</th>
+                  <th className="text-right px-3 py-2.5">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-line bg-canvas/50">
+                  <td className="px-4 py-2.5 text-ink-dim text-xs">—</td>
+                  <td className="px-3 py-2.5 text-ink-dim italic text-xs">Opening Balance</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-xs">{ob < 0 ? inr(Math.abs(ob)) : "—"}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-xs">{ob >= 0 ? inr(ob) : "—"}</td>
+                  <td className={`px-3 py-2.5 text-right font-mono text-xs ${ob < 0 ? "text-err" : "text-ok"}`}>{inr(ob)}</td>
+                </tr>
+                {rows.map((r, i) => (
+                  <tr key={i} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                    <td className="px-4 py-2.5 text-ink-dim">{shortDate(r.date)}</td>
+                    <td className="px-3 py-2.5">{r.description}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-err">{r.dr > 0 ? inr(r.dr) : "—"}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-ok">{r.cr > 0 ? inr(r.cr) : "—"}</td>
+                    <td className={`px-3 py-2.5 text-right font-mono font-semibold ${r.balance < 0 ? "text-err" : "text-ok"}`}>{inr(r.balance)}</td>
+                  </tr>
+                ))}
+                {rows.length === 0 && (
+                  <tr><td colSpan={5} className="px-4 py-6 text-center text-ink-dim">No transactions</td></tr>
+                )}
+              </tbody>
+              <tfoot>
+                <tr className="bg-canvas border-t-2 border-line">
+                  <td colSpan={4} className="px-4 py-2.5 text-xs font-semibold text-ink-dim text-right">Closing Balance</td>
+                  <td className={`px-3 py-2.5 text-right font-mono font-bold ${balance < 0 ? "text-err" : "text-ok"}`}>{inr(balance)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        );
+      })()}
 
       {/* Sales tab */}
       {tab === "sales" && !isLoading && (
