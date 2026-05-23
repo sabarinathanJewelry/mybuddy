@@ -49,6 +49,9 @@ export default function ChitsPage() {
   const [payDate, setPayDate] = useState(globalDate);
   const [notes, setNotes] = useState("");
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editAmount, setEditAmount] = useState(0);
+
   // Current board rate for selected metal
   const boardRateForMetal = metalType === "gold"
     ? (boardRate?.gold_22k ?? 0)
@@ -63,6 +66,73 @@ export default function ChitsPage() {
     setMode("cash"); setPayDate(globalDate); setNotes("");
     setShowForm(false);
   }
+
+  function startEdit(p: any) {
+    setEditingId(p.id);
+    setEditAmount(Number(p.amount));
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditAmount(0);
+  }
+
+  const updatePayment = useMutation({
+    mutationFn: async ({ id, newAmount }: { id: string; newAmount: number }) => {
+      const client = supabase();
+      const row = (rows as any[]).find((p: any) => p.id === id);
+      if (!row) throw new Error("Row not found");
+
+      const oldAmount = Number(row.amount);
+      const oldGrams = Number(row.metal_grams);
+      const boardRate = Number(row.board_rate);
+      const newGrams = boardRate > 0 ? parseFloat((newAmount / boardRate).toFixed(4)) : oldGrams;
+      const deltaGrams = newGrams - oldGrams;
+      const deltaAmount = newAmount - oldAmount;
+
+      // Update chit_payments row
+      const { error } = await client.from("chit_payments")
+        .update({ amount: newAmount, metal_grams: newGrams })
+        .eq("id", id);
+      if (error) throw error;
+
+      // Adjust customer metal balance
+      const balanceField = row.metal_type === "gold" ? "gold_balance_g" : "silver_balance_g";
+      const { data: cust } = await client.from("customers")
+        .select("gold_balance_g, silver_balance_g").eq("id", row.customer_id).single();
+      const current = Number((cust as any)?.[balanceField]) || 0;
+      await client.from("customers")
+        .update({ [balanceField]: parseFloat((current + deltaGrams).toFixed(4)) })
+        .eq("id", row.customer_id);
+
+      // Update cash/bank ledger
+      if (row.mode === "cash") {
+        await client.from("cash_ledger")
+          .update({ amount: newAmount })
+          .eq("ref_type", "chit_payment").eq("ref_id", id);
+      } else if (row.mode === "upi" || row.mode === "bank") {
+        await client.from("bank_ledger")
+          .update({ amount: newAmount })
+          .eq("ref_type", "chit_payment").eq("ref_id", id);
+      } else if (row.mode === "advance" && Math.abs(deltaAmount) > 0.01) {
+        // Insert a correction entry to balance the advance
+        await client.from("payments").insert({
+          pay_date: row.pay_date,
+          direction: deltaAmount > 0 ? "out" : "in",
+          mode: "advance",
+          amount: Math.abs(deltaAmount),
+          customer_id: row.customer_id,
+          is_advance: true,
+          notes: `Chit payment correction (${row.metal_type})`,
+        });
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["chit_payments"] });
+      qc.invalidateQueries({ queryKey: ["customers"] });
+      cancelEdit();
+    },
+  });
 
   const save = useMutation({
     mutationFn: async () => {
@@ -267,25 +337,72 @@ export default function ChitsPage() {
                 <th className="text-right px-3 py-2.5">Amount</th>
                 <th className="text-right px-3 py-2.5">Grams</th>
                 <th className="text-left px-3 py-2.5">Mode</th>
+                <th className="px-3 py-2.5"></th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((p: any) => (
-                <tr key={p.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                  <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.pay_date)}</td>
-                  <td className="px-3 py-2.5 font-medium">{p.customers?.name ?? "—"}</td>
-                  <td className="px-3 py-2.5 capitalize">
-                    <span className={p.metal_type === "gold" ? "text-gold" : "text-ink-mid"}>
-                      {p.metal_type}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono">{inr(p.amount)}</td>
-                  <td className="px-3 py-2.5 text-right font-mono text-gold">{Number(p.metal_grams).toFixed(4)}g</td>
-                  <td className="px-3 py-2.5 text-ink-dim capitalize">{p.mode === "advance" ? "Advance" : p.mode}</td>
-                </tr>
-              ))}
+              {rows.map((p: any) => {
+                const isEditing = editingId === p.id;
+                const storedRate = Number(p.board_rate);
+                const previewGrams = storedRate > 0
+                  ? (editAmount / storedRate).toFixed(4)
+                  : Number(p.metal_grams).toFixed(4);
+                return isEditing ? (
+                  <tr key={p.id} className="border-b border-line bg-gold/5">
+                    <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.pay_date)}</td>
+                    <td className="px-3 py-2.5 font-medium">{p.customers?.name ?? "—"}</td>
+                    <td className="px-3 py-2.5 capitalize">
+                      <span className={p.metal_type === "gold" ? "text-gold" : "text-ink-mid"}>
+                        {p.metal_type}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="number" step="0.01" autoFocus
+                        value={editAmount || ""}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => setEditAmount(parseFloat(e.target.value) || 0)}
+                        className="w-28 border border-gold rounded px-2 py-1 text-sm font-mono text-right focus:outline-none focus:ring-1 focus:ring-gold"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono text-gold">{previewGrams}g</td>
+                    <td className="px-3 py-2.5 text-ink-dim capitalize">{p.mode === "advance" ? "Advance" : p.mode}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      <button
+                        disabled={updatePayment.isPending || editAmount <= 0}
+                        onClick={() => updatePayment.mutate({ id: p.id, newAmount: editAmount })}
+                        className="bg-gold text-white text-xs px-3 py-1 rounded disabled:opacity-50 mr-1">
+                        {updatePayment.isPending ? "…" : "Save"}
+                      </button>
+                      <button onClick={cancelEdit}
+                        className="border border-line text-xs px-3 py-1 rounded text-ink-dim">
+                        Cancel
+                      </button>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr key={p.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                    <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.pay_date)}</td>
+                    <td className="px-3 py-2.5 font-medium">{p.customers?.name ?? "—"}</td>
+                    <td className="px-3 py-2.5 capitalize">
+                      <span className={p.metal_type === "gold" ? "text-gold" : "text-ink-mid"}>
+                        {p.metal_type}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono">{inr(p.amount)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-gold">{Number(p.metal_grams).toFixed(4)}g</td>
+                    <td className="px-3 py-2.5 text-ink-dim capitalize">{p.mode === "advance" ? "Advance" : p.mode}</td>
+                    <td className="px-3 py-2.5 text-right">
+                      <button onClick={() => startEdit(p)}
+                        className="text-xs text-ink-dim border border-line rounded px-2 py-0.5 hover:border-gold hover:text-gold">
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
               {!rows.length && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-ink-dim">{t("no_data")}</td></tr>
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-ink-dim">{t("no_data")}</td></tr>
               )}
             </tbody>
           </table>
