@@ -108,7 +108,7 @@ async function fanoutOrderPayments(
     }
 
     if (p.mode === "advance") {
-      // Debit customer's advance balance
+      // Debit customer's existing advance balance
       if (customerId) {
         promises.push(Promise.resolve(client.from("payments").insert({
           pay_date: payDate, direction: "out", mode: "advance",
@@ -119,16 +119,9 @@ async function fanoutOrderPayments(
       continue;
     }
 
-    if (customerId) {
-      promises.push(Promise.resolve(client.from("payments").insert({
-        pay_date: payDate,
-        direction: "in",
-        mode: p.mode === "old_gold" || p.mode === "old_silver" ? "cash" : p.mode,
-        amount: p.amount,
-        customer_id: customerId,
-        notes: p.notes || `Order advance — ${orderNo}`,
-      })));
-    }
+    // Cash/bank/UPI/old_gold payments for an order are tracked in order_payments only.
+    // They do NOT go into the customer payments table — that table is for direct credit/debit
+    // to the customer's account, not order-specific transactions.
   }
 
   await Promise.allSettled(promises);
