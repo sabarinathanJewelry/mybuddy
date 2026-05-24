@@ -7,9 +7,16 @@ const ZK_IP   = process.env.ZK_DEVICE_IP   ?? "192.168.1.101";
 const ZK_PORT = parseInt(process.env.ZK_DEVICE_PORT ?? "4370");
 
 export async function POST() {
+  // Vercel (cloud) cannot reach a local network device
+  if (process.env.VERCEL) {
+    return NextResponse.json(
+      { ok: false, vercel: true, error: `App is running on Vercel — it cannot reach the local device at ${ZK_IP}. Run the local sync script instead: node scripts/sync-attendance.js` },
+      { status: 400 }
+    );
+  }
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
   if (!url || !key) {
     return NextResponse.json(
       { ok: false, error: "NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set" },
@@ -25,10 +32,9 @@ export async function POST() {
   try {
     await zk.createSocket();
 
-    // ── Staff ───────────────────────────────────────────────────────────
     const { data: users = [] } = await zk.getUsers();
     if (users.length) {
-      const staffRows = users.map((u: any) => ({
+      const staffRows = (users as any[]).map((u) => ({
         bio_user_id: String(u.userId),
         name:        u.name?.trim() || `User ${u.userId}`,
         device_uid:  u.uid   ?? null,
@@ -38,7 +44,6 @@ export async function POST() {
       await sb.from("staff").upsert(staffRows, { onConflict: "bio_user_id" });
     }
 
-    // ── Attendance ──────────────────────────────────────────────────────
     const { data: logs = [] } = await zk.getAttendances();
     const records = (logs as any[])
       .filter((a) => a.deviceUserId)
@@ -56,9 +61,10 @@ export async function POST() {
       );
     }
 
-    return NextResponse.json({ ok: true, staff: users.length, records: records.length });
+    return NextResponse.json({ ok: true, staff: (users as any[]).length, records: records.length });
   } catch (err: any) {
-    return NextResponse.json({ ok: false, error: err.message ?? "Unknown error" }, { status: 500 });
+    const msg = err?.message || err?.code || String(err) || "Connection failed";
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   } finally {
     try { await zk.disconnect(); } catch {}
   }
