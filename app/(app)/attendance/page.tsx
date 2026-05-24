@@ -170,7 +170,7 @@ function MonthlyTab() {
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
-          <table className="w-full text-sm" style={{ minWidth: "960px" }}>
+          <table className="w-full text-sm" style={{ minWidth: "1080px" }}>
             <thead>
               <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                 <th className="w-8 px-3 py-2.5" />
@@ -183,6 +183,7 @@ function MonthlyTab() {
                 <th className="text-right px-3 py-2.5 text-warn">Late</th>
                 <th className="text-right px-3 py-2.5 text-warn">Late(m)</th>
                 <th className="text-right px-3 py-2.5 text-ok">OT</th>
+                <th className="text-center px-3 py-2.5" title="no lunch / spare (1h–1h10m) / over (>1h10m)">Lunch</th>
                 <th className="text-right px-3 py-2.5 text-err">L.Ded</th>
                 <th className="text-right px-3 py-2.5 text-err">Fine</th>
                 <th className="text-right px-3 py-2.5 font-semibold text-ink">
@@ -235,6 +236,22 @@ function MonthlyTab() {
                       <td className={`px-3 py-2.5 text-right text-xs ${r.total_ot_minutes > 0 ? "text-ok" : "text-ink-dim"}`}>
                         {formatMins(r.total_ot_minutes)}
                       </td>
+                      <td className="px-3 py-2.5 text-center">
+                        <div className="flex flex-wrap gap-1 justify-center">
+                          {r.days_no_lunch > 0 && (
+                            <span className="text-[10px] text-ink-dim">{r.days_no_lunch}×no</span>
+                          )}
+                          {r.days_lunch_spare > 0 && (
+                            <span className="text-[10px] text-warn font-semibold">{r.days_lunch_spare}×spare</span>
+                          )}
+                          {r.days_lunch_over > 0 && (
+                            <span className="text-[10px] text-err font-semibold">{r.days_lunch_over}×over</span>
+                          )}
+                          {r.days_no_lunch === 0 && r.days_lunch_spare === 0 && r.days_lunch_over === 0 && (
+                            <span className="text-[10px] text-ink-dim">—</span>
+                          )}
+                        </div>
+                      </td>
                       <td className={`px-3 py-2.5 text-right text-xs font-mono ${r.leave_deduction > 0 ? "text-err" : "text-ink-dim"}`}>
                         {r.leave_deduction > 0 ? inr(Math.round(r.leave_deduction)) : "—"}
                       </td>
@@ -255,7 +272,7 @@ function MonthlyTab() {
                     {/* Salary edit row */}
                     {editingId === r.bio_user_id && (
                       <tr className="border-b border-line bg-canvas/40">
-                        <td colSpan={14} className="px-4 py-3">
+                        <td colSpan={15} className="px-4 py-3">
                           <div className="flex flex-wrap gap-3 items-end">
                             <div>
                               <label className="text-xs text-ink-dim block mb-1">Monthly Salary (₹)</label>
@@ -283,7 +300,7 @@ function MonthlyTab() {
                     {/* Expanded detail row */}
                     {isExpanded && (
                       <tr className="border-b border-line bg-canvas/10">
-                        <td colSpan={14} className="px-4 py-4">
+                        <td colSpan={15} className="px-4 py-4">
                           <div className="flex gap-5 flex-wrap items-start">
 
                             {/* Day-by-day attendance calendar */}
@@ -291,7 +308,7 @@ function MonthlyTab() {
                               <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide mb-2">
                                 Daily Attendance — {monthLabel(month)}
                               </p>
-                              <table className="w-full text-xs" style={{ minWidth: "380px" }}>
+                              <table className="w-full text-xs" style={{ minWidth: "520px" }}>
                                 <thead>
                                   <tr className="text-ink-dim border-b border-line">
                                     <th className="text-left py-1 pr-3 font-medium">Date</th>
@@ -299,6 +316,7 @@ function MonthlyTab() {
                                     <th className="text-right py-1 px-2 font-medium">IN</th>
                                     <th className="text-right py-1 px-2 font-medium">OUT</th>
                                     <th className="text-right py-1 px-2 font-medium">Hours</th>
+                                    <th className="text-center py-1 px-2 font-medium">Lunch</th>
                                     <th className="text-right py-1 px-2 font-medium">Late</th>
                                     <th className="text-right py-1 px-2 font-medium">OT</th>
                                   </tr>
@@ -320,6 +338,23 @@ function MonthlyTab() {
                                       <td className="py-1 px-2 text-right font-mono text-ok">{formatTime(d.first_in)}</td>
                                       <td className="py-1 px-2 text-right font-mono text-ink-dim">{formatTime(d.last_out)}</td>
                                       <td className="py-1 px-2 text-right">{formatHours(d.effective_hours)}</td>
+                                      <td className="py-1 px-2 text-center">
+                                        {!d.first_in ? (
+                                          <span className="text-ink-dim">—</span>
+                                        ) : d.lunch_minutes === null ? (
+                                          <span className="text-[10px] text-ink-dim">not tracked</span>
+                                        ) : (
+                                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                                            d.lunch_minutes > 70  ? "bg-err/10 text-err" :
+                                            d.lunch_minutes >= 60 ? "bg-warn/10 text-warn" :
+                                                                    "bg-ok/10 text-ok"
+                                          }`}>
+                                            {formatMins(Math.round(d.lunch_minutes))}
+                                            {d.lunch_minutes > 70  && " over"}
+                                            {d.lunch_minutes >= 60 && d.lunch_minutes <= 70 && " spare"}
+                                          </span>
+                                        )}
+                                      </td>
                                       <td className={`py-1 px-2 text-right font-medium ${d.late_minutes > 0 ? "text-warn" : "text-ink-dim"}`}>
                                         {d.late_minutes > 0 ? `${d.late_minutes}m` : "—"}
                                       </td>
@@ -394,6 +429,28 @@ function MonthlyTab() {
                                 )}
                               </div>
 
+                              <div className="border-t border-line pt-1.5 mt-1.5 space-y-1">
+                                <div className="font-medium text-ink-dim mb-0.5">Lunch Tracking</div>
+                                <div className="flex justify-between">
+                                  <span className="text-ink-dim">Not tracked (2 punches)</span>
+                                  <span className={r.days_no_lunch > 0 ? "font-medium" : "text-ink-dim"}>{r.days_no_lunch} days</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className={r.days_lunch_spare > 0 ? "text-warn" : "text-ink-dim"}>Spare (1h–1h10m)</span>
+                                  <span className={`font-medium ${r.days_lunch_spare > 0 ? "text-warn" : "text-ink-dim"}`}>{r.days_lunch_spare} days</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className={r.days_lunch_over > 0 ? "text-err" : "text-ink-dim"}>Over (&gt;1h10m)</span>
+                                  <span className={`font-medium ${r.days_lunch_over > 0 ? "text-err" : "text-ink-dim"}`}>{r.days_lunch_over} days</span>
+                                </div>
+                                {r.present_days - r.days_no_lunch - r.days_lunch_spare - r.days_lunch_over > 0 && (
+                                  <div className="flex justify-between text-ok">
+                                    <span>On time (&lt;1h)</span>
+                                    <span className="font-medium">{r.present_days - r.days_no_lunch - r.days_lunch_spare - r.days_lunch_over} days</span>
+                                  </div>
+                                )}
+                              </div>
+
                               <div className="border-t-2 border-line pt-2 mt-1">
                                 <div className="flex justify-between font-semibold text-sm">
                                   <span>Net Pay</span>
@@ -430,6 +487,13 @@ function MonthlyTab() {
                 <td className="px-3 py-2.5 text-right text-warn">{data.reduce((s, r) => s + r.late_days, 0) || "—"}</td>
                 <td className="px-3 py-2.5 text-right text-warn text-xs">{formatMins(data.reduce((s, r) => s + r.total_late_minutes, 0))}</td>
                 <td className="px-3 py-2.5 text-right text-ok text-xs">{formatMins(totOtMins)}</td>
+                <td className="px-3 py-2.5 text-center">
+                  <div className="flex flex-wrap gap-1 justify-center">
+                    {data.reduce((s,r)=>s+r.days_no_lunch,0) > 0 && <span className="text-[10px] text-ink-dim">{data.reduce((s,r)=>s+r.days_no_lunch,0)}×no</span>}
+                    {data.reduce((s,r)=>s+r.days_lunch_spare,0) > 0 && <span className="text-[10px] text-warn font-semibold">{data.reduce((s,r)=>s+r.days_lunch_spare,0)}×spare</span>}
+                    {data.reduce((s,r)=>s+r.days_lunch_over,0) > 0 && <span className="text-[10px] text-err font-semibold">{data.reduce((s,r)=>s+r.days_lunch_over,0)}×over</span>}
+                  </div>
+                </td>
                 <td className="px-3 py-2.5 text-right text-err text-xs font-mono">{totLeaveDed > 0 ? inr(Math.round(totLeaveDed)) : "—"}</td>
                 <td className="px-3 py-2.5 text-right text-err text-xs font-mono">{totFine > 0 ? inr(totFine) : "—"}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-xs">
@@ -794,13 +858,14 @@ export default function AttendancePage() {
                         <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{formatTime(r.last_out)}</td>
                         <td className="px-3 py-2.5 text-right">
                           <span className="font-mono">{formatHours(r.effective_hours)}</span>
+                          {r.lunch_spare_minutes > 0 && (
+                            <span className="block text-[10px] text-warn font-medium">lunch spare +{Math.round(r.lunch_spare_minutes)}m</span>
+                          )}
                           {r.lunch_overrun_minutes > 0 && (
-                            <span className="block text-[10px] text-warn font-medium">
-                              +{formatMins(r.lunch_overrun_minutes)} lunch
-                            </span>
+                            <span className="block text-[10px] text-err font-medium">lunch over +{formatMins(r.lunch_overrun_minutes)}</span>
                           )}
                           {r.effective_hours !== null && r.lunch_minutes === null && r.last_out && (
-                            <span className="block text-[10px] text-ink-dim">−1h lunch</span>
+                            <span className="block text-[10px] text-ink-dim">no lunch tracked</span>
                           )}
                         </td>
                         <td className="px-3 py-2.5 text-center">
@@ -834,16 +899,19 @@ export default function AttendancePage() {
                                   {" "}{formatTime(p)}
                                 </span>
                               ))}
-                              {r.lunch_minutes !== null && (
+                              {r.lunch_minutes !== null ? (
                                 <span className={`text-xs border rounded px-2 py-1 font-medium ${
-                                  r.lunch_overrun_minutes > 0
-                                    ? "bg-warn/10 border-warn/30 text-warn"
-                                    : "bg-ok/10 border-ok/30 text-ok"
+                                  r.lunch_overrun_minutes > 0 ? "bg-err/10 border-err/30 text-err" :
+                                  r.lunch_spare_minutes > 0  ? "bg-warn/10 border-warn/30 text-warn" :
+                                                               "bg-ok/10 border-ok/30 text-ok"
                                 }`}>
                                   Lunch: {formatMins(r.lunch_minutes)}
-                                  {r.lunch_overrun_minutes > 0 && ` (+${formatMins(r.lunch_overrun_minutes)} over)`}
+                                  {r.lunch_spare_minutes  > 0 && ` (spare +${Math.round(r.lunch_spare_minutes)}m)`}
+                                  {r.lunch_overrun_minutes > 0 && ` (over +${formatMins(r.lunch_overrun_minutes)})`}
                                 </span>
-                              )}
+                              ) : r.present && r.last_out ? (
+                                <span className="text-xs border border-line rounded px-2 py-1 text-ink-dim">No lunch tracked</span>
+                              ) : null}
                             </div>
                           </td>
                         </tr>

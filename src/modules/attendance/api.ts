@@ -26,7 +26,8 @@ export type AttendanceEntry = {
   hours_worked: number | null;
   is_late: boolean;
   lunch_minutes: number | null;
-  lunch_overrun_minutes: number;
+  lunch_spare_minutes: number;    // lunch 60–70 min (in buffer zone)
+  lunch_overrun_minutes: number;  // lunch > 70 min (over limit)
   effective_hours: number | null;
   short_interval: boolean;
   extra_punches: boolean;
@@ -55,6 +56,7 @@ export type DailyAttendance = {
   ot_minutes: number;       // minutes beyond shift end
   effective_hours: number | null;
   punch_count: number;
+  lunch_minutes: number | null;   // null = only 2 punches (no lunch tracked)
 };
 
 export type MonthlyEmployeeSummary = {
@@ -73,6 +75,9 @@ export type MonthlyEmployeeSummary = {
   excess_leave_days: number;
   per_day_salary: number;
   leave_deduction: number;
+  days_no_lunch: number;     // present but no lunch tracked (2 punches only)
+  days_lunch_spare: number;  // lunch 60–70 min
+  days_lunch_over: number;   // lunch > 70 min
   daily: DailyAttendance[];
 };
 
@@ -124,13 +129,19 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
         const is_late = firstIn ? istMinutes(firstIn) > 9 * 60 + 50 : false;
 
         // Lunch = time between second punch and second-to-last punch (middle window)
+        // Spare: 60–70 min (buffer zone), Over: > 70 min (red flag)
         let lunch_minutes: number | null = null;
+        let lunch_spare_minutes  = 0;
         let lunch_overrun_minutes = 0;
         if (punches.length >= 4) {
           const ms =
             new Date(punches[punches.length - 2]).getTime() - new Date(punches[1]).getTime();
           lunch_minutes = ms / 60000;
-          lunch_overrun_minutes = Math.max(0, lunch_minutes - 60);
+          if (lunch_minutes > 70) {
+            lunch_overrun_minutes = lunch_minutes - 70;
+          } else if (lunch_minutes >= 60) {
+            lunch_spare_minutes = lunch_minutes - 60;
+          }
         }
 
         // Effective hours = total hours minus lunch (or minus standard 1h if no lunch punches)
@@ -164,6 +175,7 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
           hours_worked: hoursWorked,
           is_late,
           lunch_minutes,
+          lunch_spare_minutes,
           lunch_overrun_minutes,
           effective_hours,
           short_interval,
@@ -299,27 +311,34 @@ export function useMonthlyAttendanceSummary(month: string) {
           const lastOutMins = lastOut ? istMinutes(lastOut) : 0;
           const ot_minutes  = lastOut ? Math.max(0, lastOutMins - shiftEndMin) : 0;
 
-          let effective_hours: number | null = null;
-          if (hw !== null) {
-            if (dayPunches.length >= 4) {
-              const lunchMs = new Date(dayPunches[dayPunches.length - 2]).getTime() - new Date(dayPunches[1]).getTime();
-              effective_hours = hw - lunchMs / 3_600_000;
-            } else {
-              effective_hours = Math.max(0, hw - 1);
-            }
+          // Lunch from middle punches (null if only 2 punches)
+          let lunch_minutes: number | null = null;
+          if (dayPunches.length >= 4) {
+            const lunchMs = new Date(dayPunches[dayPunches.length - 2]).getTime() - new Date(dayPunches[1]).getTime();
+            lunch_minutes = lunchMs / 60000;
           }
 
-          return { date, first_in: firstIn, last_out: lastOut, is_late, late_minutes, ot_minutes, effective_hours, punch_count: dayPunches.length };
+          let effective_hours: number | null = null;
+          if (hw !== null) {
+            effective_hours = lunch_minutes !== null
+              ? hw - lunch_minutes / 60
+              : Math.max(0, hw - 1);
+          }
+
+          return { date, first_in: firstIn, last_out: lastOut, is_late, late_minutes, ot_minutes, effective_hours, punch_count: dayPunches.length, lunch_minutes };
         });
 
         // Aggregate totals from daily
         let present_days = 0, late_days = 0, total_late_minutes = 0, total_ot_minutes = 0;
+        let days_no_lunch = 0, days_lunch_spare = 0, days_lunch_over = 0;
         for (const d of daily) {
-          if (d.first_in) {
-            present_days++;
-            if (d.is_late) { late_days++; total_late_minutes += d.late_minutes; }
-            total_ot_minutes += d.ot_minutes;
-          }
+          if (!d.first_in) continue;
+          present_days++;
+          if (d.is_late) { late_days++; total_late_minutes += d.late_minutes; }
+          total_ot_minutes += d.ot_minutes;
+          if (d.lunch_minutes === null)  days_no_lunch++;
+          else if (d.lunch_minutes > 70) days_lunch_over++;
+          else if (d.lunch_minutes >= 60) days_lunch_spare++;
         }
 
         const absent_days       = Math.max(0, totalDays - present_days);
@@ -344,6 +363,9 @@ export function useMonthlyAttendanceSummary(month: string) {
           excess_leave_days,
           per_day_salary,
           leave_deduction,
+          days_no_lunch,
+          days_lunch_spare,
+          days_lunch_over,
           daily,
         };
       });
