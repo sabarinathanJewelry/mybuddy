@@ -40,8 +40,8 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
   process.exit(1);
 }
 
-// ── Supabase REST helper (no extra dependency) ──────────────────────────────
-async function supabaseUpsert(table, rows, onConflict) {
+// ── Supabase REST helpers ────────────────────────────────────────────────────
+async function supabaseUpsert(table, rows, onConflict, prefer = "resolution=merge-duplicates") {
   const res = await fetch(
     `${SUPABASE_URL}/rest/v1/${table}?on_conflict=${onConflict}`,
     {
@@ -50,7 +50,7 @@ async function supabaseUpsert(table, rows, onConflict) {
         apikey: SUPABASE_KEY,
         Authorization: `Bearer ${SUPABASE_KEY}`,
         "Content-Type": "application/json",
-        Prefer: "resolution=merge-duplicates",
+        Prefer: prefer,
       },
       body: JSON.stringify(rows),
     }
@@ -74,16 +74,27 @@ async function main() {
     // Sync staff
     const { data: users = [] } = await zk.getUsers();
     if (users.length) {
-      const staffRows = users.map((u) => ({
+      // Step 1: insert NEW staff only (ignore existing — preserves manually-edited names)
+      const newRows = users.map((u) => ({
         bio_user_id: String(u.userId),
         name:        u.name?.trim() || `User ${u.userId}`,
         device_uid:  u.uid   ?? null,
         privilege:   u.role  ?? 0,
         card_no:     u.cardno ?? 0,
       }));
-      await supabaseUpsert("staff", staffRows, "bio_user_id");
-      console.log(`Staff synced: ${staffRows.length}`);
-      staffRows.forEach((r) => console.log(`  [${r.bio_user_id}] ${r.name}`));
+      await supabaseUpsert("staff", newRows, "bio_user_id", "resolution=ignore-duplicates");
+
+      // Step 2: update device fields only for ALL staff (never touches name)
+      const deviceRows = users.map((u) => ({
+        bio_user_id: String(u.userId),
+        device_uid:  u.uid   ?? null,
+        privilege:   u.role  ?? 0,
+        card_no:     u.cardno ?? 0,
+      }));
+      await supabaseUpsert("staff", deviceRows, "bio_user_id", "resolution=merge-duplicates");
+
+      console.log(`Staff synced: ${newRows.length}`);
+      newRows.forEach((r) => console.log(`  [${r.bio_user_id}] ${r.name}`));
     }
 
     // Sync attendance

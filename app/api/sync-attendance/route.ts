@@ -34,14 +34,24 @@ export async function POST() {
 
     const { data: users = [] } = await zk.getUsers();
     if (users.length) {
-      const staffRows = (users as any[]).map((u) => ({
+      // Insert new staff with device name; ignore existing (preserves manually-edited names)
+      const newRows = (users as any[]).map((u) => ({
         bio_user_id: String(u.userId),
         name:        u.name?.trim() || `User ${u.userId}`,
         device_uid:  u.uid   ?? null,
         privilege:   u.role  ?? 0,
         card_no:     u.cardno ?? 0,
       }));
-      await sb.from("staff").upsert(staffRows, { onConflict: "bio_user_id" });
+      await sb.from("staff").upsert(newRows, { onConflict: "bio_user_id", ignoreDuplicates: true });
+
+      // Update only device fields for all staff (never overwrites name)
+      const deviceRows = (users as any[]).map((u) => ({
+        bio_user_id: String(u.userId),
+        device_uid:  u.uid   ?? null,
+        privilege:   u.role  ?? 0,
+        card_no:     u.cardno ?? 0,
+      }));
+      await sb.from("staff").upsert(deviceRows, { onConflict: "bio_user_id" });
     }
 
     const { data: logs = [] } = await zk.getAttendances();
