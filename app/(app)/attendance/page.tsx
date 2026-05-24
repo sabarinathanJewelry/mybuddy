@@ -4,11 +4,12 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useAttendanceByDate, useStaff, useUpdateStaff, useDeleteStaff,
-  type StaffMember,
+  useMonthlyAttendanceSummary,
+  type StaffMember, type MonthlyEmployeeSummary,
 } from "@/modules/attendance/api";
-import { shortDate } from "@/lib/format";
+import { shortDate, inr } from "@/lib/format";
 
-type PageTab = "attendance" | "staff";
+type PageTab = "attendance" | "staff" | "monthly";
 
 const inp = "border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
 
@@ -22,10 +23,288 @@ function formatHours(h: number | null) {
   const mins = Math.round((h - hrs) * 60);
   return `${hrs}h ${mins}m`;
 }
-function formatMins(m: number) {
-  const h = Math.floor(m / 60);
-  const min = Math.round(m % 60);
-  return h > 0 ? `${h}h ${min}m` : `${min}m`;
+function formatMins(mins: number): string {
+  if (mins <= 0) return "—";
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+function currentMonth(): string {
+  return new Date().toISOString().slice(0, 7);
+}
+function monthLabel(m: string): string {
+  const [y, mo] = m.split("-");
+  return new Date(Number(y), Number(mo) - 1, 1).toLocaleString("en-IN", {
+    month: "long", year: "numeric",
+  });
+}
+
+// ── Monthly Report tab ───────────────────────────────────────────────────────
+function MonthlyTab() {
+  const today        = currentMonth();
+  const [month, setMonth]           = useState(today);
+  const [lateFineAmt, setLateFineAmt] = useState(100);
+  const [fineMode, setFineMode]     = useState<"day" | "minute">("day");
+  const [applyFine, setApplyFine]   = useState(true);
+  const [bulkLeaves, setBulkLeaves] = useState(1);
+  const [editingId, setEditingId]   = useState<string | null>(null);
+  const [editForm, setEditForm]     = useState({ monthly_salary: 0, allowed_leaves: 1 });
+
+  const { data = [], isLoading } = useMonthlyAttendanceSummary(month);
+  const update = useUpdateStaff();
+  const qc     = useQueryClient();
+
+  function shiftMonth(dir: -1 | 1) {
+    const [y, m] = month.split("-").map(Number);
+    const next = m + dir;
+    const newM = next < 1 ? `${y - 1}-12` : next > 12 ? `${y + 1}-01` : `${y}-${String(next).padStart(2, "0")}`;
+    if (newM <= today) setMonth(newM);
+  }
+
+  function calcFine(r: MonthlyEmployeeSummary): number {
+    if (!applyFine) return 0;
+    return fineMode === "day" ? lateFineAmt * r.late_days : lateFineAmt * r.total_late_minutes;
+  }
+  function calcNet(r: MonthlyEmployeeSummary): number {
+    return r.monthly_salary - r.leave_deduction - calcFine(r);
+  }
+
+  function startEdit(r: MonthlyEmployeeSummary) {
+    setEditingId(r.bio_user_id);
+    setEditForm({ monthly_salary: r.monthly_salary, allowed_leaves: r.allowed_leaves });
+  }
+  async function saveEdit(bio_user_id: string) {
+    await update.mutateAsync({ bio_user_id, ...editForm });
+    setEditingId(null);
+  }
+
+  async function handleBulkLeaves() {
+    if (!confirm(`Set allowed leaves to ${bulkLeaves} for all ${data.length} active staff?`)) return;
+    for (const r of data) {
+      await update.mutateAsync({ bio_user_id: r.bio_user_id, allowed_leaves: bulkLeaves });
+    }
+    qc.invalidateQueries({ queryKey: ["monthly-attendance"] });
+  }
+
+  const totalDays   = data[0]?.total_days ?? 0;
+  const totSalary   = data.reduce((s, r) => s + r.monthly_salary, 0);
+  const totLeaveDed = data.reduce((s, r) => s + r.leave_deduction, 0);
+  const totFine     = data.reduce((s, r) => s + calcFine(r), 0);
+  const totNet      = data.reduce((s, r) => s + calcNet(r), 0);
+  const totOtMins   = data.reduce((s, r) => s + r.total_ot_minutes, 0);
+
+  return (
+    <div className="space-y-4">
+      {/* Month navigation */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={() => shiftMonth(-1)}
+          className="px-2.5 py-1.5 border border-line rounded-lg2 text-sm hover:bg-canvas">◄</button>
+        <span className="font-semibold text-ink w-44 text-center">{monthLabel(month)}</span>
+        <button onClick={() => shiftMonth(1)} disabled={month >= today}
+          className="px-2.5 py-1.5 border border-line rounded-lg2 text-sm hover:bg-canvas disabled:opacity-30">►</button>
+        {totalDays > 0 && (
+          <span className="text-xs text-ink-dim ml-1">
+            {totalDays} day{totalDays > 1 ? "s" : ""} counted
+          </span>
+        )}
+      </div>
+
+      {/* Settings card */}
+      <div className="bg-canvas border border-line rounded-xl p-4 space-y-3">
+        <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide">Report Settings</p>
+        <div className="flex flex-wrap gap-5 items-end">
+          {/* Late fine */}
+          <div>
+            <label className="text-xs text-ink-dim block mb-1">Late Fine</label>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm text-ink-dim">₹</span>
+              <input type="number" value={lateFineAmt} min={0}
+                onChange={e => setLateFineAmt(Number(e.target.value))}
+                className={inp + " w-20"} />
+              <span className="text-xs text-ink-dim">per</span>
+              <select value={fineMode} onChange={e => setFineMode(e.target.value as "day" | "minute")}
+                className={inp + " w-28"}>
+                <option value="day">late day</option>
+                <option value="minute">minute late</option>
+              </select>
+              <label className="flex items-center gap-1.5 text-sm cursor-pointer select-none ml-1">
+                <input type="checkbox" checked={applyFine} onChange={e => setApplyFine(e.target.checked)}
+                  className="accent-gold" />
+                Apply
+              </label>
+            </div>
+          </div>
+
+          {/* Bulk set allowed leaves */}
+          <div>
+            <label className="text-xs text-ink-dim block mb-1">Set allowed leaves for all staff</label>
+            <div className="flex items-center gap-1.5">
+              <input type="number" value={bulkLeaves} min={0} max={31}
+                onChange={e => setBulkLeaves(Number(e.target.value))}
+                className={inp + " w-16"} />
+              <span className="text-xs text-ink-dim">days/month</span>
+              <button onClick={handleBulkLeaves}
+                className="bg-gold text-white text-xs px-2.5 py-1.5 rounded-lg2">Set all</button>
+            </div>
+          </div>
+        </div>
+        <p className="text-[11px] text-ink-dim leading-relaxed">
+          Fine suggestion: <strong>₹50–200 / late day</strong> (flat) or <strong>₹3–10 / minute</strong>.
+          ₹100/day on ₹25,000 salary ≈ 4% daily wage per incident.
+          Leave deduction (absent days beyond allowed) is always calculated and shown separately — fine and deduction cover different things.
+        </p>
+      </div>
+
+      {/* Table */}
+      {isLoading ? (
+        <p className="text-ink-dim text-sm text-center py-8">Loading…</p>
+      ) : data.length === 0 ? (
+        <div className="bg-white rounded-xl border border-line p-10 text-center text-ink-dim shadow-soft">
+          No active staff. Run migration 029 in Supabase, then check staff records.
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+          <table className="w-full text-sm" style={{ minWidth: "960px" }}>
+            <thead>
+              <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                <th className="text-left px-3 py-2.5 w-8">#</th>
+                <th className="text-left px-3 py-2.5">Name</th>
+                <th className="text-right px-3 py-2.5">Salary</th>
+                <th className="text-right px-3 py-2.5">Present</th>
+                <th className="text-right px-3 py-2.5">Absent</th>
+                <th className="text-right px-3 py-2.5" title="Allowed leaves">Allowed</th>
+                <th className="text-right px-3 py-2.5 text-err" title="Absent beyond allowed leaves">Excess</th>
+                <th className="text-right px-3 py-2.5 text-warn">Late Days</th>
+                <th className="text-right px-3 py-2.5 text-warn" title="Total minutes late from 9:30">Late(m)</th>
+                <th className="text-right px-3 py-2.5 text-ok">OT</th>
+                <th className="text-right px-3 py-2.5 text-err">L. Ded</th>
+                <th className="text-right px-3 py-2.5 text-err">Fine</th>
+                <th className="text-right px-3 py-2.5 font-semibold text-ink">Net Pay</th>
+                <th className="w-10 px-3 py-2.5" />
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((r, i) => {
+                const fine = calcFine(r);
+                const net  = calcNet(r);
+                return (
+                  <Fragment key={r.bio_user_id}>
+                    <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
+                      <td className="px-3 py-2.5 text-ink-dim text-xs">{i + 1}</td>
+                      <td className="px-3 py-2.5 font-medium">
+                        {r.name}
+                        <span className={`ml-1.5 text-[10px] font-semibold px-1 py-0.5 rounded ${
+                          r.shift === "girls" ? "bg-info/10 text-info" : "bg-gold/10 text-gold"
+                        }`}>
+                          {r.shift === "girls" ? "G" : "B"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono text-xs">
+                        {r.monthly_salary > 0 ? inr(r.monthly_salary) : <span className="text-ink-dim">—</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-ok font-medium">{r.present_days}</td>
+                      <td className={`px-3 py-2.5 text-right font-medium ${r.absent_days > r.allowed_leaves ? "text-err" : ""}`}>
+                        {r.absent_days}
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-ink-dim">{r.allowed_leaves}</td>
+                      <td className={`px-3 py-2.5 text-right font-medium ${r.excess_leave_days > 0 ? "text-err" : "text-ink-dim"}`}>
+                        {r.excess_leave_days > 0 ? r.excess_leave_days : "—"}
+                      </td>
+                      <td className={`px-3 py-2.5 text-right font-medium ${r.late_days > 0 ? "text-warn" : "text-ink-dim"}`}>
+                        {r.late_days > 0 ? r.late_days : "—"}
+                      </td>
+                      <td className={`px-3 py-2.5 text-right text-xs ${r.total_late_minutes > 0 ? "text-warn" : "text-ink-dim"}`}>
+                        {formatMins(r.total_late_minutes)}
+                      </td>
+                      <td className={`px-3 py-2.5 text-right text-xs ${r.total_ot_minutes > 0 ? "text-ok" : "text-ink-dim"}`}>
+                        {formatMins(r.total_ot_minutes)}
+                      </td>
+                      <td className={`px-3 py-2.5 text-right text-xs font-mono ${r.leave_deduction > 0 ? "text-err" : "text-ink-dim"}`}>
+                        {r.leave_deduction > 0 ? inr(Math.round(r.leave_deduction)) : "—"}
+                      </td>
+                      <td className={`px-3 py-2.5 text-right text-xs font-mono ${fine > 0 ? "text-err" : "text-ink-dim"}`}>
+                        {fine > 0 ? inr(fine) : "—"}
+                      </td>
+                      <td className={`px-3 py-2.5 text-right font-semibold font-mono ${
+                        r.monthly_salary > 0 ? (net < r.monthly_salary * 0.8 ? "text-err" : "text-ink") : "text-ink-dim"
+                      }`}>
+                        {r.monthly_salary > 0 ? inr(Math.round(net)) : "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        <button onClick={() => startEdit(r)} className="text-xs text-gold hover:underline">Edit</button>
+                      </td>
+                    </tr>
+
+                    {editingId === r.bio_user_id && (
+                      <tr className="border-b border-line bg-canvas/40">
+                        <td colSpan={14} className="px-4 py-3">
+                          <div className="flex flex-wrap gap-3 items-end">
+                            <div>
+                              <label className="text-xs text-ink-dim block mb-1">Monthly Salary (₹)</label>
+                              <input type="number" value={editForm.monthly_salary} min={0}
+                                onChange={e => setEditForm(f => ({ ...f, monthly_salary: Number(e.target.value) }))}
+                                className={inp + " w-36"} />
+                            </div>
+                            <div>
+                              <label className="text-xs text-ink-dim block mb-1">Allowed Leaves / month</label>
+                              <input type="number" value={editForm.allowed_leaves} min={0} max={31}
+                                onChange={e => setEditForm(f => ({ ...f, allowed_leaves: Number(e.target.value) }))}
+                                className={inp + " w-24"} />
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={() => saveEdit(r.bio_user_id)} disabled={update.isPending}
+                                className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40">Save</button>
+                              <button onClick={() => setEditingId(null)}
+                                className="border border-line text-xs px-3 py-1.5 rounded-lg2">Cancel</button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+
+              {/* Totals row */}
+              <tr className="bg-canvas/70 border-t-2 border-line text-sm font-semibold">
+                <td colSpan={2} className="px-3 py-2.5 text-xs text-ink-dim">
+                  Total · {data.length} staff · {totalDays} days
+                </td>
+                <td className="px-3 py-2.5 text-right font-mono text-xs">{inr(totSalary)}</td>
+                <td className="px-3 py-2.5 text-right text-ok">
+                  {data.reduce((s, r) => s + r.present_days, 0)}
+                </td>
+                <td className="px-3 py-2.5 text-right">
+                  {data.reduce((s, r) => s + r.absent_days, 0)}
+                </td>
+                <td />
+                <td className="px-3 py-2.5 text-right text-err">
+                  {data.reduce((s, r) => s + r.excess_leave_days, 0) || "—"}
+                </td>
+                <td className="px-3 py-2.5 text-right text-warn">
+                  {data.reduce((s, r) => s + r.late_days, 0) || "—"}
+                </td>
+                <td className="px-3 py-2.5 text-right text-warn text-xs">
+                  {formatMins(data.reduce((s, r) => s + r.total_late_minutes, 0))}
+                </td>
+                <td className="px-3 py-2.5 text-right text-ok text-xs">
+                  {formatMins(totOtMins)}
+                </td>
+                <td className="px-3 py-2.5 text-right text-err text-xs font-mono">
+                  {totLeaveDed > 0 ? inr(Math.round(totLeaveDed)) : "—"}
+                </td>
+                <td className="px-3 py-2.5 text-right text-err text-xs font-mono">
+                  {totFine > 0 ? inr(totFine) : "—"}
+                </td>
+                <td className="px-3 py-2.5 text-right text-ink font-mono text-xs">{inr(Math.round(totNet))}</td>
+                <td />
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Staff management tab ─────────────────────────────────────────────────────
@@ -233,8 +512,14 @@ export default function AttendancePage() {
   const overrunCount = present.filter(r => r.lunch_overrun_minutes > 0).length;
   const shortCount   = present.filter(r => r.short_interval).length;
 
+  const tabLabels: Record<PageTab, string> = {
+    attendance: "Attendance",
+    staff:      "Manage Staff",
+    monthly:    "Monthly Report",
+  };
+
   return (
-    <div className="max-w-4xl mx-auto space-y-5">
+    <div className="max-w-5xl mx-auto space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-xl font-bold text-ink">Attendance</h1>
@@ -265,12 +550,12 @@ export default function AttendancePage() {
 
       {/* Tabs */}
       <div className="flex border-b border-line gap-1">
-        {(["attendance", "staff"] as PageTab[]).map((t) => (
+        {(["attendance", "staff", "monthly"] as PageTab[]).map((t) => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors capitalize ${
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
               tab === t ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"
             }`}>
-            {t === "staff" ? "Manage Staff" : "Attendance"}
+            {tabLabels[t]}
           </button>
         ))}
       </div>
@@ -291,7 +576,6 @@ export default function AttendancePage() {
       {/* ── Attendance tab ── */}
       {tab === "attendance" && (
         <>
-          {/* Summary cards */}
           <div className="grid grid-cols-4 gap-3">
             {[
               { label: "Total Staff", value: data.length,        color: "text-ink"  },
@@ -306,7 +590,6 @@ export default function AttendancePage() {
             ))}
           </div>
 
-          {/* Issues summary bar */}
           {(lateCount > 0 || overrunCount > 0 || shortCount > 0) && (
             <div className="flex gap-2 flex-wrap">
               {lateCount > 0 && (
@@ -332,7 +615,7 @@ export default function AttendancePage() {
           ) : data.length === 0 ? (
             <div className="bg-white rounded-xl border border-line p-10 text-center text-ink-dim shadow-soft">
               <p className="font-medium">{syncing ? "Syncing…" : "No staff records found"}</p>
-              {!syncing && <p className="text-xs mt-1">Run migrations 025–028 in Supabase, then sync the device.</p>}
+              {!syncing && <p className="text-xs mt-1">Run migrations 025–029 in Supabase, then sync the device.</p>}
             </div>
           ) : (
             <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
@@ -358,8 +641,6 @@ export default function AttendancePage() {
                         <td className="px-3 py-2.5 font-medium">{r.name}</td>
                         <td className="px-3 py-2.5 text-ink-dim hidden md:table-cell">{r.designation || "—"}</td>
                         <td className="px-3 py-2.5 text-ink-dim hidden sm:table-cell">{r.department || "—"}</td>
-
-                        {/* Status + Late badge */}
                         <td className="px-3 py-2.5 text-center">
                           <div className="flex flex-col items-center gap-0.5">
                             {r.present
@@ -368,16 +649,11 @@ export default function AttendancePage() {
                                 : <span className="text-[10px] font-semibold bg-info/10 text-info px-2 py-0.5 rounded-full">In</span>
                               : <span className="text-[10px] font-semibold bg-err/10 text-err px-2 py-0.5 rounded-full">Absent</span>
                             }
-                            {r.is_late && (
-                              <span className="text-[9px] font-semibold text-warn leading-none">Late</span>
-                            )}
+                            {r.is_late && <span className="text-[9px] font-semibold text-warn leading-none">Late</span>}
                           </div>
                         </td>
-
                         <td className="px-3 py-2.5 text-right font-mono text-ok">{formatTime(r.first_in)}</td>
                         <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{formatTime(r.last_out)}</td>
-
-                        {/* Effective hours + lunch overrun note */}
                         <td className="px-3 py-2.5 text-right">
                           <span className="font-mono">{formatHours(r.effective_hours)}</span>
                           {r.lunch_overrun_minutes > 0 && (
@@ -389,8 +665,6 @@ export default function AttendancePage() {
                             <span className="block text-[10px] text-ink-dim">−1h lunch</span>
                           )}
                         </td>
-
-                        {/* Punches + short interval flag */}
                         <td className="px-3 py-2.5 text-center">
                           {r.punches.length > 0 ? (
                             <div className="flex flex-col items-center gap-0.5">
@@ -445,7 +719,7 @@ export default function AttendancePage() {
           {data.length > 0 && (
             <p className="text-xs text-ink-dim text-center">
               {shortDate(date)} · {present.length} present, {absent.length} absent of {data.length} staff
-              {" "}· Boys shift 9:30–21:30 · Girls shift 9:30–20:30 · Grace till 9:50
+              {" "}· Boys 9:30–21:30 · Girls 9:30–20:30 · Grace till 9:50
             </p>
           )}
         </>
@@ -453,6 +727,9 @@ export default function AttendancePage() {
 
       {/* ── Staff tab ── */}
       {tab === "staff" && <StaffTab />}
+
+      {/* ── Monthly report tab ── */}
+      {tab === "monthly" && <MonthlyTab />}
     </div>
   );
 }

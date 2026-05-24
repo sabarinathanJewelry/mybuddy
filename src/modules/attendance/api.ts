@@ -42,6 +42,26 @@ export type StaffMember = {
   active: boolean;
   join_date: string | null;
   shift: "boys" | "girls";
+  monthly_salary: number;
+  allowed_leaves: number;
+};
+
+export type MonthlyEmployeeSummary = {
+  bio_user_id: string;
+  name: string;
+  designation: string;
+  shift: "boys" | "girls";
+  monthly_salary: number;
+  allowed_leaves: number;
+  total_days: number;
+  present_days: number;
+  absent_days: number;
+  late_days: number;
+  total_late_minutes: number;
+  total_ot_minutes: number;
+  excess_leave_days: number;
+  per_day_salary: number;
+  leave_deduction: number;
 };
 
 export function useAttendanceByDate(date: string, activeOnly = true) {
@@ -178,6 +198,118 @@ export function useDeleteStaff() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["staff"] });
       qc.invalidateQueries({ queryKey: ["attendance"] });
+    },
+  });
+}
+
+export function useMonthlyAttendanceSummary(month: string) {
+  return useQuery<MonthlyEmployeeSummary[]>({
+    queryKey: ["monthly-attendance", month],
+    enabled: !!month,
+    queryFn: async () => {
+      const [yearStr, monStr] = month.split("-");
+      const year = Number(yearStr);
+      const mon  = Number(monStr);
+
+      const daysInMonth = new Date(year, mon, 0).getDate();
+      const monthEnd    = `${month}-${String(daysInMonth).padStart(2, "0")}`;
+      const today       = new Date().toISOString().slice(0, 10);
+      const lastDay     = month < today.slice(0, 7) ? monthEnd : today;
+      const totalDays   =
+        Math.round((new Date(lastDay).getTime() - new Date(`${month}-01`).getTime()) / 86400000) + 1;
+
+      const nextMon = mon === 12
+        ? `${year + 1}-01`
+        : `${year}-${String(mon + 1).padStart(2, "0")}`;
+
+      const client = supabase();
+      const [staffRes, logsRes] = await Promise.all([
+        client
+          .from("staff")
+          .select("bio_user_id, name, designation, active, shift, monthly_salary, allowed_leaves")
+          .eq("active", true)
+          .order("name"),
+        client
+          .from("attendance_logs")
+          .select("bio_user_id, punch_time")
+          .gte("punch_time", `${month}-01T00:00:00+05:30`)
+          .lt("punch_time", `${nextMon}-01T00:00:00+05:30`)
+          .order("punch_time")
+          .limit(10000),
+      ]);
+
+      if (staffRes.error) throw staffRes.error;
+      if (logsRes.error)  throw logsRes.error;
+
+      const staff = (staffRes.data ?? []) as any[];
+      const logs  = logsRes.data ?? [];
+
+      // Group logs by employee and IST calendar date
+      const byUserByDate = new Map<string, Map<string, string[]>>();
+      for (const log of logs) {
+        const uid     = log.bio_user_id;
+        const istDate = new Date(new Date(log.punch_time).getTime() + IST_MS)
+          .toISOString()
+          .slice(0, 10);
+        if (!byUserByDate.has(uid)) byUserByDate.set(uid, new Map());
+        const m = byUserByDate.get(uid)!;
+        if (!m.has(istDate)) m.set(istDate, []);
+        m.get(istDate)!.push(log.punch_time);
+      }
+
+      return staff.map((s) => {
+        const shiftEndMin =
+          ((s.shift as string) ?? "boys") === "girls" ? 20 * 60 + 30 : 21 * 60 + 30;
+        const byDate = byUserByDate.get(s.bio_user_id) ?? new Map<string, string[]>();
+
+        let present_days       = 0;
+        let late_days          = 0;
+        let total_late_minutes = 0;
+        let total_ot_minutes   = 0;
+
+        for (const punches of byDate.values()) {
+          const sorted = [...punches].sort();
+          if (!sorted.length) continue;
+          present_days++;
+
+          const firstInMins = istMinutes(sorted[0]);
+          if (firstInMins > 9 * 60 + 50) {
+            late_days++;
+            total_late_minutes += firstInMins - (9 * 60 + 30); // minutes from scheduled 9:30
+          }
+
+          if (sorted.length >= 2) {
+            const lastOutMins = istMinutes(sorted[sorted.length - 1]);
+            if (lastOutMins > shiftEndMin) {
+              total_ot_minutes += lastOutMins - shiftEndMin;
+            }
+          }
+        }
+
+        const absent_days       = Math.max(0, totalDays - present_days);
+        const allowed_leaves    = (s.allowed_leaves as number) ?? 1;
+        const excess_leave_days = Math.max(0, absent_days - allowed_leaves);
+        const per_day_salary    = totalDays > 0 ? ((s.monthly_salary as number) ?? 0) / totalDays : 0;
+        const leave_deduction   = excess_leave_days * per_day_salary;
+
+        return {
+          bio_user_id:       s.bio_user_id as string,
+          name:              s.name as string,
+          designation:       (s.designation as string) ?? "",
+          shift:             ((s.shift as string) ?? "boys") as "boys" | "girls",
+          monthly_salary:    (s.monthly_salary as number) ?? 0,
+          allowed_leaves,
+          total_days:        totalDays,
+          present_days,
+          absent_days,
+          late_days,
+          total_late_minutes,
+          total_ot_minutes,
+          excess_leave_days,
+          per_day_salary,
+          leave_deduction,
+        };
+      });
     },
   });
 }

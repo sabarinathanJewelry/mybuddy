@@ -1,0 +1,3 @@
+ALTER TABLE staff
+  ADD COLUMN IF NOT EXISTS monthly_salary numeric NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS allowed_leaves  int     NOT NULL DEFAULT 1;
