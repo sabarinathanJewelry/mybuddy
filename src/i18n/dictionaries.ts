@@ -25,6 +25,7 @@ const en = {
   nav_kolusu: "Kolusu",
   nav_walkins: "Walk-ins",
   nav_reports: "Reports",
+  nav_attendance: "Attendance",
   nav_admin: "Admin",
   nav_logout: "Logout",
   nav_info: "Info",

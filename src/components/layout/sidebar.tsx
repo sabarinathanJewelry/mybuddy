@@ -29,6 +29,7 @@ const NAV = [
   { href: "/kolusu",       icon: "🪬", key: "nav_kolusu" as const },
   { href: "/walkins",      icon: "🚶", key: "nav_walkins" as const },
   { href: "/reports",      icon: "📈", key: "nav_reports" as const },
+  { href: "/attendance",   icon: "🕐", key: "nav_attendance" as const },
 ];
 
 const ADMIN_NAV = [
