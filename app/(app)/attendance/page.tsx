@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAttendanceByDate } from "@/modules/attendance/api";
 import { shortDate } from "@/lib/format";
 
@@ -25,11 +26,39 @@ export default function AttendancePage() {
   const [date, setDate] = useState(today);
   const [activeOnly, setActiveOnly] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const { data = [], isLoading, refetch, isFetching } = useAttendanceByDate(date, activeOnly);
+  const qc = useQueryClient();
+  const { data = [], isLoading } = useAttendanceByDate(date, activeOnly);
 
-  const present  = data.filter((r) => r.present);
-  const absent   = data.filter((r) => !r.present);
+  const syncFromDevice = useCallback(async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await fetch("/api/sync-attendance", { method: "POST" });
+      const json = await res.json();
+      if (json.ok) {
+        setSyncMsg({ ok: true, text: "Synced from device" });
+        qc.invalidateQueries({ queryKey: ["attendance"] });
+        qc.invalidateQueries({ queryKey: ["staff"] });
+      } else {
+        setSyncMsg({ ok: false, text: json.error ?? "Sync failed" });
+      }
+    } catch {
+      setSyncMsg({ ok: false, text: "Cannot reach sync service — make sure app is running locally on the shop network" });
+    } finally {
+      setSyncing(false);
+    }
+  }, [qc]);
+
+  // Auto-sync when the page loads
+  useEffect(() => {
+    syncFromDevice();
+  }, [syncFromDevice]);
+
+  const present    = data.filter((r) => r.present);
+  const absent     = data.filter((r) => !r.present);
   const checkedOut = present.filter((r) => r.last_out !== null);
 
   return (
@@ -45,7 +74,7 @@ export default function AttendancePage() {
             onChange={(e) => setActiveOnly(e.target.checked)}
             className="accent-gold"
           />
-          Active employees only
+          Active only
         </label>
         <input
           type="date"
@@ -54,13 +83,28 @@ export default function AttendancePage() {
           className="border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
         />
         <button
-          onClick={() => refetch()}
-          disabled={isFetching}
-          className="bg-gold hover:bg-gold-dark text-white text-sm font-medium px-4 py-2 rounded-lg2 disabled:opacity-50"
+          onClick={syncFromDevice}
+          disabled={syncing}
+          className="bg-gold hover:bg-gold-dark text-white text-sm font-medium px-4 py-2 rounded-lg2 disabled:opacity-50 flex items-center gap-2"
         >
-          {isFetching ? "Loading…" : "Refresh"}
+          {syncing && (
+            <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          )}
+          {syncing ? "Syncing…" : "Sync from Device"}
         </button>
       </div>
+
+      {/* Sync status bar */}
+      {syncMsg && (
+        <div className={`text-xs px-4 py-2 rounded-lg2 ${syncMsg.ok ? "bg-ok/10 text-ok" : "bg-err/10 text-err"}`}>
+          {syncMsg.text}
+        </div>
+      )}
+
+      {/* Syncing skeleton hint */}
+      {syncing && data.length === 0 && (
+        <p className="text-ink-dim text-sm animate-pulse">Connecting to biometric device…</p>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-4 gap-3">
@@ -87,10 +131,13 @@ export default function AttendancePage() {
         <p className="text-ink-dim text-sm">Loading…</p>
       ) : data.length === 0 ? (
         <div className="bg-white rounded-xl border border-line p-10 text-center text-ink-dim shadow-soft">
-          <p className="font-medium">No staff records found</p>
-          <p className="text-xs mt-1">
-            Run <code className="bg-canvas px-1 rounded">python scripts/sync_attendance.py</code> to pull employee data from the device.
-          </p>
+          <p className="font-medium">{syncing ? "Syncing from device…" : "No staff records found"}</p>
+          {!syncing && (
+            <p className="text-xs mt-2">
+              Make sure the sync script is configured with your Supabase URL and key, and the device at{" "}
+              <code className="bg-canvas px-1 rounded">192.168.1.101</code> is reachable.
+            </p>
+          )}
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
@@ -167,7 +214,7 @@ export default function AttendancePage() {
 
       {data.length > 0 && (
         <p className="text-xs text-ink-dim text-center">
-          {shortDate(date)} · {present.length} present, {absent.length} absent out of {data.length} staff
+          {shortDate(date)} · {present.length} present, {absent.length} absent of {data.length} staff
         </p>
       )}
     </div>
