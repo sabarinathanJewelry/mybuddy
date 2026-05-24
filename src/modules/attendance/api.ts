@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 
 export type AttendanceEntry = {
@@ -94,6 +94,35 @@ export function useStaff() {
       const { data, error } = await supabase().from("staff").select("*").order("name");
       if (error) throw error;
       return (data ?? []) as any;
+    },
+  });
+}
+
+export function useUpdateStaff() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (s: Partial<StaffMember> & { bio_user_id: string }) => {
+      const { bio_user_id, ...rest } = s;
+      const { error } = await supabase().from("staff").update(rest).eq("bio_user_id", bio_user_id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["staff"] });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+    },
+  });
+}
+
+export function useDeleteStaff() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (bio_user_id: string) => {
+      const { error } = await supabase().from("staff").delete().eq("bio_user_id", bio_user_id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["staff"] });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
     },
   });
 }
