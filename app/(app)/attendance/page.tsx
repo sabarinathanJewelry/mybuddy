@@ -102,6 +102,10 @@ function StaffTab() {
                   <td className="px-3 py-2.5 text-right">
                     <div className="flex gap-2 justify-end">
                       <button onClick={() => startEdit(s)} className="text-xs text-gold hover:underline">Edit</button>
+                      <button onClick={() => toggleActive(s)}
+                        className={`text-xs hover:underline ${s.active ? "text-warn" : "text-ok"}`}>
+                        {s.active ? "Deactivate" : "Activate"}
+                      </button>
                       <button onClick={() => handleDelete(s)} className="text-xs text-err hover:underline">Delete</button>
                     </div>
                   </td>
