@@ -64,7 +64,7 @@ async function supabaseUpsert(table, rows, onConflict) {
 // ── Main ────────────────────────────────────────────────────────────────────
 async function main() {
   const ZKLib = require("node-zklib");
-  const zk = new ZKLib(ZK_IP, ZK_PORT, 10, 4000);
+  const zk = new ZKLib(ZK_IP, ZK_PORT, 10000, 4000);
 
   console.log(`Connecting to ZK device at ${ZK_IP}:${ZK_PORT} ...`);
   await zk.createSocket();

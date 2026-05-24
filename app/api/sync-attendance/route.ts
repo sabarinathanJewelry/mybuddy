@@ -27,7 +27,7 @@ export async function POST() {
   const sb = createClient(url, key);
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const ZKLib = require("node-zklib");
-  const zk = new ZKLib(ZK_IP, ZK_PORT, 10, 4000);
+  const zk = new ZKLib(ZK_IP, ZK_PORT, 10000, 4000);
 
   try {
     await zk.createSocket();
