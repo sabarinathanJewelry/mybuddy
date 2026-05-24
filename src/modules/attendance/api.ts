@@ -10,6 +10,23 @@ function istMinutes(ts: string): number {
   return ist.getUTCHours() * 60 + ist.getUTCMinutes();
 }
 
+// Collapse consecutive punches within thresholdMs (default 30s) — biometric double-reads.
+// Returns deduplicated list and a flag so the UI can warn the user.
+function deduplicatePunches(punches: string[], thresholdMs = 30_000): { deduped: string[]; double_punch_detected: boolean } {
+  if (punches.length <= 1) return { deduped: [...punches], double_punch_detected: false };
+  const sorted = [...punches].sort();
+  const deduped: string[] = [sorted[0]];
+  let detected = false;
+  for (let i = 1; i < sorted.length; i++) {
+    if (new Date(sorted[i]).getTime() - new Date(sorted[i - 1]).getTime() <= thresholdMs) {
+      detected = true; // skip this duplicate
+    } else {
+      deduped.push(sorted[i]);
+    }
+  }
+  return { deduped, double_punch_detected: detected };
+}
+
 export type AttendanceEntry = {
   bio_user_id: string;
   name: string;
@@ -31,6 +48,7 @@ export type AttendanceEntry = {
   effective_hours: number | null;
   short_interval: boolean;
   extra_punches: boolean;
+  double_punch_detected: boolean;
 };
 
 export type StaffMember = {
@@ -57,6 +75,7 @@ export type DailyAttendance = {
   effective_hours: number | null;
   punch_count: number;
   lunch_minutes: number | null;   // null = only 2 punches (no lunch tracked)
+  double_punch_detected: boolean;
 };
 
 export type MonthlyEmployeeSummary = {
@@ -78,6 +97,7 @@ export type MonthlyEmployeeSummary = {
   days_no_lunch: number;     // present but no lunch tracked (2 punches only)
   days_lunch_spare: number;  // lunch 60–70 min
   days_lunch_over: number;   // lunch > 70 min
+  days_double_punch: number; // days where a double-read was detected and collapsed
   daily: DailyAttendance[];
 };
 
@@ -116,7 +136,8 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
       }
 
       return staff.map((s) => {
-        const punches = [...(byUser.get(s.bio_user_id) ?? [])].sort();
+        const rawPunches = [...(byUser.get(s.bio_user_id) ?? [])].sort();
+        const { deduped: punches, double_punch_detected } = deduplicatePunches(rawPunches);
         const present = punches.length > 0;
         const firstIn = punches[0] ?? null;
         const lastOut = punches.length >= 2 ? punches[punches.length - 1] : null;
@@ -180,6 +201,7 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
           effective_hours,
           short_interval,
           extra_punches,
+          double_punch_detected,
         };
       });
     },
@@ -297,7 +319,8 @@ export function useMonthlyAttendanceSummary(month: string) {
 
         // Build per-day detail
         const daily: DailyAttendance[] = allDates.map((date) => {
-          const dayPunches = [...(byDate.get(date) ?? [])].sort();
+          const rawDayPunches = [...(byDate.get(date) ?? [])].sort();
+          const { deduped: dayPunches, double_punch_detected } = deduplicatePunches(rawDayPunches);
           const firstIn  = dayPunches[0] ?? null;
           const lastOut  = dayPunches.length >= 2 ? dayPunches[dayPunches.length - 1] : null;
           const hw = lastOut && firstIn
@@ -325,17 +348,18 @@ export function useMonthlyAttendanceSummary(month: string) {
               : Math.max(0, hw - 1);
           }
 
-          return { date, first_in: firstIn, last_out: lastOut, is_late, late_minutes, ot_minutes, effective_hours, punch_count: dayPunches.length, lunch_minutes };
+          return { date, first_in: firstIn, last_out: lastOut, is_late, late_minutes, ot_minutes, effective_hours, punch_count: dayPunches.length, lunch_minutes, double_punch_detected };
         });
 
         // Aggregate totals from daily
         let present_days = 0, late_days = 0, total_late_minutes = 0, total_ot_minutes = 0;
-        let days_no_lunch = 0, days_lunch_spare = 0, days_lunch_over = 0;
+        let days_no_lunch = 0, days_lunch_spare = 0, days_lunch_over = 0, days_double_punch = 0;
         for (const d of daily) {
           if (!d.first_in) continue;
           present_days++;
           if (d.is_late) { late_days++; total_late_minutes += d.late_minutes; }
           total_ot_minutes += d.ot_minutes;
+          if (d.double_punch_detected) days_double_punch++;
           if (d.lunch_minutes === null)  days_no_lunch++;
           else if (d.lunch_minutes > 70) days_lunch_over++;
           else if (d.lunch_minutes >= 60) days_lunch_spare++;
@@ -366,6 +390,7 @@ export function useMonthlyAttendanceSummary(month: string) {
           days_no_lunch,
           days_lunch_spare,
           days_lunch_over,
+          days_double_punch,
           daily,
         };
       });

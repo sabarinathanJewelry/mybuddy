@@ -327,13 +327,18 @@ function MonthlyTab() {
                                       className={`border-b border-line last:border-0 ${!d.first_in ? "opacity-50" : ""}`}>
                                       <td className="py-1 pr-3 font-mono whitespace-nowrap">{dayLabel(d.date)}</td>
                                       <td className="py-1 px-2 text-center">
-                                        {!d.first_in ? (
-                                          <span className="text-[10px] font-semibold bg-err/10 text-err px-1.5 py-0.5 rounded">Leave</span>
-                                        ) : d.is_late ? (
-                                          <span className="text-[10px] font-semibold bg-warn/10 text-warn px-1.5 py-0.5 rounded">Late</span>
-                                        ) : (
-                                          <span className="text-[10px] font-semibold bg-ok/10 text-ok px-1.5 py-0.5 rounded">Present</span>
-                                        )}
+                                        <div className="flex flex-col items-center gap-0.5">
+                                          {!d.first_in ? (
+                                            <span className="text-[10px] font-semibold bg-err/10 text-err px-1.5 py-0.5 rounded">Leave</span>
+                                          ) : d.is_late ? (
+                                            <span className="text-[10px] font-semibold bg-warn/10 text-warn px-1.5 py-0.5 rounded">Late</span>
+                                          ) : (
+                                            <span className="text-[10px] font-semibold bg-ok/10 text-ok px-1.5 py-0.5 rounded">Present</span>
+                                          )}
+                                          {d.double_punch_detected && (
+                                            <span className="text-[9px] font-semibold text-warn leading-none">Dbl punch</span>
+                                          )}
+                                        </div>
                                       </td>
                                       <td className="py-1 px-2 text-right font-mono text-ok">{formatTime(d.first_in)}</td>
                                       <td className="py-1 px-2 text-right font-mono text-ink-dim">{formatTime(d.last_out)}</td>
@@ -427,6 +432,14 @@ function MonthlyTab() {
                                     <span className="text-ok text-ink-dim text-[10px]">not calculated</span>
                                   </div>
                                 )}
+                              </div>
+
+                              <div className="border-t border-line pt-1.5 mt-1.5 space-y-1">
+                                <div className="font-medium text-ink-dim mb-0.5">Punch Alerts</div>
+                                <div className="flex justify-between">
+                                  <span className={r.days_double_punch > 0 ? "text-warn" : "text-ink-dim"}>Double punch (verify)</span>
+                                  <span className={`font-medium ${r.days_double_punch > 0 ? "text-warn" : "text-ink-dim"}`}>{r.days_double_punch} days</span>
+                                </div>
                               </div>
 
                               <div className="border-t border-line pt-1.5 mt-1.5 space-y-1">
@@ -710,9 +723,10 @@ export default function AttendancePage() {
   const absent     = data.filter((r) => !r.present);
   const checkedOut = present.filter((r) => r.last_out !== null);
 
-  const lateCount    = present.filter(r => r.is_late).length;
-  const overrunCount = present.filter(r => r.lunch_overrun_minutes > 0).length;
-  const shortCount   = present.filter(r => r.short_interval).length;
+  const lateCount       = present.filter(r => r.is_late).length;
+  const overrunCount    = present.filter(r => r.lunch_overrun_minutes > 0).length;
+  const shortCount      = present.filter(r => r.short_interval).length;
+  const doubleCount     = present.filter(r => r.double_punch_detected).length;
 
   const tabLabels: Record<PageTab, string> = {
     attendance: "Attendance",
@@ -792,7 +806,7 @@ export default function AttendancePage() {
             ))}
           </div>
 
-          {(lateCount > 0 || overrunCount > 0 || shortCount > 0) && (
+          {(lateCount > 0 || overrunCount > 0 || shortCount > 0 || doubleCount > 0) && (
             <div className="flex gap-2 flex-wrap">
               {lateCount > 0 && (
                 <div className="bg-warn/10 text-warn text-xs font-medium px-3 py-1.5 rounded-lg2">
@@ -807,6 +821,11 @@ export default function AttendancePage() {
               {shortCount > 0 && (
                 <div className="bg-err/10 text-err text-xs font-medium px-3 py-1.5 rounded-lg2">
                   {shortCount} short interval{shortCount > 1 ? "s" : ""} — verify records
+                </div>
+              )}
+              {doubleCount > 0 && (
+                <div className="bg-warn/10 text-warn text-xs font-medium px-3 py-1.5 rounded-lg2">
+                  {doubleCount} double punch{doubleCount > 1 ? "es" : ""} — verify with staff
                 </div>
               )}
             </div>
@@ -876,10 +895,13 @@ export default function AttendancePage() {
                                 className="text-xs text-info hover:underline">
                                 {r.punches.length} {r.punches.length === 1 ? "punch" : "punches"}
                               </button>
+                              {r.double_punch_detected && (
+                                <span className="text-[9px] font-semibold text-warn leading-none">Double punch!</span>
+                              )}
                               {r.short_interval && (
                                 <span className="text-[9px] font-semibold text-err leading-none">Short! Verify</span>
                               )}
-                              {r.extra_punches && !r.short_interval && (
+                              {r.extra_punches && !r.short_interval && !r.double_punch_detected && (
                                 <span className="text-[9px] text-ink-dim leading-none">extra punches</span>
                               )}
                             </div>
@@ -899,7 +921,12 @@ export default function AttendancePage() {
                                   {" "}{formatTime(p)}
                                 </span>
                               ))}
-                              {r.lunch_minutes !== null ? (
+                              {r.double_punch_detected && (
+                              <span className="text-xs border border-warn/40 rounded px-2 py-1 bg-warn/10 text-warn font-medium">
+                                Double punch detected — verify with staff
+                              </span>
+                            )}
+                            {r.lunch_minutes !== null ? (
                                 <span className={`text-xs border rounded px-2 py-1 font-medium ${
                                   r.lunch_overrun_minutes > 0 ? "bg-err/10 border-err/30 text-err" :
                                   r.lunch_spare_minutes > 0  ? "bg-warn/10 border-warn/30 text-warn" :
