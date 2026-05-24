@@ -33,25 +33,25 @@ export async function POST() {
     await zk.createSocket();
 
     const { data: users = [] } = await zk.getUsers();
-    if (users.length) {
-      // Insert new staff with device name; ignore existing (preserves manually-edited names)
-      const newRows = (users as any[]).map((u) => ({
-        bio_user_id: String(u.userId),
-        name:        u.name?.trim() || `User ${u.userId}`,
-        device_uid:  u.uid   ?? null,
-        privilege:   u.role  ?? 0,
-        card_no:     u.cardno ?? 0,
-      }));
-      await sb.from("staff").upsert(newRows, { onConflict: "bio_user_id", ignoreDuplicates: true });
+    // Staff sync is non-fatal — attendance sync always runs even if this errors
+    try {
+      if (users.length) {
+        // Fetch existing names from DB so we never overwrite manually-edited names
+        const { data: existingStaff } = await sb.from("staff").select("bio_user_id, name");
+        const nameMap = new Map((existingStaff ?? []).map((s) => [s.bio_user_id, s.name]));
 
-      // Update only device fields for all staff (never overwrites name)
-      const deviceRows = (users as any[]).map((u) => ({
-        bio_user_id: String(u.userId),
-        device_uid:  u.uid   ?? null,
-        privilege:   u.role  ?? 0,
-        card_no:     u.cardno ?? 0,
-      }));
-      await sb.from("staff").upsert(deviceRows, { onConflict: "bio_user_id" });
+        // Single upsert: existing staff keep their DB name, new staff get device name
+        const rows = (users as any[]).map((u) => ({
+          bio_user_id: String(u.userId),
+          name:        nameMap.get(String(u.userId)) || u.name?.trim() || `User ${u.userId}`,
+          device_uid:  u.uid    ?? null,
+          privilege:   u.role   ?? 0,
+          card_no:     u.cardno ?? 0,
+        }));
+        await sb.from("staff").upsert(rows, { onConflict: "bio_user_id" });
+      }
+    } catch (staffErr: any) {
+      console.warn("Staff sync warning (attendance still syncing):", staffErr?.message ?? staffErr);
     }
 
     const { data: logs = [] } = await zk.getAttendances();

@@ -140,7 +140,8 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
         const { deduped: punches, double_punch_detected } = deduplicatePunches(rawPunches);
         const present = punches.length > 0;
         const firstIn = punches[0] ?? null;
-        const lastOut = punches.length >= 2 ? punches[punches.length - 1] : null;
+        // last punch is OUT only if it falls on an odd index (even = in, odd = out)
+        const lastOut = punches.length >= 2 && (punches.length - 1) % 2 === 1 ? punches[punches.length - 1] : null;
         const hoursWorked =
           lastOut && firstIn
             ? (new Date(lastOut).getTime() - new Date(firstIn).getTime()) / 3_600_000
@@ -177,8 +178,8 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
         // Short interval = came in and out but total < 2 hours (accidental double punch or early leave)
         const short_interval = present && lastOut !== null && hoursWorked !== null && hoursWorked < 2;
 
-        // Extra punches = more than 2 punches in a day (policy: only 2)
-        const extra_punches = punches.length > 2;
+        // Extra punches = more than expected (2 = standard, 4 = with lunch)
+        const extra_punches = punches.length > 4;
 
         return {
           bio_user_id: s.bio_user_id,
@@ -322,7 +323,7 @@ export function useMonthlyAttendanceSummary(month: string) {
           const rawDayPunches = [...(byDate.get(date) ?? [])].sort();
           const { deduped: dayPunches, double_punch_detected } = deduplicatePunches(rawDayPunches);
           const firstIn  = dayPunches[0] ?? null;
-          const lastOut  = dayPunches.length >= 2 ? dayPunches[dayPunches.length - 1] : null;
+          const lastOut  = dayPunches.length >= 2 && (dayPunches.length - 1) % 2 === 1 ? dayPunches[dayPunches.length - 1] : null;
           const hw = lastOut && firstIn
             ? (new Date(lastOut).getTime() - new Date(firstIn).getTime()) / 3_600_000
             : null;

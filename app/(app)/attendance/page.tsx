@@ -917,7 +917,7 @@ export default function AttendancePage() {
                             <div className="flex flex-wrap gap-2">
                               {r.punches.map((p, pi) => (
                                 <span key={pi} className="text-xs bg-white border border-line rounded px-2 py-1 font-mono">
-                                  {pi === 0 ? "IN" : pi === r.punches.length - 1 ? "OUT" : pi % 2 === 1 ? "↑ out" : "↓ in"}
+                                  {pi === 0 ? "IN" : pi % 2 === 1 ? (pi === r.punches.length - 1 ? "OUT" : "↑ out") : "↓ in"}
                                   {" "}{formatTime(p)}
                                 </span>
                               ))}

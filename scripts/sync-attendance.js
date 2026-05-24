@@ -71,30 +71,33 @@ async function main() {
   console.log("Connected.");
 
   try {
-    // Sync staff
+    // Sync staff (non-fatal — attendance sync always runs even if this fails)
     const { data: users = [] } = await zk.getUsers();
-    if (users.length) {
-      // Step 1: insert NEW staff only (ignore existing — preserves manually-edited names)
-      const newRows = users.map((u) => ({
-        bio_user_id: String(u.userId),
-        name:        u.name?.trim() || `User ${u.userId}`,
-        device_uid:  u.uid   ?? null,
-        privilege:   u.role  ?? 0,
-        card_no:     u.cardno ?? 0,
-      }));
-      await supabaseUpsert("staff", newRows, "bio_user_id", "resolution=ignore-duplicates");
+    try {
+      if (users.length) {
+        // Fetch existing names from DB so we never overwrite manually-edited names
+        const namesRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/staff?select=bio_user_id,name`,
+          { headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }
+        );
+        const existingStaff = namesRes.ok ? await namesRes.json() : [];
+        const nameMap = new Map(existingStaff.map((s) => [s.bio_user_id, s.name]));
 
-      // Step 2: update device fields only for ALL staff (never touches name)
-      const deviceRows = users.map((u) => ({
-        bio_user_id: String(u.userId),
-        device_uid:  u.uid   ?? null,
-        privilege:   u.role  ?? 0,
-        card_no:     u.cardno ?? 0,
-      }));
-      await supabaseUpsert("staff", deviceRows, "bio_user_id", "resolution=merge-duplicates");
+        // Single upsert: existing staff keep their DB name, new staff get device name
+        const rows = users.map((u) => ({
+          bio_user_id: String(u.userId),
+          name:        nameMap.get(String(u.userId)) || u.name?.trim() || `User ${u.userId}`,
+          device_uid:  u.uid    ?? null,
+          privilege:   u.role   ?? 0,
+          card_no:     u.cardno ?? 0,
+        }));
+        await supabaseUpsert("staff", rows, "bio_user_id", "resolution=merge-duplicates");
 
-      console.log(`Staff synced: ${newRows.length}`);
-      newRows.forEach((r) => console.log(`  [${r.bio_user_id}] ${r.name}`));
+        console.log(`Staff synced: ${rows.length}`);
+        rows.forEach((r) => console.log(`  [${r.bio_user_id}] ${r.name}`));
+      }
+    } catch (staffErr) {
+      console.warn("WARNING: staff sync failed (attendance sync will still run):", staffErr.message || staffErr);
     }
 
     // Sync attendance
