@@ -113,6 +113,12 @@ export default function PaymentsPage() {
                 {t("is_advance")}
               </label>
             </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-ink-dim mb-1">Note (optional)</label>
+              <input type="text" value={form.notes} placeholder="e.g. advance for wedding order, balance payment…"
+                onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                className={inp} />
+            </div>
           </div>
           <div className="flex gap-2">
             <button type="submit" disabled={save.isPending || form.amount <= 0}
@@ -137,7 +143,10 @@ export default function PaymentsPage() {
                 <Fragment key={p.id}>
                   <tr className={clsx("border-b border-line last:border-0 hover:bg-canvas/50", p.amount === 0 && "bg-err/5")}>
                     <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.pay_date)}</td>
-                    <td className="px-3 py-2.5">{p.customers?.name ?? p.suppliers?.name ?? "—"}</td>
+                    <td className="px-3 py-2.5">
+                      <div>{p.customers?.name ?? p.suppliers?.name ?? "—"}</div>
+                      {p.notes && <div className="text-xs text-ink-dim truncate max-w-[180px]">{p.notes}</div>}
+                    </td>
                     <td className="px-3 py-2.5 capitalize text-ink-dim">{p.mode}</td>
                     <td className={clsx("px-3 py-2.5 text-right font-mono", p.direction === "in" ? "text-ok" : "text-err", p.amount === 0 && "font-bold")}>
                       {p.direction === "in" ? "+" : "-"}{inr(p.amount)}
@@ -189,6 +198,13 @@ export default function PaymentsPage() {
                               onChange={(e) => setEditForm({ ...editForm, amount: parseFloat(e.target.value) || 0 })}
                               className="border border-line rounded-lg2 px-2 py-1 text-sm w-32 focus:outline-none focus:ring-1 focus:ring-gold"
                               autoFocus />
+                          </div>
+                          <div className="w-56">
+                            <label className="text-xs text-ink-dim block mb-1">Note</label>
+                            <input type="text" value={editForm.notes}
+                              onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                              placeholder="optional note"
+                              className="border border-line rounded-lg2 px-2 py-1 text-sm w-full focus:outline-none focus:ring-1 focus:ring-gold" />
                           </div>
                           <div className="flex gap-2">
                             <button type="submit" disabled={update.isPending || editForm.amount <= 0}
