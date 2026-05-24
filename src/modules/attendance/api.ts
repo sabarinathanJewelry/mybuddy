@@ -46,6 +46,17 @@ export type StaffMember = {
   allowed_leaves: number;
 };
 
+export type DailyAttendance = {
+  date: string;             // YYYY-MM-DD IST
+  first_in: string | null;
+  last_out: string | null;
+  is_late: boolean;
+  late_minutes: number;     // minutes from 9:30 AM (if late)
+  ot_minutes: number;       // minutes beyond shift end
+  effective_hours: number | null;
+  punch_count: number;
+};
+
 export type MonthlyEmployeeSummary = {
   bio_user_id: string;
   name: string;
@@ -62,6 +73,7 @@ export type MonthlyEmployeeSummary = {
   excess_leave_days: number;
   per_day_salary: number;
   leave_deduction: number;
+  daily: DailyAttendance[];
 };
 
 export function useAttendanceByDate(date: string, activeOnly = true) {
@@ -257,32 +269,56 @@ export function useMonthlyAttendanceSummary(month: string) {
         m.get(istDate)!.push(log.punch_time);
       }
 
+      // Enumerate every calendar date in the range (UTC dates = IST dates for full months)
+      const allDates: string[] = [];
+      for (let i = 0; i < totalDays; i++) {
+        const d = new Date(Date.UTC(year, mon - 1, 1 + i));
+        allDates.push(
+          `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+        );
+      }
+
       return staff.map((s) => {
         const shiftEndMin =
           ((s.shift as string) ?? "boys") === "girls" ? 20 * 60 + 30 : 21 * 60 + 30;
         const byDate = byUserByDate.get(s.bio_user_id) ?? new Map<string, string[]>();
 
-        let present_days       = 0;
-        let late_days          = 0;
-        let total_late_minutes = 0;
-        let total_ot_minutes   = 0;
+        // Build per-day detail
+        const daily: DailyAttendance[] = allDates.map((date) => {
+          const dayPunches = [...(byDate.get(date) ?? [])].sort();
+          const firstIn  = dayPunches[0] ?? null;
+          const lastOut  = dayPunches.length >= 2 ? dayPunches[dayPunches.length - 1] : null;
+          const hw = lastOut && firstIn
+            ? (new Date(lastOut).getTime() - new Date(firstIn).getTime()) / 3_600_000
+            : null;
 
-        for (const punches of byDate.values()) {
-          const sorted = [...punches].sort();
-          if (!sorted.length) continue;
-          present_days++;
+          const firstInMins = firstIn ? istMinutes(firstIn) : 0;
+          const is_late     = firstIn ? firstInMins > 9 * 60 + 50 : false;
+          const late_minutes = is_late ? firstInMins - (9 * 60 + 30) : 0;
 
-          const firstInMins = istMinutes(sorted[0]);
-          if (firstInMins > 9 * 60 + 50) {
-            late_days++;
-            total_late_minutes += firstInMins - (9 * 60 + 30); // minutes from scheduled 9:30
+          const lastOutMins = lastOut ? istMinutes(lastOut) : 0;
+          const ot_minutes  = lastOut ? Math.max(0, lastOutMins - shiftEndMin) : 0;
+
+          let effective_hours: number | null = null;
+          if (hw !== null) {
+            if (dayPunches.length >= 4) {
+              const lunchMs = new Date(dayPunches[dayPunches.length - 2]).getTime() - new Date(dayPunches[1]).getTime();
+              effective_hours = hw - lunchMs / 3_600_000;
+            } else {
+              effective_hours = Math.max(0, hw - 1);
+            }
           }
 
-          if (sorted.length >= 2) {
-            const lastOutMins = istMinutes(sorted[sorted.length - 1]);
-            if (lastOutMins > shiftEndMin) {
-              total_ot_minutes += lastOutMins - shiftEndMin;
-            }
+          return { date, first_in: firstIn, last_out: lastOut, is_late, late_minutes, ot_minutes, effective_hours, punch_count: dayPunches.length };
+        });
+
+        // Aggregate totals from daily
+        let present_days = 0, late_days = 0, total_late_minutes = 0, total_ot_minutes = 0;
+        for (const d of daily) {
+          if (d.first_in) {
+            present_days++;
+            if (d.is_late) { late_days++; total_late_minutes += d.late_minutes; }
+            total_ot_minutes += d.ot_minutes;
           }
         }
 
@@ -308,6 +344,7 @@ export function useMonthlyAttendanceSummary(month: string) {
           excess_leave_days,
           per_day_salary,
           leave_deduction,
+          daily,
         };
       });
     },

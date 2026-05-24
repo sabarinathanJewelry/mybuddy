@@ -38,17 +38,24 @@ function monthLabel(m: string): string {
     month: "long", year: "numeric",
   });
 }
+function dayLabel(dateStr: string): string {
+  const [y, mo, d] = dateStr.split("-").map(Number);
+  const dow = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
+  return `${String(d).padStart(2, "0")} ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dow]}`;
+}
 
 // ── Monthly Report tab ───────────────────────────────────────────────────────
 function MonthlyTab() {
-  const today        = currentMonth();
-  const [month, setMonth]           = useState(today);
+  const today      = currentMonth();
+  const [month, setMonth]             = useState(today);
   const [lateFineAmt, setLateFineAmt] = useState(100);
-  const [fineMode, setFineMode]     = useState<"day" | "minute">("day");
-  const [applyFine, setApplyFine]   = useState(true);
-  const [bulkLeaves, setBulkLeaves] = useState(1);
-  const [editingId, setEditingId]   = useState<string | null>(null);
-  const [editForm, setEditForm]     = useState({ monthly_salary: 0, allowed_leaves: 1 });
+  const [fineMode, setFineMode]       = useState<"day" | "minute">("day");
+  const [applyFine, setApplyFine]     = useState(true);
+  const [bulkLeaves, setBulkLeaves]   = useState(1);
+  const [showNetPay, setShowNetPay]   = useState(true);
+  const [expandedId, setExpandedId]   = useState<string | null>(null);
+  const [editingId, setEditingId]     = useState<string | null>(null);
+  const [editForm, setEditForm]       = useState({ monthly_salary: 0, allowed_leaves: 1 });
 
   const { data = [], isLoading } = useMonthlyAttendanceSummary(month);
   const update = useUpdateStaff();
@@ -77,7 +84,6 @@ function MonthlyTab() {
     await update.mutateAsync({ bio_user_id, ...editForm });
     setEditingId(null);
   }
-
   async function handleBulkLeaves() {
     if (!confirm(`Set allowed leaves to ${bulkLeaves} for all ${data.length} active staff?`)) return;
     for (const r of data) {
@@ -102,18 +108,20 @@ function MonthlyTab() {
         <span className="font-semibold text-ink w-44 text-center">{monthLabel(month)}</span>
         <button onClick={() => shiftMonth(1)} disabled={month >= today}
           className="px-2.5 py-1.5 border border-line rounded-lg2 text-sm hover:bg-canvas disabled:opacity-30">►</button>
-        {totalDays > 0 && (
-          <span className="text-xs text-ink-dim ml-1">
-            {totalDays} day{totalDays > 1 ? "s" : ""} counted
-          </span>
-        )}
+        {totalDays > 0 && <span className="text-xs text-ink-dim ml-1">{totalDays} days counted</span>}
+        <div className="flex-1" />
+        <button onClick={() => setShowNetPay(v => !v)}
+          className={`text-xs px-3 py-1.5 rounded-lg2 border transition-colors ${
+            showNetPay ? "border-line text-ink-dim hover:text-ink" : "border-gold text-gold bg-gold/5"
+          }`}>
+          {showNetPay ? "Hide Net Pay" : "Show Net Pay"}
+        </button>
       </div>
 
       {/* Settings card */}
       <div className="bg-canvas border border-line rounded-xl p-4 space-y-3">
         <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide">Report Settings</p>
         <div className="flex flex-wrap gap-5 items-end">
-          {/* Late fine */}
           <div>
             <label className="text-xs text-ink-dim block mb-1">Late Fine</label>
             <div className="flex items-center gap-1.5">
@@ -134,8 +142,6 @@ function MonthlyTab() {
               </label>
             </div>
           </div>
-
-          {/* Bulk set allowed leaves */}
           <div>
             <label className="text-xs text-ink-dim block mb-1">Set allowed leaves for all staff</label>
             <div className="flex items-center gap-1.5">
@@ -149,9 +155,9 @@ function MonthlyTab() {
           </div>
         </div>
         <p className="text-[11px] text-ink-dim leading-relaxed">
-          Fine suggestion: <strong>₹50–200 / late day</strong> (flat) or <strong>₹3–10 / minute</strong>.
-          ₹100/day on ₹25,000 salary ≈ 4% daily wage per incident.
-          Leave deduction (absent days beyond allowed) is always calculated and shown separately — fine and deduction cover different things.
+          Fine suggestion: <strong>₹50–200 / late day</strong> or <strong>₹3–10 / minute late</strong>.
+          ₹100/day on ₹25,000 ≈ 4% daily wage.
+          Leave deduction and late fine are independent — both or either can be applied.
         </p>
       </div>
 
@@ -167,30 +173,40 @@ function MonthlyTab() {
           <table className="w-full text-sm" style={{ minWidth: "960px" }}>
             <thead>
               <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
-                <th className="text-left px-3 py-2.5 w-8">#</th>
+                <th className="w-8 px-3 py-2.5" />
                 <th className="text-left px-3 py-2.5">Name</th>
                 <th className="text-right px-3 py-2.5">Salary</th>
                 <th className="text-right px-3 py-2.5">Present</th>
                 <th className="text-right px-3 py-2.5">Absent</th>
-                <th className="text-right px-3 py-2.5" title="Allowed leaves">Allowed</th>
-                <th className="text-right px-3 py-2.5 text-err" title="Absent beyond allowed leaves">Excess</th>
-                <th className="text-right px-3 py-2.5 text-warn">Late Days</th>
-                <th className="text-right px-3 py-2.5 text-warn" title="Total minutes late from 9:30">Late(m)</th>
+                <th className="text-right px-3 py-2.5">Allowed</th>
+                <th className="text-right px-3 py-2.5 text-err">Excess</th>
+                <th className="text-right px-3 py-2.5 text-warn">Late</th>
+                <th className="text-right px-3 py-2.5 text-warn">Late(m)</th>
                 <th className="text-right px-3 py-2.5 text-ok">OT</th>
-                <th className="text-right px-3 py-2.5 text-err">L. Ded</th>
+                <th className="text-right px-3 py-2.5 text-err">L.Ded</th>
                 <th className="text-right px-3 py-2.5 text-err">Fine</th>
-                <th className="text-right px-3 py-2.5 font-semibold text-ink">Net Pay</th>
-                <th className="w-10 px-3 py-2.5" />
+                <th className="text-right px-3 py-2.5 font-semibold text-ink">
+                  {showNetPay ? "Net Pay" : "Net Pay 🔒"}
+                </th>
+                <th className="w-12 px-3 py-2.5" />
               </tr>
             </thead>
             <tbody>
               {data.map((r, i) => {
-                const fine = calcFine(r);
-                const net  = calcNet(r);
+                const fine       = calcFine(r);
+                const net        = calcNet(r);
+                const isExpanded = expandedId === r.bio_user_id;
+
                 return (
                   <Fragment key={r.bio_user_id}>
-                    <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
-                      <td className="px-3 py-2.5 text-ink-dim text-xs">{i + 1}</td>
+                    {/* Summary row */}
+                    <tr
+                      className={`border-b border-line hover:bg-canvas/50 cursor-pointer ${isExpanded ? "bg-canvas/30" : ""}`}
+                      onClick={() => setExpandedId(isExpanded ? null : r.bio_user_id)}
+                    >
+                      <td className="px-3 py-2.5 text-center text-ink-dim text-xs select-none">
+                        {isExpanded ? "▼" : "▶"}
+                      </td>
                       <td className="px-3 py-2.5 font-medium">
                         {r.name}
                         <span className={`ml-1.5 text-[10px] font-semibold px-1 py-0.5 rounded ${
@@ -226,15 +242,17 @@ function MonthlyTab() {
                         {fine > 0 ? inr(fine) : "—"}
                       </td>
                       <td className={`px-3 py-2.5 text-right font-semibold font-mono ${
+                        !showNetPay ? "text-ink-dim" :
                         r.monthly_salary > 0 ? (net < r.monthly_salary * 0.8 ? "text-err" : "text-ink") : "text-ink-dim"
                       }`}>
-                        {r.monthly_salary > 0 ? inr(Math.round(net)) : "—"}
+                        {!showNetPay ? "•••" : r.monthly_salary > 0 ? inr(Math.round(net)) : "—"}
                       </td>
-                      <td className="px-3 py-2.5 text-right">
+                      <td className="px-3 py-2.5 text-right" onClick={e => e.stopPropagation()}>
                         <button onClick={() => startEdit(r)} className="text-xs text-gold hover:underline">Edit</button>
                       </td>
                     </tr>
 
+                    {/* Salary edit row */}
                     {editingId === r.bio_user_id && (
                       <tr className="border-b border-line bg-canvas/40">
                         <td colSpan={14} className="px-4 py-3">
@@ -261,42 +279,162 @@ function MonthlyTab() {
                         </td>
                       </tr>
                     )}
+
+                    {/* Expanded detail row */}
+                    {isExpanded && (
+                      <tr className="border-b border-line bg-canvas/10">
+                        <td colSpan={14} className="px-4 py-4">
+                          <div className="flex gap-5 flex-wrap items-start">
+
+                            {/* Day-by-day attendance calendar */}
+                            <div className="flex-1 overflow-x-auto" style={{ minWidth: "380px" }}>
+                              <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide mb-2">
+                                Daily Attendance — {monthLabel(month)}
+                              </p>
+                              <table className="w-full text-xs" style={{ minWidth: "380px" }}>
+                                <thead>
+                                  <tr className="text-ink-dim border-b border-line">
+                                    <th className="text-left py-1 pr-3 font-medium">Date</th>
+                                    <th className="text-center py-1 px-2 font-medium">Status</th>
+                                    <th className="text-right py-1 px-2 font-medium">IN</th>
+                                    <th className="text-right py-1 px-2 font-medium">OUT</th>
+                                    <th className="text-right py-1 px-2 font-medium">Hours</th>
+                                    <th className="text-right py-1 px-2 font-medium">Late</th>
+                                    <th className="text-right py-1 px-2 font-medium">OT</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {r.daily.map(d => (
+                                    <tr key={d.date}
+                                      className={`border-b border-line last:border-0 ${!d.first_in ? "opacity-50" : ""}`}>
+                                      <td className="py-1 pr-3 font-mono whitespace-nowrap">{dayLabel(d.date)}</td>
+                                      <td className="py-1 px-2 text-center">
+                                        {!d.first_in ? (
+                                          <span className="text-[10px] font-semibold bg-err/10 text-err px-1.5 py-0.5 rounded">Leave</span>
+                                        ) : d.is_late ? (
+                                          <span className="text-[10px] font-semibold bg-warn/10 text-warn px-1.5 py-0.5 rounded">Late</span>
+                                        ) : (
+                                          <span className="text-[10px] font-semibold bg-ok/10 text-ok px-1.5 py-0.5 rounded">Present</span>
+                                        )}
+                                      </td>
+                                      <td className="py-1 px-2 text-right font-mono text-ok">{formatTime(d.first_in)}</td>
+                                      <td className="py-1 px-2 text-right font-mono text-ink-dim">{formatTime(d.last_out)}</td>
+                                      <td className="py-1 px-2 text-right">{formatHours(d.effective_hours)}</td>
+                                      <td className={`py-1 px-2 text-right font-medium ${d.late_minutes > 0 ? "text-warn" : "text-ink-dim"}`}>
+                                        {d.late_minutes > 0 ? `${d.late_minutes}m` : "—"}
+                                      </td>
+                                      <td className={`py-1 px-2 text-right font-medium ${d.ot_minutes > 0 ? "text-ok" : "text-ink-dim"}`}>
+                                        {d.ot_minutes > 0 ? formatMins(d.ot_minutes) : "—"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+
+                            {/* Salary split card */}
+                            <div className="w-60 shrink-0 bg-white rounded-xl border border-line p-4 text-xs space-y-1.5 shadow-soft">
+                              <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide mb-2">Salary Split-up</p>
+
+                              <div className="flex justify-between">
+                                <span className="text-ink-dim">Base Salary</span>
+                                <span className="font-mono font-medium">{inr(r.monthly_salary)}</span>
+                              </div>
+                              <div className="flex justify-between text-ink-dim">
+                                <span>÷ {r.total_days} working days</span>
+                                <span className="font-mono">{inr(Math.round(r.per_day_salary))}/day</span>
+                              </div>
+
+                              <div className="border-t border-line pt-1.5 mt-1.5 space-y-1">
+                                <div className="flex justify-between">
+                                  <span className="text-ok">Present</span>
+                                  <span className="font-medium">{r.present_days} days</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className={r.absent_days > r.allowed_leaves ? "text-err" : "text-ink-dim"}>Absent</span>
+                                  <span className="font-medium">{r.absent_days} days</span>
+                                </div>
+                                <div className="flex justify-between text-ink-dim">
+                                  <span>Allowed Leaves</span>
+                                  <span>{r.allowed_leaves} days</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className={r.excess_leave_days > 0 ? "text-err" : "text-ink-dim"}>Excess Absent</span>
+                                  <span className={`font-medium ${r.excess_leave_days > 0 ? "text-err" : "text-ink-dim"}`}>
+                                    {r.excess_leave_days > 0 ? `${r.excess_leave_days} days` : "None"}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="border-t border-line pt-1.5 mt-1.5 space-y-1">
+                                <div className="flex justify-between">
+                                  <span className={r.leave_deduction > 0 ? "text-err" : "text-ink-dim"}>Leave Deduction</span>
+                                  <span className={`font-mono ${r.leave_deduction > 0 ? "text-err font-medium" : "text-ink-dim"}`}>
+                                    {r.leave_deduction > 0 ? `−${inr(Math.round(r.leave_deduction))}` : "—"}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className={r.late_days > 0 ? "text-warn" : "text-ink-dim"}>
+                                    Late ({r.late_days} day{r.late_days !== 1 ? "s" : ""}, {formatMins(r.total_late_minutes)})
+                                  </span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-ink-dim pl-2">
+                                    {applyFine ? `Fine @₹${lateFineAmt}/${fineMode === "day" ? "day" : "min"}` : "Fine (disabled)"}
+                                  </span>
+                                  <span className={`font-mono ${fine > 0 ? "text-err font-medium" : "text-ink-dim"}`}>
+                                    {fine > 0 ? `−${inr(fine)}` : "—"}
+                                  </span>
+                                </div>
+                                {r.total_ot_minutes > 0 && (
+                                  <div className="flex justify-between">
+                                    <span className="text-ok">OT ({formatMins(r.total_ot_minutes)})</span>
+                                    <span className="text-ok text-ink-dim text-[10px]">not calculated</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="border-t-2 border-line pt-2 mt-1">
+                                <div className="flex justify-between font-semibold text-sm">
+                                  <span>Net Pay</span>
+                                  {showNetPay ? (
+                                    <span className={`font-mono ${net < r.monthly_salary * 0.8 ? "text-err" : "text-ink"}`}>
+                                      {r.monthly_salary > 0 ? inr(Math.round(net)) : "—"}
+                                    </span>
+                                  ) : (
+                                    <span className="text-ink-dim tracking-widest">•••</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                   </Fragment>
                 );
               })}
 
               {/* Totals row */}
               <tr className="bg-canvas/70 border-t-2 border-line text-sm font-semibold">
-                <td colSpan={2} className="px-3 py-2.5 text-xs text-ink-dim">
+                <td />
+                <td colSpan={1} className="px-3 py-2.5 text-xs text-ink-dim">
                   Total · {data.length} staff · {totalDays} days
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono text-xs">{inr(totSalary)}</td>
-                <td className="px-3 py-2.5 text-right text-ok">
-                  {data.reduce((s, r) => s + r.present_days, 0)}
-                </td>
-                <td className="px-3 py-2.5 text-right">
-                  {data.reduce((s, r) => s + r.absent_days, 0)}
-                </td>
+                <td className="px-3 py-2.5 text-right text-ok">{data.reduce((s, r) => s + r.present_days, 0)}</td>
+                <td className="px-3 py-2.5 text-right">{data.reduce((s, r) => s + r.absent_days, 0)}</td>
                 <td />
-                <td className="px-3 py-2.5 text-right text-err">
-                  {data.reduce((s, r) => s + r.excess_leave_days, 0) || "—"}
+                <td className="px-3 py-2.5 text-right text-err">{data.reduce((s, r) => s + r.excess_leave_days, 0) || "—"}</td>
+                <td className="px-3 py-2.5 text-right text-warn">{data.reduce((s, r) => s + r.late_days, 0) || "—"}</td>
+                <td className="px-3 py-2.5 text-right text-warn text-xs">{formatMins(data.reduce((s, r) => s + r.total_late_minutes, 0))}</td>
+                <td className="px-3 py-2.5 text-right text-ok text-xs">{formatMins(totOtMins)}</td>
+                <td className="px-3 py-2.5 text-right text-err text-xs font-mono">{totLeaveDed > 0 ? inr(Math.round(totLeaveDed)) : "—"}</td>
+                <td className="px-3 py-2.5 text-right text-err text-xs font-mono">{totFine > 0 ? inr(totFine) : "—"}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-xs">
+                  {showNetPay ? inr(Math.round(totNet)) : "•••"}
                 </td>
-                <td className="px-3 py-2.5 text-right text-warn">
-                  {data.reduce((s, r) => s + r.late_days, 0) || "—"}
-                </td>
-                <td className="px-3 py-2.5 text-right text-warn text-xs">
-                  {formatMins(data.reduce((s, r) => s + r.total_late_minutes, 0))}
-                </td>
-                <td className="px-3 py-2.5 text-right text-ok text-xs">
-                  {formatMins(totOtMins)}
-                </td>
-                <td className="px-3 py-2.5 text-right text-err text-xs font-mono">
-                  {totLeaveDed > 0 ? inr(Math.round(totLeaveDed)) : "—"}
-                </td>
-                <td className="px-3 py-2.5 text-right text-err text-xs font-mono">
-                  {totFine > 0 ? inr(totFine) : "—"}
-                </td>
-                <td className="px-3 py-2.5 text-right text-ink font-mono text-xs">{inr(Math.round(totNet))}</td>
                 <td />
               </tr>
             </tbody>
