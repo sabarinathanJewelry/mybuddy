@@ -367,6 +367,21 @@ export default function OrdersPage() {
   const [finalTotal, setFinalTotal] = useState(0);
   const [finalPayments, setFinalPayments] = useState<PaymentDraft[]>([]);
 
+  // ── Filters
+  const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "ready" | "delivered" | "cancelled">("all");
+  const [filterMonth, setFilterMonth] = useState("");
+
+  const filteredOrders = (orders as any[]).filter((o) => {
+    if (filterStatus !== "all" && o.status !== filterStatus) return false;
+    if (filterMonth && !o.order_date?.startsWith(filterMonth)) return false;
+    return true;
+  });
+
+  const statusCounts = (orders as any[]).reduce((acc: Record<string, number>, o) => {
+    acc[o.status] = (acc[o.status] || 0) + 1;
+    return acc;
+  }, {});
+
   function resetCreate() {
     setShowForm(false); setCustomer(null); setOrderDate(globalDate);
     setDeliveryDate(""); setDescription(""); setEstimatedWt(0); setEstimatedTotal(0); setGstIncluded(false); setAdvPayments([]); setOrderItems([]);
@@ -759,14 +774,41 @@ export default function OrdersPage() {
       )}
 
       {/* ── ORDERS LIST ──────────────────────────────────────────── */}
+
+      {/* Filters */}
+      {!isLoading && (orders as any[]).length > 0 && (
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Status tabs */}
+          <div className="flex rounded-lg overflow-hidden border border-line text-xs">
+            {(["all", "pending", "ready", "delivered", "cancelled"] as const).map((s) => (
+              <button key={s} type="button"
+                onClick={() => setFilterStatus(s)}
+                className={clsx("px-3 py-1.5 font-medium capitalize transition-colors",
+                  filterStatus === s ? "bg-gold text-white" : "bg-white text-ink-dim hover:bg-canvas")}>
+                {s === "all" ? `All (${(orders as any[]).length})` : `${s} (${statusCounts[s] || 0})`}
+              </button>
+            ))}
+          </div>
+          {/* Month picker */}
+          <div className="flex items-center gap-1.5">
+            <input type="month" value={filterMonth}
+              onChange={(e) => setFilterMonth(e.target.value)}
+              className="border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+            {filterMonth && (
+              <button onClick={() => setFilterMonth("")} className="text-xs text-ink-dim hover:text-err">×</button>
+            )}
+          </div>
+        </div>
+      )}
+
       {isLoading ? <p className="text-ink-dim text-sm">{t("loading")}</p> : (
         <div className="space-y-2">
-          {!orders.length && (
+          {!filteredOrders.length && (
             <div className="bg-white rounded-xl border border-line p-10 text-center text-ink-dim shadow-soft">
-              No orders yet.
+              {(orders as any[]).length === 0 ? "No orders yet." : "No orders match the selected filters."}
             </div>
           )}
-          {orders.map((o: any) => {
+          {filteredOrders.map((o: any) => {
             const isExpanded = expanded === o.id;
             const paidSoFar = isExpanded
               ? expandedPayments.reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0)
