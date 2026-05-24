@@ -527,9 +527,14 @@ function StaffTab() {
   const { data: staff = [], isLoading } = useStaff();
   const update = useUpdateStaff();
   const del    = useDeleteStaff();
-  const [editing, setEditing] = useState<string | null>(null);
-  const [form, setForm] = useState<Partial<StaffMember>>({});
+  const [editing, setEditing]       = useState<string | null>(null);
+  const [form, setForm]             = useState<Partial<StaffMember>>({});
   const [showInactive, setShowInactive] = useState(false);
+  const [loginForm, setLoginForm]   = useState<{ bio_user_id: string; name: string } | null>(null);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPwd, setLoginPwd]     = useState("");
+  const [loginSaving, setLoginSaving] = useState(false);
+  const [loginMsg, setLoginMsg]     = useState<{ ok: boolean; text: string } | null>(null);
 
   const visible = showInactive ? staff : staff.filter((s) => s.active);
 
@@ -558,6 +563,47 @@ function StaffTab() {
     await del.mutateAsync(s.bio_user_id);
   }
 
+  function openLoginForm(s: StaffMember) {
+    setLoginForm({ bio_user_id: s.bio_user_id, name: s.name });
+    setLoginEmail("");
+    setLoginPwd("");
+    setLoginMsg(null);
+  }
+
+  async function saveLogin() {
+    if (!loginForm || !loginEmail || !loginPwd) return;
+    setLoginSaving(true);
+    setLoginMsg(null);
+    try {
+      const res  = await fetch("/api/staff/assign-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bio_user_id: loginForm.bio_user_id, name: loginForm.name, email: loginEmail, password: loginPwd }),
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setLoginMsg({ ok: true, text: json.action === "updated" ? "Login updated." : "Login created." });
+        update.mutate({ bio_user_id: loginForm.bio_user_id });
+      } else {
+        setLoginMsg({ ok: false, text: json.error ?? "Failed" });
+      }
+    } finally {
+      setLoginSaving(false);
+    }
+  }
+
+  async function removeLogin(s: StaffMember) {
+    if (!confirm(`Remove login for "${s.name}"? They will no longer be able to sign in.`)) return;
+    const res  = await fetch("/api/staff/assign-login", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio_user_id: s.bio_user_id }),
+    });
+    const json = await res.json();
+    if (json.ok) update.mutate({ bio_user_id: s.bio_user_id });
+    else alert(json.error ?? "Failed to remove login");
+  }
+
   if (isLoading) return <p className="text-ink-dim text-sm">Loading…</p>;
 
   return (
@@ -581,6 +627,7 @@ function StaffTab() {
               <th className="text-left px-3 py-2.5 hidden sm:table-cell">Dept</th>
               <th className="text-left px-3 py-2.5 hidden lg:table-cell">Phone</th>
               <th className="text-left px-3 py-2.5 hidden lg:table-cell">Shift</th>
+              <th className="text-center px-3 py-2.5">Login</th>
               <th className="text-center px-3 py-2.5">Status</th>
               <th className="px-3 py-2.5" />
             </tr>
@@ -601,6 +648,20 @@ function StaffTab() {
                     }`}>
                       {(s.shift ?? "boys") === "girls" ? "Girls" : "Boys"}
                     </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-center">
+                    {s.user_id ? (
+                      <div className="flex flex-col items-center gap-0.5">
+                        <span className="text-[10px] font-semibold bg-ok/10 text-ok px-1.5 py-0.5 rounded">Set</span>
+                        <button onClick={() => openLoginForm(s)} className="text-[9px] text-gold hover:underline">Change</button>
+                        <button onClick={() => removeLogin(s)} className="text-[9px] text-err hover:underline">Remove</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => openLoginForm(s)}
+                        className="text-[10px] font-medium text-gold border border-gold/40 rounded px-1.5 py-0.5 hover:bg-gold/10">
+                        Assign
+                      </button>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-center">
                     <button
@@ -624,9 +685,41 @@ function StaffTab() {
                   </td>
                 </tr>
 
+                {loginForm?.bio_user_id === s.bio_user_id && (
+                  <tr className="border-b border-line bg-canvas/40">
+                    <td colSpan={10} className="px-4 py-3">
+                      <div className="flex flex-wrap gap-3 items-end">
+                        <div>
+                          <label className="text-xs text-ink-dim block mb-1">Email for {s.name}</label>
+                          <input type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)}
+                            placeholder="staff@example.com" className={inp + " w-52"} />
+                        </div>
+                        <div>
+                          <label className="text-xs text-ink-dim block mb-1">Password</label>
+                          <input type="password" value={loginPwd} onChange={e => setLoginPwd(e.target.value)}
+                            placeholder="min 6 characters" className={inp + " w-40"} />
+                        </div>
+                        <div className="flex gap-2 items-center">
+                          <button onClick={saveLogin} disabled={loginSaving || !loginEmail || !loginPwd}
+                            className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40">
+                            {loginSaving ? "Saving…" : s.user_id ? "Update Login" : "Create Login"}
+                          </button>
+                          <button onClick={() => { setLoginForm(null); setLoginMsg(null); }}
+                            className="border border-line text-xs px-3 py-1.5 rounded-lg2">Cancel</button>
+                          {loginMsg && (
+                            <span className={`text-xs font-medium ${loginMsg.ok ? "text-ok" : "text-err"}`}>
+                              {loginMsg.text}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+
                 {editing === s.bio_user_id && (
                   <tr className="border-b border-line bg-canvas/40">
-                    <td colSpan={9} className="px-4 py-3">
+                    <td colSpan={10} className="px-4 py-3">
                       <div className="flex flex-wrap gap-3 items-end">
                         <div>
                           <label className="text-xs text-ink-dim block mb-1">Name</label>
@@ -669,7 +762,7 @@ function StaffTab() {
               </Fragment>
             ))}
             {visible.length === 0 && (
-              <tr><td colSpan={9} className="px-4 py-8 text-center text-ink-dim">No staff found</td></tr>
+              <tr><td colSpan={10} className="px-4 py-8 text-center text-ink-dim">No staff found</td></tr>
             )}
           </tbody>
         </table>

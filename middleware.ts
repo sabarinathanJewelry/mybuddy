@@ -30,13 +30,26 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getSession();
 
   const { pathname } = request.nextUrl;
+  const isStaff = session?.user?.app_metadata?.role === "staff";
 
-  if (session && pathname === "/login") {
+  // Unauthenticated → login
+  if (!session && pathname !== "/login" && !pathname.startsWith("/api/auth")) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
+  // Logged-in staff: only /my-attendance is allowed
+  if (isStaff && pathname !== "/my-attendance" && !pathname.startsWith("/api/")) {
+    return NextResponse.redirect(new URL("/my-attendance", request.url));
+  }
+
+  // Logged-in admin at /login → dashboard
+  if (session && !isStaff && pathname === "/login") {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  if (!session && pathname !== "/login" && !pathname.startsWith("/api/auth")) {
-    return NextResponse.redirect(new URL("/login", request.url));
+  // Logged-in staff at /login → my-attendance
+  if (session && isStaff && pathname === "/login") {
+    return NextResponse.redirect(new URL("/my-attendance", request.url));
   }
 
   return supabaseResponse;
