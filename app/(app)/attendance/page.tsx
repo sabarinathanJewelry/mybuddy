@@ -22,6 +22,11 @@ function formatHours(h: number | null) {
   const mins = Math.round((h - hrs) * 60);
   return `${hrs}h ${mins}m`;
 }
+function formatMins(m: number) {
+  const h = Math.floor(m / 60);
+  const min = Math.round(m % 60);
+  return h > 0 ? `${h}h ${min}m` : `${min}m`;
+}
 
 // ── Staff management tab ─────────────────────────────────────────────────────
 function StaffTab() {
@@ -36,7 +41,13 @@ function StaffTab() {
 
   function startEdit(s: StaffMember) {
     setEditing(s.bio_user_id);
-    setForm({ name: s.name, designation: s.designation, department: s.department, phone: s.phone });
+    setForm({
+      name: s.name,
+      designation: s.designation,
+      department: s.department,
+      phone: s.phone,
+      shift: s.shift ?? "boys",
+    });
   }
 
   async function saveEdit(bio_user_id: string) {
@@ -75,6 +86,7 @@ function StaffTab() {
               <th className="text-left px-3 py-2.5 hidden md:table-cell">Designation</th>
               <th className="text-left px-3 py-2.5 hidden sm:table-cell">Dept</th>
               <th className="text-left px-3 py-2.5 hidden lg:table-cell">Phone</th>
+              <th className="text-left px-3 py-2.5 hidden lg:table-cell">Shift</th>
               <th className="text-center px-3 py-2.5">Status</th>
               <th className="px-3 py-2.5" />
             </tr>
@@ -89,6 +101,13 @@ function StaffTab() {
                   <td className="px-3 py-2.5 text-ink-dim hidden md:table-cell">{s.designation || "—"}</td>
                   <td className="px-3 py-2.5 text-ink-dim hidden sm:table-cell">{s.department || "—"}</td>
                   <td className="px-3 py-2.5 text-ink-dim hidden lg:table-cell">{s.phone || "—"}</td>
+                  <td className="px-3 py-2.5 hidden lg:table-cell">
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                      (s.shift ?? "boys") === "girls" ? "bg-info/10 text-info" : "bg-gold/10 text-gold"
+                    }`}>
+                      {(s.shift ?? "boys") === "girls" ? "Girls" : "Boys"}
+                    </span>
+                  </td>
                   <td className="px-3 py-2.5 text-center">
                     <button
                       onClick={() => toggleActive(s)}
@@ -113,7 +132,7 @@ function StaffTab() {
 
                 {editing === s.bio_user_id && (
                   <tr className="border-b border-line bg-canvas/40">
-                    <td colSpan={8} className="px-4 py-3">
+                    <td colSpan={9} className="px-4 py-3">
                       <div className="flex flex-wrap gap-3 items-end">
                         <div>
                           <label className="text-xs text-ink-dim block mb-1">Name</label>
@@ -135,6 +154,14 @@ function StaffTab() {
                           <input value={form.phone ?? ""} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
                             placeholder="9XXXXXXXXX" className={inp + " w-32"} />
                         </div>
+                        <div>
+                          <label className="text-xs text-ink-dim block mb-1">Shift</label>
+                          <select value={form.shift ?? "boys"} onChange={e => setForm(f => ({ ...f, shift: e.target.value as "boys" | "girls" }))}
+                            className={inp + " w-36"}>
+                            <option value="boys">Boys (till 9:30 PM)</option>
+                            <option value="girls">Girls (till 8:30 PM)</option>
+                          </select>
+                        </div>
                         <div className="flex gap-2">
                           <button onClick={() => saveEdit(s.bio_user_id)} disabled={update.isPending}
                             className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40">Save</button>
@@ -148,7 +175,7 @@ function StaffTab() {
               </Fragment>
             ))}
             {visible.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-ink-dim">No staff found</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-ink-dim">No staff found</td></tr>
             )}
           </tbody>
         </table>
@@ -201,6 +228,10 @@ export default function AttendancePage() {
   const present    = data.filter((r) => r.present);
   const absent     = data.filter((r) => !r.present);
   const checkedOut = present.filter((r) => r.last_out !== null);
+
+  const lateCount    = present.filter(r => r.is_late).length;
+  const overrunCount = present.filter(r => r.lunch_overrun_minutes > 0).length;
+  const shortCount   = present.filter(r => r.short_interval).length;
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">
@@ -260,12 +291,13 @@ export default function AttendancePage() {
       {/* ── Attendance tab ── */}
       {tab === "attendance" && (
         <>
+          {/* Summary cards */}
           <div className="grid grid-cols-4 gap-3">
             {[
-              { label: "Total Staff", value: data.length, color: "text-ink" },
-              { label: "Present",     value: present.length, color: "text-ok" },
-              { label: "Checked Out", value: checkedOut.length, color: "text-info" },
-              { label: "Absent",      value: absent.length, color: "text-err" },
+              { label: "Total Staff", value: data.length,        color: "text-ink"  },
+              { label: "Present",     value: present.length,     color: "text-ok"   },
+              { label: "Checked Out", value: checkedOut.length,  color: "text-info" },
+              { label: "Absent",      value: absent.length,      color: "text-err"  },
             ].map(c => (
               <div key={c.label} className="bg-white rounded-xl border border-line p-4 shadow-soft text-center">
                 <p className={`text-2xl font-bold ${c.color}`}>{c.value}</p>
@@ -274,12 +306,33 @@ export default function AttendancePage() {
             ))}
           </div>
 
+          {/* Issues summary bar */}
+          {(lateCount > 0 || overrunCount > 0 || shortCount > 0) && (
+            <div className="flex gap-2 flex-wrap">
+              {lateCount > 0 && (
+                <div className="bg-warn/10 text-warn text-xs font-medium px-3 py-1.5 rounded-lg2">
+                  {lateCount} late arrival{lateCount > 1 ? "s" : ""}
+                </div>
+              )}
+              {overrunCount > 0 && (
+                <div className="bg-warn/10 text-warn text-xs font-medium px-3 py-1.5 rounded-lg2">
+                  {overrunCount} lunch overrun{overrunCount > 1 ? "s" : ""}
+                </div>
+              )}
+              {shortCount > 0 && (
+                <div className="bg-err/10 text-err text-xs font-medium px-3 py-1.5 rounded-lg2">
+                  {shortCount} short interval{shortCount > 1 ? "s" : ""} — verify records
+                </div>
+              )}
+            </div>
+          )}
+
           {isLoading ? (
             <p className="text-ink-dim text-sm">Loading…</p>
           ) : data.length === 0 ? (
             <div className="bg-white rounded-xl border border-line p-10 text-center text-ink-dim shadow-soft">
               <p className="font-medium">{syncing ? "Syncing…" : "No staff records found"}</p>
-              {!syncing && <p className="text-xs mt-1">Run migrations 025–027 in Supabase, then sync the device.</p>}
+              {!syncing && <p className="text-xs mt-1">Run migrations 025–028 in Supabase, then sync the device.</p>}
             </div>
           ) : (
             <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
@@ -293,7 +346,7 @@ export default function AttendancePage() {
                     <th className="text-center px-3 py-2.5">Status</th>
                     <th className="text-right px-3 py-2.5">IN</th>
                     <th className="text-right px-3 py-2.5">OUT</th>
-                    <th className="text-right px-3 py-2.5">Hours</th>
+                    <th className="text-right px-3 py-2.5">Eff. Hrs</th>
                     <th className="text-center px-3 py-2.5">Punches</th>
                   </tr>
                 </thead>
@@ -305,34 +358,80 @@ export default function AttendancePage() {
                         <td className="px-3 py-2.5 font-medium">{r.name}</td>
                         <td className="px-3 py-2.5 text-ink-dim hidden md:table-cell">{r.designation || "—"}</td>
                         <td className="px-3 py-2.5 text-ink-dim hidden sm:table-cell">{r.department || "—"}</td>
+
+                        {/* Status + Late badge */}
                         <td className="px-3 py-2.5 text-center">
-                          {r.present
-                            ? r.last_out
-                              ? <span className="text-[10px] font-semibold bg-ok/10 text-ok px-2 py-0.5 rounded-full">Out</span>
-                              : <span className="text-[10px] font-semibold bg-info/10 text-info px-2 py-0.5 rounded-full">In</span>
-                            : <span className="text-[10px] font-semibold bg-err/10 text-err px-2 py-0.5 rounded-full">Absent</span>
-                          }
+                          <div className="flex flex-col items-center gap-0.5">
+                            {r.present
+                              ? r.last_out
+                                ? <span className="text-[10px] font-semibold bg-ok/10 text-ok px-2 py-0.5 rounded-full">Out</span>
+                                : <span className="text-[10px] font-semibold bg-info/10 text-info px-2 py-0.5 rounded-full">In</span>
+                              : <span className="text-[10px] font-semibold bg-err/10 text-err px-2 py-0.5 rounded-full">Absent</span>
+                            }
+                            {r.is_late && (
+                              <span className="text-[9px] font-semibold text-warn leading-none">Late</span>
+                            )}
+                          </div>
                         </td>
+
                         <td className="px-3 py-2.5 text-right font-mono text-ok">{formatTime(r.first_in)}</td>
                         <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{formatTime(r.last_out)}</td>
-                        <td className="px-3 py-2.5 text-right font-mono">{formatHours(r.hours_worked)}</td>
+
+                        {/* Effective hours + lunch overrun note */}
+                        <td className="px-3 py-2.5 text-right">
+                          <span className="font-mono">{formatHours(r.effective_hours)}</span>
+                          {r.lunch_overrun_minutes > 0 && (
+                            <span className="block text-[10px] text-warn font-medium">
+                              +{formatMins(r.lunch_overrun_minutes)} lunch
+                            </span>
+                          )}
+                          {r.effective_hours !== null && r.lunch_minutes === null && r.last_out && (
+                            <span className="block text-[10px] text-ink-dim">−1h lunch</span>
+                          )}
+                        </td>
+
+                        {/* Punches + short interval flag */}
                         <td className="px-3 py-2.5 text-center">
-                          {r.punches.length > 0
-                            ? <button onClick={() => setExpanded(expanded === r.bio_user_id ? null : r.bio_user_id)}
+                          {r.punches.length > 0 ? (
+                            <div className="flex flex-col items-center gap-0.5">
+                              <button
+                                onClick={() => setExpanded(expanded === r.bio_user_id ? null : r.bio_user_id)}
                                 className="text-xs text-info hover:underline">
                                 {r.punches.length} {r.punches.length === 1 ? "punch" : "punches"}
                               </button>
-                            : <span className="text-xs text-ink-dim">—</span>
-                          }
+                              {r.short_interval && (
+                                <span className="text-[9px] font-semibold text-err leading-none">Short! Verify</span>
+                              )}
+                              {r.extra_punches && !r.short_interval && (
+                                <span className="text-[9px] text-ink-dim leading-none">extra punches</span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-ink-dim">—</span>
+                          )}
                         </td>
                       </tr>
+
                       {expanded === r.bio_user_id && (
                         <tr className="border-b border-line bg-canvas/30">
                           <td colSpan={9} className="px-6 py-2.5">
                             <div className="flex flex-wrap gap-2">
                               {r.punches.map((p, pi) => (
-                                <span key={pi} className="text-xs bg-white border border-line rounded px-2 py-1 font-mono">{formatTime(p)}</span>
+                                <span key={pi} className="text-xs bg-white border border-line rounded px-2 py-1 font-mono">
+                                  {pi === 0 ? "IN" : pi === r.punches.length - 1 ? "OUT" : pi % 2 === 1 ? "↑ out" : "↓ in"}
+                                  {" "}{formatTime(p)}
+                                </span>
                               ))}
+                              {r.lunch_minutes !== null && (
+                                <span className={`text-xs border rounded px-2 py-1 font-medium ${
+                                  r.lunch_overrun_minutes > 0
+                                    ? "bg-warn/10 border-warn/30 text-warn"
+                                    : "bg-ok/10 border-ok/30 text-ok"
+                                }`}>
+                                  Lunch: {formatMins(r.lunch_minutes)}
+                                  {r.lunch_overrun_minutes > 0 && ` (+${formatMins(r.lunch_overrun_minutes)} over)`}
+                                </span>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -346,6 +445,7 @@ export default function AttendancePage() {
           {data.length > 0 && (
             <p className="text-xs text-ink-dim text-center">
               {shortDate(date)} · {present.length} present, {absent.length} absent of {data.length} staff
+              {" "}· Boys shift 9:30–21:30 · Girls shift 9:30–20:30 · Grace till 9:50
             </p>
           )}
         </>
