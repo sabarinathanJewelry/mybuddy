@@ -6,13 +6,17 @@ import {
   useAttendanceByDate, useStaff, useUpdateStaff, useDeleteStaff,
   useMonthlyAttendanceSummary, useAllPermissions, useDecidePermission,
   useKioskSequence, useSaveKioskSequence,
+  useLeavesByDate, useAllLeaveRequests, useMyLeaveRequests, usePendingLeaveCount,
+  useMyStaffProfile, useSubmitLeaveRequest, useDecideLeaveRequest,
+  useAppNotifications, useMarkNotificationRead, useMarkAllNotificationsRead,
   type StaffMember, type MonthlyEmployeeSummary, type PermissionRequest, type KioskTap,
+  type LeaveRequest, type AppNotification,
 } from "@/modules/attendance/api";
 import { useKiosk } from "@/stores/kiosk";
 import { useAuth } from "@/stores/auth";
 import { shortDate, inr } from "@/lib/format";
 
-type PageTab = "attendance" | "staff" | "monthly" | "requests";
+type PageTab = "attendance" | "staff" | "monthly" | "requests" | "leaves";
 
 const inp = "border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
 
@@ -867,6 +871,267 @@ function StaffTab() {
   );
 }
 
+// ── Notification Bell ────────────────────────────────────────────────────────
+function NotificationBell({ notifications, bioUserId }: {
+  notifications: AppNotification[];
+  bioUserId: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const markOne = useMarkNotificationRead();
+  const markAll = useMarkAllNotificationsRead();
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="relative p-2 rounded-lg2 border border-line hover:bg-canvas/80 transition-colors text-ink-dim">
+        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+        </svg>
+        {notifications.length > 0 && (
+          <span className="absolute -top-1 -right-1 bg-err text-white text-[9px] font-bold px-1 py-0.5 rounded-full min-w-[16px] text-center leading-none">
+            {notifications.length > 9 ? "9+" : notifications.length}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-80 bg-white border border-line rounded-xl shadow-soft z-50 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-line">
+            <span className="text-sm font-semibold">Notifications</span>
+            {notifications.length > 0 && (
+              <button
+                onClick={() => {
+                  markAll.mutate({ notificationIds: notifications.map(n => n.id), bioUserId });
+                  setOpen(false);
+                }}
+                className="text-xs text-gold hover:underline">
+                Mark all read
+              </button>
+            )}
+          </div>
+          {notifications.length === 0 ? (
+            <p className="px-4 py-6 text-center text-xs text-ink-dim">No new notifications</p>
+          ) : (
+            <div className="max-h-72 overflow-y-auto divide-y divide-line">
+              {notifications.map(n => (
+                <div key={n.id} className="px-4 py-3 hover:bg-canvas/50 flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold">{n.title}</p>
+                    <p className="text-xs text-ink-dim mt-0.5 leading-relaxed">{n.body}</p>
+                    <p className="text-[10px] text-ink-dim/60 mt-1">
+                      {new Date(n.created_at).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => markOne.mutate({ notificationId: n.id, bioUserId })}
+                    className="text-[10px] text-ink-dim hover:text-gold shrink-0 mt-0.5 leading-none">
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Leaves tab ───────────────────────────────────────────────────────────────
+const LEAVE_TYPE_LABELS: Record<string, string> = { casual: "Casual", sick: "Sick", half_day: "Half Day" };
+const LEAVE_STATUS_STYLE: Record<string, string> = {
+  pending:  "bg-warn/10 text-warn",
+  approved: "bg-ok/10 text-ok",
+  rejected: "bg-err/10 text-err",
+};
+
+function LeavesTab({ isAdmin, myBioUserId, myName }: {
+  isAdmin: boolean;
+  myBioUserId: string | null;
+  myName: string;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: allRequests = [], isLoading } = useAllLeaveRequests();
+  const { data: myRequests = [] } = useMyLeaveRequests(isAdmin ? null : myBioUserId);
+  const submitLeave   = useSubmitLeaveRequest();
+  const decideLeave   = useDecideLeaveRequest();
+
+  const [filter, setFilter]   = useState<"all" | "pending" | "approved" | "rejected">("pending");
+  const [noteMap, setNoteMap] = useState<Record<string, string>>({});
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ leave_date: today, leave_type: "casual", reason: "" });
+
+  const displayed  = isAdmin
+    ? allRequests.filter(r => filter === "all" || r.status === filter)
+    : myRequests;
+  const pendingCount = allRequests.filter(r => r.status === "pending").length;
+
+  async function handleSubmit() {
+    if (!myBioUserId || !form.leave_date) return;
+    await submitLeave.mutateAsync({
+      bio_user_id: myBioUserId,
+      leave_date: form.leave_date,
+      leave_type: form.leave_type,
+      reason: form.reason || undefined,
+      staff_name: myName,
+    });
+    setShowForm(false);
+    setForm({ leave_date: today, leave_type: "casual", reason: "" });
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Staff: request leave button + form */}
+      {!isAdmin && myBioUserId && (
+        <div>
+          {!showForm ? (
+            <button onClick={() => setShowForm(true)}
+              className="bg-gold text-white text-sm px-4 py-2 rounded-lg2">
+              + Request Leave
+            </button>
+          ) : (
+            <div className="bg-white border border-line rounded-xl p-4 shadow-soft space-y-3">
+              <h3 className="font-semibold text-sm">Request Leave</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Date *</label>
+                  <input type="date" value={form.leave_date} min={today}
+                    onChange={e => setForm(f => ({ ...f, leave_date: e.target.value }))}
+                    className={inp} />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Type</label>
+                  <select value={form.leave_type}
+                    onChange={e => setForm(f => ({ ...f, leave_type: e.target.value }))}
+                    className={inp}>
+                    <option value="casual">Casual</option>
+                    <option value="sick">Sick</option>
+                    <option value="half_day">Half Day</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Reason (optional)</label>
+                  <input value={form.reason}
+                    onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
+                    placeholder="e.g. family function"
+                    className={inp} />
+                </div>
+              </div>
+              {submitLeave.isError && (
+                <p className="text-xs text-err">{(submitLeave.error as any)?.message}</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  disabled={submitLeave.isPending || !form.leave_date}
+                  onClick={handleSubmit}
+                  className="bg-gold text-white text-sm px-4 py-2 rounded-lg2 disabled:opacity-50">
+                  {submitLeave.isPending ? "Submitting…" : "Submit Request"}
+                </button>
+                <button onClick={() => setShowForm(false)}
+                  className="border border-line text-sm px-4 py-2 rounded-lg2">Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Staff: not linked to staff profile */}
+      {!isAdmin && !myBioUserId && (
+        <div className="bg-canvas border border-line rounded-xl px-4 py-3 text-sm text-ink-dim">
+          Your account is not linked to a staff profile. Ask admin to assign your login in Manage Staff.
+        </div>
+      )}
+
+      {/* Admin: filter bar */}
+      {isAdmin && (
+        <div className="flex rounded-lg overflow-hidden border border-line text-xs w-fit">
+          {(["pending","approved","rejected","all"] as const).map(f => (
+            <button key={f} onClick={() => setFilter(f)}
+              className={`px-3 py-1.5 font-medium capitalize transition-colors ${filter === f ? "bg-gold text-white" : "bg-white text-ink-dim hover:bg-canvas"}`}>
+              {f === "pending" ? `Pending (${pendingCount})` : f === "all" ? `All (${allRequests.length})` : f.charAt(0).toUpperCase() + f.slice(1)}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Request list */}
+      {isLoading ? <p className="text-ink-dim text-sm">Loading…</p> : (
+        <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                {isAdmin && <th className="text-left px-4 py-2.5">Staff</th>}
+                <th className="text-left px-3 py-2.5">Date</th>
+                <th className="text-left px-3 py-2.5">Type</th>
+                <th className="text-left px-3 py-2.5">Reason</th>
+                <th className="text-center px-3 py-2.5">Status</th>
+                {isAdmin && <th className="px-3 py-2.5" />}
+              </tr>
+            </thead>
+            <tbody>
+              {displayed.map((r: LeaveRequest) => (
+                <Fragment key={r.id}>
+                  <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
+                    {isAdmin && (
+                      <td className="px-4 py-2.5 font-medium">{(r as any).staff?.name ?? r.bio_user_id}</td>
+                    )}
+                    <td className="px-3 py-2.5 text-ink-dim">{shortDate(r.leave_date)}</td>
+                    <td className="px-3 py-2.5">{LEAVE_TYPE_LABELS[r.leave_type] ?? r.leave_type}</td>
+                    <td className="px-3 py-2.5 text-ink-dim max-w-[180px] truncate">{r.reason || "—"}</td>
+                    <td className="px-3 py-2.5 text-center">
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${LEAVE_STATUS_STYLE[r.status]}`}>
+                        {r.status}
+                      </span>
+                      {r.admin_note && (
+                        <p className="text-[10px] text-ink-dim mt-0.5">{r.admin_note}</p>
+                      )}
+                    </td>
+                    {isAdmin && (
+                      <td className="px-3 py-2.5 text-right">
+                        {r.status === "pending" && (
+                          <div className="flex items-center gap-1 justify-end">
+                            <input type="text" placeholder="note (opt.)"
+                              value={noteMap[r.id] ?? ""}
+                              onChange={e => setNoteMap(m => ({ ...m, [r.id]: e.target.value }))}
+                              className="border border-line rounded px-2 py-0.5 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-gold" />
+                            <button
+                              onClick={() => decideLeave.mutate({ id: r.id, bio_user_id: r.bio_user_id, leave_date: r.leave_date, leave_type: r.leave_type, status: "approved", admin_note: noteMap[r.id] })}
+                              disabled={decideLeave.isPending}
+                              className="text-xs bg-ok text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">
+                              Approve
+                            </button>
+                            <button
+                              onClick={() => decideLeave.mutate({ id: r.id, bio_user_id: r.bio_user_id, leave_date: r.leave_date, leave_type: r.leave_type, status: "rejected", admin_note: noteMap[r.id] })}
+                              disabled={decideLeave.isPending}
+                              className="text-xs bg-err text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">
+                              Reject
+                            </button>
+                          </div>
+                        )}
+                        {r.status !== "pending" && r.admin_note && (
+                          <span className="text-xs text-ink-dim">{r.admin_note}</span>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                </Fragment>
+              ))}
+              {!displayed.length && (
+                <tr>
+                  <td colSpan={isAdmin ? 6 : 5} className="px-4 py-8 text-center text-ink-dim">
+                    No leave requests
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Kiosk sequence configuration (admin only, unlocked) ─────────────────────
 function KioskConfig() {
   const { data: currentSeq = [], isLoading } = useKioskSequence();
@@ -987,7 +1252,12 @@ export default function AttendancePage() {
 
   const { isLocked: rawLocked, unlock } = useKiosk();
   const profile = useAuth((s) => s.profile);
-  const { data: kioskSeq } = useKioskSequence();
+  const { data: kioskSeq }         = useKioskSequence();
+  const { data: myStaffProfile }   = useMyStaffProfile();
+  const { data: pendingLeaveCount = 0 } = usePendingLeaveCount();
+  const myBioUserId = myStaffProfile?.bio_user_id ?? null;
+  const isAdmin = profile?.role !== "staff";
+  const { data: notifications = [] } = useAppNotifications(isAdmin ? null : myBioUserId);
   // Effective lock only when a sequence is actually configured
   const isLocked = rawLocked && !!kioskSeq?.length;
   const [tapBuffer, setTapBuffer] = useState<KioskTap[]>([]);
@@ -1016,6 +1286,7 @@ export default function AttendancePage() {
 
   const qc = useQueryClient();
   const { data = [], isLoading, refetch } = useAttendanceByDate(date, activeOnly);
+  const { data: leavesByDate = [] }       = useLeavesByDate(date);
 
   const syncFromDevice = useCallback(async () => {
     setSyncing(true);
@@ -1067,6 +1338,7 @@ export default function AttendancePage() {
     staff:      "Manage Staff",
     monthly:    "Monthly Report",
     requests:   "Requests",
+    leaves:     "Leaves",
   };
 
   return (
@@ -1085,6 +1357,7 @@ export default function AttendancePage() {
           <input type="date" value={date} onChange={e => setDate(e.target.value)}
             className="border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
         )}
+        <NotificationBell notifications={notifications} bioUserId={isAdmin ? null : myBioUserId} />
         {isVercel ? (
           <button onClick={() => refetch()} disabled={isLoading}
             className="bg-gold hover:bg-gold-dark text-white text-sm font-medium px-4 py-2 rounded-lg2 disabled:opacity-50">
@@ -1102,7 +1375,7 @@ export default function AttendancePage() {
       {/* Tabs — hidden in locked/kiosk mode */}
       {!isLocked && (
         <div className="flex border-b border-line gap-1">
-          {(["attendance", "staff", "monthly", "requests"] as PageTab[]).map((t) => (
+          {(["attendance", "staff", "monthly", "requests", "leaves"] as PageTab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
                 tab === t ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"
@@ -1110,6 +1383,9 @@ export default function AttendancePage() {
               {tabLabels[t]}
               {t === "requests" && pendingReqCount > 0 && (
                 <span className="bg-err text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{pendingReqCount}</span>
+              )}
+              {t === "leaves" && pendingLeaveCount > 0 && (
+                <span className="bg-warn text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{pendingLeaveCount}</span>
               )}
             </button>
           ))}
@@ -1146,6 +1422,28 @@ export default function AttendancePage() {
             <p className="text-xs text-ink-dim text-center -mt-1">
               Service last ran: <strong>{lastSynced}</strong>
             </p>
+          )}
+
+          {/* Who's on leave today — visible to all including kiosk */}
+          {leavesByDate.length > 0 && (
+            <div className="bg-warn/5 border border-warn/20 rounded-xl px-4 py-3">
+              <p className="text-xs font-semibold text-warn mb-2">On Leave — {shortDate(date)}</p>
+              <div className="flex flex-wrap gap-2">
+                {(leavesByDate as any[]).map((l: any) => (
+                  <div key={l.bio_user_id + l.leave_type} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs ${
+                    l.status === "approved"
+                      ? "bg-warn/10 border-warn/30 text-warn"
+                      : "bg-canvas border-line text-ink-dim"
+                  }`}>
+                    <span className="font-medium">{l.staff?.name ?? l.bio_user_id}</span>
+                    <span className="opacity-60">{LEAVE_TYPE_LABELS[l.leave_type] ?? l.leave_type}</span>
+                    {l.status === "pending" && (
+                      <span className="text-[9px] bg-warn/20 text-warn px-1 rounded font-semibold">pending</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
 
           {(lateCount > 0 || overrunCount > 0 || shortCount > 0 || doubleCount > 0) && (
@@ -1322,6 +1620,15 @@ export default function AttendancePage() {
 
       {/* ── Requests tab ── */}
       {tab === "requests" && <RequestsTab />}
+
+      {/* ── Leaves tab ── */}
+      {tab === "leaves" && (
+        <LeavesTab
+          isAdmin={isAdmin}
+          myBioUserId={myBioUserId}
+          myName={myStaffProfile?.name ?? "Staff"}
+        />
+      )}
     </div>
   );
 }

@@ -534,3 +534,250 @@ export function useSaveKioskSequence() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["kiosk-sequence"] }),
   });
 }
+
+// ── Leave requests ────────────────────────────────────────────────────────────
+
+export type LeaveRequest = {
+  id: string;
+  bio_user_id: string;
+  leave_date: string;
+  leave_type: string;
+  reason: string | null;
+  status: "pending" | "approved" | "rejected";
+  admin_note: string | null;
+  created_at: string;
+  staff?: { name: string; designation: string };
+};
+
+export function useLeavesByDate(date: string) {
+  return useQuery<LeaveRequest[]>({
+    queryKey: ["leaves-by-date", date],
+    enabled: !!date,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("leave_requests")
+        .select("bio_user_id, leave_type, status, staff(name, designation)")
+        .eq("leave_date", date)
+        .in("status", ["approved", "pending"]);
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
+export function useAllLeaveRequests() {
+  return useQuery<LeaveRequest[]>({
+    queryKey: ["leave-requests-all"],
+    refetchOnMount: "always",
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("leave_requests")
+        .select("*, staff(name, designation)")
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
+export function useMyLeaveRequests(bioUserId: string | null) {
+  return useQuery<LeaveRequest[]>({
+    queryKey: ["leave-requests-mine", bioUserId],
+    enabled: !!bioUserId,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("leave_requests")
+        .select("*")
+        .eq("bio_user_id", bioUserId!)
+        .order("created_at", { ascending: false })
+        .limit(30);
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
+export function usePendingLeaveCount() {
+  return useQuery<number>({
+    queryKey: ["leave-pending-count"],
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { count } = await supabase()
+        .from("leave_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending");
+      return count ?? 0;
+    },
+  });
+}
+
+export function useMyStaffProfile() {
+  return useQuery<StaffMember | null>({
+    queryKey: ["my-staff-profile"],
+    queryFn: async () => {
+      const { data: { user } } = await supabase().auth.getUser();
+      if (!user) return null;
+      const { data } = await supabase()
+        .from("staff")
+        .select("*")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      return (data ?? null) as any;
+    },
+  });
+}
+
+export function useSubmitLeaveRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ bio_user_id, leave_date, leave_type, reason, staff_name }: {
+      bio_user_id: string;
+      leave_date: string;
+      leave_type: string;
+      reason?: string;
+      staff_name: string;
+    }) => {
+      const client = supabase();
+      const { data: req, error } = await client
+        .from("leave_requests")
+        .insert({ bio_user_id, leave_date, leave_type, reason: reason || null })
+        .select()
+        .single();
+      if (error) throw error;
+      const typeLabel = leave_type === "half_day" ? "half-day" : leave_type;
+      await client.from("app_notifications").insert({
+        for_bio_user_id: null,
+        title: "Leave Requested",
+        body: `${staff_name} has requested ${typeLabel} leave on ${leave_date}.`,
+        ref_type: "leave_request",
+        ref_id: req.id,
+      });
+      return req;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leave-requests-mine"] });
+      qc.invalidateQueries({ queryKey: ["leave-requests-all"] });
+      qc.invalidateQueries({ queryKey: ["leave-pending-count"] });
+      qc.invalidateQueries({ queryKey: ["leaves-by-date"] });
+      qc.invalidateQueries({ queryKey: ["app-notifications"] });
+    },
+  });
+}
+
+export function useDecideLeaveRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, bio_user_id, leave_date, leave_type, status, admin_note }: {
+      id: string;
+      bio_user_id: string;
+      leave_date: string;
+      leave_type: string;
+      status: "approved" | "rejected";
+      admin_note?: string;
+    }) => {
+      const client = supabase();
+      const { error } = await client
+        .from("leave_requests")
+        .update({ status, admin_note: admin_note || null, updated_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) throw error;
+      const typeLabel = leave_type === "half_day" ? "half-day" : leave_type;
+      await client.from("app_notifications").insert({
+        for_bio_user_id: bio_user_id,
+        title: `Leave ${status === "approved" ? "Approved" : "Rejected"}`,
+        body: `Your ${typeLabel} leave request for ${leave_date} was ${status}${admin_note ? ` — ${admin_note}` : ""}.`,
+        ref_type: "leave_request",
+        ref_id: id,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leave-requests-all"] });
+      qc.invalidateQueries({ queryKey: ["leave-requests-mine"] });
+      qc.invalidateQueries({ queryKey: ["leave-pending-count"] });
+      qc.invalidateQueries({ queryKey: ["leaves-by-date"] });
+      qc.invalidateQueries({ queryKey: ["app-notifications"] });
+    },
+  });
+}
+
+// ── App notifications ─────────────────────────────────────────────────────────
+
+export type AppNotification = {
+  id: string;
+  for_bio_user_id: string | null;
+  title: string;
+  body: string;
+  ref_type: string | null;
+  ref_id: string | null;
+  created_at: string;
+};
+
+export function useAppNotifications(bioUserId: string | null) {
+  return useQuery<AppNotification[]>({
+    queryKey: ["app-notifications", bioUserId],
+    refetchInterval: 30_000,
+    queryFn: async () => {
+      const client = supabase();
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return [];
+
+      let q = client
+        .from("app_notifications")
+        .select("id, for_bio_user_id, title, body, ref_type, ref_id, created_at")
+        .order("created_at", { ascending: false })
+        .limit(50);
+
+      if (bioUserId) {
+        q = q.or(`for_bio_user_id.is.null,for_bio_user_id.eq.${bioUserId}`);
+      } else {
+        q = q.is("for_bio_user_id", null);
+      }
+
+      const { data: notifs, error } = await q;
+      if (error) throw error;
+      if (!notifs?.length) return [];
+
+      const { data: reads } = await client
+        .from("notification_reads")
+        .select("notification_id")
+        .eq("user_id", user.id)
+        .in("notification_id", notifs.map((n: any) => n.id));
+
+      const readIds = new Set((reads ?? []).map((r: any) => r.notification_id));
+      return (notifs ?? []).filter((n: any) => !readIds.has(n.id)) as AppNotification[];
+    },
+  });
+}
+
+export function useMarkNotificationRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ notificationId, bioUserId }: { notificationId: string; bioUserId: string | null }) => {
+      const client = supabase();
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) return;
+      await client.from("notification_reads").upsert({ notification_id: notificationId, user_id: user.id });
+    },
+    onSuccess: (_, { bioUserId }) => {
+      qc.invalidateQueries({ queryKey: ["app-notifications", bioUserId] });
+    },
+  });
+}
+
+export function useMarkAllNotificationsRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ notificationIds, bioUserId }: { notificationIds: string[]; bioUserId: string | null }) => {
+      const client = supabase();
+      const { data: { user } } = await client.auth.getUser();
+      if (!user || !notificationIds.length) return;
+      await client.from("notification_reads").upsert(
+        notificationIds.map(id => ({ notification_id: id, user_id: user.id }))
+      );
+    },
+    onSuccess: (_, { bioUserId }) => {
+      qc.invalidateQueries({ queryKey: ["app-notifications", bioUserId] });
+    },
+  });
+}
