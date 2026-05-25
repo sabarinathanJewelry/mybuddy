@@ -169,7 +169,7 @@ export default function MetalFlowPage() {
   const [payoutRowId, setPayoutRowId] = useState<string | null>(null);
   const [payoutForm, setPayoutForm] = useState({ amount: 0, mode: "cash" as "cash" | "bank" });
   const [editIntakeId, setEditIntakeId] = useState<string | null>(null);
-  const [editIntakeForm, setEditIntakeForm] = useState<{ intake_date: string; customer_id: string; metal: string; gross_wt: number; purity_pct: number; pure_wt: number; notes: string } | null>(null);
+  const [editIntakeForm, setEditIntakeForm] = useState<{ intake_date: string; customer_id: string; metal: string; gross_wt: number; purity_pct: number; pure_wt: number; notes: string; payout_amount: number; payout_mode: "cash" | "bank" } | null>(null);
   const [metalFilter, setMetalFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "used">("all");
   const defaultIntakeForm = () => ({
@@ -297,7 +297,17 @@ export default function MetalFlowPage() {
 
   const updateIntake = useMutation({
     mutationFn: async (d: NonNullable<typeof editIntakeForm> & { id: string }) => {
-      const { error } = await supabase().from("old_metal_intake").update({
+      const client = supabase();
+
+      // Fetch current record so we know the old payout mode (for ledger table switch)
+      const { data: cur } = await client
+        .from("old_metal_intake")
+        .select("payout_amount, payout_mode, customer_id")
+        .eq("id", d.id)
+        .maybeSingle();
+
+      // Update the intake record
+      const { error } = await client.from("old_metal_intake").update({
         intake_date: d.intake_date,
         metal: d.metal,
         gross_wt: d.gross_wt,
@@ -305,11 +315,44 @@ export default function MetalFlowPage() {
         pure_wt: d.pure_wt,
         customer_id: d.customer_id || null,
         notes: d.notes || null,
+        payout_amount: d.payout_amount > 0 ? d.payout_amount : null,
+        payout_mode:   d.payout_amount > 0 ? d.payout_mode   : null,
       }).eq("id", d.id);
       if (error) throw error;
+
+      // Sync the cash/bank ledger entry
+      if (d.payout_amount > 0) {
+        const oldMode  = (cur?.payout_mode ?? "cash") as "cash" | "bank";
+        const oldTable = oldMode === "bank" ? "bank_ledger" : "cash_ledger";
+        const newTable = d.payout_mode === "bank" ? "bank_ledger" : "cash_ledger";
+
+        if (oldMode === d.payout_mode) {
+          // Same table — just update amount
+          await client.from(newTable).update({ amount: d.payout_amount, tx_date: d.intake_date })
+            .eq("ref_type", "old_metal_intake").eq("ref_id", d.id);
+        } else {
+          // Mode changed — move entry to the new table
+          await client.from(oldTable).delete()
+            .eq("ref_type", "old_metal_intake").eq("ref_id", d.id);
+          await client.from(newTable).insert({
+            tx_date: d.intake_date, direction: "out", amount: d.payout_amount,
+            description: "Old gold purchase payout",
+            ref_type: "old_metal_intake", ref_id: d.id,
+          });
+        }
+
+        // Sync customer payment if linked
+        if (d.customer_id) {
+          await client.from("payments")
+            .update({ amount: d.payout_amount, mode: d.payout_mode === "bank" ? "bank" : "cash", pay_date: d.intake_date })
+            .eq("customer_id", d.customer_id)
+            .eq("notes", "Old gold purchase — cash payout to customer");
+        }
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["metal_intake"] });
+      qc.invalidateQueries({ queryKey: ["ledger_detail"] });
       setEditIntakeId(null);
       setEditIntakeForm(null);
     },
@@ -730,6 +773,8 @@ export default function MetalFlowPage() {
                                     purity_pct: r.purity_pct,
                                     pure_wt: r.pure_wt,
                                     notes: r.notes ?? "",
+                                    payout_amount: r.payout_amount ?? 0,
+                                    payout_mode: (r.payout_mode ?? "cash") as "cash" | "bank",
                                   });
                                   setPayoutRowId(null);
                                 }}
@@ -821,6 +866,29 @@ export default function MetalFlowPage() {
                                     className={inp} placeholder="Optional" />
                                 </div>
                               </div>
+
+                              <div className="border-t border-line pt-3 space-y-2">
+                                <p className="text-xs font-medium text-ink-dim">Cash Payout to Customer</p>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                  <div>
+                                    <label className="block text-xs text-ink-dim mb-1">Amount Paid (₹)</label>
+                                    <input type="number" step="1" value={editIntakeForm.payout_amount || ""}
+                                      onFocus={e => e.target.select()}
+                                      onChange={e => setEditIntakeForm({ ...editIntakeForm, payout_amount: parseFloat(e.target.value) || 0 })}
+                                      className={inp} placeholder="0" />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-ink-dim mb-1">Paid via</label>
+                                    <select value={editIntakeForm.payout_mode}
+                                      onChange={e => setEditIntakeForm({ ...editIntakeForm, payout_mode: e.target.value as "cash" | "bank" })}
+                                      className={inp}>
+                                      <option value="cash">Cash</option>
+                                      <option value="bank">Bank / UPI</option>
+                                    </select>
+                                  </div>
+                                </div>
+                              </div>
+
                               <div className="flex gap-2">
                                 <button
                                   disabled={updateIntake.isPending}
