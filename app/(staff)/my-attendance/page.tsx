@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
-import { useMyPermissions, useCreatePermission, type PermissionRequest } from "@/modules/attendance/api";
+import {
+  useMyPermissions, useCreatePermission,
+  useMyLeaveRequests, useSubmitLeaveRequest,
+  type PermissionRequest, type LeaveRequest,
+} from "@/modules/attendance/api";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const IST_MS = 5.5 * 3600000;
@@ -82,12 +86,38 @@ export default function MyAttendancePage() {
   const [permForm, setPermForm] = useState({ permission_date: new Date().toLocaleDateString("en-CA"), late_minutes: 30, reason: "" });
   const [permError, setPermError] = useState<string | null>(null);
 
+  // Leave requests
+  const { data: myLeaves = [], refetch: refetchLeaves } = useMyLeaveRequests(staff?.bio_user_id ?? null);
+  const submitLeave = useSubmitLeaveRequest();
+  const [showLeaveForm, setShowLeaveForm] = useState(false);
+  const [leaveForm, setLeaveForm] = useState({ leave_date: new Date().toLocaleDateString("en-CA"), leave_type: "casual", reason: "" });
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+
   const todayStr = new Date().toLocaleDateString("en-CA");
   const thisMonth = todayStr.slice(0, 7);
   const usedThisMonth = permissions.filter((p: PermissionRequest) =>
     p.permission_date.startsWith(thisMonth) && (p.status === "pending" || p.status === "approved")
   ).length;
   const canRequest = usedThisMonth < 2;
+
+  async function handleLeaveSubmit() {
+    setLeaveError(null);
+    if (!staff) return;
+    try {
+      await submitLeave.mutateAsync({
+        bio_user_id: staff.bio_user_id,
+        leave_date: leaveForm.leave_date,
+        leave_type: leaveForm.leave_type,
+        reason: leaveForm.reason || undefined,
+        staff_name: staff.name,
+      });
+      setShowLeaveForm(false);
+      setLeaveForm({ leave_date: todayStr, leave_type: "casual", reason: "" });
+      refetchLeaves();
+    } catch (e: any) {
+      setLeaveError(e?.message ?? "Failed to submit. Please try again.");
+    }
+  }
 
   async function submitPermission() {
     setPermError(null);
@@ -335,6 +365,77 @@ export default function MyAttendancePage() {
         {permissions.length === 0 && !showPermForm && (
           <p className="text-xs text-ink-dim">No requests yet.</p>
         )}
+      </div>
+
+      {/* Leave Requests */}
+      <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-ink">Leave Requests</p>
+          {!showLeaveForm && (
+            <button onClick={() => setShowLeaveForm(true)}
+              className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 hover:opacity-90">
+              + Request Leave
+            </button>
+          )}
+        </div>
+
+        {showLeaveForm && (
+          <div className="bg-canvas rounded-lg2 p-3 space-y-2 border border-line">
+            <p className="text-xs font-medium text-ink-dim">New Leave Request</p>
+            <div className="flex flex-wrap gap-2 items-end">
+              <div>
+                <label className="text-xs text-ink-dim block mb-1">Date</label>
+                <input type="date" value={leaveForm.leave_date} min={todayStr}
+                  onChange={e => setLeaveForm(f => ({ ...f, leave_date: e.target.value }))}
+                  className="border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+              </div>
+              <div>
+                <label className="text-xs text-ink-dim block mb-1">Type</label>
+                <select value={leaveForm.leave_type}
+                  onChange={e => setLeaveForm(f => ({ ...f, leave_type: e.target.value }))}
+                  className="border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                  <option value="casual">Casual</option>
+                  <option value="sick">Sick</option>
+                  <option value="half_day">Half Day</option>
+                </select>
+              </div>
+              <div className="flex-1 min-w-[140px]">
+                <label className="text-xs text-ink-dim block mb-1">Reason (optional)</label>
+                <input type="text" value={leaveForm.reason} placeholder="e.g. family function"
+                  onChange={e => setLeaveForm(f => ({ ...f, reason: e.target.value }))}
+                  className="border border-line rounded-lg2 px-2 py-1 text-sm w-full focus:outline-none focus:ring-1 focus:ring-gold" />
+              </div>
+            </div>
+            {leaveError && <p className="text-xs text-err">{leaveError}</p>}
+            <div className="flex gap-2">
+              <button onClick={handleLeaveSubmit} disabled={submitLeave.isPending || !leaveForm.leave_date}
+                className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 disabled:opacity-40">
+                {submitLeave.isPending ? "Submitting…" : "Submit"}
+              </button>
+              <button onClick={() => { setShowLeaveForm(false); setLeaveError(null); }}
+                className="text-xs border border-line px-3 py-1.5 rounded-lg2">Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {myLeaves.length > 0 ? (
+          <div className="space-y-1">
+            {(myLeaves as LeaveRequest[]).map(l => (
+              <div key={l.id} className="flex items-center gap-3 text-xs py-1 border-b border-line last:border-0">
+                <span className="text-ink-dim w-20">{l.leave_date}</span>
+                <span className="text-ink capitalize">{l.leave_type.replace("_", " ")}</span>
+                <span className="flex-1 text-ink-dim truncate">{l.reason || "—"}</span>
+                <span className={`font-semibold px-1.5 py-0.5 rounded text-[10px] ${
+                  l.status === "approved" ? "bg-ok/10 text-ok" :
+                  l.status === "rejected" ? "bg-err/10 text-err" : "bg-warn/10 text-warn"
+                }`}>{l.status}</span>
+                {l.admin_note && <span className="text-ink-dim italic max-w-[100px] truncate">{l.admin_note}</span>}
+              </div>
+            ))}
+          </div>
+        ) : !showLeaveForm ? (
+          <p className="text-xs text-ink-dim">No leave requests yet.</p>
+        ) : null}
       </div>
 
       {/* Day-by-day table */}
