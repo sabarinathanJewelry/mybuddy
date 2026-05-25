@@ -57,7 +57,7 @@ function MonthlyTab() {
   const [editingId, setEditingId]     = useState<string | null>(null);
   const [editForm, setEditForm]       = useState({ monthly_salary: 0, allowed_leaves: 1 });
 
-  const { data = [], isLoading } = useMonthlyAttendanceSummary(month);
+  const { data = [], isLoading, refetch, isFetching } = useMonthlyAttendanceSummary(month);
   const update = useUpdateStaff();
   const qc     = useQueryClient();
 
@@ -109,6 +109,10 @@ function MonthlyTab() {
         <button onClick={() => shiftMonth(1)} disabled={month >= today}
           className="px-2.5 py-1.5 border border-line rounded-lg2 text-sm hover:bg-canvas disabled:opacity-30">►</button>
         {totalDays > 0 && <span className="text-xs text-ink-dim ml-1">{totalDays} days counted</span>}
+        <button onClick={() => refetch()} disabled={isFetching}
+          className="text-xs px-3 py-1.5 rounded-lg2 border border-line text-ink-dim hover:text-ink disabled:opacity-40 transition-colors">
+          {isFetching ? "Refreshing…" : "Refresh"}
+        </button>
         <div className="flex-1" />
         <button onClick={() => setShowNetPay(v => !v)}
           className={`text-xs px-3 py-1.5 rounded-lg2 border transition-colors ${

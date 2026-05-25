@@ -254,6 +254,7 @@ export function useMonthlyAttendanceSummary(month: string) {
   return useQuery<MonthlyEmployeeSummary[]>({
     queryKey: ["monthly-attendance", month],
     enabled: !!month,
+    refetchOnMount: "always",
     queryFn: async () => {
       const [yearStr, monStr] = month.split("-");
       const year = Number(yearStr);
