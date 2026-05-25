@@ -421,6 +421,26 @@ function ProductTable({ title, color, items, showGrams = true, mergeMode, mergeS
   );
 }
 
+// ── item search ───────────────────────────────────────────────────────────────
+
+function useItemSearch(term: string, from: string, to: string) {
+  return useQuery({
+    queryKey: ["item-search", term, from, to],
+    enabled: term.trim().length >= 2 && !!from && !!to,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("sale_items")
+        .select("description, metal, gross_wt, net_wt, line_total, sales!inner(id, bill_no, bill_date, total, customers!inner(id, name))")
+        .ilike("description", `%${term.trim()}%`)
+        .gte("sales.bill_date", from)
+        .lte("sales.bill_date", to)
+        .limit(500);
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
 // ── main page ─────────────────────────────────────────────────────────────────
 
 export default function ReportsPage() {
@@ -428,10 +448,13 @@ export default function ReportsPage() {
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [tab, setTab]     = useState<"pnl" | "detail" | "products" | "expenses">("pnl");
+  const [tab, setTab]     = useState<"pnl" | "detail" | "products" | "expenses" | "items">("pnl");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo]     = useState("");
   const [useCustom, setUseCustom]   = useState(false);
+  const [itemTerm, setItemTerm]     = useState("");
+  const [itemFrom, setItemFrom]     = useState("");
+  const [itemTo, setItemTo]         = useState("");
   const [mergeMode, setMergeMode]   = useState(false);
   const [mergeSelected, setMergeSelected] = useState<Set<string>>(new Set());
   const [mergeTo, setMergeTo]       = useState("");
@@ -470,6 +493,7 @@ export default function ReportsPage() {
   const { data: oldMetalBuys = [] }                                 = useOldMetalPurchases(range.from, range.to);
   const { data: exchangePayments = [] }                             = useSaleExchangePayments(range.from, range.to);
   const { data: productItems = [] }                                 = useProductItems(range.from, range.to);
+  const { data: itemResults = [], isFetching: itemSearching }      = useItemSearch(itemTerm, itemFrom, itemTo);
 
   const isLoading = loadingItems || loadingPurchases || loadingExpenses;
 
@@ -546,7 +570,7 @@ export default function ReportsPage() {
 
       {/* Tabs */}
       <div className="flex border-b border-line gap-1">
-        {([["pnl", "P&L Report"], ["detail", "Sales Detail"], ["products", "Product Mix"], ["expenses", "Expenses"]] as const).map(([k, label]) => (
+        {([["pnl", "P&L Report"], ["detail", "Sales Detail"], ["products", "Product Mix"], ["expenses", "Expenses"], ["items", "Item Search"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={clsx("px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
               tab === k ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink")}>
@@ -890,6 +914,121 @@ export default function ReportsPage() {
               </>
             );
           })()}
+        </div>
+      )}
+
+      {/* ── ITEM SEARCH TAB ─────────────────────────────────────── */}
+      {tab === "items" && (
+        <div className="space-y-5">
+          {/* Search controls */}
+          <div className="bg-white rounded-xl border border-line p-4 shadow-soft space-y-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <input
+                type="text"
+                value={itemTerm}
+                onChange={e => setItemTerm(e.target.value)}
+                placeholder="Search item description (e.g. malai, chain, ring…)"
+                className="border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold flex-1 min-w-52"
+              />
+              <div className="flex items-center gap-2">
+                <input type="date" value={itemFrom} onChange={e => setItemFrom(e.target.value)}
+                  className="border border-line rounded-lg2 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                <span className="text-ink-dim text-xs">–</span>
+                <input type="date" value={itemTo} onChange={e => setItemTo(e.target.value)}
+                  className="border border-line rounded-lg2 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+              </div>
+            </div>
+            {itemTerm.trim().length > 0 && itemTerm.trim().length < 2 && (
+              <p className="text-xs text-warn">Enter at least 2 characters to search.</p>
+            )}
+            {(!itemFrom || !itemTo) && itemTerm.trim().length >= 2 && (
+              <p className="text-xs text-warn">Select a date range to search.</p>
+            )}
+          </div>
+
+          {/* Results */}
+          {itemSearching && <p className="text-ink-dim text-sm">{t("loading")}</p>}
+
+          {!itemSearching && itemResults.length > 0 && (() => {
+            const totalQty    = itemResults.length;
+            const totalWt     = itemResults.reduce((s: number, i: any) => s + Number(i.gross_wt || 0), 0);
+            const totalNetWt  = itemResults.reduce((s: number, i: any) => s + Number(i.net_wt || 0), 0);
+            const totalAmt    = itemResults.reduce((s: number, i: any) => s + Number(i.line_total || 0), 0);
+            return (
+              <>
+                {/* Summary strip */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: "Items Found", value: String(totalQty) },
+                    { label: "Gross Weight", value: grams(totalWt) },
+                    { label: "Net Weight",   value: grams(totalNetWt) },
+                    { label: "Total Amount", value: inr(totalAmt) },
+                  ].map(s => (
+                    <div key={s.label} className="bg-white rounded-xl border border-line p-4 shadow-soft">
+                      <p className="text-xs text-ink-dim">{s.label}</p>
+                      <p className="text-lg font-bold mt-0.5">{s.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Results table */}
+                <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+                  <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-ink bg-canvas/50">
+                    Results for &ldquo;{itemTerm}&rdquo;
+                    <span className="ml-2 text-xs font-normal text-ink-dim">{totalQty} item{totalQty !== 1 ? "s" : ""}</span>
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                        <th className="text-left px-4 py-2">Date</th>
+                        <th className="text-left px-3 py-2">Bill No</th>
+                        <th className="text-left px-3 py-2">Customer</th>
+                        <th className="text-left px-3 py-2">Description</th>
+                        <th className="text-right px-3 py-2">Metal</th>
+                        <th className="text-right px-3 py-2">Gross Wt</th>
+                        <th className="text-right px-3 py-2">Net Wt</th>
+                        <th className="text-right px-4 py-2">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {itemResults.map((item: any, idx: number) => {
+                        const sale = item.sales as any;
+                        const customer = sale?.customers as any;
+                        return (
+                          <tr key={idx} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                            <td className="px-4 py-2.5 text-ink-dim">{shortDate(sale?.bill_date)}</td>
+                            <td className="px-3 py-2.5 font-mono text-info">{sale?.bill_no ?? "—"}</td>
+                            <td className="px-3 py-2.5">{customer?.name ?? "—"}</td>
+                            <td className="px-3 py-2.5 font-medium">{item.description || "—"}</td>
+                            <td className="px-3 py-2.5 text-right text-xs text-ink-dim uppercase">{item.metal || "—"}</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-xs">{Number(item.gross_wt) > 0 ? grams(Number(item.gross_wt)) : "—"}</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-xs">{Number(item.net_wt) > 0 ? grams(Number(item.net_wt)) : "—"}</td>
+                            <td className="px-4 py-2.5 text-right font-mono font-semibold">{inr(Number(item.line_total || 0))}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-canvas/50 border-t border-line font-semibold text-sm">
+                        <td colSpan={5} className="px-4 py-2.5">Total</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(totalWt)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(totalNetWt)}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold">{inr(totalAmt)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </>
+            );
+          })()}
+
+          {!itemSearching && itemTerm.trim().length >= 2 && itemFrom && itemTo && itemResults.length === 0 && (
+            <p className="text-ink-dim text-sm text-center py-10">No items found matching &ldquo;{itemTerm}&rdquo; in this period.</p>
+          )}
+
+          {!itemTerm.trim() && (
+            <p className="text-ink-dim text-sm text-center py-10">Enter an item name and date range to search across all sales.</p>
+          )}
         </div>
       )}
 
