@@ -272,30 +272,34 @@ export function useMonthlyAttendanceSummary(month: string) {
         : `${year}-${String(mon + 1).padStart(2, "0")}`;
 
       const client = supabase();
-      const [staffRes, logsRes] = await Promise.all([
-        client
-          .from("staff")
-          .select("bio_user_id, name, designation, active, shift, monthly_salary, allowed_leaves")
-          .eq("active", true)
-          .order("name"),
-        client
+
+      // Supabase/PostgREST caps responses at 1000 rows — paginate to get all logs
+      const logs: any[] = [];
+      const PAGE = 1000;
+      let from = 0;
+      while (true) {
+        const res = await client
           .from("attendance_logs")
           .select("bio_user_id, punch_time")
           .gte("punch_time", `${month}-01T00:00:00+05:30`)
           .lt("punch_time", `${nextMon}-01T00:00:00+05:30`)
           .order("punch_time")
-          .limit(10000),
-      ]);
+          .range(from, from + PAGE - 1);
+        if (res.error) throw res.error;
+        logs.push(...(res.data ?? []));
+        if ((res.data ?? []).length < PAGE) break;
+        from += PAGE;
+      }
+
+      const staffRes = await client
+        .from("staff")
+        .select("bio_user_id, name, designation, active, shift, monthly_salary, allowed_leaves")
+        .eq("active", true)
+        .order("name");
 
       if (staffRes.error) throw staffRes.error;
-      if (logsRes.error)  throw logsRes.error;
 
       const staff = (staffRes.data ?? []) as any[];
-      const logs  = logsRes.data ?? [];
-
-      // DEBUG — remove after diagnosing
-      const uniqueDates = [...new Set(logs.map((l: any) => new Date(new Date(l.punch_time).getTime() + IST_MS).toISOString().slice(0, 10)))].sort();
-      console.log("[monthly-debug] today(UTC):", new Date().toISOString().slice(0, 10), "lastDay:", lastDay, "totalDays:", totalDays, "logs:", logs.length, "uniqueDates:", uniqueDates);
 
       // Group logs by employee and IST calendar date
       const byUserByDate = new Map<string, Map<string, string[]>>();
