@@ -981,9 +981,11 @@ export default function AttendancePage() {
   const [isVercel, setIsVercel] = useState(false);
   const [syncMsg, setSyncMsg]   = useState<{ ok: boolean; text: string } | null>(null);
 
-  const { isLocked, unlock } = useKiosk();
+  const { isLocked: rawLocked, unlock } = useKiosk();
   const profile = useAuth((s) => s.profile);
   const { data: kioskSeq } = useKioskSequence();
+  // Effective lock only when a sequence is actually configured
+  const isLocked = rawLocked && !!kioskSeq?.length;
   const [tapBuffer, setTapBuffer] = useState<KioskTap[]>([]);
 
   // Force attendance tab when locked
