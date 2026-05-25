@@ -126,6 +126,30 @@ export default function LoansPage() {
     },
   });
 
+  const deleteLoan = useMutation({
+    mutationFn: async (l: any) => {
+      const client = supabase();
+      // Remove ledger entries for each payment
+      for (const p of (l.loan_payments ?? [])) {
+        await client.from("cash_ledger").delete().eq("ref_type", "loan_payment").eq("ref_id", p.id);
+        await client.from("bank_ledger").delete().eq("ref_type", "loan_payment").eq("ref_id", p.id);
+      }
+      // Remove the loan's own cash ledger entry (matched by ref_type + date + amount)
+      if (l.affects_cash) {
+        await client.from("cash_ledger").delete()
+          .eq("ref_type", "loan")
+          .eq("tx_date", l.loan_date)
+          .eq("amount", l.principal);
+      }
+      const { error } = await client.from("loans").delete().eq("id", l.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["loans"] });
+      setExpanded(null);
+    },
+  });
+
   const addPayment = useMutation({
     mutationFn: async ({ loan, pf }: { loan: any; pf: typeof payForm }) => {
       const client = supabase();
@@ -474,6 +498,19 @@ export default function LoansPage() {
                     {l.notes && (
                       <p className="text-xs text-ink-dim bg-canvas rounded-lg px-3 py-2">{l.notes}</p>
                     )}
+
+                    <div className="flex justify-end border-t border-line pt-3">
+                      <button
+                        disabled={deleteLoan.isPending}
+                        onClick={async () => {
+                          if (!confirm(`Delete loan "${l.lender}" (${shortDate(l.loan_date)})? This will also remove all its payments and ledger entries.`)) return;
+                          await deleteLoan.mutateAsync(l);
+                        }}
+                        className="text-xs text-err hover:underline disabled:opacity-40"
+                      >
+                        {deleteLoan.isPending ? "Deleting…" : "Delete this loan"}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
