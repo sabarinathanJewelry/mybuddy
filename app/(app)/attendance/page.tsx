@@ -952,19 +952,17 @@ function LeavesTab({ isAdmin, myBioUserId, myName }: {
   myName: string;
 }) {
   const today = new Date().toISOString().slice(0, 10);
-  const { data: allRequests = [], isLoading } = useAllLeaveRequests();
-  const { data: myRequests = [] } = useMyLeaveRequests(isAdmin ? null : myBioUserId);
+  const { data: allRequests = [], isLoading, error: listError } = useAllLeaveRequests();
   const submitLeave   = useSubmitLeaveRequest();
   const decideLeave   = useDecideLeaveRequest();
 
-  const [filter, setFilter]   = useState<"all" | "pending" | "approved" | "rejected">("pending");
+  const [filter, setFilter]   = useState<"all" | "pending" | "approved" | "rejected">("all");
   const [noteMap, setNoteMap] = useState<Record<string, string>>({});
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ leave_date: today, leave_type: "casual", reason: "" });
 
-  const displayed  = isAdmin
-    ? allRequests.filter(r => filter === "all" || r.status === filter)
-    : myRequests;
+  // All users see all requests; admin can filter, staff see all by default
+  const displayed = allRequests.filter(r => filter === "all" || r.status === filter);
   const pendingCount = allRequests.filter(r => r.status === "pending").length;
 
   async function handleSubmit() {
@@ -1036,32 +1034,29 @@ function LeavesTab({ isAdmin, myBioUserId, myName }: {
         </div>
       )}
 
-      {/* Staff: not linked to staff profile */}
-      {!isAdmin && !myBioUserId && (
-        <div className="bg-canvas border border-line rounded-xl px-4 py-3 text-sm text-ink-dim">
-          Your account is not linked to a staff profile. Ask admin to assign your login in Manage Staff.
-        </div>
+      {/* Filter bar — all users */}
+      <div className="flex rounded-lg overflow-hidden border border-line text-xs w-fit">
+        {(["all","pending","approved","rejected"] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`px-3 py-1.5 font-medium capitalize transition-colors ${filter === f ? "bg-gold text-white" : "bg-white text-ink-dim hover:bg-canvas"}`}>
+            {f === "pending" ? `Pending (${pendingCount})` : f === "all" ? `All (${allRequests.length})` : f.charAt(0).toUpperCase() + f.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {listError && (
+        <p className="text-xs text-err bg-err/5 border border-err/20 rounded-lg px-3 py-2">
+          Could not load leave requests. Make sure migrations 033 and 034 are run in Supabase SQL Editor.
+        </p>
       )}
 
-      {/* Admin: filter bar */}
-      {isAdmin && (
-        <div className="flex rounded-lg overflow-hidden border border-line text-xs w-fit">
-          {(["pending","approved","rejected","all"] as const).map(f => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 font-medium capitalize transition-colors ${filter === f ? "bg-gold text-white" : "bg-white text-ink-dim hover:bg-canvas"}`}>
-              {f === "pending" ? `Pending (${pendingCount})` : f === "all" ? `All (${allRequests.length})` : f.charAt(0).toUpperCase() + f.slice(1)}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Request list */}
+      {/* Leave list — all users see all rows */}
       {isLoading ? <p className="text-ink-dim text-sm">Loading…</p> : (
         <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
-                {isAdmin && <th className="text-left px-4 py-2.5">Staff</th>}
+                <th className="text-left px-4 py-2.5">Staff</th>
                 <th className="text-left px-3 py-2.5">Date</th>
                 <th className="text-left px-3 py-2.5">Type</th>
                 <th className="text-left px-3 py-2.5">Reason</th>
@@ -1071,51 +1066,52 @@ function LeavesTab({ isAdmin, myBioUserId, myName }: {
             </thead>
             <tbody>
               {displayed.map((r: LeaveRequest) => (
-                <Fragment key={r.id}>
-                  <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
-                    {isAdmin && (
-                      <td className="px-4 py-2.5 font-medium">{(r as any).staff?.name ?? r.bio_user_id}</td>
+                <tr key={r.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                  <td className="px-4 py-2.5 font-medium">
+                    {(r as any).staff?.name ?? r.bio_user_id}
+                    {r.bio_user_id === myBioUserId && (
+                      <span className="ml-1.5 text-[10px] text-gold font-semibold">(you)</span>
                     )}
-                    <td className="px-3 py-2.5 text-ink-dim">{shortDate(r.leave_date)}</td>
-                    <td className="px-3 py-2.5">{LEAVE_TYPE_LABELS[r.leave_type] ?? r.leave_type}</td>
-                    <td className="px-3 py-2.5 text-ink-dim max-w-[180px] truncate">{r.reason || "—"}</td>
-                    <td className="px-3 py-2.5 text-center">
-                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${LEAVE_STATUS_STYLE[r.status]}`}>
-                        {r.status}
-                      </span>
-                      {r.admin_note && (
-                        <p className="text-[10px] text-ink-dim mt-0.5">{r.admin_note}</p>
+                  </td>
+                  <td className="px-3 py-2.5 text-ink-dim">{shortDate(r.leave_date)}</td>
+                  <td className="px-3 py-2.5">{LEAVE_TYPE_LABELS[r.leave_type] ?? r.leave_type}</td>
+                  <td className="px-3 py-2.5 text-ink-dim max-w-[180px] truncate">{r.reason || "—"}</td>
+                  <td className="px-3 py-2.5 text-center">
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${LEAVE_STATUS_STYLE[r.status]}`}>
+                      {r.status}
+                    </span>
+                    {r.admin_note && (
+                      <p className="text-[10px] text-ink-dim mt-0.5">{r.admin_note}</p>
+                    )}
+                  </td>
+                  {isAdmin && (
+                    <td className="px-3 py-2.5 text-right">
+                      {r.status === "pending" && (
+                        <div className="flex items-center gap-1 justify-end">
+                          <input type="text" placeholder="note (opt.)"
+                            value={noteMap[r.id] ?? ""}
+                            onChange={e => setNoteMap(m => ({ ...m, [r.id]: e.target.value }))}
+                            className="border border-line rounded px-2 py-0.5 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-gold" />
+                          <button
+                            onClick={() => decideLeave.mutate({ id: r.id, bio_user_id: r.bio_user_id, leave_date: r.leave_date, leave_type: r.leave_type, status: "approved", admin_note: noteMap[r.id] })}
+                            disabled={decideLeave.isPending}
+                            className="text-xs bg-ok text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">
+                            Approve
+                          </button>
+                          <button
+                            onClick={() => decideLeave.mutate({ id: r.id, bio_user_id: r.bio_user_id, leave_date: r.leave_date, leave_type: r.leave_type, status: "rejected", admin_note: noteMap[r.id] })}
+                            disabled={decideLeave.isPending}
+                            className="text-xs bg-err text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">
+                            Reject
+                          </button>
+                        </div>
+                      )}
+                      {r.status !== "pending" && r.admin_note && (
+                        <span className="text-xs text-ink-dim">{r.admin_note}</span>
                       )}
                     </td>
-                    {isAdmin && (
-                      <td className="px-3 py-2.5 text-right">
-                        {r.status === "pending" && (
-                          <div className="flex items-center gap-1 justify-end">
-                            <input type="text" placeholder="note (opt.)"
-                              value={noteMap[r.id] ?? ""}
-                              onChange={e => setNoteMap(m => ({ ...m, [r.id]: e.target.value }))}
-                              className="border border-line rounded px-2 py-0.5 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-gold" />
-                            <button
-                              onClick={() => decideLeave.mutate({ id: r.id, bio_user_id: r.bio_user_id, leave_date: r.leave_date, leave_type: r.leave_type, status: "approved", admin_note: noteMap[r.id] })}
-                              disabled={decideLeave.isPending}
-                              className="text-xs bg-ok text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">
-                              Approve
-                            </button>
-                            <button
-                              onClick={() => decideLeave.mutate({ id: r.id, bio_user_id: r.bio_user_id, leave_date: r.leave_date, leave_type: r.leave_type, status: "rejected", admin_note: noteMap[r.id] })}
-                              disabled={decideLeave.isPending}
-                              className="text-xs bg-err text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">
-                              Reject
-                            </button>
-                          </div>
-                        )}
-                        {r.status !== "pending" && r.admin_note && (
-                          <span className="text-xs text-ink-dim">{r.admin_note}</span>
-                        )}
-                      </td>
-                    )}
-                  </tr>
-                </Fragment>
+                  )}
+                </tr>
               ))}
               {!displayed.length && (
                 <tr>
