@@ -168,6 +168,8 @@ export default function MetalFlowPage() {
   const [showIntakeForm, setShowIntakeForm] = useState(false);
   const [payoutRowId, setPayoutRowId] = useState<string | null>(null);
   const [payoutForm, setPayoutForm] = useState({ amount: 0, mode: "cash" as "cash" | "bank" });
+  const [editIntakeId, setEditIntakeId] = useState<string | null>(null);
+  const [editIntakeForm, setEditIntakeForm] = useState<{ intake_date: string; customer_id: string; metal: string; gross_wt: number; purity_pct: number; pure_wt: number; notes: string } | null>(null);
   const [metalFilter, setMetalFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "used">("all");
   const defaultIntakeForm = () => ({
@@ -290,6 +292,26 @@ export default function MetalFlowPage() {
       qc.invalidateQueries({ queryKey: ["ledger_detail"] });
       setShowIntakeForm(false);
       setIntakeForm(defaultIntakeForm());
+    },
+  });
+
+  const updateIntake = useMutation({
+    mutationFn: async (d: NonNullable<typeof editIntakeForm> & { id: string }) => {
+      const { error } = await supabase().from("old_metal_intake").update({
+        intake_date: d.intake_date,
+        metal: d.metal,
+        gross_wt: d.gross_wt,
+        purity_pct: d.purity_pct,
+        pure_wt: d.pure_wt,
+        customer_id: d.customer_id || null,
+        notes: d.notes || null,
+      }).eq("id", d.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["metal_intake"] });
+      setEditIntakeId(null);
+      setEditIntakeForm(null);
     },
   });
 
@@ -684,19 +706,138 @@ export default function MetalFlowPage() {
                           }`}>{r.status}</span>
                         </td>
                         <td className="px-3 py-2.5">
-                          {r.payout_amount > 0 ? (
-                            <span className="text-xs text-ok font-medium">
-                              ✓ {r.payout_mode === "bank" ? "Bank" : "Cash"} paid
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => { setPayoutRowId(r.id); setPayoutForm({ amount: 0, mode: "cash" }); }}
-                              className="text-xs text-gold hover:underline">
-                              + Pay Out
-                            </button>
-                          )}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {r.payout_amount > 0 ? (
+                              <span className="text-xs text-ok font-medium">
+                                ✓ {r.payout_mode === "bank" ? "Bank" : "Cash"} paid
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => { setPayoutRowId(r.id); setPayoutForm({ amount: 0, mode: "cash" }); }}
+                                className="text-xs text-gold hover:underline">
+                                + Pay Out
+                              </button>
+                            )}
+                            {r.status === "pending" && (
+                              <button
+                                onClick={() => {
+                                  setEditIntakeId(r.id);
+                                  setEditIntakeForm({
+                                    intake_date: r.intake_date,
+                                    customer_id: r.customer_id ?? "",
+                                    metal: r.metal,
+                                    gross_wt: r.gross_wt,
+                                    purity_pct: r.purity_pct,
+                                    pure_wt: r.pure_wt,
+                                    notes: r.notes ?? "",
+                                  });
+                                  setPayoutRowId(null);
+                                }}
+                                className="text-xs text-ink-dim hover:text-gold hover:underline">
+                                Edit
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
+                      {editIntakeId === r.id && editIntakeForm && (
+                        <tr className="bg-canvas/60">
+                          <td colSpan={9} className="px-4 py-4">
+                            <div className="space-y-3">
+                              <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide">Edit Intake</p>
+                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                <div>
+                                  <label className="block text-xs text-ink-dim mb-1">Date</label>
+                                  <input type="date" value={editIntakeForm.intake_date}
+                                    onChange={e => setEditIntakeForm({ ...editIntakeForm, intake_date: e.target.value })}
+                                    className={inp} />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-ink-dim mb-1">Customer</label>
+                                  <select value={editIntakeForm.customer_id}
+                                    onChange={e => setEditIntakeForm({ ...editIntakeForm, customer_id: e.target.value })}
+                                    className={inp}>
+                                    <option value="">— walk-in / no customer —</option>
+                                    {customers.map((c) => (
+                                      <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-ink-dim mb-1">Metal</label>
+                                  <select value={editIntakeForm.metal}
+                                    onChange={e => setEditIntakeForm({ ...editIntakeForm, metal: e.target.value })}
+                                    className={inp}>
+                                    <option value="gold_22k">Gold 22K</option>
+                                    <option value="gold_24k">Gold 24K</option>
+                                    <option value="gold_18k">Gold 18K</option>
+                                    <option value="silver">Silver</option>
+                                    <option value="silver_pure">Silver Pure</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-ink-dim mb-1">Gross Wt (g)</label>
+                                  <input type="number" step="0.001" value={editIntakeForm.gross_wt || ""}
+                                    onFocus={e => e.target.select()}
+                                    onChange={e => {
+                                      const gross = parseFloat(e.target.value) || 0;
+                                      setEditIntakeForm({ ...editIntakeForm, gross_wt: gross, pure_wt: parseFloat((gross * editIntakeForm.purity_pct / 100).toFixed(3)) });
+                                    }}
+                                    className={inp} />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-ink-dim mb-1">Purity %</label>
+                                  <div className="flex gap-1 mb-1">
+                                    {[["22K", 91.6], ["18K", 75.0], ["24K", 99.9]].map(([label, val]) => (
+                                      <button key={label as string} type="button"
+                                        onClick={() => {
+                                          const pct = val as number;
+                                          setEditIntakeForm({ ...editIntakeForm, purity_pct: pct, pure_wt: parseFloat((editIntakeForm.gross_wt * pct / 100).toFixed(3)) });
+                                        }}
+                                        className={`text-xs px-2 py-0.5 rounded border transition-colors ${editIntakeForm.purity_pct === val ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:border-gold"}`}>
+                                        {label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <input type="number" step="0.01" value={editIntakeForm.purity_pct || ""}
+                                    onFocus={e => e.target.select()}
+                                    onChange={e => {
+                                      const pct = parseFloat(e.target.value) || 0;
+                                      setEditIntakeForm({ ...editIntakeForm, purity_pct: pct, pure_wt: parseFloat((editIntakeForm.gross_wt * pct / 100).toFixed(3)) });
+                                    }}
+                                    className={inp} />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-ink-dim mb-1">Pure Wt (g)</label>
+                                  <input type="number" step="0.001" value={editIntakeForm.pure_wt || ""}
+                                    onFocus={e => e.target.select()}
+                                    onChange={e => setEditIntakeForm({ ...editIntakeForm, pure_wt: parseFloat(e.target.value) || 0 })}
+                                    className={`${inp} bg-canvas`} />
+                                </div>
+                                <div className="sm:col-span-3">
+                                  <label className="block text-xs text-ink-dim mb-1">Notes</label>
+                                  <input value={editIntakeForm.notes}
+                                    onChange={e => setEditIntakeForm({ ...editIntakeForm, notes: e.target.value })}
+                                    className={inp} placeholder="Optional" />
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  disabled={updateIntake.isPending}
+                                  onClick={() => updateIntake.mutate({ id: r.id, ...editIntakeForm })}
+                                  className="bg-gold text-white text-sm px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                                  {updateIntake.isPending ? "Saving…" : "Save Changes"}
+                                </button>
+                                <button onClick={() => { setEditIntakeId(null); setEditIntakeForm(null); }}
+                                  className="border border-line text-sm px-4 py-1.5 rounded-lg2">Cancel</button>
+                              </div>
+                              {updateIntake.isError && (
+                                <p className="text-xs text-err">Save failed — please try again.</p>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
                       {payoutRowId === r.id && (
                         <tr className="bg-gold/5">
                           <td colSpan={9} className="px-4 py-3">

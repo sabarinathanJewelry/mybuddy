@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase/client";
 import {
   useMyPermissions, useCreatePermission,
   useMyLeaveRequests, useSubmitLeaveRequest,
+  useLastSyncTime,
   type PermissionRequest, type LeaveRequest,
 } from "@/modules/attendance/api";
 
@@ -55,6 +56,11 @@ function dayLabel(dateStr: string) {
   const dow = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
   return `${String(d).padStart(2, "0")} ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dow]}`;
 }
+function punchLabel(idx: number, total: number) {
+  if (idx === 0) return "IN";
+  if (idx === total - 1 && idx % 2 === 1) return "OUT";
+  return idx % 2 === 1 ? "Lunch out" : "Lunch in";
+}
 
 // ── types ─────────────────────────────────────────────────────────────────────
 type DayRow = {
@@ -66,39 +72,47 @@ type DayRow = {
   late_minutes: number;
   ot_minutes: number;
   double_punch: boolean;
+  punches: string[];
+  lunch_minutes: number | null;
 };
 
 type StaffInfo = { bio_user_id: string; name: string; shift: string };
 
+type PageTab = "today" | "monthly" | "requests";
+
 // ── page ─────────────────────────────────────────────────────────────────────
 export default function MyAttendancePage() {
-  const today = currentMonth();
-  const [month, setMonth]       = useState(today);
+  const todayMonth = currentMonth();
+  const todayStr   = new Date().toLocaleDateString("en-CA");
+
+  const [tab, setTab]           = useState<PageTab>("today");
+  const [month, setMonth]       = useState(todayMonth);
   const [staff, setStaff]       = useState<StaffInfo | null>(null);
   const [rows, setRows]         = useState<DayRow[]>([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
 
+  const { data: lastSyncIso }   = useLastSyncTime();
+
   // Permission requests
   const { data: permissions = [], refetch: refetchPerms } = useMyPermissions();
   const createPerm = useCreatePermission();
   const [showPermForm, setShowPermForm] = useState(false);
-  const [permForm, setPermForm] = useState({ permission_date: new Date().toLocaleDateString("en-CA"), late_minutes: 30, reason: "" });
+  const [permForm, setPermForm] = useState({ permission_date: todayStr, late_minutes: 30, reason: "" });
   const [permError, setPermError] = useState<string | null>(null);
+
+  const thisMonth      = todayStr.slice(0, 7);
+  const usedThisMonth  = permissions.filter((p: PermissionRequest) =>
+    p.permission_date.startsWith(thisMonth) && (p.status === "pending" || p.status === "approved")
+  ).length;
+  const canRequest = usedThisMonth < 2;
 
   // Leave requests
   const { data: myLeaves = [], refetch: refetchLeaves } = useMyLeaveRequests(staff?.bio_user_id ?? null);
   const submitLeave = useSubmitLeaveRequest();
   const [showLeaveForm, setShowLeaveForm] = useState(false);
-  const [leaveForm, setLeaveForm] = useState({ leave_date: new Date().toLocaleDateString("en-CA"), leave_type: "casual", reason: "" });
+  const [leaveForm, setLeaveForm] = useState({ leave_date: todayStr, leave_type: "casual", reason: "" });
   const [leaveError, setLeaveError] = useState<string | null>(null);
-
-  const todayStr = new Date().toLocaleDateString("en-CA");
-  const thisMonth = todayStr.slice(0, 7);
-  const usedThisMonth = permissions.filter((p: PermissionRequest) =>
-    p.permission_date.startsWith(thisMonth) && (p.status === "pending" || p.status === "approved")
-  ).length;
-  const canRequest = usedThisMonth < 2;
 
   async function handleLeaveSubmit() {
     setLeaveError(null);
@@ -155,8 +169,8 @@ export default function MyAttendancePage() {
     const year = Number(yearStr), mon = Number(monStr);
     const daysInMonth = new Date(year, mon, 0).getDate();
     const monthEnd    = `${month}-${String(daysInMonth).padStart(2, "0")}`;
-    const todayStr    = new Date().toISOString().slice(0, 10);
-    const lastDay     = month < todayStr.slice(0, 7) ? monthEnd : todayStr;
+    const todayISO    = new Date().toISOString().slice(0, 10);
+    const lastDay     = month < todayISO.slice(0, 7) ? monthEnd : todayISO;
     const totalDays   = Math.round((new Date(lastDay).getTime() - new Date(`${month}-01`).getTime()) / 86400000) + 1;
     const nextMon     = mon === 12 ? `${year + 1}-01` : `${year}-${String(mon + 1).padStart(2, "0")}`;
     const shiftEndMin = staff.shift === "girls" ? 20 * 60 + 30 : 21 * 60 + 30;
@@ -191,15 +205,15 @@ export default function MyAttendancePage() {
           const hw = firstIn && lastOut
             ? (new Date(lastOut).getTime() - new Date(firstIn).getTime()) / 3_600_000 : null;
 
-          const firstInMins = firstIn ? istMinutes(firstIn) : 0;
-          const is_late     = firstIn ? firstInMins > 9 * 60 + 50 : false;
+          const firstInMins  = firstIn ? istMinutes(firstIn) : 0;
+          const is_late      = firstIn ? firstInMins > 9 * 60 + 50 : false;
           const late_minutes = is_late ? firstInMins - (9 * 60 + 30) : 0;
           const lastOutMins  = lastOut ? istMinutes(lastOut) : 0;
           const ot_minutes   = lastOut ? Math.max(0, lastOutMins - shiftEndMin) : 0;
 
           let lunch_minutes: number | null = null;
           if (deduped.length >= 4) {
-            lunch_minutes = (new Date(deduped[deduped.length - 2]).getTime() - new Date(deduped[1]).getTime()) / 60000;
+            lunch_minutes = Math.round((new Date(deduped[deduped.length - 2]).getTime() - new Date(deduped[1]).getTime()) / 60000);
           }
           let effective_hours: number | null = null;
           if (hw !== null) {
@@ -215,6 +229,8 @@ export default function MyAttendancePage() {
             late_minutes,
             ot_minutes,
             double_punch,
+            punches: deduped,
+            lunch_minutes,
           });
         }
 
@@ -227,7 +243,7 @@ export default function MyAttendancePage() {
     const [y, m] = month.split("-").map(Number);
     const next = m + dir;
     const newM = next < 1 ? `${y - 1}-12` : next > 12 ? `${y + 1}-01` : `${y}-${String(next).padStart(2, "0")}`;
-    if (newM <= today) setMonth(newM);
+    if (newM <= todayMonth) setMonth(newM);
   }
 
   async function handleLogout() {
@@ -235,13 +251,17 @@ export default function MyAttendancePage() {
   }
 
   const presentDays   = rows.filter(r => r.status !== "leave").length;
-  const lateDays      = rows.filter(r => r.status === "late").length;
   const absentDays    = rows.filter(r => r.status === "leave").length;
   const totalOtMins   = rows.reduce((s, r) => s + r.ot_minutes, 0);
   const totalLateMins = rows.reduce((s, r) => s + r.late_minutes, 0);
 
+  // Today's row (only meaningful when viewing current month)
+  const todayRow = month === todayMonth ? rows.find(r => r.date === todayStr) ?? null : null;
+
+  const inpCls = "border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
+
   return (
-    <div className="max-w-2xl mx-auto p-4 space-y-5">
+    <div className="max-w-2xl mx-auto p-4 space-y-4">
       {/* Header */}
       <div className="flex items-center gap-3 py-2">
         <div className="flex-1">
@@ -257,242 +277,400 @@ export default function MyAttendancePage() {
             </p>
           )}
         </div>
-        <button
-          onClick={handleLogout}
-          className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-err hover:border-err transition-colors"
-        >
+        <button onClick={handleLogout}
+          className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-err hover:border-err transition-colors">
           Logout
         </button>
       </div>
 
-      {error && (
-        <div className="bg-err/10 text-err text-sm px-4 py-3 rounded-xl">{error}</div>
+      {error && <div className="bg-err/10 text-err text-sm px-4 py-3 rounded-xl">{error}</div>}
+
+      {/* Last sync */}
+      {lastSyncIso && (
+        <p className="text-xs text-ink-dim text-center -mt-1">
+          Last updated: <strong>{new Date(lastSyncIso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</strong>
+        </p>
       )}
 
-      {/* Month nav */}
-      <div className="flex items-center gap-2">
-        <button onClick={() => shiftMonth(-1)}
-          className="px-2.5 py-1.5 border border-line rounded-lg2 text-sm hover:bg-canvas">◄</button>
-        <span className="font-semibold text-ink w-44 text-center">{monthLabel(month)}</span>
-        <button onClick={() => shiftMonth(1)} disabled={month >= today}
-          className="px-2.5 py-1.5 border border-line rounded-lg2 text-sm hover:bg-canvas disabled:opacity-30">►</button>
-      </div>
-
-      {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-3">
-        {[
-          { label: "Present", value: presentDays, color: "text-ok" },
-          { label: "Absent",  value: absentDays,  color: absentDays > 0 ? "text-err" : "text-ink-dim" },
-          { label: "Late",    value: totalLateMins > 0 ? formatMins(totalLateMins) : "—", color: totalLateMins > 0 ? "text-warn" : "text-ink-dim" },
-          { label: "OT",      value: formatMins(totalOtMins), color: totalOtMins > 0 ? "text-ok" : "text-ink-dim" },
-        ].map(c => (
-          <div key={c.label} className="bg-white rounded-xl border border-line p-3 shadow-soft text-center">
-            <p className={`text-xl font-bold ${c.color}`}>{c.value}</p>
-            <p className="text-xs text-ink-dim mt-0.5">{c.label}</p>
-          </div>
+      {/* Tabs */}
+      <div className="flex border-b border-line gap-1">
+        {([
+          { key: "today",    label: "Today" },
+          { key: "monthly",  label: "Monthly" },
+          { key: "requests", label: "Requests" },
+        ] as { key: PageTab; label: string }[]).map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              tab === t.key ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"
+            }`}>
+            {t.label}
+          </button>
         ))}
       </div>
 
-      {/* Permission Requests */}
-      <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-semibold text-ink">Permission Requests</p>
-            <p className="text-xs text-ink-dim mt-0.5">Used {usedThisMonth}/2 this month</p>
-          </div>
-          {canRequest && !showPermForm && (
-            <button onClick={() => setShowPermForm(true)}
-              className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 hover:opacity-90">
-              + Request Permission
-            </button>
-          )}
-          {!canRequest && (
-            <span className="text-xs text-err font-medium">Monthly limit reached</span>
-          )}
-        </div>
-
-        {showPermForm && (
-          <div className="bg-canvas rounded-lg2 p-3 space-y-2 border border-line">
-            <p className="text-xs font-medium text-ink-dim">New Permission Request (max 2 hrs late)</p>
-            <div className="flex flex-wrap gap-2 items-end">
-              <div>
-                <label className="text-xs text-ink-dim block mb-1">Date</label>
-                <input type="date" value={permForm.permission_date} max={todayStr}
-                  onChange={e => setPermForm(f => ({ ...f, permission_date: e.target.value }))}
-                  className="border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-              </div>
-              <div>
-                <label className="text-xs text-ink-dim block mb-1">I will be late by (minutes)</label>
-                <input type="number" min={1} max={120} value={permForm.late_minutes}
-                  onChange={e => setPermForm(f => ({ ...f, late_minutes: Number(e.target.value) }))}
-                  className="border border-line rounded-lg2 px-2 py-1 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-gold" />
-              </div>
-              <div className="flex-1 min-w-[140px]">
-                <label className="text-xs text-ink-dim block mb-1">Reason</label>
-                <input type="text" value={permForm.reason} placeholder="Briefly explain…"
-                  onChange={e => setPermForm(f => ({ ...f, reason: e.target.value }))}
-                  className="border border-line rounded-lg2 px-2 py-1 text-sm w-full focus:outline-none focus:ring-1 focus:ring-gold" />
-              </div>
+      {/* ── TODAY TAB ─────────────────────────────────────────────────────────── */}
+      {tab === "today" && (
+        <div className="space-y-4">
+          {/* Today's activity card */}
+          <div className="bg-white rounded-xl border border-line shadow-soft p-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-ink">
+                Today — {new Date().toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
+              </p>
+              {todayRow && (
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                  todayRow.status === "leave"   ? "bg-err/10 text-err" :
+                  todayRow.status === "late"    ? "bg-warn/10 text-warn" :
+                                                  "bg-ok/10 text-ok"
+                }`}>
+                  {todayRow.status === "leave" ? "Absent" : todayRow.status === "late" ? "Late" : "Present"}
+                </span>
+              )}
+              {!todayRow && !loading && (
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-err/10 text-err">Absent</span>
+              )}
             </div>
-            {permError && <p className="text-xs text-err">{permError}</p>}
-            <div className="flex gap-2">
-              <button onClick={submitPermission} disabled={createPerm.isPending}
-                className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 disabled:opacity-40">
-                {createPerm.isPending ? "Submitting…" : "Submit"}
-              </button>
-              <button onClick={() => { setShowPermForm(false); setPermError(null); }}
-                className="text-xs border border-line px-3 py-1.5 rounded-lg2">Cancel</button>
-            </div>
-          </div>
-        )}
 
-        {permissions.length > 0 && (
-          <div className="space-y-1">
-            {(permissions as PermissionRequest[]).slice(0, 6).map(p => (
-              <div key={p.id} className="flex items-center gap-3 text-xs py-1 border-b border-line last:border-0">
-                <span className="text-ink-dim w-20">{p.permission_date}</span>
-                <span className="text-ink">{p.late_minutes}m late</span>
-                <span className="flex-1 text-ink-dim truncate">{p.reason || "—"}</span>
-                <span className={`font-semibold px-1.5 py-0.5 rounded text-[10px] ${
-                  p.status === "approved" ? "bg-ok/10 text-ok" :
-                  p.status === "rejected" ? "bg-err/10 text-err" : "bg-warn/10 text-warn"
-                }`}>{p.status}</span>
-                {p.admin_note && <span className="text-ink-dim italic max-w-[100px] truncate">{p.admin_note}</span>}
-              </div>
-            ))}
-          </div>
-        )}
-        {permissions.length === 0 && !showPermForm && (
-          <p className="text-xs text-ink-dim">No requests yet.</p>
-        )}
-      </div>
-
-      {/* Leave Requests */}
-      <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-ink">Leave Requests</p>
-          {!showLeaveForm && (
-            <button onClick={() => setShowLeaveForm(true)}
-              className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 hover:opacity-90">
-              + Request Leave
-            </button>
-          )}
-        </div>
-
-        {showLeaveForm && (
-          <div className="bg-canvas rounded-lg2 p-3 space-y-2 border border-line">
-            <p className="text-xs font-medium text-ink-dim">New Leave Request</p>
-            <div className="flex flex-wrap gap-2 items-end">
-              <div>
-                <label className="text-xs text-ink-dim block mb-1">Date</label>
-                <input type="date" value={leaveForm.leave_date} min={todayStr}
-                  onChange={e => setLeaveForm(f => ({ ...f, leave_date: e.target.value }))}
-                  className="border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
-              </div>
-              <div>
-                <label className="text-xs text-ink-dim block mb-1">Type</label>
-                <select value={leaveForm.leave_type}
-                  onChange={e => setLeaveForm(f => ({ ...f, leave_type: e.target.value }))}
-                  className="border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
-                  <option value="casual">Casual</option>
-                  <option value="sick">Sick</option>
-                  <option value="half_day">Half Day</option>
-                </select>
-              </div>
-              <div className="flex-1 min-w-[140px]">
-                <label className="text-xs text-ink-dim block mb-1">Reason (optional)</label>
-                <input type="text" value={leaveForm.reason} placeholder="e.g. family function"
-                  onChange={e => setLeaveForm(f => ({ ...f, reason: e.target.value }))}
-                  className="border border-line rounded-lg2 px-2 py-1 text-sm w-full focus:outline-none focus:ring-1 focus:ring-gold" />
-              </div>
-            </div>
-            {leaveError && <p className="text-xs text-err">{leaveError}</p>}
-            <div className="flex gap-2">
-              <button onClick={handleLeaveSubmit} disabled={submitLeave.isPending || !leaveForm.leave_date}
-                className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 disabled:opacity-40">
-                {submitLeave.isPending ? "Submitting…" : "Submit"}
-              </button>
-              <button onClick={() => { setShowLeaveForm(false); setLeaveError(null); }}
-                className="text-xs border border-line px-3 py-1.5 rounded-lg2">Cancel</button>
-            </div>
-          </div>
-        )}
-
-        {myLeaves.length > 0 ? (
-          <div className="space-y-1">
-            {(myLeaves as LeaveRequest[]).map(l => (
-              <div key={l.id} className="flex items-center gap-3 text-xs py-1 border-b border-line last:border-0">
-                <span className="text-ink-dim w-20">{l.leave_date}</span>
-                <span className="text-ink capitalize">{l.leave_type.replace("_", " ")}</span>
-                <span className="flex-1 text-ink-dim truncate">{l.reason || "—"}</span>
-                <span className={`font-semibold px-1.5 py-0.5 rounded text-[10px] ${
-                  l.status === "approved" ? "bg-ok/10 text-ok" :
-                  l.status === "rejected" ? "bg-err/10 text-err" : "bg-warn/10 text-warn"
-                }`}>{l.status}</span>
-                {l.admin_note && <span className="text-ink-dim italic max-w-[100px] truncate">{l.admin_note}</span>}
-              </div>
-            ))}
-          </div>
-        ) : !showLeaveForm ? (
-          <p className="text-xs text-ink-dim">No leave requests yet.</p>
-        ) : null}
-      </div>
-
-      {/* Day-by-day table */}
-      {loading ? (
-        <div className="text-center py-12 text-ink-dim text-sm">Loading…</div>
-      ) : (
-        <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
-                <th className="text-left px-4 py-2.5">Date</th>
-                <th className="text-center px-3 py-2.5">Status</th>
-                <th className="text-right px-3 py-2.5">IN</th>
-                <th className="text-right px-3 py-2.5">OUT</th>
-                <th className="text-right px-3 py-2.5">Hours</th>
-                <th className="text-right px-3 py-2.5">Late</th>
-                <th className="text-right px-3 py-2.5">OT</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(r => (
-                <tr key={r.date}
-                  className={`border-b border-line last:border-0 ${r.status === "leave" ? "opacity-50" : ""}`}>
-                  <td className="px-4 py-2 font-mono text-xs">{dayLabel(r.date)}</td>
-                  <td className="px-3 py-2 text-center">
-                    <div className="flex flex-col items-center gap-0.5">
-                      {r.status === "leave" ? (
-                        <span className="text-[10px] font-semibold bg-err/10 text-err px-1.5 py-0.5 rounded">Leave</span>
-                      ) : r.status === "late" ? (
-                        <span className="text-[10px] font-semibold bg-warn/10 text-warn px-1.5 py-0.5 rounded">Late</span>
-                      ) : (
-                        <span className="text-[10px] font-semibold bg-ok/10 text-ok px-1.5 py-0.5 rounded">Present</span>
-                      )}
-                      {r.double_punch && (
-                        <span className="text-[9px] text-warn leading-none">dbl punch</span>
-                      )}
+            {loading ? (
+              <p className="text-xs text-ink-dim py-4 text-center">Loading…</p>
+            ) : todayRow && todayRow.punches.length > 0 ? (
+              <div className="space-y-3">
+                {/* Punch timeline */}
+                <div className="space-y-1.5">
+                  {todayRow.punches.map((p, idx) => {
+                    const label = punchLabel(idx, todayRow.punches.length);
+                    const isIn  = idx === 0 || idx % 2 === 0;
+                    return (
+                      <div key={idx} className="flex items-center gap-3">
+                        <span className={`text-[10px] font-bold w-16 shrink-0 ${
+                          label === "IN" ? "text-ok" : label === "OUT" ? "text-ink-dim" :
+                          label === "Lunch out" ? "text-warn" : "text-info"
+                        }`}>
+                          {label}
+                        </span>
+                        <span className={`font-mono text-sm font-semibold ${isIn ? "text-ok" : "text-ink-dim"}`}>
+                          {formatTime(p)}
+                        </span>
+                        {/* Lunch gap shown between punch[1] and punch[2] */}
+                        {idx === 1 && todayRow.lunch_minutes !== null && (
+                          <span className={`ml-auto text-xs px-2 py-0.5 rounded font-medium ${
+                            todayRow.lunch_minutes > 70  ? "bg-err/10 text-err" :
+                            todayRow.lunch_minutes >= 60 ? "bg-warn/10 text-warn" :
+                                                           "bg-ok/10 text-ok"
+                          }`}>
+                            Lunch {formatMins(todayRow.lunch_minutes)}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {/* Still in — no OUT yet */}
+                  {!todayRow.last_out && todayRow.first_in && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] font-bold w-16 shrink-0 text-ink-dim">OUT</span>
+                      <span className="text-xs text-ink-dim italic">Still in</span>
                     </div>
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono text-xs text-ok">{formatTime(r.first_in)}</td>
-                  <td className="px-3 py-2 text-right font-mono text-xs text-ink-dim">{formatTime(r.last_out)}</td>
-                  <td className="px-3 py-2 text-right text-xs">{formatHours(r.effective_hours)}</td>
-                  <td className={`px-3 py-2 text-right text-xs font-medium ${r.late_minutes > 0 ? "text-warn" : "text-ink-dim"}`}>
-                    {r.late_minutes > 0 ? `${r.late_minutes}m` : "—"}
-                  </td>
-                  <td className={`px-3 py-2 text-right text-xs font-medium ${r.ot_minutes > 0 ? "text-ok" : "text-ink-dim"}`}>
-                    {r.ot_minutes > 0 ? formatMins(r.ot_minutes) : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  )}
+                </div>
+
+                {/* Summary row */}
+                <div className="flex gap-4 pt-3 border-t border-line flex-wrap">
+                  <div>
+                    <p className="text-xs text-ink-dim">Hours</p>
+                    <p className="text-sm font-semibold text-ink">{formatHours(todayRow.effective_hours)}</p>
+                  </div>
+                  {todayRow.late_minutes > 0 && (
+                    <div>
+                      <p className="text-xs text-ink-dim">Late by</p>
+                      <p className="text-sm font-semibold text-warn">{todayRow.late_minutes}m</p>
+                    </div>
+                  )}
+                  {todayRow.ot_minutes > 0 && (
+                    <div>
+                      <p className="text-xs text-ink-dim">OT</p>
+                      <p className="text-sm font-semibold text-ok">{formatMins(todayRow.ot_minutes)}</p>
+                    </div>
+                  )}
+                  {todayRow.double_punch && (
+                    <div className="ml-auto">
+                      <span className="text-xs text-warn font-medium">Double punch detected</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-ink-dim py-3 text-center">No punch records found for today.</p>
+            )}
+          </div>
+
+          {/* Monthly summary strip */}
+          <div className="grid grid-cols-4 gap-3">
+            {[
+              { label: "Present", value: presentDays, color: "text-ok" },
+              { label: "Absent",  value: absentDays,  color: absentDays > 0 ? "text-err" : "text-ink-dim" },
+              { label: "Late",    value: totalLateMins > 0 ? formatMins(totalLateMins) : "—", color: totalLateMins > 0 ? "text-warn" : "text-ink-dim" },
+              { label: "OT",      value: formatMins(totalOtMins), color: totalOtMins > 0 ? "text-ok" : "text-ink-dim" },
+            ].map(c => (
+              <div key={c.label} className="bg-white rounded-xl border border-line p-3 shadow-soft text-center">
+                <p className={`text-xl font-bold ${c.color}`}>{c.value}</p>
+                <p className="text-xs text-ink-dim mt-0.5">{c.label} · {monthLabel(todayMonth).split(" ")[0]}</p>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-xs text-ink-dim text-center">
+            Boys: 9:30 AM – 9:30 PM · Girls: 9:30 AM – 8:30 PM · Grace till 9:50 AM
+          </p>
         </div>
       )}
 
-      <p className="text-xs text-ink-dim text-center pb-4">
-        Boys shift: 9:30 AM – 9:30 PM · Girls shift: 9:30 AM – 8:30 PM · Grace till 9:50 AM
-      </p>
+      {/* ── MONTHLY TAB ───────────────────────────────────────────────────────── */}
+      {tab === "monthly" && (
+        <div className="space-y-4">
+          {/* Month nav */}
+          <div className="flex items-center gap-2">
+            <button onClick={() => shiftMonth(-1)}
+              className="px-2.5 py-1.5 border border-line rounded-lg2 text-sm hover:bg-canvas">◄</button>
+            <span className="font-semibold text-ink w-44 text-center">{monthLabel(month)}</span>
+            <button onClick={() => shiftMonth(1)} disabled={month >= todayMonth}
+              className="px-2.5 py-1.5 border border-line rounded-lg2 text-sm hover:bg-canvas disabled:opacity-30">►</button>
+          </div>
+
+          {/* Summary cards */}
+          <div className="grid grid-cols-4 gap-3">
+            {[
+              { label: "Present", value: presentDays, color: "text-ok" },
+              { label: "Absent",  value: absentDays,  color: absentDays > 0 ? "text-err" : "text-ink-dim" },
+              { label: "Late",    value: totalLateMins > 0 ? formatMins(totalLateMins) : "—", color: totalLateMins > 0 ? "text-warn" : "text-ink-dim" },
+              { label: "OT",      value: formatMins(totalOtMins), color: totalOtMins > 0 ? "text-ok" : "text-ink-dim" },
+            ].map(c => (
+              <div key={c.label} className="bg-white rounded-xl border border-line p-3 shadow-soft text-center">
+                <p className={`text-xl font-bold ${c.color}`}>{c.value}</p>
+                <p className="text-xs text-ink-dim mt-0.5">{c.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Day-by-day table */}
+          {loading ? (
+            <div className="text-center py-12 text-ink-dim text-sm">Loading…</div>
+          ) : (
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                    <th className="text-left px-4 py-2.5">Date</th>
+                    <th className="text-center px-3 py-2.5">Status</th>
+                    <th className="text-right px-3 py-2.5">IN</th>
+                    <th className="text-right px-3 py-2.5">OUT</th>
+                    <th className="text-right px-3 py-2.5">Hours</th>
+                    <th className="text-right px-3 py-2.5">Lunch</th>
+                    <th className="text-right px-3 py-2.5">Late</th>
+                    <th className="text-right px-3 py-2.5">OT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(r => (
+                    <tr key={r.date}
+                      className={`border-b border-line last:border-0 ${r.status === "leave" ? "opacity-50" : ""} ${r.date === todayStr ? "bg-gold/5" : ""}`}>
+                      <td className="px-4 py-2 font-mono text-xs">{dayLabel(r.date)}</td>
+                      <td className="px-3 py-2 text-center">
+                        <div className="flex flex-col items-center gap-0.5">
+                          {r.status === "leave" ? (
+                            <span className="text-[10px] font-semibold bg-err/10 text-err px-1.5 py-0.5 rounded">Leave</span>
+                          ) : r.status === "late" ? (
+                            <span className="text-[10px] font-semibold bg-warn/10 text-warn px-1.5 py-0.5 rounded">Late</span>
+                          ) : (
+                            <span className="text-[10px] font-semibold bg-ok/10 text-ok px-1.5 py-0.5 rounded">Present</span>
+                          )}
+                          {r.double_punch && (
+                            <span className="text-[9px] text-warn leading-none">dbl punch</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono text-xs text-ok">{formatTime(r.first_in)}</td>
+                      <td className="px-3 py-2 text-right font-mono text-xs text-ink-dim">{formatTime(r.last_out)}</td>
+                      <td className="px-3 py-2 text-right text-xs">{formatHours(r.effective_hours)}</td>
+                      <td className="px-3 py-2 text-right text-xs">
+                        {r.lunch_minutes !== null ? (
+                          <span className={`font-medium ${
+                            r.lunch_minutes > 70 ? "text-err" : r.lunch_minutes >= 60 ? "text-warn" : "text-ok"
+                          }`}>
+                            {formatMins(r.lunch_minutes)}
+                          </span>
+                        ) : r.punches.length >= 2 ? (
+                          <span className="text-ink-dim">—</span>
+                        ) : (
+                          <span className="text-ink-dim">—</span>
+                        )}
+                      </td>
+                      <td className={`px-3 py-2 text-right text-xs font-medium ${r.late_minutes > 0 ? "text-warn" : "text-ink-dim"}`}>
+                        {r.late_minutes > 0 ? `${r.late_minutes}m` : "—"}
+                      </td>
+                      <td className={`px-3 py-2 text-right text-xs font-medium ${r.ot_minutes > 0 ? "text-ok" : "text-ink-dim"}`}>
+                        {r.ot_minutes > 0 ? formatMins(r.ot_minutes) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <p className="text-xs text-ink-dim text-center pb-2">
+            Boys shift: 9:30 AM – 9:30 PM · Girls shift: 9:30 AM – 8:30 PM · Grace till 9:50 AM
+          </p>
+        </div>
+      )}
+
+      {/* ── REQUESTS TAB ──────────────────────────────────────────────────────── */}
+      {tab === "requests" && (
+        <div className="space-y-4">
+          {/* Permission Requests */}
+          <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-ink">Permission Requests</p>
+                <p className="text-xs text-ink-dim mt-0.5">Used {usedThisMonth}/2 this month</p>
+              </div>
+              {canRequest && !showPermForm && (
+                <button onClick={() => setShowPermForm(true)}
+                  className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 hover:opacity-90">
+                  + Request Permission
+                </button>
+              )}
+              {!canRequest && (
+                <span className="text-xs text-err font-medium">Monthly limit reached</span>
+              )}
+            </div>
+
+            {showPermForm && (
+              <div className="bg-canvas rounded-lg2 p-3 space-y-2 border border-line">
+                <p className="text-xs font-medium text-ink-dim">New Permission Request (max 2 hrs late)</p>
+                <div className="flex flex-wrap gap-2 items-end">
+                  <div>
+                    <label className="text-xs text-ink-dim block mb-1">Date</label>
+                    <input type="date" value={permForm.permission_date} max={todayStr}
+                      onChange={e => setPermForm(f => ({ ...f, permission_date: e.target.value }))}
+                      className={inpCls} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-ink-dim block mb-1">I will be late by (minutes)</label>
+                    <input type="number" min={1} max={120} value={permForm.late_minutes}
+                      onChange={e => setPermForm(f => ({ ...f, late_minutes: Number(e.target.value) }))}
+                      className={`${inpCls} w-20`} />
+                  </div>
+                  <div className="flex-1 min-w-[140px]">
+                    <label className="text-xs text-ink-dim block mb-1">Reason</label>
+                    <input type="text" value={permForm.reason} placeholder="Briefly explain…"
+                      onChange={e => setPermForm(f => ({ ...f, reason: e.target.value }))}
+                      className={`${inpCls} w-full`} />
+                  </div>
+                </div>
+                {permError && <p className="text-xs text-err">{permError}</p>}
+                <div className="flex gap-2">
+                  <button onClick={submitPermission} disabled={createPerm.isPending}
+                    className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 disabled:opacity-40">
+                    {createPerm.isPending ? "Submitting…" : "Submit"}
+                  </button>
+                  <button onClick={() => { setShowPermForm(false); setPermError(null); }}
+                    className="text-xs border border-line px-3 py-1.5 rounded-lg2">Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {permissions.length > 0 ? (
+              <div className="space-y-1">
+                {(permissions as PermissionRequest[]).slice(0, 6).map(p => (
+                  <div key={p.id} className="flex items-center gap-3 text-xs py-1 border-b border-line last:border-0">
+                    <span className="text-ink-dim w-20">{p.permission_date}</span>
+                    <span className="text-ink">{p.late_minutes}m late</span>
+                    <span className="flex-1 text-ink-dim truncate">{p.reason || "—"}</span>
+                    <span className={`font-semibold px-1.5 py-0.5 rounded text-[10px] ${
+                      p.status === "approved" ? "bg-ok/10 text-ok" :
+                      p.status === "rejected" ? "bg-err/10 text-err" : "bg-warn/10 text-warn"
+                    }`}>{p.status}</span>
+                    {p.admin_note && <span className="text-ink-dim italic max-w-[100px] truncate">{p.admin_note}</span>}
+                  </div>
+                ))}
+              </div>
+            ) : !showPermForm ? (
+              <p className="text-xs text-ink-dim">No requests yet.</p>
+            ) : null}
+          </div>
+
+          {/* Leave Requests */}
+          <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-ink">Leave Requests</p>
+              {!showLeaveForm && (
+                <button onClick={() => setShowLeaveForm(true)}
+                  className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 hover:opacity-90">
+                  + Request Leave
+                </button>
+              )}
+            </div>
+
+            {showLeaveForm && (
+              <div className="bg-canvas rounded-lg2 p-3 space-y-2 border border-line">
+                <p className="text-xs font-medium text-ink-dim">New Leave Request</p>
+                <div className="flex flex-wrap gap-2 items-end">
+                  <div>
+                    <label className="text-xs text-ink-dim block mb-1">Date</label>
+                    <input type="date" value={leaveForm.leave_date} min={todayStr}
+                      onChange={e => setLeaveForm(f => ({ ...f, leave_date: e.target.value }))}
+                      className={inpCls} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-ink-dim block mb-1">Type</label>
+                    <select value={leaveForm.leave_type}
+                      onChange={e => setLeaveForm(f => ({ ...f, leave_type: e.target.value }))}
+                      className={inpCls}>
+                      <option value="casual">Casual</option>
+                      <option value="sick">Sick</option>
+                      <option value="half_day">Half Day</option>
+                    </select>
+                  </div>
+                  <div className="flex-1 min-w-[140px]">
+                    <label className="text-xs text-ink-dim block mb-1">Reason (optional)</label>
+                    <input type="text" value={leaveForm.reason} placeholder="e.g. family function"
+                      onChange={e => setLeaveForm(f => ({ ...f, reason: e.target.value }))}
+                      className={`${inpCls} w-full`} />
+                  </div>
+                </div>
+                {leaveError && <p className="text-xs text-err">{leaveError}</p>}
+                <div className="flex gap-2">
+                  <button onClick={handleLeaveSubmit} disabled={submitLeave.isPending || !leaveForm.leave_date}
+                    className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 disabled:opacity-40">
+                    {submitLeave.isPending ? "Submitting…" : "Submit"}
+                  </button>
+                  <button onClick={() => { setShowLeaveForm(false); setLeaveError(null); }}
+                    className="text-xs border border-line px-3 py-1.5 rounded-lg2">Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {myLeaves.length > 0 ? (
+              <div className="space-y-1">
+                {(myLeaves as LeaveRequest[]).map(l => (
+                  <div key={l.id} className="flex items-center gap-3 text-xs py-1 border-b border-line last:border-0">
+                    <span className="text-ink-dim w-20">{l.leave_date}</span>
+                    <span className="text-ink capitalize">{l.leave_type.replace("_", " ")}</span>
+                    <span className="flex-1 text-ink-dim truncate">{l.reason || "—"}</span>
+                    <span className={`font-semibold px-1.5 py-0.5 rounded text-[10px] ${
+                      l.status === "approved" ? "bg-ok/10 text-ok" :
+                      l.status === "rejected" ? "bg-err/10 text-err" : "bg-warn/10 text-warn"
+                    }`}>{l.status}</span>
+                    {l.admin_note && <span className="text-ink-dim italic max-w-[100px] truncate">{l.admin_note}</span>}
+                  </div>
+                ))}
+              </div>
+            ) : !showLeaveForm ? (
+              <p className="text-xs text-ink-dim">No leave requests yet.</p>
+            ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
