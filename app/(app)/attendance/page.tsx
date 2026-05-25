@@ -969,8 +969,8 @@ export default function AttendancePage() {
         ))}
       </div>
 
-      {/* Vercel info banner */}
-      {isVercel && (
+      {/* Vercel info banner — only on attendance tab */}
+      {isVercel && tab === "attendance" && (
         <div className="text-xs bg-info/10 text-info px-4 py-2.5 rounded-lg2 leading-relaxed">
           <strong>Running on Vercel</strong> — sync runs locally on the shop PC:<br />
           <code className="bg-white/60 px-1 rounded mt-1 inline-block">node scripts/sync-attendance.js</code>
