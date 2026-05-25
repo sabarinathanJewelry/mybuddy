@@ -56,12 +56,6 @@ function dayLabel(dateStr: string) {
   const dow = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
   return `${String(d).padStart(2, "0")} ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dow]}`;
 }
-function punchLabel(idx: number, total: number) {
-  if (idx === 0) return "IN";
-  if (idx === total - 1 && idx % 2 === 1) return "OUT";
-  return idx % 2 === 1 ? "Lunch out" : "Lunch in";
-}
-
 // ── types ─────────────────────────────────────────────────────────────────────
 type DayRow = {
   date: string;
@@ -333,72 +327,80 @@ export default function MyAttendancePage() {
 
             {loading ? (
               <p className="text-xs text-ink-dim py-4 text-center">Loading…</p>
-            ) : todayRow && todayRow.punches.length > 0 ? (
-              <div className="space-y-3">
-                {/* Punch timeline */}
-                <div className="space-y-1.5">
-                  {todayRow.punches.map((p, idx) => {
-                    const label = punchLabel(idx, todayRow.punches.length);
-                    const isIn  = idx === 0 || idx % 2 === 0;
-                    return (
-                      <div key={idx} className="flex items-center gap-3">
-                        <span className={`text-[10px] font-bold w-16 shrink-0 ${
-                          label === "IN" ? "text-ok" : label === "OUT" ? "text-ink-dim" :
-                          label === "Lunch out" ? "text-warn" : "text-info"
-                        }`}>
-                          {label}
-                        </span>
-                        <span className={`font-mono text-sm font-semibold ${isIn ? "text-ok" : "text-ink-dim"}`}>
-                          {formatTime(p)}
-                        </span>
-                        {/* Lunch gap shown between punch[1] and punch[2] */}
-                        {idx === 1 && todayRow.lunch_minutes !== null && (
-                          <span className={`ml-auto text-xs px-2 py-0.5 rounded font-medium ${
-                            todayRow.lunch_minutes > 70  ? "bg-err/10 text-err" :
-                            todayRow.lunch_minutes >= 60 ? "bg-warn/10 text-warn" :
-                                                           "bg-ok/10 text-ok"
-                          }`}>
-                            Lunch {formatMins(todayRow.lunch_minutes)}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {/* Still in — no OUT yet */}
-                  {!todayRow.last_out && todayRow.first_in && (
-                    <div className="flex items-center gap-3">
-                      <span className="text-[10px] font-bold w-16 shrink-0 text-ink-dim">OUT</span>
-                      <span className="text-xs text-ink-dim italic">Still in</span>
+            ) : todayRow && todayRow.punches.length > 0 ? (() => {
+              const lunchStart = todayRow.punches.length >= 4 ? todayRow.punches[1] : null;
+              const lunchEnd   = todayRow.punches.length >= 4 ? todayRow.punches[todayRow.punches.length - 2] : null;
+              return (
+                <div className="space-y-4">
+                  {/* IN / OUT row */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-ok/5 border border-ok/20 rounded-xl px-4 py-3">
+                      <p className="text-xs font-semibold text-ok uppercase tracking-wide mb-1">IN</p>
+                      <p className="text-2xl font-bold text-ok font-mono">{formatTime(todayRow.first_in)}</p>
+                      {todayRow.late_minutes > 0 && (
+                        <p className="text-xs text-warn mt-1 font-medium">{todayRow.late_minutes}m late</p>
+                      )}
                     </div>
-                  )}
-                </div>
-
-                {/* Summary row */}
-                <div className="flex gap-4 pt-3 border-t border-line flex-wrap">
-                  <div>
-                    <p className="text-xs text-ink-dim">Hours</p>
-                    <p className="text-sm font-semibold text-ink">{formatHours(todayRow.effective_hours)}</p>
+                    <div className="bg-canvas border border-line rounded-xl px-4 py-3">
+                      <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide mb-1">OUT</p>
+                      {todayRow.last_out ? (
+                        <p className="text-2xl font-bold text-ink font-mono">{formatTime(todayRow.last_out)}</p>
+                      ) : (
+                        <p className="text-lg font-semibold text-ink-dim italic mt-0.5">Still in</p>
+                      )}
+                      {todayRow.ot_minutes > 0 && (
+                        <p className="text-xs text-ok mt-1 font-medium">OT {formatMins(todayRow.ot_minutes)}</p>
+                      )}
+                    </div>
                   </div>
-                  {todayRow.late_minutes > 0 && (
-                    <div>
-                      <p className="text-xs text-ink-dim">Late by</p>
-                      <p className="text-sm font-semibold text-warn">{todayRow.late_minutes}m</p>
+
+                  {/* Lunch break row */}
+                  {lunchStart && lunchEnd ? (
+                    <div className="flex items-center gap-3 bg-warn/5 border border-warn/20 rounded-xl px-4 py-3">
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold text-warn uppercase tracking-wide mb-1">Lunch Break</p>
+                        <p className="text-sm font-mono font-semibold text-ink">
+                          {formatTime(lunchStart)}
+                          <span className="text-ink-dim mx-2">→</span>
+                          {formatTime(lunchEnd)}
+                        </p>
+                      </div>
+                      {todayRow.lunch_minutes !== null && (
+                        <span className={`text-sm font-bold px-3 py-1 rounded-lg ${
+                          todayRow.lunch_minutes > 70  ? "bg-err/10 text-err" :
+                          todayRow.lunch_minutes >= 60 ? "bg-warn/20 text-warn" :
+                                                         "bg-ok/10 text-ok"
+                        }`}>
+                          {formatMins(todayRow.lunch_minutes)}
+                          {todayRow.lunch_minutes > 70 && <span className="text-xs ml-1 font-normal">over</span>}
+                        </span>
+                      )}
                     </div>
-                  )}
-                  {todayRow.ot_minutes > 0 && (
-                    <div>
-                      <p className="text-xs text-ink-dim">OT</p>
-                      <p className="text-sm font-semibold text-ok">{formatMins(todayRow.ot_minutes)}</p>
-                    </div>
-                  )}
+                  ) : todayRow.punches.length === 2 ? (
+                    <p className="text-xs text-ink-dim text-center">No lunch recorded (2 punches only)</p>
+                  ) : null}
+
+                  {/* Working hours */}
+                  <div className="bg-info/5 border border-info/20 rounded-xl px-4 py-3">
+                    <p className="text-xs font-semibold text-info uppercase tracking-wide mb-1">Total Working Hours</p>
+                    {todayRow.effective_hours !== null ? (
+                      <p className="text-2xl font-bold text-ink">{formatHours(todayRow.effective_hours)}</p>
+                    ) : (
+                      <p className="text-sm text-ink-dim italic">Calculating when you check out…</p>
+                    )}
+                    {todayRow.lunch_minutes !== null && todayRow.effective_hours !== null && (
+                      <p className="text-xs text-ink-dim mt-1">
+                        Total time − {formatMins(todayRow.lunch_minutes)} lunch = {formatHours(todayRow.effective_hours)}
+                      </p>
+                    )}
+                  </div>
+
                   {todayRow.double_punch && (
-                    <div className="ml-auto">
-                      <span className="text-xs text-warn font-medium">Double punch detected</span>
-                    </div>
+                    <p className="text-xs text-warn font-medium text-center">Double punch detected — please check with admin</p>
                   )}
                 </div>
-              </div>
-            ) : (
+              );
+            })() : (
               <p className="text-xs text-ink-dim py-3 text-center">No punch records found for today.</p>
             )}
           </div>
