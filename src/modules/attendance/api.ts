@@ -273,7 +273,17 @@ export function useMonthlyAttendanceSummary(month: string) {
 
       const client = supabase();
 
-      // Supabase/PostgREST caps responses at 1000 rows — paginate to get all logs
+      const staffRes = await client
+        .from("staff")
+        .select("bio_user_id, name, designation, active, shift, monthly_salary, allowed_leaves")
+        .eq("active", true)
+        .order("name");
+      if (staffRes.error) throw staffRes.error;
+      const staff = (staffRes.data ?? []) as any[];
+
+      const activeIds = staff.map((s) => s.bio_user_id);
+
+      // Filter by active staff IDs and paginate past Supabase's 1000-row cap
       const logs: any[] = [];
       const PAGE = 1000;
       let from = 0;
@@ -281,6 +291,7 @@ export function useMonthlyAttendanceSummary(month: string) {
         const res = await client
           .from("attendance_logs")
           .select("bio_user_id, punch_time")
+          .in("bio_user_id", activeIds)
           .gte("punch_time", `${month}-01T00:00:00+05:30`)
           .lt("punch_time", `${nextMon}-01T00:00:00+05:30`)
           .order("punch_time")
@@ -290,16 +301,6 @@ export function useMonthlyAttendanceSummary(month: string) {
         if ((res.data ?? []).length < PAGE) break;
         from += PAGE;
       }
-
-      const staffRes = await client
-        .from("staff")
-        .select("bio_user_id, name, designation, active, shift, monthly_salary, allowed_leaves")
-        .eq("active", true)
-        .order("name");
-
-      if (staffRes.error) throw staffRes.error;
-
-      const staff = (staffRes.data ?? []) as any[];
 
       // Group logs by employee and IST calendar date
       const byUserByDate = new Map<string, Map<string, string[]>>();
