@@ -35,7 +35,7 @@ export type AttendanceEntry = {
   phone: string;
   card_no: number;
   active: boolean;
-  shift: "boys" | "girls";
+  shift: "boys" | "girls" | "helper";
   present: boolean;
   punches: string[];
   first_in: string | null;
@@ -60,7 +60,7 @@ export type StaffMember = {
   card_no: number;
   active: boolean;
   join_date: string | null;
-  shift: "boys" | "girls";
+  shift: "boys" | "girls" | "helper";
   monthly_salary: number;
   allowed_leaves: number;
   user_id: string | null;
@@ -83,7 +83,7 @@ export type MonthlyEmployeeSummary = {
   bio_user_id: string;
   name: string;
   designation: string;
-  shift: "boys" | "girls";
+  shift: "boys" | "girls" | "helper";
   monthly_salary: number;
   allowed_leaves: number;
   total_days: number;
@@ -115,7 +115,7 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
         .order("name");
       if (activeOnly) staffQ = staffQ.eq("active", true);
 
-      const [logsRes, staffRes] = await Promise.all([
+      const [logsRes, staffRes, permsRes] = await Promise.all([
         client
           .from("attendance_logs")
           .select("bio_user_id, punch_time, punch_status")
@@ -123,12 +123,18 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
           .lte("punch_time", `${date}T23:59:59+05:30`)
           .order("punch_time"),
         staffQ,
+        client
+          .from("permission_requests")
+          .select("bio_user_id")
+          .eq("status", "approved")
+          .eq("permission_date", date),
       ]);
 
       if (logsRes.error) throw logsRes.error;
 
       const logs = logsRes.data ?? [];
       const staff: StaffMember[] = (staffRes.data ?? []) as any;
+      const approvedPerms = new Set((permsRes.data ?? []).map((p: any) => p.bio_user_id));
 
       const byUser = new Map<string, string[]>();
       for (const log of logs) {
@@ -148,8 +154,8 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
             ? (new Date(lastOut).getTime() - new Date(firstIn).getTime()) / 3_600_000
             : null;
 
-        // Late = first punch after 9:50 AM IST (9:30 + 20 min grace)
-        const is_late = firstIn ? istMinutes(firstIn) > 9 * 60 + 50 : false;
+        // Late = first punch after 9:50 AM IST (9:30 + 20 min grace); approved permission overrides
+        const is_late = firstIn && !approvedPerms.has(s.bio_user_id) ? istMinutes(firstIn) > 9 * 60 + 50 : false;
 
         // Lunch = time between second punch and second-to-last punch (middle window)
         // Spare: 60–70 min (buffer zone), Over: > 70 min (red flag)
@@ -190,7 +196,7 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
           phone: s.phone ?? "",
           card_no: s.card_no ?? 0,
           active: s.active,
-          shift: ((s.shift as string) ?? "boys") as "boys" | "girls",
+          shift: ((s.shift as string) ?? "boys") as "boys" | "girls" | "helper",
           present,
           punches,
           first_in: firstIn,
@@ -302,6 +308,17 @@ export function useMonthlyAttendanceSummary(month: string) {
         from += PAGE;
       }
 
+      // Fetch approved permissions for the month
+      const permsRes = await client
+        .from("permission_requests")
+        .select("bio_user_id, permission_date")
+        .eq("status", "approved")
+        .gte("permission_date", `${month}-01`)
+        .lte("permission_date", monthEnd);
+      const approvedPermSet = new Set(
+        (permsRes.data ?? []).map((p: any) => `${p.bio_user_id}:${p.permission_date}`)
+      );
+
       // Group logs by employee and IST calendar date
       const byUserByDate = new Map<string, Map<string, string[]>>();
       for (const log of logs) {
@@ -325,8 +342,8 @@ export function useMonthlyAttendanceSummary(month: string) {
       }
 
       return staff.map((s) => {
-        const shiftEndMin =
-          ((s.shift as string) ?? "boys") === "girls" ? 20 * 60 + 30 : 21 * 60 + 30;
+        const sh = (s.shift as string) ?? "boys";
+        const shiftEndMin = sh === "girls" ? 20 * 60 + 30 : sh === "helper" ? 18 * 60 : 21 * 60 + 30;
         const byDate = byUserByDate.get(s.bio_user_id) ?? new Map<string, string[]>();
 
         // Build per-day detail
@@ -340,7 +357,8 @@ export function useMonthlyAttendanceSummary(month: string) {
             : null;
 
           const firstInMins = firstIn ? istMinutes(firstIn) : 0;
-          const is_late     = firstIn ? firstInMins > 9 * 60 + 50 : false;
+          const hasPermission = approvedPermSet.has(`${s.bio_user_id}:${date}`);
+          const is_late     = firstIn && !hasPermission ? firstInMins > 9 * 60 + 50 : false;
           const late_minutes = is_late ? firstInMins - (9 * 60 + 30) : 0;
 
           const lastOutMins = lastOut ? istMinutes(lastOut) : 0;
@@ -406,6 +424,80 @@ export function useMonthlyAttendanceSummary(month: string) {
           daily,
         };
       });
+    },
+  });
+}
+
+// ── Permission requests ───────────────────────────────────────────────────────
+
+export type PermissionRequest = {
+  id: string;
+  bio_user_id: string;
+  permission_date: string;
+  late_minutes: number;
+  reason: string | null;
+  status: "pending" | "approved" | "rejected";
+  admin_note: string | null;
+  decided_at: string | null;
+  notified: boolean;
+  created_at: string;
+  staff?: { name: string };
+};
+
+export function useMyPermissions() {
+  return useQuery<PermissionRequest[]>({
+    queryKey: ["permission_requests", "my"],
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("permission_requests")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
+export function useAllPermissions() {
+  return useQuery<PermissionRequest[]>({
+    queryKey: ["permission_requests", "all"],
+    refetchOnMount: "always",
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("permission_requests")
+        .select("*, staff(name)")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
+export function useCreatePermission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (req: { bio_user_id: string; permission_date: string; late_minutes: number; reason: string }) => {
+      const { error } = await supabase().from("permission_requests").insert(req);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["permission_requests"] }),
+  });
+}
+
+export function useDecidePermission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status, admin_note }: { id: string; status: "approved" | "rejected"; admin_note?: string }) => {
+      const { error } = await supabase()
+        .from("permission_requests")
+        .update({ status, admin_note: admin_note || null, decided_at: new Date().toISOString(), notified: false })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["permission_requests"] });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["monthly-attendance"] });
     },
   });
 }

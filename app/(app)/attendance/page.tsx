@@ -4,12 +4,12 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useAttendanceByDate, useStaff, useUpdateStaff, useDeleteStaff,
-  useMonthlyAttendanceSummary,
-  type StaffMember, type MonthlyEmployeeSummary,
+  useMonthlyAttendanceSummary, useAllPermissions, useDecidePermission,
+  type StaffMember, type MonthlyEmployeeSummary, type PermissionRequest,
 } from "@/modules/attendance/api";
 import { shortDate, inr } from "@/lib/format";
 
-type PageTab = "attendance" | "staff" | "monthly";
+type PageTab = "attendance" | "staff" | "monthly" | "requests";
 
 const inp = "border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
 
@@ -526,6 +526,94 @@ function MonthlyTab() {
   );
 }
 
+// ── Permission Requests tab ──────────────────────────────────────────────────
+function RequestsTab() {
+  const { data: requests = [], isLoading } = useAllPermissions();
+  const decide = useDecidePermission();
+  const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
+  const [noteMap, setNoteMap] = useState<Record<string, string>>({});
+
+  const filtered = requests.filter(r => filter === "all" || r.status === filter);
+  const pendingCount = requests.filter(r => r.status === "pending").length;
+
+  const STATUS_STYLE: Record<string, string> = {
+    pending:  "bg-warn/10 text-warn",
+    approved: "bg-ok/10 text-ok",
+    rejected: "bg-err/10 text-err",
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex rounded-lg overflow-hidden border border-line text-xs">
+          {(["pending","approved","rejected","all"] as const).map(f => (
+            <button key={f} onClick={() => setFilter(f)}
+              className={`px-3 py-1.5 font-medium capitalize transition-colors ${filter === f ? "bg-gold text-white" : "bg-white text-ink-dim hover:bg-canvas"}`}>
+              {f === "pending" ? `Pending (${pendingCount})` : f === "all" ? `All (${requests.length})` : f.charAt(0).toUpperCase() + f.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading ? <p className="text-ink-dim text-sm">Loading…</p> : (
+        <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                <th className="text-left px-4 py-2.5">Staff</th>
+                <th className="text-left px-3 py-2.5">Date</th>
+                <th className="text-right px-3 py-2.5">Late (min)</th>
+                <th className="text-left px-3 py-2.5">Reason</th>
+                <th className="text-center px-3 py-2.5">Status</th>
+                <th className="px-3 py-2.5" />
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((r: PermissionRequest) => (
+                <Fragment key={r.id}>
+                  <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
+                    <td className="px-4 py-2.5 font-medium">{(r as any).staff?.name ?? r.bio_user_id}</td>
+                    <td className="px-3 py-2.5 text-ink-dim">{shortDate(r.permission_date)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono">{r.late_minutes}m</td>
+                    <td className="px-3 py-2.5 text-ink-dim max-w-[200px] truncate">{r.reason || "—"}</td>
+                    <td className="px-3 py-2.5 text-center">
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${STATUS_STYLE[r.status]}`}>
+                        {r.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      {r.status === "pending" && (
+                        <div className="flex items-center gap-1 justify-end">
+                          <input type="text" placeholder="note (optional)"
+                            value={noteMap[r.id] ?? ""}
+                            onChange={e => setNoteMap(m => ({ ...m, [r.id]: e.target.value }))}
+                            className="border border-line rounded px-2 py-0.5 text-xs w-32 focus:outline-none focus:ring-1 focus:ring-gold" />
+                          <button onClick={() => decide.mutate({ id: r.id, status: "approved", admin_note: noteMap[r.id] })}
+                            disabled={decide.isPending}
+                            className="text-xs bg-ok text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">Approve</button>
+                          <button onClick={() => decide.mutate({ id: r.id, status: "rejected", admin_note: noteMap[r.id] })}
+                            disabled={decide.isPending}
+                            className="text-xs bg-err text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">Reject</button>
+                        </div>
+                      )}
+                      {r.admin_note && r.status !== "pending" && (
+                        <span className="text-xs text-ink-dim">{r.admin_note}</span>
+                      )}
+                    </td>
+                  </tr>
+                </Fragment>
+              ))}
+              {!filtered.length && (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-ink-dim">No requests</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Staff management tab ─────────────────────────────────────────────────────
 function StaffTab() {
   const { data: staff = [], isLoading } = useStaff();
@@ -648,9 +736,9 @@ function StaffTab() {
                   <td className="px-3 py-2.5 text-ink-dim hidden lg:table-cell">{s.phone || "—"}</td>
                   <td className="px-3 py-2.5 hidden lg:table-cell">
                     <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                      (s.shift ?? "boys") === "girls" ? "bg-info/10 text-info" : "bg-gold/10 text-gold"
+                      (s.shift ?? "boys") === "girls" ? "bg-info/10 text-info" : (s.shift ?? "boys") === "helper" ? "bg-ok/10 text-ok" : "bg-gold/10 text-gold"
                     }`}>
-                      {(s.shift ?? "boys") === "girls" ? "Girls" : "Boys"}
+                      {(s.shift ?? "boys") === "girls" ? "Girls" : (s.shift ?? "boys") === "helper" ? "Helper" : "Boys"}
                     </span>
                   </td>
                   <td className="px-3 py-2.5 text-center">
@@ -747,10 +835,11 @@ function StaffTab() {
                         </div>
                         <div>
                           <label className="text-xs text-ink-dim block mb-1">Shift</label>
-                          <select value={form.shift ?? "boys"} onChange={e => setForm(f => ({ ...f, shift: e.target.value as "boys" | "girls" }))}
-                            className={inp + " w-36"}>
+                          <select value={form.shift ?? "boys"} onChange={e => setForm(f => ({ ...f, shift: e.target.value as "boys" | "girls" | "helper" }))}
+                            className={inp + " w-40"}>
                             <option value="boys">Boys (till 9:30 PM)</option>
                             <option value="girls">Girls (till 8:30 PM)</option>
+                            <option value="helper">Helper (till 6:00 PM)</option>
                           </select>
                         </div>
                         <div className="flex gap-2">
@@ -825,10 +914,14 @@ export default function AttendancePage() {
   const shortCount      = present.filter(r => r.short_interval).length;
   const doubleCount     = present.filter(r => r.double_punch_detected).length;
 
+  const { data: allReqs = [] } = useAllPermissions();
+  const pendingReqCount = allReqs.filter((r: any) => r.status === "pending").length;
+
   const tabLabels: Record<PageTab, string> = {
     attendance: "Attendance",
     staff:      "Manage Staff",
     monthly:    "Monthly Report",
+    requests:   "Requests",
   };
 
   return (
@@ -863,12 +956,15 @@ export default function AttendancePage() {
 
       {/* Tabs */}
       <div className="flex border-b border-line gap-1">
-        {(["attendance", "staff", "monthly"] as PageTab[]).map((t) => (
+        {(["attendance", "staff", "monthly", "requests"] as PageTab[]).map((t) => (
           <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
               tab === t ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"
             }`}>
             {tabLabels[t]}
+            {t === "requests" && pendingReqCount > 0 && (
+              <span className="bg-err text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{pendingReqCount}</span>
+            )}
           </button>
         ))}
       </div>
@@ -1060,6 +1156,9 @@ export default function AttendancePage() {
 
       {/* ── Monthly report tab ── */}
       {tab === "monthly" && <MonthlyTab />}
+
+      {/* ── Requests tab ── */}
+      {tab === "requests" && <RequestsTab />}
     </div>
   );
 }

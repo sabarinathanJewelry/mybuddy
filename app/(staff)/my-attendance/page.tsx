@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
+import { useMyPermissions, useCreatePermission, type PermissionRequest } from "@/modules/attendance/api";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const IST_MS = 5.5 * 3600000;
@@ -73,6 +74,35 @@ export default function MyAttendancePage() {
   const [rows, setRows]         = useState<DayRow[]>([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
+
+  // Permission requests
+  const { data: permissions = [], refetch: refetchPerms } = useMyPermissions();
+  const createPerm = useCreatePermission();
+  const [showPermForm, setShowPermForm] = useState(false);
+  const [permForm, setPermForm] = useState({ permission_date: new Date().toLocaleDateString("en-CA"), late_minutes: 30, reason: "" });
+  const [permError, setPermError] = useState<string | null>(null);
+
+  const todayStr = new Date().toLocaleDateString("en-CA");
+  const thisMonth = todayStr.slice(0, 7);
+  const usedThisMonth = permissions.filter((p: PermissionRequest) =>
+    p.permission_date.startsWith(thisMonth) && (p.status === "pending" || p.status === "approved")
+  ).length;
+  const canRequest = usedThisMonth < 2;
+
+  async function submitPermission() {
+    setPermError(null);
+    if (!staff) return;
+    if (!canRequest) { setPermError("You have already used 2 permissions this month."); return; }
+    if (permForm.late_minutes < 1 || permForm.late_minutes > 120) { setPermError("Late minutes must be between 1 and 120."); return; }
+    try {
+      await createPerm.mutateAsync({ ...permForm, bio_user_id: staff.bio_user_id });
+      setShowPermForm(false);
+      setPermForm({ permission_date: todayStr, late_minutes: 30, reason: "" });
+      refetchPerms();
+    } catch {
+      setPermError("Failed to submit. Please try again.");
+    }
+  }
 
   // Fetch staff info once on mount
   useEffect(() => {
@@ -189,9 +219,9 @@ export default function MyAttendancePage() {
             <p className="text-sm text-ink-dim">
               {staff.name}
               <span className={`ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                staff.shift === "girls" ? "bg-info/10 text-info" : "bg-gold/10 text-gold"
+                staff.shift === "girls" ? "bg-info/10 text-info" : staff.shift === "helper" ? "bg-ok/10 text-ok" : "bg-gold/10 text-gold"
               }`}>
-                {staff.shift === "girls" ? "Girls shift" : "Boys shift"}
+                {staff.shift === "girls" ? "Girls shift" : staff.shift === "helper" ? "Helper shift" : "Boys shift"}
               </span>
             </p>
           )}
@@ -230,6 +260,80 @@ export default function MyAttendancePage() {
             <p className="text-xs text-ink-dim mt-0.5">{c.label}</p>
           </div>
         ))}
+      </div>
+
+      {/* Permission Requests */}
+      <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-ink">Permission Requests</p>
+            <p className="text-xs text-ink-dim mt-0.5">Used {usedThisMonth}/2 this month</p>
+          </div>
+          {canRequest && !showPermForm && (
+            <button onClick={() => setShowPermForm(true)}
+              className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 hover:opacity-90">
+              + Request Permission
+            </button>
+          )}
+          {!canRequest && (
+            <span className="text-xs text-err font-medium">Monthly limit reached</span>
+          )}
+        </div>
+
+        {showPermForm && (
+          <div className="bg-canvas rounded-lg2 p-3 space-y-2 border border-line">
+            <p className="text-xs font-medium text-ink-dim">New Permission Request (max 2 hrs late)</p>
+            <div className="flex flex-wrap gap-2 items-end">
+              <div>
+                <label className="text-xs text-ink-dim block mb-1">Date</label>
+                <input type="date" value={permForm.permission_date} max={todayStr}
+                  onChange={e => setPermForm(f => ({ ...f, permission_date: e.target.value }))}
+                  className="border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+              </div>
+              <div>
+                <label className="text-xs text-ink-dim block mb-1">I will be late by (minutes)</label>
+                <input type="number" min={1} max={120} value={permForm.late_minutes}
+                  onChange={e => setPermForm(f => ({ ...f, late_minutes: Number(e.target.value) }))}
+                  className="border border-line rounded-lg2 px-2 py-1 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-gold" />
+              </div>
+              <div className="flex-1 min-w-[140px]">
+                <label className="text-xs text-ink-dim block mb-1">Reason</label>
+                <input type="text" value={permForm.reason} placeholder="Briefly explain…"
+                  onChange={e => setPermForm(f => ({ ...f, reason: e.target.value }))}
+                  className="border border-line rounded-lg2 px-2 py-1 text-sm w-full focus:outline-none focus:ring-1 focus:ring-gold" />
+              </div>
+            </div>
+            {permError && <p className="text-xs text-err">{permError}</p>}
+            <div className="flex gap-2">
+              <button onClick={submitPermission} disabled={createPerm.isPending}
+                className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 disabled:opacity-40">
+                {createPerm.isPending ? "Submitting…" : "Submit"}
+              </button>
+              <button onClick={() => { setShowPermForm(false); setPermError(null); }}
+                className="text-xs border border-line px-3 py-1.5 rounded-lg2">Cancel</button>
+            </div>
+          </div>
+        )}
+
+        {permissions.length > 0 && (
+          <div className="space-y-1">
+            {(permissions as PermissionRequest[]).slice(0, 6).map(p => (
+              <div key={p.id} className="flex items-center gap-3 text-xs py-1 border-b border-line last:border-0">
+                <span className="text-ink-dim w-20">{p.permission_date}</span>
+                <span className="text-ink">{p.late_minutes}m late</span>
+                <span className="flex-1 text-ink-dim truncate">{p.reason || "—"}</span>
+                <span className={`font-semibold px-1.5 py-0.5 rounded text-[10px] ${
+                  p.status === "approved" ? "bg-ok/10 text-ok" :
+                  p.status === "rejected" ? "bg-err/10 text-err" : "bg-warn/10 text-warn"
+                }`}>{p.status}</span>
+                {p.admin_note && <span className="text-ink-dim italic max-w-[100px] truncate">{p.admin_note}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+        {permissions.length === 0 && !showPermForm && (
+          <p className="text-xs text-ink-dim">No requests yet.</p>
+        )}
       </div>
 
       {/* Day-by-day table */}
