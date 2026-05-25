@@ -293,6 +293,10 @@ export function useMonthlyAttendanceSummary(month: string) {
       const staff = (staffRes.data ?? []) as any[];
       const logs  = logsRes.data ?? [];
 
+      // DEBUG — remove after diagnosing
+      const uniqueDates = [...new Set(logs.map((l: any) => new Date(new Date(l.punch_time).getTime() + IST_MS).toISOString().slice(0, 10)))].sort();
+      console.log("[monthly-debug] today(UTC):", new Date().toISOString().slice(0, 10), "lastDay:", lastDay, "totalDays:", totalDays, "logs:", logs.length, "uniqueDates:", uniqueDates);
+
       // Group logs by employee and IST calendar date
       const byUserByDate = new Map<string, Map<string, string[]>>();
       for (const log of logs) {
