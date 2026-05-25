@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useAttendanceByDate, useStaff, useUpdateStaff, useDeleteStaff,
   useMonthlyAttendanceSummary, useAllPermissions, useDecidePermission,
-  useKioskSequence, useSaveKioskSequence,
+  useKioskSequence, useSaveKioskSequence, useLastSyncTime,
   useLeavesByDate, useAllLeaveRequests, useMyLeaveRequests, usePendingLeaveCount,
   useMyStaffProfile, useSubmitLeaveRequest, useDecideLeaveRequest,
   useAppNotifications, useMarkNotificationRead, useMarkAllNotificationsRead,
@@ -1245,10 +1245,7 @@ export default function AttendancePage() {
   const [syncing, setSyncing]   = useState(false);
   const [isVercel, setIsVercel] = useState(false);
   const [syncMsg, setSyncMsg]   = useState<{ ok: boolean; text: string } | null>(null);
-  const [lastSynced, setLastSynced] = useState<string | null>(() => {
-    if (typeof window !== "undefined") return localStorage.getItem("attendance_last_sync");
-    return null;
-  });
+  const { data: lastSyncIso }   = useLastSyncTime();
 
   const { isLocked: rawLocked, unlock } = useKiosk();
   const profile = useAuth((s) => s.profile);
@@ -1295,16 +1292,11 @@ export default function AttendancePage() {
       const res  = await fetch("/api/sync-attendance", { method: "POST" });
       const json = await res.json();
       if (json.ok) {
-        const ts = new Date().toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" });
-        setLastSynced(ts);
-        localStorage.setItem("attendance_last_sync", ts);
         setSyncMsg({ ok: true, text: `Synced — ${json.staff} staff, ${json.records} records` });
         qc.invalidateQueries({ queryKey: ["attendance"] });
         qc.invalidateQueries({ queryKey: ["staff"] });
+        qc.invalidateQueries({ queryKey: ["last-sync-time"] });
       } else if (json.vercel) {
-        const ts = new Date().toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" });
-        setLastSynced(ts);
-        localStorage.setItem("attendance_last_sync", ts);
         setIsVercel(true);
         setSyncMsg(null);
         qc.invalidateQueries({ queryKey: ["attendance"] });
@@ -1418,9 +1410,11 @@ export default function AttendancePage() {
             ))}
           </div>
 
-          {lastSynced && (
+          {lastSyncIso && (
             <p className="text-xs text-ink-dim text-center -mt-1">
-              Service last ran: <strong>{lastSynced}</strong>
+              Service last ran: <strong>
+                {new Date(lastSyncIso).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })}
+              </strong>
             </p>
           )}
 

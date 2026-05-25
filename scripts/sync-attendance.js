@@ -115,6 +115,9 @@ async function main() {
       await supabaseUpsert("attendance_logs", records.slice(i, i + 500), "bio_user_id,punch_time");
     }
     console.log(`Attendance records synced: ${records.length}`);
+
+    // Record when this sync ran so the app can display the real last-sync time
+    await supabaseUpsert("app_settings", [{ key: "last_sync_at", value: new Date().toISOString() }], "key");
     console.log("Done.");
   } finally {
     await zk.disconnect();

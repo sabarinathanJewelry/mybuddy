@@ -506,6 +506,21 @@ export function useDecidePermission() {
 
 export type KioskTap = { bio_user_id: string; action: "in" | "out" };
 
+export function useLastSyncTime() {
+  return useQuery<string | null>({
+    queryKey: ["last-sync-time"],
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const { data } = await supabase()
+        .from("app_settings")
+        .select("value")
+        .eq("key", "last_sync_at")
+        .maybeSingle();
+      return (data?.value as string) ?? null;
+    },
+  });
+}
+
 export function useKioskSequence() {
   return useQuery<KioskTap[]>({
     queryKey: ["kiosk-sequence"],

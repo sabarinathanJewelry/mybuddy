@@ -71,6 +71,7 @@ export async function POST() {
       );
     }
 
+    await sb.from("app_settings").upsert({ key: "last_sync_at", value: new Date().toISOString() });
     return NextResponse.json({ ok: true, staff: (users as any[]).length, records: records.length });
   } catch (err: any) {
     const msg = err?.message || err?.code || String(err) || "Connection failed";
