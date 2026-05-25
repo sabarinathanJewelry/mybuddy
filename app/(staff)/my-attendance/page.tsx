@@ -204,10 +204,11 @@ export default function MyAttendancePage() {
     await supabase().auth.signOut();
   }
 
-  const presentDays = rows.filter(r => r.status !== "leave").length;
-  const lateDays    = rows.filter(r => r.status === "late").length;
-  const absentDays  = rows.filter(r => r.status === "leave").length;
-  const totalOtMins = rows.reduce((s, r) => s + r.ot_minutes, 0);
+  const presentDays   = rows.filter(r => r.status !== "leave").length;
+  const lateDays      = rows.filter(r => r.status === "late").length;
+  const absentDays    = rows.filter(r => r.status === "leave").length;
+  const totalOtMins   = rows.reduce((s, r) => s + r.ot_minutes, 0);
+  const totalLateMins = rows.reduce((s, r) => s + r.late_minutes, 0);
 
   return (
     <div className="max-w-2xl mx-auto p-4 space-y-5">
@@ -252,7 +253,7 @@ export default function MyAttendancePage() {
         {[
           { label: "Present", value: presentDays, color: "text-ok" },
           { label: "Absent",  value: absentDays,  color: absentDays > 0 ? "text-err" : "text-ink-dim" },
-          { label: "Late",    value: lateDays,     color: lateDays > 0 ? "text-warn" : "text-ink-dim" },
+          { label: "Late",    value: totalLateMins > 0 ? formatMins(totalLateMins) : "—", color: totalLateMins > 0 ? "text-warn" : "text-ink-dim" },
           { label: "OT",      value: formatMins(totalOtMins), color: totalOtMins > 0 ? "text-ok" : "text-ink-dim" },
         ].map(c => (
           <div key={c.label} className="bg-white rounded-xl border border-line p-3 shadow-soft text-center">
