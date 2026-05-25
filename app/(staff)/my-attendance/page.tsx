@@ -328,8 +328,13 @@ export default function MyAttendancePage() {
             {loading ? (
               <p className="text-xs text-ink-dim py-4 text-center">Loading…</p>
             ) : todayRow && todayRow.punches.length > 0 ? (() => {
-              const lunchStart = todayRow.punches.length >= 4 ? todayRow.punches[1] : null;
-              const lunchEnd   = todayRow.punches.length >= 4 ? todayRow.punches[todayRow.punches.length - 2] : null;
+              // 3 punches = IN + Lunch out + Lunch in (still working); 4 = complete day with lunch
+              const lunchStart   = todayRow.punches.length >= 3 ? todayRow.punches[1] : null;
+              const lunchEnd     = todayRow.punches.length >= 3 ? todayRow.punches[2] : null;
+              const lunchMins    = lunchStart && lunchEnd
+                ? Math.round((new Date(lunchEnd).getTime() - new Date(lunchStart).getTime()) / 60000)
+                : null;
+              const lunchStatus  = lunchMins === null ? null : lunchMins > 70 ? "over" : lunchMins >= 60 ? "spare" : "ok";
               return (
                 <div className="space-y-4">
                   {/* IN / OUT row */}
@@ -356,28 +361,50 @@ export default function MyAttendancePage() {
 
                   {/* Lunch break row */}
                   {lunchStart && lunchEnd ? (
-                    <div className="flex items-center gap-3 bg-warn/5 border border-warn/20 rounded-xl px-4 py-3">
-                      <div className="flex-1">
-                        <p className="text-xs font-semibold text-warn uppercase tracking-wide mb-1">Lunch Break</p>
-                        <p className="text-sm font-mono font-semibold text-ink">
+                    <div className={`border rounded-xl px-4 py-3 ${
+                      lunchStatus === "over"  ? "bg-err/5 border-err/20" :
+                      lunchStatus === "spare" ? "bg-warn/5 border-warn/20" :
+                                               "bg-warn/5 border-warn/20"
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold text-warn uppercase tracking-wide">Lunch Break</p>
+                        {lunchMins !== null && (
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                            lunchStatus === "over"  ? "bg-err/10 text-err" :
+                            lunchStatus === "spare" ? "bg-warn/20 text-warn" :
+                                                     "bg-ok/10 text-ok"
+                          }`}>
+                            {lunchStatus === "over" ? "Over" : lunchStatus === "spare" ? "Spare" : "OK"}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <p className="text-base font-mono font-semibold text-ink">
                           {formatTime(lunchStart)}
                           <span className="text-ink-dim mx-2">→</span>
                           {formatTime(lunchEnd)}
                         </p>
+                        {lunchMins !== null && (
+                          <span className={`text-sm font-bold ${
+                            lunchStatus === "over"  ? "text-err" :
+                            lunchStatus === "spare" ? "text-warn" : "text-ok"
+                          }`}>
+                            {formatMins(lunchMins)}
+                          </span>
+                        )}
                       </div>
-                      {todayRow.lunch_minutes !== null && (
-                        <span className={`text-sm font-bold px-3 py-1 rounded-lg ${
-                          todayRow.lunch_minutes > 70  ? "bg-err/10 text-err" :
-                          todayRow.lunch_minutes >= 60 ? "bg-warn/20 text-warn" :
-                                                         "bg-ok/10 text-ok"
-                        }`}>
-                          {formatMins(todayRow.lunch_minutes)}
-                          {todayRow.lunch_minutes > 70 && <span className="text-xs ml-1 font-normal">over</span>}
-                        </span>
+                      {lunchStatus === "over" && (
+                        <p className="text-xs text-err mt-1">Lunch exceeded 1h 10m — will be noted</p>
+                      )}
+                      {lunchStatus === "spare" && (
+                        <p className="text-xs text-warn mt-1">Lunch between 1h and 1h 10m</p>
                       )}
                     </div>
-                  ) : todayRow.punches.length === 2 ? (
-                    <p className="text-xs text-ink-dim text-center">No lunch recorded (2 punches only)</p>
+                  ) : todayRow.punches.length <= 2 ? (
+                    <div className="bg-canvas border border-line rounded-xl px-4 py-3">
+                      <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide">Lunch Break</p>
+                      <p className="text-sm text-ink-dim italic mt-1">Not recorded yet</p>
+                    </div>
                   ) : null}
 
                   {/* Working hours */}
