@@ -155,6 +155,33 @@ export function useDeletePayment() {
   });
 }
 
+export function useApplyAdvanceToOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ customer_id, order_no, amount }: {
+      customer_id: string;
+      order_no: string;
+      amount: number;
+    }) => {
+      const { error } = await supabase().from("payments").insert({
+        customer_id,
+        direction: "out",
+        mode: "advance",
+        amount,
+        pay_date: new Date().toISOString().slice(0, 10),
+        is_advance: true,
+        notes: `Advance applied — Order ${order_no}`,
+      });
+      if (error) throw error;
+    },
+    onSuccess: (_data, { customer_id }) => {
+      qc.invalidateQueries({ queryKey: ["customer-360", customer_id] });
+      qc.invalidateQueries({ queryKey: ["customer", customer_id] });
+      qc.invalidateQueries({ queryKey: ["customers"] });
+    },
+  });
+}
+
 export function useCustomer360(id: string) {
   const client = supabase();
   return useQuery({
@@ -164,7 +191,7 @@ export function useCustomer360(id: string) {
       const [salesRes, ordersRes, paymentsRes, writeoffsRes] = await Promise.all([
         client.from("sales").select("id, bill_no, bill_date, total, status").eq("customer_id", id).order("bill_date", { ascending: false }).limit(20),
         client.from("orders").select("id, order_no, order_date, status, total, order_payments(amount)").eq("customer_id", id).order("order_date", { ascending: false }).limit(20),
-        client.from("payments").select("id, pay_date, direction, mode, amount").eq("customer_id", id).order("pay_date", { ascending: false }).limit(20),
+        client.from("payments").select("id, pay_date, direction, mode, amount, notes").eq("customer_id", id).order("pay_date", { ascending: false }).limit(20),
         client.from("scrap_entries").select("id, scrap_date, amount, notes").eq("customer_id", id).order("scrap_date", { ascending: false }).limit(20),
       ]);
       return {

@@ -2,7 +2,7 @@
 
 import { Fragment, use, useState } from "react";
 import Link from "next/link";
-import { useCustomer, useCustomer360, useUpdatePayment, useDeletePayment } from "@/modules/customers/api";
+import { useCustomer, useCustomer360, useUpdatePayment, useDeletePayment, useApplyAdvanceToOrder } from "@/modules/customers/api";
 import { useT } from "@/i18n";
 import { inr, grams, shortDate } from "@/lib/format";
 
@@ -17,7 +17,9 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
   const { data: view, isLoading } = useCustomer360(id);
   const updatePayment = useUpdatePayment();
   const deletePayment = useDeletePayment();
+  const applyAdvance = useApplyAdvanceToOrder();
   const [editingPayment, setEditingPayment] = useState<{ id: string; pay_date: string; mode: string; amount: number; direction: string } | null>(null);
+  const [applyingOrder, setApplyingOrder] = useState<{ id: string; order_no: string; amount: number } | null>(null);
 
   const totalSales = view?.sales.reduce((s, x) => s + (x.total ?? 0), 0) ?? 0;
   const totalPaidIn = view?.payments.filter((p) => p.direction === "in").reduce((s, x) => s + x.amount, 0) ?? 0;
@@ -179,34 +181,99 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
 
       {/* Orders tab */}
       {tab === "orders" && !isLoading && (
-        <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
-          <table className="w-full text-sm">
-            <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
-              <th className="text-left px-4 py-2.5">Order No</th>
-              <th className="text-left px-3 py-2.5">{t("date")}</th>
-              <th className="text-right px-3 py-2.5">Est. Total</th>
-              <th className="text-right px-3 py-2.5">Advance</th>
-              <th className="text-right px-3 py-2.5">Balance Due</th>
-              <th className="text-left px-3 py-2.5">{t("status")}</th>
-            </tr></thead>
-            <tbody>
-              {view?.orders.map((o) => {
-                const advancePaid = (o.order_payments ?? []).reduce((s: number, p: { amount: number }) => s + (p.amount ?? 0), 0);
-                const balanceDue = (o.total ?? 0) - advancePaid;
-                return (
-                  <tr key={o.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                    <td className="px-4 py-2.5 font-mono text-info">{o.order_no}</td>
-                    <td className="px-3 py-2.5 text-ink-dim">{shortDate(o.order_date)}</td>
-                    <td className="px-3 py-2.5 text-right font-mono">{inr(o.total ?? 0)}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-ok">{inr(advancePaid)}</td>
-                    <td className={`px-3 py-2.5 text-right font-mono ${balanceDue > 0 ? "text-err" : "text-ok"}`}>{inr(balanceDue)}</td>
-                    <td className="px-3 py-2.5 text-ink-dim capitalize">{o.status}</td>
-                  </tr>
-                );
-              })}
-              {!view?.orders.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
-            </tbody>
-          </table>
+        <div className="space-y-3">
+          {balance > 0 && (
+            <div className="bg-ok/10 text-ok text-xs px-4 py-2.5 rounded-lg2 font-medium">
+              Customer has {inr(balance)} advance — apply it to delivered orders below to clear the balance.
+            </div>
+          )}
+          <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+            <table className="w-full text-sm">
+              <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                <th className="text-left px-4 py-2.5">Order No</th>
+                <th className="text-left px-3 py-2.5">{t("date")}</th>
+                <th className="text-right px-3 py-2.5">Order Total</th>
+                <th className="text-right px-3 py-2.5">Paid (cash/gold)</th>
+                <th className="text-right px-3 py-2.5">Balance Due</th>
+                <th className="text-left px-3 py-2.5">{t("status")}</th>
+                <th className="px-3 py-2.5" />
+              </tr></thead>
+              <tbody>
+                {view?.orders.map((o) => {
+                  const advancePaid = (o.order_payments ?? []).reduce((s: number, p: { amount: number }) => s + (p.amount ?? 0), 0);
+                  const balanceDue = (o.total ?? 0) - advancePaid;
+                  // Check if advance was already applied for this order
+                  const alreadyApplied = view?.payments.some(
+                    (p) => p.direction === "out" && p.notes?.includes(`Order ${o.order_no}`)
+                  );
+                  const canApply = o.status === "delivered" && balance > 0 && !alreadyApplied;
+                  const suggestedAmount = Math.min(balance, o.total ?? 0);
+
+                  return (
+                    <Fragment key={o.id}>
+                      <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
+                        <td className="px-4 py-2.5 font-mono text-info">{o.order_no}</td>
+                        <td className="px-3 py-2.5 text-ink-dim">{shortDate(o.order_date)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono">{inr(o.total ?? 0)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-ok">{inr(advancePaid)}</td>
+                        <td className={`px-3 py-2.5 text-right font-mono ${balanceDue > 0 ? "text-err" : "text-ok"}`}>{inr(balanceDue)}</td>
+                        <td className="px-3 py-2.5 text-ink-dim capitalize">{o.status}</td>
+                        <td className="px-3 py-2.5 text-right">
+                          {alreadyApplied && (
+                            <span className="text-[10px] font-semibold text-ok bg-ok/10 px-1.5 py-0.5 rounded">Advance applied</span>
+                          )}
+                          {canApply && applyingOrder?.id !== o.id && (
+                            <button
+                              onClick={() => setApplyingOrder({ id: o.id, order_no: o.order_no, amount: suggestedAmount })}
+                              className="text-xs text-gold hover:underline"
+                            >
+                              Apply Advance
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {applyingOrder?.id === o.id && (
+                        <tr className="border-b border-line bg-canvas/40">
+                          <td colSpan={7} className="px-4 py-3">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className="text-xs text-ink-dim">Apply advance for Order {o.order_no}:</span>
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs text-ink-dim">₹</span>
+                                <input
+                                  type="number"
+                                  value={applyingOrder?.amount ?? 0}
+                                  min={1}
+                                  max={balance}
+                                  onChange={(e) => setApplyingOrder((prev) => prev ? { ...prev, amount: Number(e.target.value) } : null)}
+                                  className="border border-line rounded-lg2 px-2 py-1 text-sm w-36 focus:outline-none focus:ring-1 focus:ring-gold"
+                                />
+                              </div>
+                              <span className="text-xs text-ink-dim">(available: {inr(balance)})</span>
+                              <button
+                                disabled={applyAdvance.isPending || (applyingOrder?.amount ?? 0) <= 0}
+                                onClick={async () => {
+                                  if (!applyingOrder) return;
+                                  await applyAdvance.mutateAsync({ customer_id: id, order_no: o.order_no, amount: applyingOrder.amount });
+                                  setApplyingOrder(null);
+                                }}
+                                className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40"
+                              >
+                                {applyAdvance.isPending ? "Saving…" : "Confirm"}
+                              </button>
+                              <button onClick={() => setApplyingOrder(null)} className="border border-line text-xs px-3 py-1.5 rounded-lg2">
+                                Cancel
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+                {!view?.orders.length && <tr><td colSpan={7} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
