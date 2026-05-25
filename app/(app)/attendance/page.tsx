@@ -980,6 +980,10 @@ export default function AttendancePage() {
   const [syncing, setSyncing]   = useState(false);
   const [isVercel, setIsVercel] = useState(false);
   const [syncMsg, setSyncMsg]   = useState<{ ok: boolean; text: string } | null>(null);
+  const [lastSynced, setLastSynced] = useState<string | null>(() => {
+    if (typeof window !== "undefined") return localStorage.getItem("attendance_last_sync");
+    return null;
+  });
 
   const { isLocked: rawLocked, unlock } = useKiosk();
   const profile = useAuth((s) => s.profile);
@@ -1020,10 +1024,16 @@ export default function AttendancePage() {
       const res  = await fetch("/api/sync-attendance", { method: "POST" });
       const json = await res.json();
       if (json.ok) {
+        const ts = new Date().toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" });
+        setLastSynced(ts);
+        localStorage.setItem("attendance_last_sync", ts);
         setSyncMsg({ ok: true, text: `Synced — ${json.staff} staff, ${json.records} records` });
         qc.invalidateQueries({ queryKey: ["attendance"] });
         qc.invalidateQueries({ queryKey: ["staff"] });
       } else if (json.vercel) {
+        const ts = new Date().toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" });
+        setLastSynced(ts);
+        localStorage.setItem("attendance_last_sync", ts);
         setIsVercel(true);
         setSyncMsg(null);
         qc.invalidateQueries({ queryKey: ["attendance"] });
@@ -1131,6 +1141,12 @@ export default function AttendancePage() {
               </div>
             ))}
           </div>
+
+          {lastSynced && (
+            <p className="text-xs text-ink-dim text-center -mt-1">
+              Service last ran: <strong>{lastSynced}</strong>
+            </p>
+          )}
 
           {(lateCount > 0 || overrunCount > 0 || shortCount > 0 || doubleCount > 0) && (
             <div className="flex gap-2 flex-wrap">

@@ -88,9 +88,11 @@ export default function LoansPage() {
   const { data: loans, isLoading } = useLoans();
   const qc = useQueryClient();
 
-  const [showForm, setShowForm] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [payLoanId, setPayLoanId] = useState<string | null>(null);
+  const [showForm, setShowForm]           = useState(false);
+  const [expanded, setExpanded]           = useState<string | null>(null);
+  const [payLoanId, setPayLoanId]         = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleteOpts, setDeleteOpts]       = useState({ removeLoanLedger: true, removePaymentLedger: true });
   const [payForm, setPayForm] = useState({ pay_date: globalDate, principal: 0, interest: 0, mode: "cash", notes: "" });
 
   const [form, setForm] = useState({
@@ -127,15 +129,15 @@ export default function LoansPage() {
   });
 
   const deleteLoan = useMutation({
-    mutationFn: async (l: any) => {
+    mutationFn: async ({ l, opts }: { l: any; opts: { removeLoanLedger: boolean; removePaymentLedger: boolean } }) => {
       const client = supabase();
-      // Remove ledger entries for each payment
-      for (const p of (l.loan_payments ?? [])) {
-        await client.from("cash_ledger").delete().eq("ref_type", "loan_payment").eq("ref_id", p.id);
-        await client.from("bank_ledger").delete().eq("ref_type", "loan_payment").eq("ref_id", p.id);
+      if (opts.removePaymentLedger) {
+        for (const p of (l.loan_payments ?? [])) {
+          await client.from("cash_ledger").delete().eq("ref_type", "loan_payment").eq("ref_id", p.id);
+          await client.from("bank_ledger").delete().eq("ref_type", "loan_payment").eq("ref_id", p.id);
+        }
       }
-      // Remove the loan's own cash ledger entry (matched by ref_type + date + amount)
-      if (l.affects_cash) {
+      if (opts.removeLoanLedger && l.affects_cash) {
         await client.from("cash_ledger").delete()
           .eq("ref_type", "loan")
           .eq("tx_date", l.loan_date)
@@ -147,6 +149,7 @@ export default function LoansPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["loans"] });
       setExpanded(null);
+      setDeleteConfirmId(null);
     },
   });
 
@@ -342,6 +345,9 @@ export default function LoansPage() {
                   <div className={clsx("text-xs px-2 py-0.5 rounded-full", l.outstanding <= 0 ? "bg-ok/10 text-ok" : "bg-err/10 text-err")}>
                     {l.outstanding <= 0 ? "Closed" : "Active"}
                   </div>
+                  <div className={clsx("text-xs px-2 py-0.5 rounded-full", l.affects_cash ? "bg-info/10 text-info" : "bg-canvas text-ink-dim border border-line")}>
+                    {l.affects_cash ? "Cash" : "Non-cash"}
+                  </div>
                   <span className="text-ink-dim text-xs">{isOpen ? "▲" : "▼"}</span>
                 </div>
 
@@ -499,17 +505,53 @@ export default function LoansPage() {
                       <p className="text-xs text-ink-dim bg-canvas rounded-lg px-3 py-2">{l.notes}</p>
                     )}
 
-                    <div className="flex justify-end border-t border-line pt-3">
-                      <button
-                        disabled={deleteLoan.isPending}
-                        onClick={async () => {
-                          if (!confirm(`Delete loan "${l.lender}" (${shortDate(l.loan_date)})? This will also remove all its payments and ledger entries.`)) return;
-                          await deleteLoan.mutateAsync(l);
-                        }}
-                        className="text-xs text-err hover:underline disabled:opacity-40"
-                      >
-                        {deleteLoan.isPending ? "Deleting…" : "Delete this loan"}
-                      </button>
+                    <div className="border-t border-line pt-3">
+                      {deleteConfirmId !== l.id ? (
+                        <div className="flex justify-end">
+                          <button
+                            onClick={() => {
+                              setDeleteConfirmId(l.id);
+                              setDeleteOpts({ removeLoanLedger: !!l.affects_cash, removePaymentLedger: (l.loan_payments?.length ?? 0) > 0 });
+                            }}
+                            className="text-xs text-err hover:underline"
+                          >
+                            Delete this loan
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="border border-err/30 bg-err/5 rounded-xl p-4 space-y-3">
+                          <p className="text-sm font-semibold text-err">Delete &ldquo;{l.lender}&rdquo; ({shortDate(l.loan_date)})?</p>
+                          <p className="text-xs text-ink-dim">The loan record will be removed. Choose what else to clean up:</p>
+                          <div className="space-y-2">
+                            {l.affects_cash && (
+                              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                <input type="checkbox" checked={deleteOpts.removeLoanLedger}
+                                  onChange={e => setDeleteOpts(o => ({ ...o, removeLoanLedger: e.target.checked }))}
+                                  className="accent-gold w-4 h-4" />
+                                Remove loan cash entry ({inr(l.principal)} on {shortDate(l.loan_date)})
+                              </label>
+                            )}
+                            {(l.loan_payments?.length ?? 0) > 0 && (
+                              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                                <input type="checkbox" checked={deleteOpts.removePaymentLedger}
+                                  onChange={e => setDeleteOpts(o => ({ ...o, removePaymentLedger: e.target.checked }))}
+                                  className="accent-gold w-4 h-4" />
+                                Remove {l.loan_payments.length} payment ledger {l.loan_payments.length === 1 ? "entry" : "entries"}
+                              </label>
+                            )}
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              disabled={deleteLoan.isPending}
+                              onClick={() => deleteLoan.mutate({ l, opts: deleteOpts })}
+                              className="text-xs bg-err text-white px-3 py-1.5 rounded-lg2 disabled:opacity-40">
+                              {deleteLoan.isPending ? "Deleting…" : "Confirm Delete"}
+                            </button>
+                            <button onClick={() => setDeleteConfirmId(null)}
+                              className="text-xs border border-line px-3 py-1.5 rounded-lg2">Cancel</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
