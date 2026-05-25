@@ -5,8 +5,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useAttendanceByDate, useStaff, useUpdateStaff, useDeleteStaff,
   useMonthlyAttendanceSummary, useAllPermissions, useDecidePermission,
-  type StaffMember, type MonthlyEmployeeSummary, type PermissionRequest,
+  useKioskSequence, useSaveKioskSequence,
+  type StaffMember, type MonthlyEmployeeSummary, type PermissionRequest, type KioskTap,
 } from "@/modules/attendance/api";
+import { useKiosk } from "@/stores/kiosk";
+import { useAuth } from "@/stores/auth";
 import { shortDate, inr } from "@/lib/format";
 
 type PageTab = "attendance" | "staff" | "monthly" | "requests";
@@ -864,6 +867,109 @@ function StaffTab() {
   );
 }
 
+// ── Kiosk sequence configuration (admin only, unlocked) ─────────────────────
+function KioskConfig() {
+  const { data: currentSeq = [], isLoading } = useKioskSequence();
+  const saveSeq = useSaveKioskSequence();
+  const { data: staff = [] } = useStaff();
+  const lock = useKiosk((s) => s.lock);
+
+  const activeStaff = staff.filter((s) => s.active);
+  const [editing, setEditing] = useState(false);
+  const [steps, setSteps] = useState<KioskTap[]>([
+    { bio_user_id: "", action: "in" },
+    { bio_user_id: "", action: "out" },
+    { bio_user_id: "", action: "in" },
+    { bio_user_id: "", action: "out" },
+  ]);
+
+  useEffect(() => {
+    if (currentSeq.length === 4) setSteps(currentSeq);
+  }, [currentSeq]);
+
+  async function handleSave() {
+    if (steps.some((s) => !s.bio_user_id)) return;
+    await saveSeq.mutateAsync(steps);
+    setEditing(false);
+    lock();
+  }
+
+  async function handleClear() {
+    if (!confirm("Clear kiosk sequence? The app will stop locking on startup.")) return;
+    await saveSeq.mutateAsync([]);
+    setEditing(false);
+  }
+
+  if (isLoading) return null;
+  const isConfigured = currentSeq.length === 4;
+
+  return (
+    <div className="bg-white rounded-xl border border-line shadow-soft p-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold text-ink">Kiosk Lock</p>
+          <p className="text-xs text-ink-dim mt-0.5">
+            {isConfigured
+              ? "Sequence active — app locks on startup, unlocks by tap sequence"
+              : "No sequence set — app starts unlocked"}
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={() => setEditing((v) => !v)} className="text-xs text-gold hover:underline">
+            {editing ? "Cancel" : isConfigured ? "Change" : "Set up"}
+          </button>
+          {isConfigured && !editing && (
+            <button onClick={handleClear} className="text-xs text-err hover:underline">Disable</button>
+          )}
+        </div>
+      </div>
+
+      {editing && (
+        <div className="mt-3 space-y-2">
+          <p className="text-xs text-ink-dim">
+            Choose 4 taps in order. Tap left side of a row = IN · Tap right side = OUT.
+          </p>
+          {steps.map((step, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span className="text-xs text-ink-dim w-12 shrink-0">Step {i + 1}</span>
+              <select
+                value={step.bio_user_id}
+                onChange={(e) => setSteps((prev) => prev.map((s, idx) => idx === i ? { ...s, bio_user_id: e.target.value } : s))}
+                className={inp + " flex-1"}
+              >
+                <option value="">— Select staff —</option>
+                {activeStaff.map((s) => (
+                  <option key={s.bio_user_id} value={s.bio_user_id}>{s.name}</option>
+                ))}
+              </select>
+              <select
+                value={step.action}
+                onChange={(e) => setSteps((prev) => prev.map((s, idx) => idx === i ? { ...s, action: e.target.value as "in" | "out" } : s))}
+                className={inp + " w-28"}
+              >
+                <option value="in">Left (IN)</option>
+                <option value="out">Right (OUT)</option>
+              </select>
+            </div>
+          ))}
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={handleSave}
+              disabled={steps.some((s) => !s.bio_user_id) || saveSeq.isPending}
+              className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40"
+            >
+              {saveSeq.isPending ? "Saving…" : "Save & Lock"}
+            </button>
+            <button onClick={() => setEditing(false)} className="border border-line text-xs px-3 py-1.5 rounded-lg2">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function AttendancePage() {
   const today = new Date().toISOString().slice(0, 10);
@@ -874,6 +980,33 @@ export default function AttendancePage() {
   const [syncing, setSyncing]   = useState(false);
   const [isVercel, setIsVercel] = useState(false);
   const [syncMsg, setSyncMsg]   = useState<{ ok: boolean; text: string } | null>(null);
+
+  const { isLocked, unlock } = useKiosk();
+  const profile = useAuth((s) => s.profile);
+  const { data: kioskSeq } = useKioskSequence();
+  const [tapBuffer, setTapBuffer] = useState<KioskTap[]>([]);
+
+  // Force attendance tab when locked
+  useEffect(() => { if (isLocked) setTab("attendance"); }, [isLocked]);
+
+  function handleKioskTap(bio_user_id: string, e: React.MouseEvent<HTMLTableRowElement>) {
+    if (!isLocked || !kioskSeq?.length) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const action: "in" | "out" = e.clientX - rect.left < rect.width * 0.4 ? "in" : "out";
+    const step = tapBuffer.length;
+    const expected = kioskSeq[step];
+    if (expected?.bio_user_id === bio_user_id && expected?.action === action) {
+      const next = [...tapBuffer, { bio_user_id, action }];
+      if (next.length === kioskSeq.length) {
+        unlock();
+        setTapBuffer([]);
+      } else {
+        setTapBuffer(next);
+      }
+    } else {
+      setTapBuffer([]);
+    }
+  }
 
   const qc = useQueryClient();
   const { data = [], isLoading, refetch } = useAttendanceByDate(date, activeOnly);
@@ -954,20 +1087,22 @@ export default function AttendancePage() {
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-line gap-1">
-        {(["attendance", "staff", "monthly", "requests"] as PageTab[]).map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
-              tab === t ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"
-            }`}>
-            {tabLabels[t]}
-            {t === "requests" && pendingReqCount > 0 && (
-              <span className="bg-err text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{pendingReqCount}</span>
-            )}
-          </button>
-        ))}
-      </div>
+      {/* Tabs — hidden in locked/kiosk mode */}
+      {!isLocked && (
+        <div className="flex border-b border-line gap-1">
+          {(["attendance", "staff", "monthly", "requests"] as PageTab[]).map((t) => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
+                tab === t ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"
+              }`}>
+              {tabLabels[t]}
+              {t === "requests" && pendingReqCount > 0 && (
+                <span className="bg-err text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{pendingReqCount}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Vercel info banner — only on attendance tab */}
       {isVercel && tab === "attendance" && (
@@ -985,6 +1120,9 @@ export default function AttendancePage() {
       {/* ── Attendance tab ── */}
       {tab === "attendance" && (
         <>
+          {/* Kiosk setup card — admin only, unlocked */}
+          {!isLocked && profile?.role === "admin" && <KioskConfig />}
+
           <div className="grid grid-cols-4 gap-3">
             {[
               { label: "Total Staff", value: data.length,        color: "text-ink"  },
@@ -1050,7 +1188,10 @@ export default function AttendancePage() {
                 <tbody>
                   {data.map((r, i) => (
                     <Fragment key={r.bio_user_id}>
-                      <tr className={`border-b border-line last:border-0 ${r.present ? "hover:bg-canvas/50" : "opacity-50 hover:opacity-70"}`}>
+                      <tr
+                        className={`border-b border-line last:border-0 ${r.present ? "hover:bg-canvas/50" : "opacity-50 hover:opacity-70"} ${isLocked ? "cursor-pointer select-none" : ""}`}
+                        onClick={isLocked ? (e) => handleKioskTap(r.bio_user_id, e) : undefined}
+                      >
                         <td className="px-4 py-2.5 text-ink-dim text-xs">{i + 1}</td>
                         <td className="px-3 py-2.5 font-medium">{r.name}</td>
                         <td className="px-3 py-2.5 text-ink-dim hidden md:table-cell">{r.designation || "—"}</td>
@@ -1147,6 +1288,17 @@ export default function AttendancePage() {
               {shortDate(date)} · {present.length} present, {absent.length} absent of {data.length} staff
               {" "}· Boys 9:30–21:30 · Girls 9:30–20:30 · Grace till 9:50
             </p>
+          )}
+
+          {/* Kiosk unlock progress dots — subtle indicator visible only to admin */}
+          {isLocked && kioskSeq && kioskSeq.length > 0 && (
+            <div className="fixed bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-50">
+              {kioskSeq.map((_, i) => (
+                <div key={i} className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                  i < tapBuffer.length ? "bg-gold/70" : "bg-line"
+                }`} />
+              ))}
+            </div>
           )}
         </>
       )}

@@ -501,3 +501,36 @@ export function useDecidePermission() {
     },
   });
 }
+
+// ── Kiosk sequence ────────────────────────────────────────────────────────────
+
+export type KioskTap = { bio_user_id: string; action: "in" | "out" };
+
+export function useKioskSequence() {
+  return useQuery<KioskTap[]>({
+    queryKey: ["kiosk-sequence"],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("app_settings")
+        .select("value")
+        .eq("key", "kiosk_sequence")
+        .single();
+      if (error) return [];
+      return (data?.value ?? []) as KioskTap[];
+    },
+  });
+}
+
+export function useSaveKioskSequence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (sequence: KioskTap[]) => {
+      const { error } = await supabase()
+        .from("app_settings")
+        .upsert({ key: "kiosk_sequence", value: sequence });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["kiosk-sequence"] }),
+  });
+}
