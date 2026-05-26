@@ -122,31 +122,78 @@ function usePosition() {
   });
 }
 
-// ── Day ledger (cash book tab) ───────────────────────────────────────────────
-const REF_MODE: Record<string, string> = {
-  sale: "Sale", payment: "Payment", transfer: "Transfer",
-  expense: "Expense", intake: "Metal In", loan_repayment: "Loan",
-  chit: "Chit", writeoff: "Write-off", deposit: "Deposit",
+// ── Day sales ledger (cash book tab) ─────────────────────────────────────────
+const MISC_REF: Record<string, string> = {
+  transfer: "Transfer", expense: "Expense", intake: "Metal In",
+  loan_repayment: "Loan", chit: "Chit", writeoff: "Write-off",
+  deposit: "Deposit", payment: "Payment",
 };
 
-function useDayLedger(date: string) {
+function paymentNote(mode: string, metalWt: number): string {
+  const wt = metalWt > 0 ? ` (${Number(metalWt).toFixed(3)}g)` : "";
+  if (mode === "old_gold")   return `Old Gold${wt}`;
+  if (mode === "old_silver") return `Old Silver${wt}`;
+  if (mode === "cash")       return "Cash";
+  if (mode === "upi")        return "UPI / GPay";
+  if (mode === "bank")       return "Bank Transfer";
+  if (mode === "advance")    return "Advance";
+  if (mode === "chit_metal") return "Metal Chit";
+  return mode;
+}
+
+function useDaySalesLedger(date: string) {
   return useQuery({
-    queryKey: ["day-ledger", date],
+    queryKey: ["day-sales-ledger", date],
     queryFn: async () => {
       const client = supabase();
-      const [cashRes, bankRes] = await Promise.all([
+      const [salesRes, miscCashRes, miscBankRes] = await Promise.all([
+        client.from("sales")
+          .select("id, bill_no, total, customers(name), sale_items(description, metal, net_wt), sale_payments(mode, amount, metal_wt)")
+          .eq("bill_date", date).eq("status", "confirmed").order("created_at"),
         client.from("cash_ledger")
           .select("id, description, direction, amount, ref_type, created_at")
-          .eq("tx_date", date).order("created_at"),
+          .eq("tx_date", date).neq("ref_type", "sale").order("created_at"),
         client.from("bank_ledger")
           .select("id, description, direction, amount, ref_type, created_at")
-          .eq("tx_date", date).order("created_at"),
+          .eq("tx_date", date).neq("ref_type", "sale").order("created_at"),
       ]);
-      const cashEntries = (cashRes.data ?? []).map((e: any) => ({ ...e, source: "cash" as const }));
-      const bankEntries = (bankRes.data ?? []).map((e: any) => ({ ...e, source: "bank" as const }));
-      return [...cashEntries, ...bankEntries].sort((a, b) =>
+
+      const saleRows = (salesRes.data ?? []).map((s: any) => {
+        const items: any[] = s.sale_items ?? [];
+        const itemDesc = items.length === 0
+          ? (s.bill_no ?? "Sale")
+          : items.map((i: any) => {
+              const wt = Number(i.net_wt) > 0 ? `${Number(i.net_wt).toFixed(3)}g ` : "";
+              return `${wt}${i.description || (i.metal ?? "item").replace(/_/g, " ")}`;
+            }).join(", ");
+
+        const payments: { note: string; amount: number; mode: string }[] =
+          ((s.sale_payments ?? []) as any[])
+            .filter((p: any) => Number(p.amount) > 0)
+            .map((p: any) => ({
+              note: paymentNote(p.mode, Number(p.metal_wt ?? 0)),
+              amount: Number(p.amount),
+              mode: p.mode,
+            }));
+
+        return {
+          id: s.id as string,
+          billNo: s.bill_no as string,
+          itemDesc,
+          customerName: (s.customers as any)?.name as string | null ?? null,
+          credit: Number(s.total),
+          payments,
+        };
+      });
+
+      const miscEntries = [
+        ...(miscCashRes.data ?? []).map((e: any) => ({ ...e, src: "Cash" })),
+        ...(miscBankRes.data ?? []).map((e: any) => ({ ...e, src: "Bank" })),
+      ].sort((a: any, b: any) =>
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
+
+      return { saleRows, miscEntries };
     },
   });
 }
@@ -186,7 +233,7 @@ export default function DailySheetPage() {
   const { data: pos } = usePosition();
   const { data: cashCount } = useCashCount(date);
   const [viewTab, setViewTab] = useState<ViewTab>("summary");
-  const { data: ledgerEntries = [], isLoading: ledgerLoading } = useDayLedger(date);
+  const { data: salesLedger, isLoading: ledgerLoading } = useDaySalesLedger(date);
 
   // Cash reconciliation
   const [showCountForm, setShowCountForm] = useState(false);
@@ -267,11 +314,27 @@ export default function DailySheetPage() {
   });
 
   // Cash Book tab calculations
-  const ledgerDebitTotal  = ledgerEntries.filter(e => e.direction === "out").reduce((s, e) => s + Number(e.amount), 0);
-  const ledgerCreditTotal = ledgerEntries.filter(e => e.direction === "in").reduce((s, e) => s + Number(e.amount), 0);
-  const ledgerNet = ledgerCreditTotal - ledgerDebitTotal;
+  const saleRows    = salesLedger?.saleRows ?? [];
+  const miscEntries = (salesLedger?.miscEntries ?? []) as any[];
+
+  // Debit column = payments received (old gold, cash, bank, UPI) + misc "out"
+  const saleDebitTotal  = saleRows.reduce((s, r) => s + r.payments.reduce((ps, p) => ps + p.amount, 0), 0);
+  const miscDebitTotal  = miscEntries.filter(e => e.direction === "out").reduce((s: number, e) => s + Number(e.amount), 0);
+  const grandDebit  = saleDebitTotal + miscDebitTotal;
+
+  // Credit column = sale totals + misc "in"
+  const saleCreditTotal = saleRows.reduce((s, r) => s + r.credit, 0);
+  const miscCreditTotal = miscEntries.filter(e => e.direction === "in").reduce((s: number, e) => s + Number(e.amount), 0);
+  const grandCredit = saleCreditTotal + miscCreditTotal;
+
+  // Opening/Closing: based on actual cash+bank ledger movements today
   const combinedCurrent = pos ? (pos.currentCash + pos.currentBank) : null;
-  const openingBalance  = combinedCurrent !== null ? combinedCurrent - ledgerNet : null;
+  const todayCashBankIn =
+    saleRows.flatMap(r => r.payments).filter(p => p.mode === "cash" || p.mode === "upi" || p.mode === "bank")
+      .reduce((s, p) => s + p.amount, 0) +
+    miscEntries.filter(e => e.direction === "in").reduce((s: number, e) => s + Number(e.amount), 0);
+  const todayCashBankOut = miscEntries.filter(e => e.direction === "out").reduce((s: number, e) => s + Number(e.amount), 0);
+  const openingBalance  = combinedCurrent !== null ? combinedCurrent - todayCashBankIn + todayCashBankOut : null;
   const closingBalance  = combinedCurrent;
 
   return (
@@ -298,11 +361,12 @@ export default function DailySheetPage() {
         <div className="space-y-4">
           {!pos?.hasOpening && (
             <div className="bg-warn/5 border border-warn/30 rounded-xl px-4 py-3 text-sm text-ink-dim">
-              Opening balance not set. Set it in the <button onClick={() => setViewTab("summary")} className="text-gold hover:underline">Summary tab</button> first.
+              Opening balance not set. Set it in the{" "}
+              <button onClick={() => setViewTab("summary")} className="text-gold hover:underline">Summary tab</button> first.
             </div>
           )}
 
-          {/* Balance summary strip */}
+          {/* Balance strip */}
           {pos?.hasOpening && openingBalance !== null && closingBalance !== null && (
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-white rounded-xl border border-line p-4 shadow-soft text-center">
@@ -311,11 +375,9 @@ export default function DailySheetPage() {
                 <p className="text-xs text-ink-dim mt-0.5">Cash + Bank</p>
               </div>
               <div className="bg-white rounded-xl border border-line p-4 shadow-soft text-center">
-                <p className="text-xs text-ink-dim mb-1">Net Movement</p>
-                <p className={`text-lg font-bold ${ledgerNet >= 0 ? "text-ok" : "text-err"}`}>
-                  {ledgerNet >= 0 ? "+" : ""}{inr(ledgerNet)}
-                </p>
-                <p className="text-xs text-ink-dim mt-0.5">Credit − Debit</p>
+                <p className="text-xs text-ink-dim mb-1">Today Sales</p>
+                <p className="text-lg font-bold text-ok">{inr(saleCreditTotal)}</p>
+                <p className="text-xs text-ink-dim mt-0.5">{saleRows.length} bill{saleRows.length !== 1 ? "s" : ""}</p>
               </div>
               <div className="bg-white rounded-xl border border-line p-4 shadow-soft text-center">
                 <p className="text-xs text-ink-dim mb-1">Closing Balance</p>
@@ -330,72 +392,94 @@ export default function DailySheetPage() {
             <p className="text-ink-dim text-sm">Loading…</p>
           ) : (
             <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
-              <table className="w-full text-sm" style={{ minWidth: "540px" }}>
+              <table className="w-full text-sm" style={{ minWidth: "560px" }}>
                 <thead>
                   <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
-                    <th className="text-left px-4 py-2.5 w-8">#</th>
-                    <th className="text-left px-3 py-2.5">Description</th>
-                    <th className="text-left px-3 py-2.5">Mode</th>
-                    <th className="text-right px-3 py-2.5 text-err">Debit (Out)</th>
-                    <th className="text-right px-4 py-2.5 text-ok">Credit (In)</th>
+                    <th className="text-left px-4 py-2.5">Item Description</th>
+                    <th className="text-left px-3 py-2.5">Debit Note</th>
+                    <th className="text-right px-3 py-2.5 text-err">Debit</th>
+                    <th className="text-right px-4 py-2.5 text-ok">Credit</th>
                   </tr>
                 </thead>
                 <tbody>
                   {/* Opening balance row */}
                   {pos?.hasOpening && openingBalance !== null && (
                     <tr className="border-b border-line bg-gold/5">
-                      <td className="px-4 py-2.5 text-xs text-ink-dim font-semibold">OB</td>
-                      <td className="px-3 py-2.5 font-semibold text-gold">Opening Balance</td>
-                      <td className="px-3 py-2.5" />
-                      <td className="px-3 py-2.5" />
-                      <td className="px-4 py-2.5 text-right font-mono font-bold text-gold">{inr(openingBalance)}</td>
+                      <td className="px-4 py-2 font-semibold text-gold text-xs">Opening Balance</td>
+                      <td className="px-3 py-2 text-xs text-ink-dim">Closing Balance</td>
+                      <td className="px-3 py-2 text-right font-mono text-xs font-semibold text-gold">{inr(openingBalance)}</td>
+                      <td className="px-4 py-2 text-right font-mono text-xs font-semibold text-gold">
+                        {closingBalance !== null ? inr(closingBalance) : ""}
+                      </td>
                     </tr>
                   )}
 
-                  {ledgerEntries.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-ink-dim">No transactions on {date}</td>
-                    </tr>
-                  ) : ledgerEntries.map((e, i) => {
-                    const ref = REF_MODE[(e as any).ref_type ?? ""] ?? (e as any).ref_type ?? "";
-                    const src = (e as any).source === "cash" ? "Cash" : "Bank";
-                    const modeStr = ref ? `${src} · ${ref}` : src;
-                    return (
-                      <tr key={(e as any).id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                        <td className="px-4 py-2.5 text-xs text-ink-dim">{i + 1}</td>
-                        <td className="px-3 py-2.5">{(e as any).description || "—"}</td>
-                        <td className="px-3 py-2.5">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                            (e as any).source === "cash" ? "bg-gold/10 text-gold-dark" : "bg-info/10 text-info"
-                          }`}>
-                            {modeStr}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5 text-right font-mono text-err">
-                          {(e as any).direction === "out" ? inr(Number((e as any).amount)) : ""}
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-mono text-ok">
-                          {(e as any).direction === "in" ? inr(Number((e as any).amount)) : ""}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {/* Sale rows */}
+                  {saleRows.length === 0 && miscEntries.length === 0 ? (
+                    <tr><td colSpan={4} className="px-4 py-8 text-center text-ink-dim">No transactions on {date}</td></tr>
+                  ) : (
+                    <>
+                      {saleRows.map((sale, si) => {
+                        const firstPay = sale.payments[0];
+                        const restPay  = sale.payments.slice(1);
+                        const label = sale.customerName
+                          ? `${sale.itemDesc} (${sale.customerName})`
+                          : sale.itemDesc;
+                        return (
+                          <tr key={sale.id} className={`border-b border-line hover:bg-canvas/50 ${restPay.length > 0 ? "border-b-0" : ""}`}>
+                            <td className="px-4 py-2 align-top" rowSpan={1 + restPay.length}>
+                              <div className="text-sm">{label}</div>
+                              <div className="text-xs text-ink-dim mt-0.5">{sale.billNo}</div>
+                            </td>
+                            <td className="px-3 py-2 text-xs text-ink-dim">
+                              {firstPay ? firstPay.note : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono text-xs text-err">
+                              {firstPay ? inr(firstPay.amount) : ""}
+                            </td>
+                            <td className="px-4 py-2 text-right font-mono text-xs font-semibold text-ok">
+                              {inr(sale.credit)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+
+                      {/* Payment sub-rows (2nd, 3rd payment modes) */}
+                      {saleRows.flatMap((sale) =>
+                        sale.payments.slice(1).map((pay, pi) => (
+                          <tr key={`${sale.id}-p${pi}`} className="border-b border-line hover:bg-canvas/50">
+                            <td className="px-3 py-1.5 text-xs text-ink-dim">{pay.note}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-xs text-err">{inr(pay.amount)}</td>
+                            <td className="px-4 py-1.5" />
+                          </tr>
+                        ))
+                      )}
+
+                      {/* Misc (non-sale) entries */}
+                      {miscEntries.map((e: any, mi: number) => (
+                        <tr key={`misc-${mi}`} className="border-b border-line hover:bg-canvas/50">
+                          <td className="px-4 py-2 text-sm">{e.description || "—"}</td>
+                          <td className="px-3 py-2 text-xs text-ink-dim">
+                            {e.src} · {MISC_REF[e.ref_type] ?? e.ref_type ?? ""}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-xs text-err">
+                            {e.direction === "out" ? inr(Number(e.amount)) : ""}
+                          </td>
+                          <td className="px-4 py-2 text-right font-mono text-xs text-ok">
+                            {e.direction === "in" ? inr(Number(e.amount)) : ""}
+                          </td>
+                        </tr>
+                      ))}
+                    </>
+                  )}
                 </tbody>
                 <tfoot>
-                  <tr className="border-t-2 border-line bg-canvas">
-                    <td colSpan={3} className="px-4 py-2.5 text-xs font-semibold text-ink-dim uppercase tracking-wide">Totals</td>
-                    <td className="px-3 py-2.5 text-right font-mono font-semibold text-err">{inr(ledgerDebitTotal)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono font-semibold text-ok">{inr(ledgerCreditTotal)}</td>
+                  <tr className="border-t-2 border-line bg-canvas font-semibold">
+                    <td className="px-4 py-2.5 text-xs text-ink-dim uppercase tracking-wide">Total</td>
+                    <td className="px-3 py-2.5" />
+                    <td className="px-3 py-2.5 text-right font-mono text-err">{inr(grandDebit)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-ok">{inr(grandCredit)}</td>
                   </tr>
-                  {pos?.hasOpening && closingBalance !== null && (
-                    <tr className="border-t border-line bg-gold/5">
-                      <td className="px-4 py-2.5 text-xs text-ink-dim font-semibold">CB</td>
-                      <td className="px-3 py-2.5 font-semibold text-gold">Closing Balance</td>
-                      <td className="px-3 py-2.5" />
-                      <td className="px-3 py-2.5" />
-                      <td className="px-4 py-2.5 text-right font-mono font-bold text-gold">{inr(closingBalance)}</td>
-                    </tr>
-                  )}
                 </tfoot>
               </table>
             </div>
