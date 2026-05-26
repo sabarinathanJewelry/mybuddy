@@ -122,6 +122,35 @@ function usePosition() {
   });
 }
 
+// ── Day ledger (cash book tab) ───────────────────────────────────────────────
+const REF_MODE: Record<string, string> = {
+  sale: "Sale", payment: "Payment", transfer: "Transfer",
+  expense: "Expense", intake: "Metal In", loan_repayment: "Loan",
+  chit: "Chit", writeoff: "Write-off", deposit: "Deposit",
+};
+
+function useDayLedger(date: string) {
+  return useQuery({
+    queryKey: ["day-ledger", date],
+    queryFn: async () => {
+      const client = supabase();
+      const [cashRes, bankRes] = await Promise.all([
+        client.from("cash_ledger")
+          .select("id, description, direction, amount, ref_type, created_at")
+          .eq("tx_date", date).order("created_at"),
+        client.from("bank_ledger")
+          .select("id, description, direction, amount, ref_type, created_at")
+          .eq("tx_date", date).order("created_at"),
+      ]);
+      const cashEntries = (cashRes.data ?? []).map((e: any) => ({ ...e, source: "cash" as const }));
+      const bankEntries = (bankRes.data ?? []).map((e: any) => ({ ...e, source: "bank" as const }));
+      return [...cashEntries, ...bankEntries].sort((a, b) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+    },
+  });
+}
+
 function useCashCount(date: string) {
   return useQuery({
     queryKey: ["cash_count", date],
@@ -147,6 +176,8 @@ function StatCard({ label, value, sub, color = "text-ink" }: StatCardProps) {
   );
 }
 
+type ViewTab = "summary" | "ledger";
+
 export default function DailySheetPage() {
   const t = useT();
   const date = useGlobalDate((s) => s.date);
@@ -154,6 +185,8 @@ export default function DailySheetPage() {
   const { data, isLoading } = useDaily(date);
   const { data: pos } = usePosition();
   const { data: cashCount } = useCashCount(date);
+  const [viewTab, setViewTab] = useState<ViewTab>("summary");
+  const { data: ledgerEntries = [], isLoading: ledgerLoading } = useDayLedger(date);
 
   // Cash reconciliation
   const [showCountForm, setShowCountForm] = useState(false);
@@ -233,12 +266,145 @@ export default function DailySheetPage() {
     },
   });
 
+  // Cash Book tab calculations
+  const ledgerDebitTotal  = ledgerEntries.filter(e => e.direction === "out").reduce((s, e) => s + Number(e.amount), 0);
+  const ledgerCreditTotal = ledgerEntries.filter(e => e.direction === "in").reduce((s, e) => s + Number(e.amount), 0);
+  const ledgerNet = ledgerCreditTotal - ledgerDebitTotal;
+  const combinedCurrent = pos ? (pos.currentCash + pos.currentBank) : null;
+  const openingBalance  = combinedCurrent !== null ? combinedCurrent - ledgerNet : null;
+  const closingBalance  = combinedCurrent;
+
   return (
     <div className="max-w-3xl mx-auto space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-ink">{t("daily_sheet")}</h1>
         <span className="text-sm text-ink-dim">{date}</span>
       </div>
+
+      {/* Tab switcher */}
+      <div className="flex gap-1 border-b border-line pb-1">
+        {(["summary", "ledger"] as ViewTab[]).map(tab => (
+          <button key={tab} onClick={() => setViewTab(tab)}
+            className={`px-4 py-1.5 text-sm rounded-lg2 transition-colors ${
+              viewTab === tab ? "bg-gold text-white" : "border border-line text-ink-dim hover:text-ink"
+            }`}>
+            {tab === "summary" ? "Summary" : "Cash Book"}
+          </button>
+        ))}
+      </div>
+
+      {/* ── CASH BOOK TAB ───────────────────────────────── */}
+      {viewTab === "ledger" && (
+        <div className="space-y-4">
+          {!pos?.hasOpening && (
+            <div className="bg-warn/5 border border-warn/30 rounded-xl px-4 py-3 text-sm text-ink-dim">
+              Opening balance not set. Set it in the <button onClick={() => setViewTab("summary")} className="text-gold hover:underline">Summary tab</button> first.
+            </div>
+          )}
+
+          {/* Balance summary strip */}
+          {pos?.hasOpening && openingBalance !== null && closingBalance !== null && (
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-white rounded-xl border border-line p-4 shadow-soft text-center">
+                <p className="text-xs text-ink-dim mb-1">Opening Balance</p>
+                <p className="text-lg font-bold text-gold">{inr(openingBalance)}</p>
+                <p className="text-xs text-ink-dim mt-0.5">Cash + Bank</p>
+              </div>
+              <div className="bg-white rounded-xl border border-line p-4 shadow-soft text-center">
+                <p className="text-xs text-ink-dim mb-1">Net Movement</p>
+                <p className={`text-lg font-bold ${ledgerNet >= 0 ? "text-ok" : "text-err"}`}>
+                  {ledgerNet >= 0 ? "+" : ""}{inr(ledgerNet)}
+                </p>
+                <p className="text-xs text-ink-dim mt-0.5">Credit − Debit</p>
+              </div>
+              <div className="bg-white rounded-xl border border-line p-4 shadow-soft text-center">
+                <p className="text-xs text-ink-dim mb-1">Closing Balance</p>
+                <p className="text-lg font-bold text-ok">{inr(closingBalance)}</p>
+                <p className="text-xs text-ink-dim mt-0.5">Cash + Bank</p>
+              </div>
+            </div>
+          )}
+
+          {/* Ledger table */}
+          {ledgerLoading ? (
+            <p className="text-ink-dim text-sm">Loading…</p>
+          ) : (
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+              <table className="w-full text-sm" style={{ minWidth: "540px" }}>
+                <thead>
+                  <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                    <th className="text-left px-4 py-2.5 w-8">#</th>
+                    <th className="text-left px-3 py-2.5">Description</th>
+                    <th className="text-left px-3 py-2.5">Mode</th>
+                    <th className="text-right px-3 py-2.5 text-err">Debit (Out)</th>
+                    <th className="text-right px-4 py-2.5 text-ok">Credit (In)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Opening balance row */}
+                  {pos?.hasOpening && openingBalance !== null && (
+                    <tr className="border-b border-line bg-gold/5">
+                      <td className="px-4 py-2.5 text-xs text-ink-dim font-semibold">OB</td>
+                      <td className="px-3 py-2.5 font-semibold text-gold">Opening Balance</td>
+                      <td className="px-3 py-2.5" />
+                      <td className="px-3 py-2.5" />
+                      <td className="px-4 py-2.5 text-right font-mono font-bold text-gold">{inr(openingBalance)}</td>
+                    </tr>
+                  )}
+
+                  {ledgerEntries.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-8 text-center text-ink-dim">No transactions on {date}</td>
+                    </tr>
+                  ) : ledgerEntries.map((e, i) => {
+                    const ref = REF_MODE[(e as any).ref_type ?? ""] ?? (e as any).ref_type ?? "";
+                    const src = (e as any).source === "cash" ? "Cash" : "Bank";
+                    const modeStr = ref ? `${src} · ${ref}` : src;
+                    return (
+                      <tr key={(e as any).id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                        <td className="px-4 py-2.5 text-xs text-ink-dim">{i + 1}</td>
+                        <td className="px-3 py-2.5">{(e as any).description || "—"}</td>
+                        <td className="px-3 py-2.5">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                            (e as any).source === "cash" ? "bg-gold/10 text-gold-dark" : "bg-info/10 text-info"
+                          }`}>
+                            {modeStr}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono text-err">
+                          {(e as any).direction === "out" ? inr(Number((e as any).amount)) : ""}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono text-ok">
+                          {(e as any).direction === "in" ? inr(Number((e as any).amount)) : ""}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-line bg-canvas">
+                    <td colSpan={3} className="px-4 py-2.5 text-xs font-semibold text-ink-dim uppercase tracking-wide">Totals</td>
+                    <td className="px-3 py-2.5 text-right font-mono font-semibold text-err">{inr(ledgerDebitTotal)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono font-semibold text-ok">{inr(ledgerCreditTotal)}</td>
+                  </tr>
+                  {pos?.hasOpening && closingBalance !== null && (
+                    <tr className="border-t border-line bg-gold/5">
+                      <td className="px-4 py-2.5 text-xs text-ink-dim font-semibold">CB</td>
+                      <td className="px-3 py-2.5 font-semibold text-gold">Closing Balance</td>
+                      <td className="px-3 py-2.5" />
+                      <td className="px-3 py-2.5" />
+                      <td className="px-4 py-2.5 text-right font-mono font-bold text-gold">{inr(closingBalance)}</td>
+                    </tr>
+                  )}
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── SUMMARY TAB ─────────────────────────────────── */}
+      {viewTab === "summary" && <>
 
       {/* Opening balance setup banner */}
       {pos && !pos.hasOpening && !showOpeningForm && (
@@ -603,6 +769,8 @@ export default function DailySheetPage() {
             className="text-gold hover:underline">Edit</button>
         </p>
       )}
+
+      </> /* end summary tab */}
     </div>
   );
 }
