@@ -16,11 +16,13 @@ export default function RateStrip() {
   ];
 
   return (
-    <Link href="/board-rate" className="flex items-center gap-2 flex-wrap">
+    <Link href="/board-rate" className="flex items-center gap-2">
       {chips.map((c) => (
         <span
           key={c.label}
-          className="inline-flex items-center gap-1 text-xs bg-gold/10 text-gold-dark border border-gold/20 rounded-full px-2.5 py-0.5"
+          className={`inline-flex items-center gap-1 text-xs bg-gold/10 text-gold-dark border border-gold/20 rounded-full px-2 py-0.5 ${
+            c.label === "24K" || c.label === "18K" ? "hidden md:inline-flex" : ""
+          }`}
         >
           <span className="font-semibold">{c.label}</span>
           <span>{inr(c.value)}</span>

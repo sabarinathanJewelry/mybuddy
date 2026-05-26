@@ -181,7 +181,7 @@ export default function CustomersPage() {
         isLoading ? (
           <p className="text-ink-dim text-sm">{t("loading")}</p>
         ) : (
-          <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+          <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
@@ -239,7 +239,7 @@ export default function CustomersPage() {
 
             {/* Customers who owe us */}
             {owingRows.length > 0 && (
-              <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+              <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
                 <div className="px-4 py-2.5 bg-err/5 border-b border-line">
                   <p className="text-xs font-semibold text-err uppercase tracking-wide">Amount Due to Company</p>
                 </div>
@@ -286,7 +286,7 @@ export default function CustomersPage() {
 
             {/* Customers with advance credit */}
             {creditRows.length > 0 && (
-              <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+              <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
                 <div className="px-4 py-2.5 bg-ok/5 border-b border-line">
                   <p className="text-xs font-semibold text-ok uppercase tracking-wide">Advance Credit (Company Owes Them)</p>
                 </div>

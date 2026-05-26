@@ -119,8 +119,8 @@ export default function BoardRatePage() {
         {isLoading ? (
           <p className="text-ink-dim text-sm">{t("loading")}</p>
         ) : (
-          <div className="bg-white rounded-xl border border-line overflow-hidden shadow-soft">
-            <table className="w-full text-sm">
+          <div className="bg-white rounded-xl border border-line overflow-x-auto shadow-soft">
+            <table className="w-full text-sm" style={{ minWidth: "360px" }}>
               <thead>
                 <tr className="border-b border-line bg-canvas text-xs text-ink-dim">
                   <th className="text-left px-4 py-2.5">{t("effective_date")}</th>

@@ -111,7 +111,7 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
         });
 
         return (
-          <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+          <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
@@ -156,7 +156,7 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
 
       {/* Sales tab */}
       {tab === "sales" && !isLoading && (
-        <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+        <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
               <th className="text-left px-4 py-2.5">{t("bill_no")}</th>
@@ -187,7 +187,7 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
               Customer has {inr(balance)} advance — apply it to delivered orders below to clear the balance.
             </div>
           )}
-          <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+          <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                 <th className="text-left px-4 py-2.5">Order No</th>
@@ -279,7 +279,7 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
 
       {/* Payments tab */}
       {tab === "payments" && !isLoading && (
-        <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+        <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
               <th className="text-left px-4 py-2.5">{t("date")}</th>
@@ -376,7 +376,7 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
               + {t("writeoff")}
             </Link>
           </div>
-          <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+          <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                 <th className="text-left px-4 py-2.5">{t("date")}</th>

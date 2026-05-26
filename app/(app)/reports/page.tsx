@@ -212,7 +212,7 @@ function MetalCard({ title, color, data, purchases }: {
 }) {
   const grossProfit = data.revenueExGst - purchases.amount;
   return (
-    <div className={clsx("bg-white rounded-xl border border-line shadow-soft overflow-hidden")}>
+    <div className={clsx("bg-white rounded-xl border border-line shadow-soft overflow-x-auto")}>
       <div className={clsx("px-4 py-2.5 border-b border-line font-semibold text-sm", color)}>
         {title}
         <span className="ml-2 text-xs font-normal text-ink-dim">{data.count} item{data.count !== 1 ? "s" : ""}</span>
@@ -345,7 +345,7 @@ function ProductTable({ title, color, items, showGrams = true, mergeMode, mergeS
   }
 
   return (
-    <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+    <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
       <div className={clsx("px-4 py-2.5 border-b border-line font-semibold text-sm flex items-center justify-between", color)}>
         <span>{title} <span className="ml-1 text-xs font-normal text-ink-dim">{items.length} item{items.length !== 1 ? "s" : ""}</span></span>
         <span className="font-bold">{inr(totalRevenue)}</span>
@@ -616,7 +616,7 @@ export default function ReportsPage() {
 
           {/* Silver MPR */}
           {mprItems.length > 0 && (
-            <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
               <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-info bg-info/5">
                 Silver MPR (Fixed-price items)
                 <span className="ml-2 text-xs font-normal text-ink-dim">{mprItems.length} items</span>
@@ -639,7 +639,7 @@ export default function ReportsPage() {
           )}
 
           {/* Service income summary */}
-          <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+          <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
             <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-ok bg-ok/5">
               Service Income Breakdown (Making + VA + Stone/Diamond)
             </div>
@@ -664,7 +664,7 @@ export default function ReportsPage() {
           </div>
 
           {/* Expenses */}
-          <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+          <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
             <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-err bg-err/5">
               Operating Expenses
             </div>
@@ -698,7 +698,7 @@ export default function ReportsPage() {
 
           {/* Old Metal Flow — exchange (assets) vs purchased (costs) */}
           {(exchGoldWt > 0 || exchSilvWt > 0 || oldGoldBuyWt > 0 || oldSilverBuyWt > 0) && (
-            <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
               <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-warn bg-warn/5">
                 Old Metal Acquired this Period
               </div>
@@ -744,7 +744,7 @@ export default function ReportsPage() {
           )}
 
           {/* Final P&L summary */}
-          <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+          <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
             <div className="px-4 py-2.5 border-b border-line font-semibold text-sm">Profit & Loss Summary</div>
             <div className="divide-y divide-line text-sm">
               {[
@@ -883,7 +883,7 @@ export default function ReportsPage() {
 
                 {/* Category-wise detail tables */}
                 {cats.map(([cat, d]) => (
-                  <div key={cat} className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+                  <div key={cat} className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
                     <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-err bg-err/5 flex justify-between">
                       <span>{cat}</span>
                       <span>{inr(d.total)}</span>
@@ -972,7 +972,7 @@ export default function ReportsPage() {
                 </div>
 
                 {/* Results table */}
-                <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+                <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
                   <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-ink bg-canvas/50">
                     Results for &ldquo;{itemTerm}&rdquo;
                     <span className="ml-2 text-xs font-normal text-ink-dim">{totalQty} item{totalQty !== 1 ? "s" : ""}</span>
@@ -1034,7 +1034,7 @@ export default function ReportsPage() {
 
       {/* ── SALES DETAIL TAB ────────────────────────────────────── */}
       {tab === "detail" && (
-        <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+        <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
               <th className="text-left px-4 py-2.5">{t("bill_no")}</th>

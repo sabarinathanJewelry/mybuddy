@@ -58,7 +58,7 @@ export default function Topbar() {
       {/* Env badge */}
       <span
         className={clsx(
-          "shrink-0 text-xs font-bold rounded-full px-2.5 py-1",
+          "shrink-0 hidden md:inline-flex text-xs font-bold rounded-full px-2.5 py-1",
           env.deployEnv === "server"
             ? "bg-ok-bg text-ok"
             : "bg-warn/10 text-warn"

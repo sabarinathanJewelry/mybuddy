@@ -563,8 +563,8 @@ function RequestsTab() {
       </div>
 
       {isLoading ? <p className="text-ink-dim text-sm">Loading…</p> : (
-        <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+          <table className="w-full text-sm" style={{ minWidth: "680px" }}>
             <thead>
               <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                 <th className="text-left px-4 py-2.5">Staff</th>
@@ -715,7 +715,7 @@ function StaffTab() {
         </label>
       </div>
 
-      <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+      <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
@@ -1052,8 +1052,8 @@ function LeavesTab({ isAdmin, myBioUserId, myName }: {
 
       {/* Leave list — all users see all rows */}
       {isLoading ? <p className="text-ink-dim text-sm">Loading…</p> : (
-        <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+          <table className="w-full text-sm" style={{ minWidth: "680px" }}>
             <thead>
               <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                 <th className="text-left px-4 py-2.5">Staff</th>
@@ -1469,7 +1469,7 @@ export default function AttendancePage() {
               {!syncing && <p className="text-xs mt-1">Run migrations 025–029 in Supabase, then sync the device.</p>}
             </div>
           ) : (
-            <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-canvas text-xs text-ink-dim border-b border-line">

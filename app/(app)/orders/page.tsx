@@ -819,7 +819,7 @@ export default function OrdersPage() {
             const isDelivering = deliverOrderId === o.id;
 
             return (
-              <div key={o.id} className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+              <div key={o.id} className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
                 {/* ── Row header (always visible) */}
                 <div className="flex flex-wrap items-center gap-3 px-4 py-3 cursor-pointer hover:bg-canvas/50"
                   onClick={() => setExpanded(isExpanded ? null : o.id)}>

@@ -700,8 +700,8 @@ export default function MetalFlowPage() {
           )}
 
           {intakeLoading ? <p className="text-ink-dim text-sm">{t("loading")}</p> : (
-            <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+              <table className="w-full text-sm" style={{ minWidth: "700px" }}>
                 <thead>
                   <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                     <th className="px-4 py-2.5 w-8">
@@ -1259,11 +1259,11 @@ export default function MetalFlowPage() {
 
           {/* Dispatch history */}
           {dispatchLoading ? <p className="text-ink-dim text-sm">{t("loading")}</p> : (
-            <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
               <div className="px-4 py-2.5 border-b border-line bg-canvas">
                 <h3 className="text-xs font-semibold text-ink-dim">Dispatch History</h3>
               </div>
-              <table className="w-full text-sm">
+              <table className="w-full text-sm" style={{ minWidth: "480px" }}>
                 <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                   <th className="text-left px-4 py-2.5">Date</th>
                   <th className="text-left px-3 py-2.5">Metal</th>

@@ -60,8 +60,8 @@ export default function SalesPage() {
       {isLoading ? (
         <p className="text-ink-dim text-sm">{t("loading")}</p>
       ) : (
-        <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+          <table className="w-full text-sm" style={{ minWidth: "520px" }}>
             <thead>
               <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                 <th className="text-left px-4 py-2.5">{t("bill_no")}</th>
