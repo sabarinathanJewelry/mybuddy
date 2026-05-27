@@ -155,22 +155,33 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
     queryKey: ["day-sales-ledger", fromDate, toDate],
     queryFn: async () => {
       const client = supabase();
-      const [salesRes, miscCashRes, miscBankRes, advanceRes] = await Promise.all([
+      const [salesRes, orderRes, miscCashRes, miscBankRes, advanceRes] = await Promise.all([
         client.from("sales")
           .select("id, bill_no, bill_date, total, customers(name), sale_items(description, metal, net_wt), sale_payments(mode, amount, metal_wt)")
           .gte("bill_date", fromDate).lte("bill_date", toDate)
           .eq("status", "confirmed").order("bill_date").order("created_at"),
+        // Order payments grouped by order+date (handles old gold, UPI, cash, advance per order)
+        client.from("order_payments")
+          .select("id, order_id, pay_date, mode, amount, metal_wt, orders(order_no, customers(name))")
+          .gte("pay_date", fromDate).lte("pay_date", toDate)
+          .gt("amount", 0)
+          .order("pay_date").order("created_at"),
         client.from("cash_ledger")
           .select("id, description, direction, amount, ref_type, tx_date, created_at")
-          .gte("tx_date", fromDate).lte("tx_date", toDate).neq("ref_type", "sale").order("tx_date").order("created_at"),
+          .gte("tx_date", fromDate).lte("tx_date", toDate)
+          .neq("ref_type", "sale").neq("ref_type", "order")  // orders handled via order_payments
+          .order("tx_date").order("created_at"),
         client.from("bank_ledger")
           .select("id, description, direction, amount, ref_type, tx_date, created_at")
-          .gte("tx_date", fromDate).lte("tx_date", toDate).neq("ref_type", "sale").order("tx_date").order("created_at"),
-        // Advance used for non-cash purposes (chit installment, order redemption)
+          .gte("tx_date", fromDate).lte("tx_date", toDate)
+          .neq("ref_type", "sale").neq("ref_type", "order")
+          .order("tx_date").order("created_at"),
+        // Advance used for non-cash purposes (chit installment — order advance handled in orderRows)
         client.from("payments")
           .select("id, pay_date, amount, notes, created_at, customers(name)")
           .gte("pay_date", fromDate).lte("pay_date", toDate)
           .eq("mode", "advance").eq("direction", "out").eq("is_advance", true)
+          .not("notes", "ilike", "Order advance used%")
           .order("pay_date").order("created_at"),
       ]);
 
@@ -205,6 +216,38 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
         };
       });
 
+      // Group order_payments by (order_id, pay_date)
+      const orderMap = new Map<string, {
+        orderId: string; orderNo: string; payDate: string;
+        customerName: string | null; credit: number;
+        payments: { note: string; amount: number; mode: string }[];
+      }>();
+      for (const p of (orderRes.data ?? []) as any[]) {
+        const key = `${p.order_id}::${p.pay_date}`;
+        if (!orderMap.has(key)) {
+          orderMap.set(key, {
+            orderId: p.order_id,
+            orderNo: (p.orders as any)?.order_no ?? "Order",
+            payDate: p.pay_date as string,
+            customerName: (p.orders as any)?.customers?.name ?? null,
+            credit: 0,
+            payments: [],
+          });
+        }
+        const row = orderMap.get(key)!;
+        row.credit += Number(p.amount);
+        // Non-cash, non-advance modes go in Debit (advance shown in advance section)
+        if (p.mode !== "cash" && p.mode !== "advance") {
+          row.payments.push({
+            note: paymentNote(p.mode, Number(p.metal_wt ?? 0)),
+            amount: Number(p.amount),
+            mode: p.mode as string,
+          });
+        }
+      }
+      const orderRows = Array.from(orderMap.values())
+        .sort((a, b) => a.payDate.localeCompare(b.payDate));
+
       const advanceEntries = (advanceRes.data ?? []).map((e: any) => ({
         id: `adv-${e.id}`,
         description: (e.customers as any)?.name
@@ -227,7 +270,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
         return d !== 0 ? d : new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
 
-      return { saleRows, miscEntries };
+      return { saleRows, orderRows, miscEntries };
     },
   });
 }
@@ -393,6 +436,7 @@ export default function DailySheetPage() {
 
   // Cash Book tab calculations
   const saleRows    = salesLedger?.saleRows ?? [];
+  const orderRows   = (salesLedger?.orderRows ?? []) as any[];
   const miscEntries = (salesLedger?.miscEntries ?? []) as any[];
 
   // Bank-in entries are bank account receipts, not cash — always hide from cash book.
@@ -403,15 +447,16 @@ export default function DailySheetPage() {
     return true;
   });
 
-  // Debit = all payment modes per sale + cash/bank "out" (advance_out excluded from totals — non-cash)
-  const saleDebitTotal  = saleRows.reduce((s, r) => s + r.payments.reduce((ps, p) => ps + p.amount, 0), 0);
-  const miscDebitTotal  = visibleMisc.filter((e: any) => e.direction === "out").reduce((s: number, e: any) => s + Number(e.amount), 0);
-  const grandDebit  = saleDebitTotal + miscDebitTotal;
+  const rowDebit = (payments: { amount: number }[]) => payments.reduce((s, p) => s + p.amount, 0);
+  const grandDebit =
+    saleRows.reduce((s, r) => s + rowDebit(r.payments), 0) +
+    orderRows.reduce((s: number, r: any) => s + rowDebit(r.payments), 0) +
+    visibleMisc.filter((e: any) => e.direction === "out").reduce((s: number, e: any) => s + Number(e.amount), 0);
 
-  // Credit = sale totals + misc "in"
-  const saleCreditTotal = saleRows.reduce((s, r) => s + r.credit, 0);
-  const miscCreditTotal = visibleMisc.filter((e: any) => e.direction === "in").reduce((s: number, e: any) => s + Number(e.amount), 0);
-  const grandCredit = saleCreditTotal + miscCreditTotal;
+  const grandCredit =
+    saleRows.reduce((s, r) => s + r.credit, 0) +
+    orderRows.reduce((s: number, r: any) => s + r.credit, 0) +
+    visibleMisc.filter((e: any) => e.direction === "in").reduce((s: number, e: any) => s + Number(e.amount), 0);
 
   // Date-specific cash position (cash only, from useDateCashPosition)
   const openingCash  = cashPos?.openingCash ?? null;
@@ -536,7 +581,7 @@ export default function DailySheetPage() {
                     </tr>
                   )}
 
-                  {saleRows.length === 0 && visibleMisc.length === 0 ? (
+                  {saleRows.length === 0 && orderRows.length === 0 && visibleMisc.length === 0 ? (
                     <tr><td colSpan={4} className="px-4 py-8 text-center text-ink-dim">No transactions{multiDay ? ` from ${cbFrom} to ${cbTo}` : ` on ${cbFrom}`}</td></tr>
                   ) : <>
                     {/* Sale rows — sub-rows rendered inline so rowSpan works */}
@@ -578,7 +623,44 @@ export default function DailySheetPage() {
                       ];
                     })}
 
-                    {/* Misc (non-sale) entries */}
+                    {/* Order payment rows — same Credit/Debit logic as sales */}
+                    {orderRows.flatMap((ord: any) => {
+                      const firstPay = ord.payments[0];
+                      const restPay  = ord.payments.slice(1);
+                      const totalRows = 1 + restPay.length;
+                      const label = ord.customerName
+                        ? `${ord.customerName} — ${ord.orderNo}`
+                        : ord.orderNo;
+                      return [
+                        <tr key={`ord-${ord.orderId}-${ord.payDate}-0`}
+                          className={`hover:bg-canvas/50 ${restPay.length === 0 ? "border-b border-line" : ""}`}>
+                          <td rowSpan={totalRows}
+                            className="px-4 py-2.5 align-top border-b border-line border-r border-line/30" style={{ verticalAlign: "top" }}>
+                            <div className="text-sm font-medium">{label}</div>
+                            <div className="text-xs text-ink-dim mt-0.5">
+                              Order{multiDay ? ` · ${ord.payDate}` : ""}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5 text-xs text-ink-dim">{firstPay ? firstPay.note : "—"}</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-xs text-err">
+                            {firstPay ? inr(firstPay.amount) : ""}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono text-xs font-semibold text-ok">
+                            {inr(ord.credit)}
+                          </td>
+                        </tr>,
+                        ...restPay.map((pay: any, pi: number) => (
+                          <tr key={`ord-${ord.orderId}-${ord.payDate}-${pi + 1}`}
+                            className={`hover:bg-canvas/50 bg-canvas/20 ${pi === restPay.length - 1 ? "border-b border-line" : ""}`}>
+                            <td className="px-3 py-1.5 text-xs text-ink-dim pl-4">{pay.note}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-xs text-err">{inr(pay.amount)}</td>
+                            <td className="px-4 py-1.5" />
+                          </tr>
+                        )),
+                      ];
+                    })}
+
+                    {/* Misc (non-sale, non-order) entries */}
                     {visibleMisc.map((e: any, mi: number) => {
                       const isAdv = e.direction === "advance_out";
                       return (
