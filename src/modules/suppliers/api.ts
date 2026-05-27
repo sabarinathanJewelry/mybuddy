@@ -115,3 +115,43 @@ export function useSaveSupplierPayment() {
     onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ["supplier-360", vars.supplier_id] }),
   });
 }
+
+export function useUpdateSupplierPayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, supplierId, data }: { id: string; supplierId: string; data: Record<string, unknown> }) => {
+      const client = supabase();
+      const { error } = await client.from("supplier_payments").update(data).eq("id", id);
+      if (error) throw error;
+      // Re-sync ledger: delete old entries, insert new
+      await Promise.all([
+        client.from("cash_ledger").delete().eq("ref_type", "supplier_payment").eq("ref_id", id),
+        client.from("bank_ledger").delete().eq("ref_type", "supplier_payment").eq("ref_id", id),
+      ]);
+      if (data.mode === "cash") {
+        await client.from("cash_ledger").insert({ tx_date: data.pay_date, direction: "out", amount: data.amount, description: "Supplier payment", ref_type: "supplier_payment", ref_id: id });
+      } else if (data.mode === "bank" || data.mode === "upi") {
+        await client.from("bank_ledger").insert({ tx_date: data.pay_date, direction: "out", amount: data.amount, description: "Supplier payment", ref_type: "supplier_payment", ref_id: id });
+      }
+      return supplierId;
+    },
+    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ["supplier-360", vars.supplierId] }),
+  });
+}
+
+export function useDeleteSupplierPayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, supplierId }: { id: string; supplierId: string }) => {
+      const client = supabase();
+      await Promise.all([
+        client.from("cash_ledger").delete().eq("ref_type", "supplier_payment").eq("ref_id", id),
+        client.from("bank_ledger").delete().eq("ref_type", "supplier_payment").eq("ref_id", id),
+      ]);
+      const { error } = await client.from("supplier_payments").delete().eq("id", id);
+      if (error) throw error;
+      return supplierId;
+    },
+    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ["supplier-360", vars.supplierId] }),
+  });
+}

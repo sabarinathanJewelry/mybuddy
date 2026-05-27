@@ -2,7 +2,7 @@
 
 import { Fragment, use, useState } from "react";
 import Link from "next/link";
-import { useSupplier360, useSaveSupplierPurchase, useSaveSupplierPayment, useConfirmSuspenseVa, useUpsertSupplier } from "@/modules/suppliers/api";
+import { useSupplier360, useSaveSupplierPurchase, useSaveSupplierPayment, useUpdateSupplierPayment, useDeleteSupplierPayment, useConfirmSuspenseVa, useUpsertSupplier } from "@/modules/suppliers/api";
 import { useGlobalDate } from "@/stores/global-date";
 import { useT } from "@/i18n";
 import { inr, grams, shortDate } from "@/lib/format";
@@ -23,6 +23,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const { data: view, isLoading } = useSupplier360(id);
   const savePurchase = useSaveSupplierPurchase();
   const savePayment = useSaveSupplierPayment();
+  const updatePayment = useUpdateSupplierPayment();
+  const deletePayment = useDeleteSupplierPayment();
   const confirmVa = useConfirmSuspenseVa();
   const upsertSupplier = useUpsertSupplier();
 
@@ -34,6 +36,23 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
 
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ pay_date: globalDate, mode: "cash", amount: 0, metal_wt: 0, metal_purity: 91.6, cut_rate: 0, notes: "" });
+
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [editPayForm, setEditPayForm] = useState({ pay_date: globalDate, mode: "cash", amount: 0, metal_wt: 0, metal_purity: 91.6, cut_rate: 0, notes: "" });
+  const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
+
+  function openEditPayment(p: any) {
+    setEditingPaymentId(p.id);
+    setEditPayForm({ pay_date: p.pay_date, mode: p.mode, amount: Number(p.amount), metal_wt: Number(p.metal_wt) || 0, metal_purity: Number(p.metal_purity) || 91.6, cut_rate: Number(p.cut_rate) || 0, notes: p.notes ?? "" });
+    setDeletingPaymentId(null);
+  }
+
+  async function handleEditPaymentSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingPaymentId) return;
+    await updatePayment.mutateAsync({ id: editingPaymentId, supplierId: id, data: editPayForm });
+    setEditingPaymentId(null);
+  }
 
   // Suspense VA% editing
   const [editingVa, setEditingVa] = useState<{ id: string; gross_wt: number; purity_pct: number; va_pct: number } | null>(null);
@@ -314,18 +333,115 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                 <th className="text-right px-3 py-2.5 hidden sm:table-cell">Metal Wt</th>
                 <th className="text-right px-3 py-2.5 hidden sm:table-cell">Rate/g</th>
                 <th className="text-right px-3 py-2.5">{t("amount")}</th>
+                <th className="px-3 py-2.5" />
               </tr></thead>
               <tbody>
                 {view?.payments.map((p: any) => (
-                  <tr key={p.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                    <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.pay_date)}</td>
-                    <td className="px-3 py-2.5 capitalize">{p.mode}</td>
-                    <td className="px-3 py-2.5 text-right hidden sm:table-cell text-ink-dim">{p.metal_wt ? grams(p.metal_wt) : "—"}</td>
-                    <td className="px-3 py-2.5 text-right hidden sm:table-cell text-ink-dim">{p.cut_rate ? inr(p.cut_rate) : "—"}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-err">{inr(p.amount)}</td>
-                  </tr>
+                  <Fragment key={p.id}>
+                    <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
+                      <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.pay_date)}</td>
+                      <td className="px-3 py-2.5 capitalize">{p.mode}</td>
+                      <td className="px-3 py-2.5 text-right hidden sm:table-cell text-ink-dim">{p.metal_wt ? grams(p.metal_wt) : "—"}</td>
+                      <td className="px-3 py-2.5 text-right hidden sm:table-cell text-ink-dim">{p.cut_rate ? inr(p.cut_rate) : "—"}</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-err">{inr(p.amount)}</td>
+                      <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                        <button onClick={() => openEditPayment(p)}
+                          className="text-xs text-gold hover:underline mr-2">Edit</button>
+                        <button onClick={() => { setDeletingPaymentId(p.id); setEditingPaymentId(null); }}
+                          className="text-xs text-err hover:underline">Del</button>
+                      </td>
+                    </tr>
+
+                    {/* Inline edit form */}
+                    {editingPaymentId === p.id && (
+                      <tr className="border-b border-line bg-gold/5">
+                        <td colSpan={6} className="px-4 py-3">
+                          <form onSubmit={handleEditPaymentSave} className="space-y-3">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                              <div><label className="text-xs text-ink-dim">Date</label>
+                                <input type="date" value={editPayForm.pay_date}
+                                  onChange={(e) => setEditPayForm({ ...editPayForm, pay_date: e.target.value })} className={inp} /></div>
+                              <div><label className="text-xs text-ink-dim">Mode</label>
+                                <select value={editPayForm.mode}
+                                  onChange={(e) => setEditPayForm({ ...editPayForm, mode: e.target.value })} className={inp}>
+                                  {PAY_MODES.map((m) => <option key={m} value={m}>{m}</option>)}
+                                  <option value="cut_rate">Cut Rate</option>
+                                </select></div>
+                              <div><label className="text-xs text-ink-dim">Amount</label>
+                                <input type="number" step="0.01" value={editPayForm.amount}
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) => setEditPayForm({ ...editPayForm, amount: parseFloat(e.target.value) || 0 })}
+                                  className={inp} /></div>
+                              {(editPayForm.mode === "cash" || editPayForm.mode === "bank" || editPayForm.mode === "upi") && (
+                                <>
+                                  <div><label className="text-xs text-ink-dim">Metal Wt g <span className="text-ink-dim/50">(opt)</span></label>
+                                    <input type="number" step="0.001" value={editPayForm.metal_wt || ""}
+                                      onFocus={(e) => e.target.select()}
+                                      onChange={(e) => {
+                                        const wt = parseFloat(e.target.value) || 0;
+                                        setEditPayForm((f) => ({ ...f, metal_wt: wt, amount: f.cut_rate > 0 && wt > 0 ? Math.round(wt * f.cut_rate * 100) / 100 : f.amount }));
+                                      }}
+                                      className={inp} /></div>
+                                  <div><label className="text-xs text-ink-dim">Rate/g <span className="text-ink-dim/50">(opt)</span></label>
+                                    <input type="number" step="0.01" value={editPayForm.cut_rate || ""}
+                                      onFocus={(e) => e.target.select()}
+                                      onChange={(e) => {
+                                        const rate = parseFloat(e.target.value) || 0;
+                                        setEditPayForm((f) => ({ ...f, cut_rate: rate, amount: f.metal_wt > 0 && rate > 0 ? Math.round(f.metal_wt * rate * 100) / 100 : f.amount }));
+                                      }}
+                                      className={inp} /></div>
+                                </>
+                              )}
+                              {(editPayForm.mode === "old_gold" || editPayForm.mode === "old_silver") && (
+                                <>
+                                  <div><label className="text-xs text-ink-dim">Metal Wt</label>
+                                    <input type="number" step="0.001" value={editPayForm.metal_wt}
+                                      onFocus={(e) => e.target.select()}
+                                      onChange={(e) => setEditPayForm({ ...editPayForm, metal_wt: parseFloat(e.target.value) || 0 })}
+                                      className={inp} /></div>
+                                  <div><label className="text-xs text-ink-dim">Purity%</label>
+                                    <input type="number" step="0.01" value={editPayForm.metal_purity}
+                                      onFocus={(e) => e.target.select()}
+                                      onChange={(e) => setEditPayForm({ ...editPayForm, metal_purity: parseFloat(e.target.value) || 0 })}
+                                      className={inp} /></div>
+                                </>
+                              )}
+                            </div>
+                            <div className="flex gap-2">
+                              <button type="submit" disabled={updatePayment.isPending}
+                                className="bg-gold text-white text-sm px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                                {updatePayment.isPending ? "Saving…" : "Save Changes"}
+                              </button>
+                              <button type="button" onClick={() => setEditingPaymentId(null)}
+                                className="border border-line text-sm px-4 py-1.5 rounded-lg2">Cancel</button>
+                            </div>
+                            {updatePayment.isError && <p className="text-xs text-err">Save failed.</p>}
+                          </form>
+                        </td>
+                      </tr>
+                    )}
+
+                    {/* Inline delete confirmation */}
+                    {deletingPaymentId === p.id && (
+                      <tr className="border-b border-line bg-err/5">
+                        <td colSpan={6} className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm text-err">Delete payment of {inr(p.amount)} on {shortDate(p.pay_date)}?</span>
+                            <button
+                              disabled={deletePayment.isPending}
+                              onClick={() => deletePayment.mutate({ id: p.id, supplierId: id }, { onSuccess: () => setDeletingPaymentId(null) })}
+                              className="text-xs bg-err text-white px-3 py-1.5 rounded-lg2 disabled:opacity-50">
+                              {deletePayment.isPending ? "Deleting…" : "Yes, Delete"}
+                            </button>
+                            <button onClick={() => setDeletingPaymentId(null)}
+                              className="text-xs border border-line px-3 py-1.5 rounded-lg2">Cancel</button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
-                {!view?.payments.length && <tr><td colSpan={5} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
+                {!view?.payments.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
               </tbody>
             </table>
           </div>
