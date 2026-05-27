@@ -2,6 +2,7 @@
 
 import { Fragment, useState } from "react";
 import { usePayments, useSavePayment, useUpdatePayment, useDeletePayment } from "@/modules/payments/api";
+import type { PaymentFilters } from "@/modules/payments/api";
 import CustomerPicker from "@/modules/customers/customer-picker";
 import { useGlobalDate } from "@/stores/global-date";
 import { useT } from "@/i18n";
@@ -10,12 +11,20 @@ import type { Customer } from "@/modules/customers/types";
 import { clsx } from "clsx";
 
 const MODES = ["cash", "upi", "bank", "old_gold", "old_silver", "advance"];
+const MODE_LABELS: Record<string, string> = {
+  cash: "Cash", upi: "UPI / GPay", bank: "Bank", old_gold: "Old Gold",
+  old_silver: "Old Silver", advance: "Advance",
+};
 const inp = "w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold";
+const finp = "border border-line rounded-lg2 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold";
 
 export default function PaymentsPage() {
   const t = useT();
   const globalDate = useGlobalDate((s) => s.date);
-  const { data: payments, isLoading } = usePayments();
+
+  const [filters, setFilters] = useState<PaymentFilters>({});
+  const hasFilters = !!(filters.fromDate || filters.toDate || filters.mode || filters.direction || filters.search);
+  const { data: payments, isLoading } = usePayments(filters);
   const save = useSavePayment();
   const update = useUpdatePayment();
   const remove = useDeletePayment();
@@ -127,6 +136,59 @@ export default function PaymentsPage() {
           </div>
         </form>
       )}
+
+      {/* Filter bar */}
+      <div className="bg-white border border-line rounded-xl px-4 py-3 shadow-soft space-y-2">
+        <div className="flex flex-wrap gap-2 items-end">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-ink-dim">From</span>
+            <input type="date" value={filters.fromDate ?? ""} onChange={e => setFilters(f => ({ ...f, fromDate: e.target.value || undefined }))} className={finp} />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-ink-dim">To</span>
+            <input type="date" value={filters.toDate ?? ""} onChange={e => setFilters(f => ({ ...f, toDate: e.target.value || undefined }))} className={finp} />
+          </div>
+          <select value={filters.mode ?? ""} onChange={e => setFilters(f => ({ ...f, mode: e.target.value || undefined }))}
+            className={finp}>
+            <option value="">All Modes</option>
+            {MODES.map(m => <option key={m} value={m}>{MODE_LABELS[m] ?? m}</option>)}
+          </select>
+          <select value={filters.direction ?? ""} onChange={e => setFilters(f => ({ ...f, direction: e.target.value || undefined }))}
+            className={finp}>
+            <option value="">In &amp; Out</option>
+            <option value="in">In only</option>
+            <option value="out">Out only</option>
+          </select>
+          <input type="text" placeholder="Search name / note…" value={filters.search ?? ""}
+            onChange={e => setFilters(f => ({ ...f, search: e.target.value || undefined }))}
+            className={`${finp} w-44`} />
+          {hasFilters && (
+            <button onClick={() => setFilters({})} className="text-xs text-gold hover:underline ml-1">Clear</button>
+          )}
+          <span className="text-xs text-ink-dim ml-auto">{payments?.length ?? 0} records</span>
+        </div>
+
+        {/* Totals strip */}
+        {payments && payments.length > 0 && (
+          <div className="flex gap-4 pt-1 border-t border-line/50 text-xs">
+            <span className="text-ink-dim">Total In:
+              <span className="ml-1 font-mono font-semibold text-ok">
+                {inr((payments as any[]).filter(p => p.direction === "in").reduce((s, p) => s + Number(p.amount), 0))}
+              </span>
+            </span>
+            <span className="text-ink-dim">Total Out:
+              <span className="ml-1 font-mono font-semibold text-err">
+                {inr((payments as any[]).filter(p => p.direction === "out").reduce((s, p) => s + Number(p.amount), 0))}
+              </span>
+            </span>
+            <span className="text-ink-dim">Net:
+              <span className="ml-1 font-mono font-semibold text-ink">
+                {inr((payments as any[]).reduce((s, p) => s + (p.direction === "in" ? Number(p.amount) : -Number(p.amount)), 0))}
+              </span>
+            </span>
+          </div>
+        )}
+      </div>
 
       {isLoading ? <p className="text-ink-dim text-sm">{t("loading")}</p> : (
         <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">

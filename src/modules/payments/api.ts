@@ -3,17 +3,42 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 
-export function usePayments(limit = 50) {
+export interface PaymentFilters {
+  fromDate?: string;
+  toDate?: string;
+  mode?: string;
+  direction?: string;
+  search?: string;
+}
+
+export function usePayments(filters: PaymentFilters = {}) {
   return useQuery({
-    queryKey: ["payments", limit],
+    queryKey: ["payments", filters],
     queryFn: async () => {
-      const { data, error } = await supabase()
+      let q = supabase()
         .from("payments")
         .select("*, customers(name), suppliers(name)")
         .order("pay_date", { ascending: false })
-        .limit(limit);
+        .order("created_at", { ascending: false })
+        .limit(500);
+
+      if (filters.fromDate)   q = q.gte("pay_date", filters.fromDate);
+      if (filters.toDate)     q = q.lte("pay_date", filters.toDate);
+      if (filters.mode)       q = q.eq("mode", filters.mode);
+      if (filters.direction)  q = q.eq("direction", filters.direction);
+
+      const { data, error } = await q;
       if (error) throw error;
-      return data ?? [];
+
+      let result = (data ?? []) as any[];
+      if (filters.search) {
+        const s = filters.search.toLowerCase();
+        result = result.filter((p) =>
+          (p.customers?.name ?? "").toLowerCase().includes(s) ||
+          (p.notes ?? "").toLowerCase().includes(s)
+        );
+      }
+      return result;
     },
   });
 }
