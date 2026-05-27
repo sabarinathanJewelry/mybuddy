@@ -162,7 +162,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .eq("status", "confirmed").order("bill_date").order("created_at"),
         // Order payments grouped by order+date (handles old gold, UPI, cash, advance per order)
         client.from("order_payments")
-          .select("id, order_id, pay_date, mode, amount, metal_wt, orders(order_no, total, final_total, advance_paid, customers(name))")
+          .select("id, order_id, pay_date, mode, amount, metal_wt, orders(order_no, order_date, total, final_total, advance_paid, customers(name))")
           .gte("pay_date", fromDate).lte("pay_date", toDate)
           .gt("amount", 0)
           .order("pay_date").order("created_at"),
@@ -228,37 +228,45 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
         customerName: string | null; credit: number; balanceDue: number;
         payments: { note: string; amount: number; mode: string }[];
       }>();
+      const orderIsNew = new Map<string, boolean>(); // key → is new order (order_date === pay_date)
       for (const p of (orderRes.data ?? []) as any[]) {
         const key = `${p.order_id}::${p.pay_date}`;
         const od = p.orders as any;
+        const isNew = (od?.order_date ?? "") === (p.pay_date as string);
         if (!orderMap.has(key)) {
-          const orderTotal = Number(od?.final_total) || Number(od?.total) || 0;
-          const totalPaid  = Number(od?.advance_paid) || 0;
-          const balanceDue = Math.max(0, orderTotal - totalPaid);
+          orderIsNew.set(key, isNew);
+          const orderTotal = isNew ? (Number(od?.final_total) || Number(od?.total) || 0) : 0;
+          const totalPaid  = isNew ? (Number(od?.advance_paid) || 0) : 0;
+          const balanceDue = isNew ? Math.max(0, orderTotal - totalPaid) : 0;
           orderMap.set(key, {
             orderId: p.order_id,
             orderNo: od?.order_no ?? "Order",
             payDate: p.pay_date as string,
             customerName: od?.customers?.name ?? null,
-            credit: orderTotal > 0 ? orderTotal : 0,
+            credit: orderTotal,
             balanceDue,
             payments: [],
           });
         }
         const row = orderMap.get(key)!;
-        if (row.credit === 0) row.credit += Number(p.amount); // fallback if no order total set
-        // Non-cash, non-advance modes go in Debit (advance shown in advance section)
-        if (p.mode !== "cash" && p.mode !== "advance") {
-          row.payments.push({
-            note: paymentNote(p.mode, Number(p.metal_wt ?? 0)),
-            amount: Number(p.amount),
-            mode: p.mode as string,
-          });
+        const amt = Number(p.amount);
+        if (isNew) {
+          // New order: non-cash modes go to Debit
+          if (p.mode !== "cash" && p.mode !== "advance") {
+            row.payments.push({ note: paymentNote(p.mode, Number(p.metal_wt ?? 0)), amount: amt, mode: p.mode as string });
+          }
+        } else {
+          // Delivery: accumulate cash in Credit; non-cash goes to Debit
+          if (p.mode === "cash") {
+            row.credit += amt;
+          } else if (p.mode !== "advance") {
+            row.payments.push({ note: paymentNote(p.mode, Number(p.metal_wt ?? 0)), amount: amt, mode: p.mode as string });
+          }
         }
       }
-      // Add Balance Due at end of each order's payment list
-      for (const row of orderMap.values()) {
-        if (row.balanceDue > 0.005) {
+      // Add Balance Due only for new orders
+      for (const [key, row] of orderMap.entries()) {
+        if (orderIsNew.get(key) && row.balanceDue > 0.005) {
           row.payments.push({ note: "Balance Due", amount: row.balanceDue, mode: "balance" });
         }
       }
@@ -375,9 +383,9 @@ export default function DailySheetPage() {
 
   // Previous day cash count (for opening reference row)
   const prevDateStr = (() => {
-    const d = new Date(cbFrom + "T00:00:00");
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
+    const [y, m, d] = cbFrom.split("-").map(Number);
+    const prev = new Date(y, m - 1, d - 1);
+    return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}-${String(prev.getDate()).padStart(2, "0")}`;
   })();
   const { data: prevDayCount } = useCashCount(prevDateStr);
   const { data: cbToCount }    = useCashCount(cbTo);
