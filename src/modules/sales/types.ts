@@ -64,4 +64,8 @@ export interface SaleDraft {
   // Exchange tracking
   sale_type: SaleType;
   exchange_ref_bill?: string;
+  // Staff attribution
+  salesperson1_id?: string | null;
+  salesperson2_id?: string | null;
+  marketing_staff_id?: string | null;
 }

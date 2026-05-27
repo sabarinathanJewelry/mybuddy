@@ -263,6 +263,9 @@ export function useSaveSale() {
           exchange_ref_bill: draft.exchange_ref_bill ?? null,
           change_due: draft.change_due ?? null,
           change_mode: draft.change_mode ?? null,
+          salesperson1_id: draft.salesperson1_id ?? null,
+          salesperson2_id: draft.salesperson2_id ?? null,
+          marketing_staff_id: draft.marketing_staff_id ?? null,
         })
         .select().single();
       if (saleErr) throw saleErr;
@@ -328,6 +331,9 @@ export function useUpdateSale() {
         exchange_ref_bill: draft.exchange_ref_bill ?? null,
         change_due: draft.change_due ?? null,
         change_mode: draft.change_mode ?? null,
+        salesperson1_id: draft.salesperson1_id ?? null,
+        salesperson2_id: draft.salesperson2_id ?? null,
+        marketing_staff_id: draft.marketing_staff_id ?? null,
       }).eq("id", id);
       if (saleErr) throw saleErr;
 

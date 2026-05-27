@@ -13,7 +13,9 @@ import CustomerPicker from "@/modules/customers/customer-picker";
 import SupplierPicker from "@/modules/suppliers/supplier-picker";
 import type { Supplier } from "@/modules/suppliers/supplier-picker";
 import { useSaveSale, useUpdateSale, useSale } from "./api";
+import { useProducts } from "./products-api";
 import type { SaleDraft, SaleItemDraft, SalePaymentDraft, Metal, PaymentMode, SaleSeries, SaleType } from "./types";
+import { useStaff } from "@/modules/attendance/api";
 import type { Customer } from "@/modules/customers/types";
 import { clsx } from "clsx";
 
@@ -138,6 +140,9 @@ export default function SaleForm({ saleId }: Props) {
   const [changePayoutMode, setChangePayoutMode] = useState<"cash" | "bank">("cash");
   const [saleType, setSaleType] = useState<SaleType>("fresh");
   const [exchangeRefBill, setExchangeRefBill] = useState("");
+  const [salesperson1Id, setSalesperson1Id] = useState<string>("");
+  const [salesperson2Id, setSalesperson2Id] = useState<string>("");
+  const [marketingStaffId, setMarketingStaffId] = useState<string>("");
   const [refBillPreview, setRefBillPreview] = useState<{
     bill_no: string; bill_date: string; customer_name: string | null;
     items: { description: string; metal: string; gross_wt: number; net_wt: number; line_total: number }[];
@@ -166,6 +171,12 @@ export default function SaleForm({ saleId }: Props) {
     setNotes(sale.notes ?? "");
     setSaleType((sale.sale_type as SaleType) ?? "fresh");
     setExchangeRefBill(sale.exchange_ref_bill ?? "");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setSalesperson1Id((sale as any).salesperson1_id ?? "");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setSalesperson2Id((sale as any).salesperson2_id ?? "");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    setMarketingStaffId((sale as any).marketing_staff_id ?? "");
     if (sale.customers) {
       setCustomer({
         id: sale.customer_id, name: sale.customers.name,
@@ -299,6 +310,10 @@ export default function SaleForm({ saleId }: Props) {
   const hasSilver = items.some((i) => SILVER_METALS.includes(i.metal as Metal));
   const isMixed   = hasGold && hasSilver;
 
+  const { data: products = [] } = useProducts(true);
+  const { data: staffList = [] } = useStaff();
+  const activeStaff = staffList.filter((s) => s.active);
+
   // Kolusu boxes — only fetched for exchange bills
   const { data: kolusuBoxes = [] } = useQuery({
     queryKey: ["kolusu_boxes"],
@@ -360,6 +375,9 @@ export default function SaleForm({ saleId }: Props) {
       change_payout_mode: changeDue > 0.01 ? changePayoutMode : undefined,
       sale_type: saleType,
       exchange_ref_bill: saleType === "exchange" && exchangeRefBill ? exchangeRefBill : undefined,
+      salesperson1_id: salesperson1Id || null,
+      salesperson2_id: salesperson2Id || null,
+      marketing_staff_id: marketingStaffId || null,
     };
     if (saleId) {
       await updateSale.mutateAsync({ id: saleId, draft });
@@ -393,6 +411,33 @@ export default function SaleForm({ saleId }: Props) {
           <input type="date" value={billDate} onChange={(e) => setBillDate(e.target.value)} className={inp} />
         </div>
       </div>
+
+      {/* Staff Attribution */}
+      {activeStaff.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-ink-dim mb-1">Salesperson 1</label>
+            <select value={salesperson1Id} onChange={(e) => setSalesperson1Id(e.target.value)} className={inp}>
+              <option value="">— none —</option>
+              {activeStaff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-ink-dim mb-1">Salesperson 2</label>
+            <select value={salesperson2Id} onChange={(e) => setSalesperson2Id(e.target.value)} className={inp}>
+              <option value="">— none —</option>
+              {activeStaff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-ink-dim mb-1">Marketing Staff</label>
+            <select value={marketingStaffId} onChange={(e) => setMarketingStaffId(e.target.value)} className={inp}>
+              <option value="">— none —</option>
+              {activeStaff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* Sale Type Toggle */}
       <div className="flex items-center gap-3 flex-wrap">
@@ -526,8 +571,30 @@ export default function SaleForm({ saleId }: Props) {
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 <div className="col-span-2">
                   <label className="text-xs text-ink-dim">Description</label>
-                  <input value={item.description} onChange={(e) => updateItem(idx, { description: e.target.value })}
-                    placeholder="Item description" className={inp} />
+                  <input
+                    list={`products-${item.id}`}
+                    value={item.description}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      const matched = products.find((p) => p.name === val);
+                      if (matched) {
+                        updateItem(idx, {
+                          description: val,
+                          metal: matched.metal as Metal,
+                          purity_pct: matched.default_purity_pct ?? item.purity_pct,
+                          va_pct: matched.default_va_pct ?? item.va_pct,
+                          making_amt: matched.default_making_amt ?? item.making_amt,
+                        });
+                      } else {
+                        updateItem(idx, { description: val });
+                      }
+                    }}
+                    placeholder="Item description"
+                    className={inp}
+                  />
+                  <datalist id={`products-${item.id}`}>
+                    {products.map((p) => <option key={p.id} value={p.name} />)}
+                  </datalist>
                 </div>
                 <div>
                   <label className="text-xs text-ink-dim">Metal</label>

@@ -33,7 +33,8 @@ const NAV = [
 ];
 
 const ADMIN_NAV = [
-  { href: "/admin/users",  icon: "🔑", key: "nav_admin" as const },
+  { href: "/admin/users",     icon: "🔑", key: "nav_admin" as const },
+  { href: "/admin/products",  icon: "📦", key: "nav_products" as const },
 ];
 
 interface NavItemProps {

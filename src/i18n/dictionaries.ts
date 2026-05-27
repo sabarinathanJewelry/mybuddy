@@ -27,6 +27,7 @@ const en = {
   nav_reports: "Reports",
   nav_attendance: "Attendance",
   nav_admin: "Admin",
+  nav_products: "Products",
   nav_logout: "Logout",
   nav_info: "Info",
 

@@ -52,6 +52,7 @@ export type AttendanceEntry = {
 };
 
 export type StaffMember = {
+  id: string;
   bio_user_id: string;
   name: string;
   designation: string;
