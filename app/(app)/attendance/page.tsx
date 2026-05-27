@@ -9,6 +9,7 @@ import {
   useLeavesByDate, useAllLeaveRequests, useMyLeaveRequests, usePendingLeaveCount,
   useMyStaffProfile, useSubmitLeaveRequest, useDecideLeaveRequest,
   useAppNotifications, useMarkNotificationRead, useMarkAllNotificationsRead,
+  useStaffAdvances, useSaveStaffAdvance, useDeleteStaffAdvance,
   type StaffMember, type MonthlyEmployeeSummary, type PermissionRequest, type KioskTap,
   type LeaveRequest, type AppNotification,
 } from "@/modules/attendance/api";
@@ -616,6 +617,168 @@ function RequestsTab() {
             </tbody>
           </table>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── Staff advances section ────────────────────────────────────────────────────
+const adv_inp = "border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
+
+function StaffAdvancesSection() {
+  const { data: staff = [] } = useStaff();
+  const { data: advances = [], isLoading } = useStaffAdvances();
+  const save   = useSaveStaffAdvance();
+  const remove = useDeleteStaffAdvance();
+
+  const today = new Date().toLocaleDateString("en-CA");
+  const [form, setForm] = useState({ staff_id: "", advance_date: today, type: "given" as "given" | "repaid", amount: 0, notes: "" });
+  const [showForm, setShowForm] = useState(false);
+  const [expandedStaff, setExpandedStaff] = useState<string | null>(null);
+
+  // Build per-staff summary
+  const activeStaff = staff.filter(s => s.active);
+  const staffMap = new Map<string, { name: string; given: number; repaid: number }>();
+  for (const s of activeStaff) {
+    // find staff.id from bio_user_id — advances join returns staff.id
+  }
+  // advances have staff_id (uuid) and staff.name
+  const summaryByStaffId = new Map<string, { name: string; bio_user_id: string; given: number; repaid: number }>();
+  for (const a of advances) {
+    const sid = a.staff_id;
+    if (!summaryByStaffId.has(sid)) {
+      summaryByStaffId.set(sid, { name: (a as any).staff?.name ?? "Unknown", bio_user_id: (a as any).staff?.bio_user_id ?? "", given: 0, repaid: 0 });
+    }
+    const entry = summaryByStaffId.get(sid)!;
+    if (a.type === "given")  entry.given  += Number(a.amount);
+    else                      entry.repaid += Number(a.amount);
+  }
+  const summaries = [...summaryByStaffId.entries()]
+    .map(([sid, v]) => ({ sid, ...v, outstanding: v.given - v.repaid }))
+    .sort((a, b) => b.outstanding - a.outstanding);
+
+  async function handleSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.staff_id || form.amount <= 0) return;
+    await save.mutateAsync(form);
+    setForm({ staff_id: "", advance_date: today, type: "given", amount: 0, notes: "" });
+    setShowForm(false);
+  }
+
+  // Build staff options from actual staff list (need staff.id uuid)
+  const staffOptions = activeStaff.map(s => ({ label: s.name, bio_user_id: s.bio_user_id }));
+
+  return (
+    <div className="space-y-3 mt-6">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-ink-dim uppercase tracking-wide">Staff Advances</h3>
+        <button onClick={() => setShowForm(v => !v)} className="text-xs text-gold hover:underline">
+          {showForm ? "Cancel" : "+ Record Advance / Repayment"}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={handleSave} className="bg-white border border-gold/30 rounded-xl p-4 shadow-soft space-y-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Staff *</label>
+              <select required value={form.staff_id}
+                onChange={e => setForm({ ...form, staff_id: e.target.value })} className={adv_inp + " w-full"}>
+                <option value="">— Select —</option>
+                {staffOptions.map(s => (
+                  <option key={s.bio_user_id} value={s.bio_user_id}>{s.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Date</label>
+              <input type="date" value={form.advance_date}
+                onChange={e => setForm({ ...form, advance_date: e.target.value })} className={adv_inp + " w-full"} />
+            </div>
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Type</label>
+              <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value as "given" | "repaid" })} className={adv_inp + " w-full"}>
+                <option value="given">Advance Given (cash out)</option>
+                <option value="repaid">Repaid by Staff (cash in)</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Amount (₹) *</label>
+              <input type="number" step="0.01" required value={form.amount || ""}
+                onFocus={e => e.target.select()}
+                onChange={e => setForm({ ...form, amount: parseFloat(e.target.value) || 0 })} className={adv_inp + " w-full"} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="text-xs text-ink-dim block mb-1">Notes</label>
+              <input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
+                placeholder="e.g. Festival advance, emergency…" className={adv_inp + " w-full"} />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" disabled={save.isPending}
+              className="bg-gold text-white text-sm px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+              {save.isPending ? "Saving…" : "Save"}
+            </button>
+            <button type="button" onClick={() => setShowForm(false)} className="border border-line text-sm px-4 py-1.5 rounded-lg2">Cancel</button>
+          </div>
+          {save.isError && <p className="text-xs text-err">Save failed — run migration 037 first.</p>}
+        </form>
+      )}
+
+      {isLoading ? <p className="text-sm text-ink-dim">Loading…</p> : (
+        summaries.length === 0 ? (
+          <p className="text-sm text-ink-dim text-center py-4">No advances recorded.</p>
+        ) : (
+          <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                  <th className="text-left px-4 py-2.5">Staff</th>
+                  <th className="text-right px-3 py-2.5 text-err">Given</th>
+                  <th className="text-right px-3 py-2.5 text-ok">Repaid</th>
+                  <th className="text-right px-3 py-2.5">Outstanding</th>
+                  <th className="px-3 py-2.5" />
+                </tr>
+              </thead>
+              <tbody>
+                {summaries.map(({ sid, name, given, repaid, outstanding }) => {
+                  const rows = advances.filter(a => a.staff_id === sid);
+                  const isExpanded = expandedStaff === sid;
+                  return (
+                    <Fragment key={sid}>
+                      <tr className="border-b border-line hover:bg-canvas/50">
+                        <td className="px-4 py-2.5 font-medium">{name}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-err">{inr(given)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-ok">{inr(repaid)}</td>
+                        <td className={`px-3 py-2.5 text-right font-mono font-semibold ${outstanding > 0 ? "text-err" : "text-ok"}`}>
+                          {inr(outstanding)}
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          <button onClick={() => setExpandedStaff(isExpanded ? null : sid)}
+                            className="text-xs text-gold hover:underline">
+                            {isExpanded ? "Hide" : "Detail"}
+                          </button>
+                        </td>
+                      </tr>
+                      {isExpanded && rows.map(a => (
+                        <tr key={a.id} className="border-b border-line bg-canvas/40 text-xs">
+                          <td className="px-6 py-1.5 text-ink-dim">{a.advance_date} · {a.notes || (a.type === "given" ? "Advance given" : "Repaid")}</td>
+                          <td className="px-3 py-1.5 text-right font-mono text-err">{a.type === "given" ? inr(a.amount) : ""}</td>
+                          <td className="px-3 py-1.5 text-right font-mono text-ok">{a.type === "repaid" ? inr(a.amount) : ""}</td>
+                          <td className="px-3 py-1.5" />
+                          <td className="px-3 py-1.5 text-right">
+                            <button onClick={() => { if (window.confirm("Delete this entry?")) remove.mutate(a.id); }}
+                              className="text-[11px] text-err hover:underline">Del</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
       )}
     </div>
   );
@@ -1603,7 +1766,12 @@ export default function AttendancePage() {
       )}
 
       {/* ── Staff tab ── */}
-      {tab === "staff" && <StaffTab />}
+      {tab === "staff" && (
+        <div>
+          <StaffTab />
+          <StaffAdvancesSection />
+        </div>
+      )}
 
       {/* ── Monthly report tab ── */}
       {tab === "monthly" && <MonthlyTab />}

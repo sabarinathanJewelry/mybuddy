@@ -796,3 +796,72 @@ export function useMarkAllNotificationsRead() {
     },
   });
 }
+
+// ── Staff advances ────────────────────────────────────────────────────────────
+
+export type StaffAdvance = {
+  id: string;
+  staff_id: string;
+  advance_date: string;
+  type: "given" | "repaid";
+  amount: number;
+  notes: string | null;
+  created_at: string;
+};
+
+export function useStaffAdvances() {
+  return useQuery<(StaffAdvance & { staff: { bio_user_id: string; name: string } })[]>({
+    queryKey: ["staff-advances"],
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("staff_advances")
+        .select("*, staff(bio_user_id, name)")
+        .order("advance_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return (data ?? []) as any;
+    },
+  });
+}
+
+export function useSaveStaffAdvance() {
+  const qc = useQueryClient();
+  return useMutation({
+    // bio_user_id is passed as staff_id from the form; we resolve to uuid here
+    mutationFn: async (payload: { staff_id: string; advance_date: string; type: "given" | "repaid"; amount: number; notes?: string }) => {
+      const client = supabase();
+      // Resolve bio_user_id → staff.id (uuid)
+      const { data: staffRow, error: se } = await client.from("staff").select("id, name").eq("bio_user_id", payload.staff_id).single();
+      if (se || !staffRow) throw new Error("Staff not found");
+      const insert = { ...payload, staff_id: staffRow.id };
+      const { data: row, error } = await client.from("staff_advances").insert(insert).select().single();
+      if (error) throw error;
+      const desc = payload.notes || (payload.type === "given" ? `Staff advance — ${staffRow.name}` : `Staff repayment — ${staffRow.name}`);
+      const { error: le } = await client.from("cash_ledger").insert({
+        tx_date: payload.advance_date,
+        direction: payload.type === "given" ? "out" : "in",
+        amount: payload.amount,
+        description: desc,
+        ref_type: "staff_advance",
+        ref_id: row.id,
+      });
+      if (le) console.warn(le);
+      return row;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["staff-advances"] }),
+  });
+}
+
+export function useDeleteStaffAdvance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const client = supabase();
+      await client.from("cash_ledger").delete().eq("ref_type", "staff_advance").eq("ref_id", id);
+      const { error } = await client.from("staff_advances").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["staff-advances"] }),
+  });
+}
