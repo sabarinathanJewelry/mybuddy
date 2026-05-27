@@ -155,7 +155,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
     queryKey: ["day-sales-ledger", fromDate, toDate],
     queryFn: async () => {
       const client = supabase();
-      const [salesRes, orderRes, miscCashRes, miscBankRes, advanceRes] = await Promise.all([
+      const [salesRes, orderRes, miscCashRes, miscBankRes, advanceRes, bullionPayRes] = await Promise.all([
         client.from("sales")
           .select("id, bill_no, bill_date, total, customers(name), sale_items(description, metal, net_wt), sale_payments(mode, amount, metal_wt)")
           .gte("bill_date", fromDate).lte("bill_date", toDate)
@@ -169,12 +169,12 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
         client.from("cash_ledger")
           .select("id, description, direction, amount, ref_type, tx_date, created_at")
           .gte("tx_date", fromDate).lte("tx_date", toDate)
-          .neq("ref_type", "sale").neq("ref_type", "order")  // orders handled via order_payments
+          .neq("ref_type", "sale").neq("ref_type", "order").neq("ref_type", "bullion")
           .order("tx_date").order("created_at"),
         client.from("bank_ledger")
           .select("id, description, direction, amount, ref_type, tx_date, created_at")
           .gte("tx_date", fromDate).lte("tx_date", toDate)
-          .neq("ref_type", "sale").neq("ref_type", "order")
+          .neq("ref_type", "sale").neq("ref_type", "order").neq("ref_type", "bullion")
           .order("tx_date").order("created_at"),
         // Advance used for non-cash purposes (chit installment — order advance handled in orderRows)
         client.from("payments")
@@ -182,6 +182,12 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .gte("pay_date", fromDate).lte("pay_date", toDate)
           .eq("mode", "advance").eq("direction", "out").eq("is_advance", true)
           .not("notes", "ilike", "Order advance used%")
+          .order("pay_date").order("created_at"),
+        // Bullion payments — sell=cash in, buy=cash out
+        client.from("bullion_payments")
+          .select("id, trade_id, pay_date, mode, amount, bullion_trades(trade_type, party_name, metal, pure_wt, rate_per_g)")
+          .gte("pay_date", fromDate).lte("pay_date", toDate)
+          .gt("amount", 0)
           .order("pay_date").order("created_at"),
       ]);
 
@@ -296,7 +302,28 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
         return d !== 0 ? d : new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
 
-      return { saleRows, orderRows, miscEntries };
+      // Bullion rows — sell=credit, buy=debit; only cash mode affects cash box
+      const bullionRows = ((bullionPayRes.data ?? []) as any[])
+        .filter((p: any) => p.mode === "cash")
+        .map((p: any) => {
+          const bt = p.bullion_trades as any;
+          const isSell = bt?.trade_type === "sell";
+          const metal = (bt?.metal ?? "gold") as string;
+          const wt = Number(bt?.pure_wt) || 0;
+          const rate = Number(bt?.rate_per_g) || 0;
+          return {
+            id: p.id as string,
+            payDate: p.pay_date as string,
+            partyName: (bt?.party_name ?? "Bullion") as string,
+            metal,
+            desc: `${bt?.party_name ?? "Bullion"} — ${isSell ? "Sell" : "Buy"} ${wt > 0 ? `${wt.toFixed(3)}g` : ""}${rate > 0 ? ` @ ${inr(rate)}/g` : ""}`,
+            isSell,
+            amount: Number(p.amount),
+          };
+        })
+        .sort((a: any, b: any) => a.payDate.localeCompare(b.payDate));
+
+      return { saleRows, orderRows, miscEntries, bullionRows };
     },
   });
 }
@@ -473,6 +500,7 @@ export default function DailySheetPage() {
   const saleRows    = salesLedger?.saleRows ?? [];
   const orderRows   = (salesLedger?.orderRows ?? []) as any[];
   const miscEntries = (salesLedger?.miscEntries ?? []) as any[];
+  const bullionRows = (salesLedger?.bullionRows ?? []) as any[];
 
   // Bank-in entries are bank account receipts, not cash — always hide from cash book.
   // Bank-out (expenses, transfers out of bank) shown only when toggle is on.
@@ -486,12 +514,14 @@ export default function DailySheetPage() {
   const grandDebit =
     saleRows.reduce((s, r) => s + rowDebit(r.payments), 0) +
     orderRows.reduce((s: number, r: any) => s + rowDebit(r.payments), 0) +
-    visibleMisc.filter((e: any) => e.direction === "out").reduce((s: number, e: any) => s + Number(e.amount), 0);
+    visibleMisc.filter((e: any) => e.direction === "out").reduce((s: number, e: any) => s + Number(e.amount), 0) +
+    bullionRows.filter((r: any) => !r.isSell).reduce((s: number, r: any) => s + r.amount, 0);
 
   const grandCredit =
     saleRows.reduce((s, r) => s + r.credit, 0) +
     orderRows.reduce((s: number, r: any) => s + r.credit, 0) +
-    visibleMisc.filter((e: any) => e.direction === "in").reduce((s: number, e: any) => s + Number(e.amount), 0);
+    visibleMisc.filter((e: any) => e.direction === "in").reduce((s: number, e: any) => s + Number(e.amount), 0) +
+    bullionRows.filter((r: any) => r.isSell).reduce((s: number, r: any) => s + r.amount, 0);
 
   // Date-specific cash position (cash only, from useDateCashPosition)
   const openingCash  = cashPos?.openingCash ?? null;
@@ -630,7 +660,7 @@ export default function DailySheetPage() {
                     </tr>
                   )}
 
-                  {saleRows.length === 0 && orderRows.length === 0 && visibleMisc.length === 0 ? (
+                  {saleRows.length === 0 && orderRows.length === 0 && bullionRows.length === 0 && visibleMisc.length === 0 ? (
                     <tr><td colSpan={4} className="px-4 py-8 text-center text-ink-dim">No transactions{multiDay ? ` from ${cbFrom} to ${cbTo}` : ` on ${cbFrom}`}</td></tr>
                   ) : <>
                     {/* Sale rows — sub-rows rendered inline so rowSpan works */}
@@ -719,7 +749,26 @@ export default function DailySheetPage() {
                       ];
                     })}
 
-                    {/* Misc (non-sale, non-order) entries */}
+                    {/* Bullion rows — cash sell = Credit, cash buy = Debit */}
+                    {bullionRows.map((r: any) => (
+                      <tr key={`bull-${r.id}`} className="border-b border-line hover:bg-canvas/50">
+                        <td className="px-4 py-2 text-sm">
+                          {r.desc}
+                          {multiDay && <span className="ml-1.5 text-[10px] text-ink-dim">{r.payDate}</span>}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-ink-dim">
+                          Bullion {r.isSell ? "Sale" : "Purchase"}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-xs text-err">
+                          {!r.isSell ? inr(r.amount) : ""}
+                        </td>
+                        <td className="px-4 py-2 text-right font-mono text-xs text-ok">
+                          {r.isSell ? inr(r.amount) : ""}
+                        </td>
+                      </tr>
+                    ))}
+
+                    {/* Misc (non-sale, non-order, non-bullion) entries */}
                     {visibleMisc.map((e: any, mi: number) => {
                       const isAdv = e.direction === "advance_out";
                       return (
