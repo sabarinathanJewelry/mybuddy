@@ -256,11 +256,12 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
             row.payments.push({ note: paymentNote(p.mode, Number(p.metal_wt ?? 0)), amount: amt, mode: p.mode as string });
           }
         } else {
-          // Delivery: accumulate cash in Credit; non-cash goes to Debit
-          if (p.mode === "cash") {
+          // Delivery: total paid → Credit; non-cash → Debit (net = cash received)
+          if (p.mode !== "advance") {
             row.credit += amt;
-          } else if (p.mode !== "advance") {
-            row.payments.push({ note: paymentNote(p.mode, Number(p.metal_wt ?? 0)), amount: amt, mode: p.mode as string });
+            if (p.mode !== "cash") {
+              row.payments.push({ note: paymentNote(p.mode, Number(p.metal_wt ?? 0)), amount: amt, mode: p.mode as string });
+            }
           }
         }
       }
