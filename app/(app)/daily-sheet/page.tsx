@@ -761,12 +761,30 @@ export default function DailySheetPage() {
                   )}
                 </tbody>
                 <tfoot>
-                  <tr className="border-t-2 border-line bg-canvas font-semibold">
-                    <td className="px-4 py-2.5 text-xs text-ink-dim uppercase tracking-wide">Total</td>
-                    <td className="px-3 py-2.5" />
-                    <td className="px-3 py-2.5 text-right font-mono text-err">{inr(grandDebit + (cbToCount?.actual ?? 0))}</td>
-                    <td className="px-4 py-2.5 text-right font-mono text-ok">{inr(grandCredit + (prevDayCount?.actual ?? 0))}</td>
-                  </tr>
+                  {(() => {
+                    const totalCredit = grandCredit + (prevDayCount?.actual ?? 0);
+                    const totalDebit  = grandDebit  + (cbToCount?.actual ?? 0);
+                    const diff = totalCredit - totalDebit;
+                    const balanced = Math.abs(diff) < 0.5;
+                    const label = balanced ? "Balanced" : diff > 0 ? "Cash Excess" : "Cash Short";
+                    const color = balanced ? "text-ink-dim" : diff > 0 ? "text-ok" : "text-err";
+                    return (<>
+                      <tr className="border-t-2 border-line bg-canvas font-semibold">
+                        <td className="px-4 py-2.5 text-xs text-ink-dim uppercase tracking-wide">Total</td>
+                        <td className="px-3 py-2.5" />
+                        <td className="px-3 py-2.5 text-right font-mono text-err">{inr(totalDebit)}</td>
+                        <td className="px-4 py-2.5 text-right font-mono text-ok">{inr(totalCredit)}</td>
+                      </tr>
+                      <tr className="bg-canvas">
+                        <td className={`px-4 py-2 text-xs font-semibold ${color}`}>{label}</td>
+                        <td className="px-3 py-2" />
+                        <td className="px-3 py-2" />
+                        <td className={`px-4 py-2 text-right font-mono text-xs font-semibold ${color}`}>
+                          {balanced ? "—" : (diff > 0 ? "+" : "") + inr(diff)}
+                        </td>
+                      </tr>
+                    </>);
+                  })()}
                 </tfoot>
               </table>
             </div>
