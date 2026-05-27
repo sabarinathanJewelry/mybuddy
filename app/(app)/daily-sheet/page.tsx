@@ -542,8 +542,10 @@ export default function DailySheetPage() {
   const selCr = Array.from(selCrKeys.values()).reduce((s, v) => s + v, 0);
   const selDr = Array.from(selDrKeys.values()).reduce((s, v) => s + v, 0);
 
-  // bank_in shown in both Credit and Debit (pass-through, net ₹0 on cash); bank_out controlled by includeBankOut
+  // bank_in for 'transfer' is already captured by the cash-out entry — hide it to avoid double-count.
+  // bank_in for payments (UPI received) is a pass-through: show in both Credit and Debit.
   const visibleMisc = miscEntries.filter((e: any) => {
+    if (e.src === "Bank" && e.direction === "in" && e.ref_type === "transfer") return false;
     if (e.src === "Bank" && e.direction === "out") return includeBankOut;
     return true;
   });
@@ -556,7 +558,7 @@ export default function DailySheetPage() {
     visibleMisc.reduce((s: number, e: any) => {
       const amt = Number(e.amount);
       if (e.direction === "out" || e.direction === "advance_out") return s + amt;
-      if (e.src === "Bank" && e.direction === "in") return s + amt;
+      if (e.src === "Bank" && e.direction === "in" && e.ref_type !== "transfer") return s + amt;
       return s;
     }, 0) +
     bullionRows.filter((r: any) => !r.isSell).reduce((s: number, r: any) => s + r.amount, 0);
@@ -907,7 +909,7 @@ export default function DailySheetPage() {
                     {/* Misc (non-sale, non-order, non-bullion) entries */}
                     {visibleMisc.map((e: any, mi: number) => {
                       const isAdv = e.direction === "advance_out";
-                      const isBankIn = e.src === "Bank" && e.direction === "in";
+                      const isBankIn = e.src === "Bank" && e.direction === "in" && e.ref_type !== "transfer";
                       const mkey = `misc-${mi}`;
                       const mCr = e.direction === "in" ? Number(e.amount) : 0;
                       const mDr = (e.direction === "out" || isAdv || isBankIn) ? Number(e.amount) : 0;

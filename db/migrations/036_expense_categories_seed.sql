@@ -1,6 +1,6 @@
 -- Seed common expense categories
--- ON CONFLICT (name) requires a unique constraint on expense_categories.name
-ALTER TABLE expense_categories ADD CONSTRAINT IF NOT EXISTS expense_categories_name_key UNIQUE (name);
+-- Use unique index (ADD CONSTRAINT IF NOT EXISTS is not valid Postgres syntax)
+CREATE UNIQUE INDEX IF NOT EXISTS expense_categories_name_key ON expense_categories (name);
 
 INSERT INTO expense_categories (name) VALUES
   ('Post Office RD'),
