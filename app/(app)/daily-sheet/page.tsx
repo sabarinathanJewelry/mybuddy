@@ -162,7 +162,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .eq("status", "confirmed").order("bill_date").order("created_at"),
         // Order payments grouped by order+date (handles old gold, UPI, cash, advance per order)
         client.from("order_payments")
-          .select("id, order_id, pay_date, mode, amount, metal_wt, orders(order_no, customers(name))")
+          .select("id, order_id, pay_date, mode, amount, metal_wt, orders(order_no, estimated_total, final_total, advance_paid, customers(name))")
           .gte("pay_date", fromDate).lte("pay_date", toDate)
           .gt("amount", 0)
           .order("pay_date").order("created_at"),
@@ -225,23 +225,28 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
       // Group order_payments by (order_id, pay_date)
       const orderMap = new Map<string, {
         orderId: string; orderNo: string; payDate: string;
-        customerName: string | null; credit: number;
+        customerName: string | null; credit: number; balanceDue: number;
         payments: { note: string; amount: number; mode: string }[];
       }>();
       for (const p of (orderRes.data ?? []) as any[]) {
         const key = `${p.order_id}::${p.pay_date}`;
+        const od = p.orders as any;
         if (!orderMap.has(key)) {
+          const orderTotal = Number(od?.final_total) || Number(od?.estimated_total) || 0;
+          const totalPaid  = Number(od?.advance_paid) || 0;
+          const balanceDue = Math.max(0, orderTotal - totalPaid);
           orderMap.set(key, {
             orderId: p.order_id,
-            orderNo: (p.orders as any)?.order_no ?? "Order",
+            orderNo: od?.order_no ?? "Order",
             payDate: p.pay_date as string,
-            customerName: (p.orders as any)?.customers?.name ?? null,
-            credit: 0,
+            customerName: od?.customers?.name ?? null,
+            credit: orderTotal > 0 ? orderTotal : 0,
+            balanceDue,
             payments: [],
           });
         }
         const row = orderMap.get(key)!;
-        row.credit += Number(p.amount);
+        if (row.credit === 0) row.credit += Number(p.amount); // fallback if no order total set
         // Non-cash, non-advance modes go in Debit (advance shown in advance section)
         if (p.mode !== "cash" && p.mode !== "advance") {
           row.payments.push({
@@ -249,6 +254,12 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
             amount: Number(p.amount),
             mode: p.mode as string,
           });
+        }
+      }
+      // Add Balance Due at end of each order's payment list
+      for (const row of orderMap.values()) {
+        if (row.balanceDue > 0.005) {
+          row.payments.push({ note: "Balance Due", amount: row.balanceDue, mode: "balance" });
         }
       }
       const orderRows = Array.from(orderMap.values())
@@ -361,6 +372,15 @@ export default function DailySheetPage() {
   const { data: salesLedger, isLoading: ledgerLoading } = useDaySalesLedger(cbFrom, cbTo);
   const { data: cashPos } = useDateCashPosition(cbFrom, cbTo);
   const multiDay = cbFrom !== cbTo;
+
+  // Previous day cash count (for opening reference row)
+  const prevDateStr = (() => {
+    const d = new Date(cbFrom + "T00:00:00");
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  })();
+  const { data: prevDayCount } = useCashCount(prevDateStr);
+  const { data: cbToCount }    = useCashCount(cbTo);
 
   // Cash reconciliation
   const [showCountForm, setShowCountForm] = useState(false);
@@ -575,7 +595,7 @@ export default function DailySheetPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {/* Opening / Closing balance row */}
+                  {/* Opening balance row (calculated) */}
                   {hasOpening && openingCash !== null && (
                     <tr className="border-b border-line bg-gold/5">
                       <td className="px-4 py-2 font-semibold text-gold text-xs">Opening Balance (Cash)</td>
@@ -583,6 +603,20 @@ export default function DailySheetPage() {
                       <td className="px-3 py-2 text-right font-mono text-xs font-semibold text-gold">{inr(openingCash)}</td>
                       <td className="px-4 py-2 text-right font-mono text-xs font-semibold text-gold">
                         {closingCash !== null ? inr(closingCash) : ""}
+                      </td>
+                    </tr>
+                  )}
+
+                  {/* Previous day actual cash count — shown as Credit (opening reference) */}
+                  {prevDayCount && (
+                    <tr className="border-b border-line bg-info/5">
+                      <td className="px-4 py-2 text-xs font-medium text-info">
+                        {prevDateStr} — Actual Cash (counted)
+                      </td>
+                      <td className="px-3 py-2 text-xs text-ink-dim">Prev. day count</td>
+                      <td className="px-3 py-2" />
+                      <td className="px-4 py-2 text-right font-mono text-xs font-semibold text-info">
+                        {inr(prevDayCount.actual)}
                       </td>
                     </tr>
                   )}
@@ -652,22 +686,27 @@ export default function DailySheetPage() {
                               Order{multiDay ? ` · ${ord.payDate}` : ""}
                             </div>
                           </td>
-                          <td className="px-3 py-2.5 text-xs text-ink-dim">{firstPay ? firstPay.note : "—"}</td>
-                          <td className="px-3 py-2.5 text-right font-mono text-xs text-err">
+                          <td className={`px-3 py-2.5 text-xs ${firstPay?.mode === "balance" ? "text-warn font-medium" : "text-ink-dim"}`}>
+                            {firstPay ? firstPay.note : "—"}
+                          </td>
+                          <td className={`px-3 py-2.5 text-right font-mono text-xs ${firstPay?.mode === "balance" ? "text-warn" : "text-err"}`}>
                             {firstPay ? inr(firstPay.amount) : ""}
                           </td>
                           <td className="px-4 py-2.5 text-right font-mono text-xs font-semibold text-ok">
                             {inr(ord.credit)}
                           </td>
                         </tr>,
-                        ...restPay.map((pay: any, pi: number) => (
-                          <tr key={`ord-${ord.orderId}-${ord.payDate}-${pi + 1}`}
-                            className={`hover:bg-canvas/50 bg-canvas/20 ${pi === restPay.length - 1 ? "border-b border-line" : ""}`}>
-                            <td className="px-3 py-1.5 text-xs text-ink-dim pl-4">{pay.note}</td>
-                            <td className="px-3 py-1.5 text-right font-mono text-xs text-err">{inr(pay.amount)}</td>
-                            <td className="px-4 py-1.5" />
-                          </tr>
-                        )),
+                        ...restPay.map((pay: any, pi: number) => {
+                          const isBal = pay.mode === "balance";
+                          return (
+                            <tr key={`ord-${ord.orderId}-${ord.payDate}-${pi + 1}`}
+                              className={`hover:bg-canvas/50 ${isBal ? "bg-warn/5" : "bg-canvas/20"} ${pi === restPay.length - 1 ? "border-b border-line" : ""}`}>
+                              <td className={`px-3 py-1.5 text-xs pl-4 ${isBal ? "text-warn font-medium" : "text-ink-dim"}`}>{pay.note}</td>
+                              <td className={`px-3 py-1.5 text-right font-mono text-xs ${isBal ? "text-warn" : "text-err"}`}>{inr(pay.amount)}</td>
+                              <td className="px-4 py-1.5" />
+                            </tr>
+                          );
+                        }),
                       ];
                     })}
 
@@ -697,6 +736,20 @@ export default function DailySheetPage() {
                       );
                     })}
                   </>}
+
+                  {/* Today's actual cash count — shown as Debit (closing reference) */}
+                  {cbToCount && (
+                    <tr className="border-t border-line bg-info/5">
+                      <td className="px-4 py-2 text-xs font-medium text-info">
+                        {cbTo} — Actual Cash (counted)
+                      </td>
+                      <td className="px-3 py-2 text-xs text-ink-dim">Today count</td>
+                      <td className="px-3 py-2 text-right font-mono text-xs font-semibold text-info">
+                        {inr(cbToCount.actual)}
+                      </td>
+                      <td className="px-4 py-2" />
+                    </tr>
+                  )}
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-line bg-canvas font-semibold">
