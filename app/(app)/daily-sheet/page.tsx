@@ -194,16 +194,22 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
               return `${wt}${i.description || (i.metal ?? "item").replace(/_/g, " ")}`;
             }).join(", ");
 
-        // Only non-cash modes go in the Debit column.
-        // Cash received is implicit: net cash = Credit − Debit.
-        const payments: { note: string; amount: number; mode: string }[] =
-          ((s.sale_payments ?? []) as any[])
+        // Non-cash payment modes + any unpaid balance go in the Debit column.
+        // Net cash = Credit (total) − Debit (non-cash + balance due).
+        const allPaid = ((s.sale_payments ?? []) as any[])
+          .reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+        const balanceDue = Number(s.total) - allPaid;
+
+        const payments: { note: string; amount: number; mode: string }[] = [
+          ...((s.sale_payments ?? []) as any[])
             .filter((p: any) => Number(p.amount) > 0 && p.mode !== "cash")
             .map((p: any) => ({
               note: paymentNote(p.mode, Number(p.metal_wt ?? 0)),
               amount: Number(p.amount),
-              mode: p.mode,
-            }));
+              mode: p.mode as string,
+            })),
+          ...(balanceDue > 0.005 ? [{ note: "Balance Due", amount: balanceDue, mode: "balance" }] : []),
+        ];
 
         return {
           id: s.id as string,
@@ -604,22 +610,27 @@ export default function DailySheetPage() {
                               {sale.billNo}{multiDay ? ` · ${sale.billDate}` : ""}
                             </div>
                           </td>
-                          <td className="px-3 py-2.5 text-xs text-ink-dim">{firstPay ? firstPay.note : "—"}</td>
-                          <td className="px-3 py-2.5 text-right font-mono text-xs text-err">
+                          <td className={`px-3 py-2.5 text-xs ${firstPay?.mode === "balance" ? "text-warn font-medium" : "text-ink-dim"}`}>
+                            {firstPay ? firstPay.note : "—"}
+                          </td>
+                          <td className={`px-3 py-2.5 text-right font-mono text-xs ${firstPay?.mode === "balance" ? "text-warn" : "text-err"}`}>
                             {firstPay ? inr(firstPay.amount) : ""}
                           </td>
                           <td className="px-4 py-2.5 text-right font-mono text-xs font-semibold text-ok">
                             {inr(sale.credit)}
                           </td>
                         </tr>,
-                        ...restPay.map((pay, pi) => (
-                          <tr key={`${sale.id}-${pi + 1}`}
-                            className={`hover:bg-canvas/50 bg-canvas/20 ${pi === restPay.length - 1 ? "border-b border-line" : ""}`}>
-                            <td className="px-3 py-1.5 text-xs text-ink-dim pl-4">{pay.note}</td>
-                            <td className="px-3 py-1.5 text-right font-mono text-xs text-err">{inr(pay.amount)}</td>
-                            <td className="px-4 py-1.5" />
-                          </tr>
-                        )),
+                        ...restPay.map((pay, pi) => {
+                          const isBal = pay.mode === "balance";
+                          return (
+                            <tr key={`${sale.id}-${pi + 1}`}
+                              className={`hover:bg-canvas/50 ${isBal ? "bg-warn/5" : "bg-canvas/20"} ${pi === restPay.length - 1 ? "border-b border-line" : ""}`}>
+                              <td className={`px-3 py-1.5 text-xs pl-4 ${isBal ? "text-warn font-medium" : "text-ink-dim"}`}>{pay.note}</td>
+                              <td className={`px-3 py-1.5 text-right font-mono text-xs ${isBal ? "text-warn" : "text-err"}`}>{inr(pay.amount)}</td>
+                              <td className="px-4 py-1.5" />
+                            </tr>
+                          );
+                        }),
                       ];
                     })}
 
