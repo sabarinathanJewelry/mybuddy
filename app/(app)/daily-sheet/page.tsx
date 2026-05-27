@@ -162,7 +162,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .eq("status", "confirmed").order("bill_date").order("created_at"),
         // Order payments grouped by order+date (handles old gold, UPI, cash, advance per order)
         client.from("order_payments")
-          .select("id, order_id, pay_date, mode, amount, metal_wt, orders(order_no, estimated_total, final_total, advance_paid, customers(name))")
+          .select("id, order_id, pay_date, mode, amount, metal_wt, orders(order_no, total, final_total, advance_paid, customers(name))")
           .gte("pay_date", fromDate).lte("pay_date", toDate)
           .gt("amount", 0)
           .order("pay_date").order("created_at"),
@@ -232,7 +232,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
         const key = `${p.order_id}::${p.pay_date}`;
         const od = p.orders as any;
         if (!orderMap.has(key)) {
-          const orderTotal = Number(od?.final_total) || Number(od?.estimated_total) || 0;
+          const orderTotal = Number(od?.final_total) || Number(od?.total) || 0;
           const totalPaid  = Number(od?.advance_paid) || 0;
           const balanceDue = Math.max(0, orderTotal - totalPaid);
           orderMap.set(key, {
