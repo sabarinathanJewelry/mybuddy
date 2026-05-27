@@ -198,6 +198,46 @@ function useDaySalesLedger(date: string) {
   });
 }
 
+// Date-specific cash position: opening and closing cash for any given date
+function useDateCashPosition(date: string) {
+  return useQuery({
+    queryKey: ["date-cash-pos", date],
+    queryFn: async () => {
+      const client = supabase();
+      // Find the latest opening balance on or before this date
+      const { data: obData } = await client.from("opening_balances")
+        .select("amount, effective_date")
+        .eq("balance_type", "cash")
+        .lte("effective_date", date)
+        .order("effective_date", { ascending: false })
+        .limit(1);
+      const ob = obData?.[0] ?? null;
+      if (!ob) return null;
+
+      // Cash movements: before date (for opening) and on date (for closing)
+      const [priorRes, todayRes] = await Promise.all([
+        client.from("cash_ledger")
+          .select("direction, amount")
+          .gte("tx_date", ob.effective_date)
+          .lt("tx_date", date),
+        client.from("cash_ledger")
+          .select("direction, amount")
+          .eq("tx_date", date),
+      ]);
+
+      const priorNet = (priorRes.data ?? []).reduce((s: number, r: any) =>
+        s + (r.direction === "in" ? Number(r.amount) : -Number(r.amount)), 0);
+      const openingCash = Number(ob.amount) + priorNet;
+
+      const todayNet = (todayRes.data ?? []).reduce((s: number, r: any) =>
+        s + (r.direction === "in" ? Number(r.amount) : -Number(r.amount)), 0);
+      const closingCash = openingCash + todayNet;
+
+      return { openingCash, closingCash };
+    },
+  });
+}
+
 function useCashCount(date: string) {
   return useQuery({
     queryKey: ["cash_count", date],
@@ -234,6 +274,7 @@ export default function DailySheetPage() {
   const { data: cashCount } = useCashCount(date);
   const [viewTab, setViewTab] = useState<ViewTab>("summary");
   const { data: salesLedger, isLoading: ledgerLoading } = useDaySalesLedger(date);
+  const { data: cashPos } = useDateCashPosition(date);
 
   // Cash reconciliation
   const [showCountForm, setShowCountForm] = useState(false);
@@ -317,25 +358,20 @@ export default function DailySheetPage() {
   const saleRows    = salesLedger?.saleRows ?? [];
   const miscEntries = (salesLedger?.miscEntries ?? []) as any[];
 
-  // Debit column = payments received (old gold, cash, bank, UPI) + misc "out"
+  // Debit = all payment modes received per sale + misc "out"
   const saleDebitTotal  = saleRows.reduce((s, r) => s + r.payments.reduce((ps, p) => ps + p.amount, 0), 0);
-  const miscDebitTotal  = miscEntries.filter(e => e.direction === "out").reduce((s: number, e) => s + Number(e.amount), 0);
+  const miscDebitTotal  = miscEntries.filter((e: any) => e.direction === "out").reduce((s: number, e: any) => s + Number(e.amount), 0);
   const grandDebit  = saleDebitTotal + miscDebitTotal;
 
-  // Credit column = sale totals + misc "in"
+  // Credit = sale totals + misc "in"
   const saleCreditTotal = saleRows.reduce((s, r) => s + r.credit, 0);
-  const miscCreditTotal = miscEntries.filter(e => e.direction === "in").reduce((s: number, e) => s + Number(e.amount), 0);
+  const miscCreditTotal = miscEntries.filter((e: any) => e.direction === "in").reduce((s: number, e: any) => s + Number(e.amount), 0);
   const grandCredit = saleCreditTotal + miscCreditTotal;
 
-  // Opening/Closing: based on actual cash+bank ledger movements today
-  const combinedCurrent = pos ? (pos.currentCash + pos.currentBank) : null;
-  const todayCashBankIn =
-    saleRows.flatMap(r => r.payments).filter(p => p.mode === "cash" || p.mode === "upi" || p.mode === "bank")
-      .reduce((s, p) => s + p.amount, 0) +
-    miscEntries.filter(e => e.direction === "in").reduce((s: number, e) => s + Number(e.amount), 0);
-  const todayCashBankOut = miscEntries.filter(e => e.direction === "out").reduce((s: number, e) => s + Number(e.amount), 0);
-  const openingBalance  = combinedCurrent !== null ? combinedCurrent - todayCashBankIn + todayCashBankOut : null;
-  const closingBalance  = combinedCurrent;
+  // Date-specific cash position (cash only, from useDateCashPosition)
+  const openingCash  = cashPos?.openingCash ?? null;
+  const closingCash  = cashPos?.closingCash ?? null;
+  const hasOpening   = cashPos !== null && cashPos !== undefined;
 
   return (
     <div className="max-w-3xl mx-auto space-y-5">
@@ -359,30 +395,50 @@ export default function DailySheetPage() {
       {/* ── CASH BOOK TAB ───────────────────────────────── */}
       {viewTab === "ledger" && (
         <div className="space-y-4">
-          {!pos?.hasOpening && (
+          {!hasOpening && (
             <div className="bg-warn/5 border border-warn/30 rounded-xl px-4 py-3 text-sm text-ink-dim">
-              Opening balance not set. Set it in the{" "}
-              <button onClick={() => setViewTab("summary")} className="text-gold hover:underline">Summary tab</button> first.
+              Cash opening balance not set for this date. Set it in the{" "}
+              <button onClick={() => setViewTab("summary")} className="text-gold hover:underline">Summary tab</button>.
             </div>
           )}
 
-          {/* Balance strip */}
-          {pos?.hasOpening && openingBalance !== null && closingBalance !== null && (
+          {/* Balance strip — cash only */}
+          {hasOpening && openingCash !== null && closingCash !== null && (
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-white rounded-xl border border-line p-4 shadow-soft text-center">
-                <p className="text-xs text-ink-dim mb-1">Opening Balance</p>
-                <p className="text-lg font-bold text-gold">{inr(openingBalance)}</p>
-                <p className="text-xs text-ink-dim mt-0.5">Cash + Bank</p>
+                <p className="text-xs text-ink-dim mb-1">Opening Cash</p>
+                <p className="text-lg font-bold text-gold">{inr(openingCash)}</p>
+                <p className="text-xs text-ink-dim mt-0.5">Start of {date}</p>
               </div>
               <div className="bg-white rounded-xl border border-line p-4 shadow-soft text-center">
-                <p className="text-xs text-ink-dim mb-1">Today Sales</p>
-                <p className="text-lg font-bold text-ok">{inr(saleCreditTotal)}</p>
-                <p className="text-xs text-ink-dim mt-0.5">{saleRows.length} bill{saleRows.length !== 1 ? "s" : ""}</p>
+                <p className="text-xs text-ink-dim mb-1">Closing Cash (calc.)</p>
+                <p className="text-lg font-bold text-ok">{inr(closingCash)}</p>
+                <p className="text-xs text-ink-dim mt-0.5">Opening + movements</p>
               </div>
-              <div className="bg-white rounded-xl border border-line p-4 shadow-soft text-center">
-                <p className="text-xs text-ink-dim mb-1">Closing Balance</p>
-                <p className="text-lg font-bold text-ok">{inr(closingBalance)}</p>
-                <p className="text-xs text-ink-dim mt-0.5">Cash + Bank</p>
+              <div className={`bg-white rounded-xl border p-4 shadow-soft text-center ${
+                cashCount ? "border-ok/40" : "border-line"
+              }`}>
+                <p className="text-xs text-ink-dim mb-1">Actual Cash (counted)</p>
+                {cashCount ? (
+                  <>
+                    <p className={`text-lg font-bold ${
+                      Math.abs(cashCount.actual - closingCash) < 1 ? "text-ok" : "text-warn"
+                    }`}>{inr(cashCount.actual)}</p>
+                    <p className={`text-xs mt-0.5 font-medium ${
+                      Math.abs(cashCount.actual - closingCash) < 1 ? "text-ok" : "text-warn"
+                    }`}>
+                      {Math.abs(cashCount.actual - closingCash) < 1
+                        ? "Tallied ✓"
+                        : `Diff: ${cashCount.actual - closingCash >= 0 ? "+" : ""}${inr(cashCount.actual - closingCash)}`}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-lg font-bold text-ink-dim">—</p>
+                    <button onClick={() => { setShowCountForm(true); setCountAmt(closingCash); setCountNotes(""); setViewTab("summary"); }}
+                      className="text-xs text-gold hover:underline mt-0.5">Count Cash</button>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -402,14 +458,14 @@ export default function DailySheetPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {/* Opening balance row */}
-                  {pos?.hasOpening && openingBalance !== null && (
+                  {/* Opening / Closing balance row */}
+                  {hasOpening && openingCash !== null && (
                     <tr className="border-b border-line bg-gold/5">
-                      <td className="px-4 py-2 font-semibold text-gold text-xs">Opening Balance</td>
-                      <td className="px-3 py-2 text-xs text-ink-dim">Closing Balance</td>
-                      <td className="px-3 py-2 text-right font-mono text-xs font-semibold text-gold">{inr(openingBalance)}</td>
+                      <td className="px-4 py-2 font-semibold text-gold text-xs">Opening Balance (Cash)</td>
+                      <td className="px-3 py-2 text-xs text-ink-dim">Closing Balance (Cash)</td>
+                      <td className="px-3 py-2 text-right font-mono text-xs font-semibold text-gold">{inr(openingCash)}</td>
                       <td className="px-4 py-2 text-right font-mono text-xs font-semibold text-gold">
-                        {closingBalance !== null ? inr(closingBalance) : ""}
+                        {closingCash !== null ? inr(closingCash) : ""}
                       </td>
                     </tr>
                   )}
