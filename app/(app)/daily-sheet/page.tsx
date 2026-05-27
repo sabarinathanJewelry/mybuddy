@@ -183,9 +183,11 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
               return `${wt}${i.description || (i.metal ?? "item").replace(/_/g, " ")}`;
             }).join(", ");
 
+        // Only non-cash modes go in the Debit column.
+        // Cash received is implicit: net cash = Credit − Debit.
         const payments: { note: string; amount: number; mode: string }[] =
           ((s.sale_payments ?? []) as any[])
-            .filter((p: any) => Number(p.amount) > 0)
+            .filter((p: any) => Number(p.amount) > 0 && p.mode !== "cash")
             .map((p: any) => ({
               note: paymentNote(p.mode, Number(p.metal_wt ?? 0)),
               amount: Number(p.amount),
