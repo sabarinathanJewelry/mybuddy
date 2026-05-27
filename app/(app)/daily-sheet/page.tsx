@@ -135,6 +135,7 @@ const MISC_REF: Record<string, string> = {
   bullion:          "Bullion",
   old_metal_intake: "Old Gold / Silver",
   supplier_payment: "Supplier",
+  advance_used:     "Advance Used",
 };
 
 function paymentNote(mode: string, metalWt: number): string {
@@ -149,21 +150,28 @@ function paymentNote(mode: string, metalWt: number): string {
   return mode;
 }
 
-function useDaySalesLedger(date: string) {
+function useDaySalesLedger(fromDate: string, toDate: string) {
   return useQuery({
-    queryKey: ["day-sales-ledger", date],
+    queryKey: ["day-sales-ledger", fromDate, toDate],
     queryFn: async () => {
       const client = supabase();
-      const [salesRes, miscCashRes, miscBankRes] = await Promise.all([
+      const [salesRes, miscCashRes, miscBankRes, advanceRes] = await Promise.all([
         client.from("sales")
-          .select("id, bill_no, total, customers(name), sale_items(description, metal, net_wt), sale_payments(mode, amount, metal_wt)")
-          .eq("bill_date", date).eq("status", "confirmed").order("created_at"),
+          .select("id, bill_no, bill_date, total, customers(name), sale_items(description, metal, net_wt), sale_payments(mode, amount, metal_wt)")
+          .gte("bill_date", fromDate).lte("bill_date", toDate)
+          .eq("status", "confirmed").order("bill_date").order("created_at"),
         client.from("cash_ledger")
-          .select("id, description, direction, amount, ref_type, created_at")
-          .eq("tx_date", date).neq("ref_type", "sale").order("created_at"),
+          .select("id, description, direction, amount, ref_type, tx_date, created_at")
+          .gte("tx_date", fromDate).lte("tx_date", toDate).neq("ref_type", "sale").order("tx_date").order("created_at"),
         client.from("bank_ledger")
-          .select("id, description, direction, amount, ref_type, created_at")
-          .eq("tx_date", date).neq("ref_type", "sale").order("created_at"),
+          .select("id, description, direction, amount, ref_type, tx_date, created_at")
+          .gte("tx_date", fromDate).lte("tx_date", toDate).neq("ref_type", "sale").order("tx_date").order("created_at"),
+        // Advance used for non-cash purposes (chit installment, order redemption)
+        client.from("payments")
+          .select("id, pay_date, amount, notes, created_at, customers(name)")
+          .gte("pay_date", fromDate).lte("pay_date", toDate)
+          .eq("mode", "advance").eq("direction", "out").eq("is_advance", true)
+          .order("pay_date").order("created_at"),
       ]);
 
       const saleRows = (salesRes.data ?? []).map((s: any) => {
@@ -187,6 +195,7 @@ function useDaySalesLedger(date: string) {
         return {
           id: s.id as string,
           billNo: s.bill_no as string,
+          billDate: s.bill_date as string,
           itemDesc,
           customerName: (s.customers as any)?.name as string | null ?? null,
           credit: Number(s.total),
@@ -194,52 +203,66 @@ function useDaySalesLedger(date: string) {
         };
       });
 
+      const advanceEntries = (advanceRes.data ?? []).map((e: any) => ({
+        id: `adv-${e.id}`,
+        description: (e.customers as any)?.name
+          ? `${(e.customers as any).name} — ${e.notes ?? "Advance used"}`
+          : (e.notes ?? "Advance used"),
+        direction: "advance_out" as string,
+        amount: Number(e.amount),
+        ref_type: "advance_used",
+        tx_date: e.pay_date as string,
+        created_at: e.created_at as string,
+        src: "Advance",
+      }));
+
       const miscEntries = [
         ...(miscCashRes.data ?? []).map((e: any) => ({ ...e, src: "Cash" })),
         ...(miscBankRes.data ?? []).map((e: any) => ({ ...e, src: "Bank" })),
-      ].sort((a: any, b: any) =>
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
+        ...advanceEntries,
+      ].sort((a: any, b: any) => {
+        const d = (a.tx_date ?? "").localeCompare(b.tx_date ?? "");
+        return d !== 0 ? d : new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      });
 
       return { saleRows, miscEntries };
     },
   });
 }
 
-// Date-specific cash position: opening and closing cash for any given date
-function useDateCashPosition(date: string) {
+// Date-specific cash position: opening for fromDate, closing through toDate
+function useDateCashPosition(fromDate: string, toDate: string) {
   return useQuery({
-    queryKey: ["date-cash-pos", date],
+    queryKey: ["date-cash-pos", fromDate, toDate],
     queryFn: async () => {
       const client = supabase();
-      // Find the latest opening balance on or before this date
       const { data: obData } = await client.from("opening_balances")
         .select("amount, effective_date")
         .eq("balance_type", "cash")
-        .lte("effective_date", date)
+        .lte("effective_date", fromDate)
         .order("effective_date", { ascending: false })
         .limit(1);
       const ob = obData?.[0] ?? null;
       if (!ob) return null;
 
-      // Cash movements: before date (for opening) and on date (for closing)
-      const [priorRes, todayRes] = await Promise.all([
+      const [priorRes, rangeRes] = await Promise.all([
         client.from("cash_ledger")
           .select("direction, amount")
           .gte("tx_date", ob.effective_date)
-          .lt("tx_date", date),
+          .lt("tx_date", fromDate),
         client.from("cash_ledger")
           .select("direction, amount")
-          .eq("tx_date", date),
+          .gte("tx_date", fromDate)
+          .lte("tx_date", toDate),
       ]);
 
       const priorNet = (priorRes.data ?? []).reduce((s: number, r: any) =>
         s + (r.direction === "in" ? Number(r.amount) : -Number(r.amount)), 0);
       const openingCash = Number(ob.amount) + priorNet;
 
-      const todayNet = (todayRes.data ?? []).reduce((s: number, r: any) =>
+      const rangeNet = (rangeRes.data ?? []).reduce((s: number, r: any) =>
         s + (r.direction === "in" ? Number(r.amount) : -Number(r.amount)), 0);
-      const closingCash = openingCash + todayNet;
+      const closingCash = openingCash + rangeNet;
 
       return { openingCash, closingCash };
     },
@@ -282,8 +305,11 @@ export default function DailySheetPage() {
   const { data: cashCount } = useCashCount(date);
   const [viewTab, setViewTab] = useState<ViewTab>("summary");
   const [includeBankOut, setIncludeBankOut] = useState(false);
-  const { data: salesLedger, isLoading: ledgerLoading } = useDaySalesLedger(date);
-  const { data: cashPos } = useDateCashPosition(date);
+  const [cbFrom, setCbFrom] = useState(date);
+  const [cbTo,   setCbTo]   = useState(date);
+  const { data: salesLedger, isLoading: ledgerLoading } = useDaySalesLedger(cbFrom, cbTo);
+  const { data: cashPos } = useDateCashPosition(cbFrom, cbTo);
+  const multiDay = cbFrom !== cbTo;
 
   // Cash reconciliation
   const [showCountForm, setShowCountForm] = useState(false);
@@ -367,12 +393,12 @@ export default function DailySheetPage() {
   const saleRows    = salesLedger?.saleRows ?? [];
   const miscEntries = (salesLedger?.miscEntries ?? []) as any[];
 
-  // Filter misc entries — bank-out only included if toggle is on
+  // Filter misc entries — bank-out only if toggle on; advance_out always shown
   const visibleMisc = miscEntries.filter((e: any) =>
     !(e.src === "Bank" && e.direction === "out" && !includeBankOut)
   );
 
-  // Debit = all payment modes received per sale + misc "out"
+  // Debit = all payment modes per sale + cash/bank "out" (advance_out excluded from totals — non-cash)
   const saleDebitTotal  = saleRows.reduce((s, r) => s + r.payments.reduce((ps, p) => ps + p.amount, 0), 0);
   const miscDebitTotal  = visibleMisc.filter((e: any) => e.direction === "out").reduce((s: number, e: any) => s + Number(e.amount), 0);
   const grandDebit  = saleDebitTotal + miscDebitTotal;
@@ -422,7 +448,7 @@ export default function DailySheetPage() {
               <div className="bg-white rounded-xl border border-line p-4 shadow-soft text-center">
                 <p className="text-xs text-ink-dim mb-1">Opening Cash</p>
                 <p className="text-lg font-bold text-gold">{inr(openingCash)}</p>
-                <p className="text-xs text-ink-dim mt-0.5">Start of {date}</p>
+                <p className="text-xs text-ink-dim mt-0.5">Start of {cbFrom}</p>
               </div>
               <div className="bg-white rounded-xl border border-line p-4 shadow-soft text-center">
                 <p className="text-xs text-ink-dim mb-1">Closing Cash (calc.)</p>
@@ -457,21 +483,30 @@ export default function DailySheetPage() {
             </div>
           )}
 
+          {/* Date range + options row */}
+          <div className="flex flex-wrap items-center gap-3 bg-white border border-line rounded-xl px-4 py-2.5 shadow-soft text-xs">
+            <span className="text-ink-dim font-medium">Period:</span>
+            <input type="date" value={cbFrom} onChange={e => setCbFrom(e.target.value)}
+              className="border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+            <span className="text-ink-dim">to</span>
+            <input type="date" value={cbTo} onChange={e => setCbTo(e.target.value)}
+              className="border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+            {multiDay && (
+              <button onClick={() => { setCbFrom(date); setCbTo(date); }}
+                className="text-gold hover:underline">Reset to today</button>
+            )}
+            <label className="flex items-center gap-1.5 ml-auto cursor-pointer select-none text-ink-dim">
+              <input type="checkbox" checked={includeBankOut} onChange={e => setIncludeBankOut(e.target.checked)}
+                className="accent-gold" />
+              Include bank-out
+            </label>
+          </div>
+
           {/* Ledger table */}
           {ledgerLoading ? (
             <p className="text-ink-dim text-sm">Loading…</p>
           ) : (
             <>
-            <div className="flex items-center gap-2 mb-2">
-              <label className="flex items-center gap-2 text-xs text-ink-dim cursor-pointer select-none">
-                <input type="checkbox" checked={includeBankOut} onChange={e => setIncludeBankOut(e.target.checked)}
-                  className="accent-gold" />
-                Include bank expenses (bank-out) in ledger
-              </label>
-              {includeBankOut && (
-                <span className="text-[10px] bg-info/10 text-info px-1.5 py-0.5 rounded">Bank out included</span>
-              )}
-            </div>
 
             <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
               <table className="w-full text-sm" style={{ minWidth: "560px" }}>
@@ -497,7 +532,7 @@ export default function DailySheetPage() {
                   )}
 
                   {saleRows.length === 0 && visibleMisc.length === 0 ? (
-                    <tr><td colSpan={4} className="px-4 py-8 text-center text-ink-dim">No transactions on {date}</td></tr>
+                    <tr><td colSpan={4} className="px-4 py-8 text-center text-ink-dim">No transactions{multiDay ? ` from ${cbFrom} to ${cbTo}` : ` on ${cbFrom}`}</td></tr>
                   ) : <>
                     {/* Sale rows — sub-rows rendered inline so rowSpan works */}
                     {saleRows.flatMap((sale) => {
@@ -515,7 +550,9 @@ export default function DailySheetPage() {
                           <td rowSpan={totalRows}
                             className="px-4 py-2.5 align-top border-b border-line border-r border-line/30" style={{ verticalAlign: "top" }}>
                             <div className="text-sm font-medium">{label}</div>
-                            <div className="text-xs text-ink-dim mt-0.5">{sale.billNo}</div>
+                            <div className="text-xs text-ink-dim mt-0.5">
+                              {sale.billNo}{multiDay ? ` · ${sale.billDate}` : ""}
+                            </div>
                           </td>
                           <td className="px-3 py-2.5 text-xs text-ink-dim">{firstPay ? firstPay.note : "—"}</td>
                           <td className="px-3 py-2.5 text-right font-mono text-xs text-err">
@@ -537,20 +574,30 @@ export default function DailySheetPage() {
                     })}
 
                     {/* Misc (non-sale) entries */}
-                    {visibleMisc.map((e: any, mi: number) => (
-                      <tr key={`misc-${mi}`} className="border-b border-line hover:bg-canvas/50">
-                        <td className="px-4 py-2 text-sm">{e.description || "—"}</td>
-                        <td className="px-3 py-2 text-xs text-ink-dim">
-                          {e.src} · {MISC_REF[e.ref_type] ?? e.ref_type ?? ""}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-xs text-err">
-                          {e.direction === "out" ? inr(Number(e.amount)) : ""}
-                        </td>
-                        <td className="px-4 py-2 text-right font-mono text-xs text-ok">
-                          {e.direction === "in" ? inr(Number(e.amount)) : ""}
-                        </td>
-                      </tr>
-                    ))}
+                    {visibleMisc.map((e: any, mi: number) => {
+                      const isAdv = e.direction === "advance_out";
+                      return (
+                        <tr key={`misc-${mi}`} className={`border-b border-line hover:bg-canvas/50 ${isAdv ? "bg-info/5" : ""}`}>
+                          <td className="px-4 py-2 text-sm">
+                            {e.description || "—"}
+                            {multiDay && e.tx_date && (
+                              <span className="ml-1.5 text-[10px] text-ink-dim">{e.tx_date}</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-ink-dim">
+                            {e.src} · {MISC_REF[e.ref_type] ?? e.ref_type ?? ""}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-xs">
+                            <span className={isAdv ? "text-info" : "text-err"}>
+                              {(e.direction === "out" || isAdv) ? inr(Number(e.amount)) : ""}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 text-right font-mono text-xs text-ok">
+                            {e.direction === "in" ? inr(Number(e.amount)) : ""}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </>}
                 </tbody>
                 <tfoot>
