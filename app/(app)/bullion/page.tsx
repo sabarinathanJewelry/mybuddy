@@ -125,16 +125,45 @@ export default function BullionPage() {
   const [payMode, setPayMode] = useState("cash");
   const [payDate, setPayDate] = useState(globalDate);
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   function resetForm() {
     setPartyName(""); setPureWt(0); setRatePerG(0); setTotalAmt(0);
     setActiveField("total"); setFirstPayAmt(0); setFirstPayMode("cash"); setFormNotes("");
-    setTradeDate(globalDate); setShowForm(false);
+    setTradeDate(globalDate); setShowForm(false); setEditingId(null);
+  }
+
+  function openEdit(r: any) {
+    setEditingId(r.id);
+    setTradeType(r.trade_type as TradeType);
+    setMetal(r.metal as Metal);
+    setPartyName(r.party_name ?? "");
+    setTradeDate(r.trade_date ?? globalDate);
+    setPureWt(Number(r.pure_wt) || 0);
+    setRatePerG(Number(r.rate_per_g) || 0);
+    setTotalAmt(Number(r.total_amount) || 0);
+    setActiveField("rate");
+    setFormNotes(r.notes ?? "");
+    setFirstPayAmt(0);
+    setShowForm(true);
   }
 
   const saveTrade = useMutation({
     mutationFn: async () => {
       if (!partyName || pureWt <= 0 || totalAmt <= 0 || ratePerG <= 0) throw new Error("Invalid input");
       const client = supabase();
+
+      if (editingId) {
+        const { error } = await client.from("bullion_trades").update({
+          trade_date: tradeDate, trade_type: tradeType,
+          party_name: partyName, metal,
+          pure_wt: pureWt, rate_per_g: ratePerG, total_amount: totalAmt,
+          notes: formNotes || null,
+        }).eq("id", editingId);
+        if (error) throw error;
+        return;
+      }
 
       const { data: row, error } = await client.from("bullion_trades").insert({
         trade_date: tradeDate, trade_type: tradeType,
@@ -168,6 +197,24 @@ export default function BullionPage() {
       qc.invalidateQueries({ queryKey: ["bullion_trades"] });
       qc.invalidateQueries({ queryKey: ["metal_reserve"] });
       resetForm();
+    },
+  });
+
+  const deleteTrade = useMutation({
+    mutationFn: async (id: string) => {
+      const client = supabase();
+      await Promise.allSettled([
+        client.from("cash_ledger").delete().eq("ref_type", "bullion").eq("ref_id", id),
+        client.from("bank_ledger").delete().eq("ref_type", "bullion").eq("ref_id", id),
+      ]);
+      await client.from("bullion_payments").delete().eq("trade_id", id);
+      const { error } = await client.from("bullion_trades").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["bullion_trades"] });
+      qc.invalidateQueries({ queryKey: ["metal_reserve"] });
+      setDeletingId(null);
     },
   });
 
@@ -255,7 +302,7 @@ export default function BullionPage() {
       {showForm && (
         <div className={`bg-white border rounded-xl p-5 shadow-soft space-y-4 ${tradeType === "buy" ? "border-gold/40" : "border-ok/40"}`}>
           <h3 className={`font-semibold text-sm ${tradeType === "buy" ? "text-gold" : "text-ok"}`}>
-            {tradeType === "buy" ? "🔶 Buy from Bullion Dealer" : "💰 Sell to Bullion Dealer"}
+            {editingId ? `Edit ${tradeType === "buy" ? "Purchase" : "Sale"}` : tradeType === "buy" ? "🔶 Buy from Bullion Dealer" : "💰 Sell to Bullion Dealer"}
           </h3>
 
           <div className="grid grid-cols-2 gap-3">
@@ -326,8 +373,8 @@ export default function BullionPage() {
             </div>
           </div>
 
-          {/* Optional first payment */}
-          <div className="border-t border-line pt-3 space-y-3">
+          {/* Optional first payment — only for new trades */}
+          {!editingId && <div className="border-t border-line pt-3 space-y-3">
             <p className="text-xs font-medium text-ink-dim">
               {tradeType === "buy" ? "Pay now (optional — add more later)" : "Receive now (optional — add more later)"}
             </p>
@@ -353,7 +400,7 @@ export default function BullionPage() {
                 Pending after this: <strong className="text-err">{inr(totalAmt - firstPayAmt)}</strong>
               </p>
             )}
-          </div>
+          </div>}
 
           <div>
             <label className="block text-xs text-ink-dim mb-1">Notes</label>
@@ -366,7 +413,7 @@ export default function BullionPage() {
               disabled={saveTrade.isPending || !partyName || pureWt <= 0 || totalAmt <= 0 || ratePerG <= 0}
               onClick={() => saveTrade.mutate()}
               className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
-              {saveTrade.isPending ? "Saving…" : `Record ${tradeType === "buy" ? "Purchase" : "Sale"}`}
+              {saveTrade.isPending ? "Saving…" : editingId ? "Save Changes" : `Record ${tradeType === "buy" ? "Purchase" : "Sale"}`}
             </button>
             <button type="button" onClick={resetForm}
               className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
@@ -427,6 +474,31 @@ export default function BullionPage() {
         );
       })()}
 
+      {/* Delete confirmation */}
+      {deletingId && (() => {
+        const trade = rows.find((r: any) => r.id === deletingId);
+        if (!trade) return null;
+        return (
+          <div className="bg-white border border-err/40 rounded-xl p-4 shadow-soft space-y-3">
+            <p className="text-sm font-semibold text-err">Delete this trade?</p>
+            <p className="text-xs text-ink-dim">
+              {shortDate(trade.trade_date)} · {trade.trade_type === "buy" ? "Buy" : "Sell"} · {trade.party_name} · {grams(Number(trade.pure_wt))} · {inr(Number(trade.total_amount))}
+            </p>
+            <p className="text-xs text-ink-dim">All payments and ledger entries for this trade will also be removed.</p>
+            <div className="flex gap-2">
+              <button
+                disabled={deleteTrade.isPending}
+                onClick={() => deleteTrade.mutate(deletingId)}
+                className="bg-err text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
+                {deleteTrade.isPending ? "Deleting…" : "Yes, Delete"}
+              </button>
+              <button onClick={() => setDeletingId(null)}
+                className="border border-line text-sm px-5 py-2 rounded-lg2">Cancel</button>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Trades table */}
       {isLoading ? <p className="text-ink-dim text-sm">{t("loading")}</p> : (
         <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
@@ -469,13 +541,19 @@ export default function BullionPage() {
                       <span className={pend > 0.01 ? "text-err font-semibold" : "text-ink-dim"}>{inr(pend)}</span>
                     </td>
                     <td className="px-3 py-2.5">
-                      {pend > 0.01 && (
-                        <button
-                          onClick={() => { setPayingTradeId(r.id); setPayAmount(0); setPayDate(globalDate); }}
-                          className="text-xs text-gold hover:underline whitespace-nowrap">
-                          + Pay
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {pend > 0.01 && (
+                          <button
+                            onClick={() => { setPayingTradeId(r.id); setPayAmount(0); setPayDate(globalDate); }}
+                            className="text-xs text-gold hover:underline whitespace-nowrap">
+                            + Pay
+                          </button>
+                        )}
+                        <button onClick={() => openEdit(r)}
+                          className="text-xs text-info hover:underline">Edit</button>
+                        <button onClick={() => setDeletingId(r.id)}
+                          className="text-xs text-err hover:underline">Del</button>
+                      </div>
                     </td>
                   </tr>
                 );
