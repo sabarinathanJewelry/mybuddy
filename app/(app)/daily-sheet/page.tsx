@@ -273,6 +273,7 @@ export default function DailySheetPage() {
   const { data: pos } = usePosition();
   const { data: cashCount } = useCashCount(date);
   const [viewTab, setViewTab] = useState<ViewTab>("summary");
+  const [includeBankOut, setIncludeBankOut] = useState(false);
   const { data: salesLedger, isLoading: ledgerLoading } = useDaySalesLedger(date);
   const { data: cashPos } = useDateCashPosition(date);
 
@@ -358,14 +359,19 @@ export default function DailySheetPage() {
   const saleRows    = salesLedger?.saleRows ?? [];
   const miscEntries = (salesLedger?.miscEntries ?? []) as any[];
 
+  // Filter misc entries — bank-out only included if toggle is on
+  const visibleMisc = miscEntries.filter((e: any) =>
+    !(e.src === "Bank" && e.direction === "out" && !includeBankOut)
+  );
+
   // Debit = all payment modes received per sale + misc "out"
   const saleDebitTotal  = saleRows.reduce((s, r) => s + r.payments.reduce((ps, p) => ps + p.amount, 0), 0);
-  const miscDebitTotal  = miscEntries.filter((e: any) => e.direction === "out").reduce((s: number, e: any) => s + Number(e.amount), 0);
+  const miscDebitTotal  = visibleMisc.filter((e: any) => e.direction === "out").reduce((s: number, e: any) => s + Number(e.amount), 0);
   const grandDebit  = saleDebitTotal + miscDebitTotal;
 
   // Credit = sale totals + misc "in"
   const saleCreditTotal = saleRows.reduce((s, r) => s + r.credit, 0);
-  const miscCreditTotal = miscEntries.filter((e: any) => e.direction === "in").reduce((s: number, e: any) => s + Number(e.amount), 0);
+  const miscCreditTotal = visibleMisc.filter((e: any) => e.direction === "in").reduce((s: number, e: any) => s + Number(e.amount), 0);
   const grandCredit = saleCreditTotal + miscCreditTotal;
 
   // Date-specific cash position (cash only, from useDateCashPosition)
@@ -447,6 +453,18 @@ export default function DailySheetPage() {
           {ledgerLoading ? (
             <p className="text-ink-dim text-sm">Loading…</p>
           ) : (
+            <>
+            <div className="flex items-center gap-2 mb-2">
+              <label className="flex items-center gap-2 text-xs text-ink-dim cursor-pointer select-none">
+                <input type="checkbox" checked={includeBankOut} onChange={e => setIncludeBankOut(e.target.checked)}
+                  className="accent-gold" />
+                Include bank expenses (bank-out) in ledger
+              </label>
+              {includeBankOut && (
+                <span className="text-[10px] bg-info/10 text-info px-1.5 py-0.5 rounded">Bank out included</span>
+              )}
+            </div>
+
             <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
               <table className="w-full text-sm" style={{ minWidth: "560px" }}>
                 <thead>
@@ -470,64 +488,62 @@ export default function DailySheetPage() {
                     </tr>
                   )}
 
-                  {/* Sale rows */}
-                  {saleRows.length === 0 && miscEntries.length === 0 ? (
+                  {saleRows.length === 0 && visibleMisc.length === 0 ? (
                     <tr><td colSpan={4} className="px-4 py-8 text-center text-ink-dim">No transactions on {date}</td></tr>
-                  ) : (
-                    <>
-                      {saleRows.map((sale, si) => {
-                        const firstPay = sale.payments[0];
-                        const restPay  = sale.payments.slice(1);
-                        const label = sale.customerName
-                          ? `${sale.itemDesc} (${sale.customerName})`
-                          : sale.itemDesc;
-                        return (
-                          <tr key={sale.id} className={`border-b border-line hover:bg-canvas/50 ${restPay.length > 0 ? "border-b-0" : ""}`}>
-                            <td className="px-4 py-2 align-top" rowSpan={1 + restPay.length}>
-                              <div className="text-sm">{label}</div>
-                              <div className="text-xs text-ink-dim mt-0.5">{sale.billNo}</div>
-                            </td>
-                            <td className="px-3 py-2 text-xs text-ink-dim">
-                              {firstPay ? firstPay.note : "—"}
-                            </td>
-                            <td className="px-3 py-2 text-right font-mono text-xs text-err">
-                              {firstPay ? inr(firstPay.amount) : ""}
-                            </td>
-                            <td className="px-4 py-2 text-right font-mono text-xs font-semibold text-ok">
-                              {inr(sale.credit)}
-                            </td>
-                          </tr>
-                        );
-                      })}
+                  ) : <>
+                    {/* Sale rows — sub-rows rendered inline so rowSpan works */}
+                    {saleRows.flatMap((sale) => {
+                      const allPay = sale.payments;
+                      const firstPay = allPay[0];
+                      const restPay  = allPay.slice(1);
+                      const label = sale.customerName
+                        ? `${sale.itemDesc} (${sale.customerName})`
+                        : sale.itemDesc;
+                      const totalRows = 1 + restPay.length;
 
-                      {/* Payment sub-rows (2nd, 3rd payment modes) */}
-                      {saleRows.flatMap((sale) =>
-                        sale.payments.slice(1).map((pay, pi) => (
-                          <tr key={`${sale.id}-p${pi}`} className="border-b border-line hover:bg-canvas/50">
-                            <td className="px-3 py-1.5 text-xs text-ink-dim">{pay.note}</td>
+                      return [
+                        <tr key={`${sale.id}-0`}
+                          className={`hover:bg-canvas/50 ${restPay.length === 0 ? "border-b border-line" : ""}`}>
+                          <td rowSpan={totalRows}
+                            className="px-4 py-2.5 align-top border-b border-line border-r border-line/30" style={{ verticalAlign: "top" }}>
+                            <div className="text-sm font-medium">{label}</div>
+                            <div className="text-xs text-ink-dim mt-0.5">{sale.billNo}</div>
+                          </td>
+                          <td className="px-3 py-2.5 text-xs text-ink-dim">{firstPay ? firstPay.note : "—"}</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-xs text-err">
+                            {firstPay ? inr(firstPay.amount) : ""}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-mono text-xs font-semibold text-ok">
+                            {inr(sale.credit)}
+                          </td>
+                        </tr>,
+                        ...restPay.map((pay, pi) => (
+                          <tr key={`${sale.id}-${pi + 1}`}
+                            className={`hover:bg-canvas/50 bg-canvas/20 ${pi === restPay.length - 1 ? "border-b border-line" : ""}`}>
+                            <td className="px-3 py-1.5 text-xs text-ink-dim pl-4">{pay.note}</td>
                             <td className="px-3 py-1.5 text-right font-mono text-xs text-err">{inr(pay.amount)}</td>
                             <td className="px-4 py-1.5" />
                           </tr>
-                        ))
-                      )}
+                        )),
+                      ];
+                    })}
 
-                      {/* Misc (non-sale) entries */}
-                      {miscEntries.map((e: any, mi: number) => (
-                        <tr key={`misc-${mi}`} className="border-b border-line hover:bg-canvas/50">
-                          <td className="px-4 py-2 text-sm">{e.description || "—"}</td>
-                          <td className="px-3 py-2 text-xs text-ink-dim">
-                            {e.src} · {MISC_REF[e.ref_type] ?? e.ref_type ?? ""}
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono text-xs text-err">
-                            {e.direction === "out" ? inr(Number(e.amount)) : ""}
-                          </td>
-                          <td className="px-4 py-2 text-right font-mono text-xs text-ok">
-                            {e.direction === "in" ? inr(Number(e.amount)) : ""}
-                          </td>
-                        </tr>
-                      ))}
-                    </>
-                  )}
+                    {/* Misc (non-sale) entries */}
+                    {visibleMisc.map((e: any, mi: number) => (
+                      <tr key={`misc-${mi}`} className="border-b border-line hover:bg-canvas/50">
+                        <td className="px-4 py-2 text-sm">{e.description || "—"}</td>
+                        <td className="px-3 py-2 text-xs text-ink-dim">
+                          {e.src} · {MISC_REF[e.ref_type] ?? e.ref_type ?? ""}
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-xs text-err">
+                          {e.direction === "out" ? inr(Number(e.amount)) : ""}
+                        </td>
+                        <td className="px-4 py-2 text-right font-mono text-xs text-ok">
+                          {e.direction === "in" ? inr(Number(e.amount)) : ""}
+                        </td>
+                      </tr>
+                    ))}
+                  </>}
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-line bg-canvas font-semibold">
@@ -539,6 +555,7 @@ export default function DailySheetPage() {
                 </tfoot>
               </table>
             </div>
+            </>
           )}
         </div>
       )}
