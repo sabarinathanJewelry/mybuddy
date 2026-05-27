@@ -393,10 +393,13 @@ export default function DailySheetPage() {
   const saleRows    = salesLedger?.saleRows ?? [];
   const miscEntries = (salesLedger?.miscEntries ?? []) as any[];
 
-  // Filter misc entries — bank-out only if toggle on; advance_out always shown
-  const visibleMisc = miscEntries.filter((e: any) =>
-    !(e.src === "Bank" && e.direction === "out" && !includeBankOut)
-  );
+  // Bank-in entries are bank account receipts, not cash — always hide from cash book.
+  // Bank-out (expenses, transfers out of bank) shown only when toggle is on.
+  const visibleMisc = miscEntries.filter((e: any) => {
+    if (e.src === "Bank" && e.direction === "in") return false;
+    if (e.src === "Bank" && e.direction === "out" && !includeBankOut) return false;
+    return true;
+  });
 
   // Debit = all payment modes per sale + cash/bank "out" (advance_out excluded from totals — non-cash)
   const saleDebitTotal  = saleRows.reduce((s, r) => s + r.payments.reduce((ps, p) => ps + p.amount, 0), 0);
