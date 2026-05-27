@@ -764,8 +764,8 @@ export default function DailySheetPage() {
                   <tr className="border-t-2 border-line bg-canvas font-semibold">
                     <td className="px-4 py-2.5 text-xs text-ink-dim uppercase tracking-wide">Total</td>
                     <td className="px-3 py-2.5" />
-                    <td className="px-3 py-2.5 text-right font-mono text-err">{inr(grandDebit)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono text-ok">{inr(grandCredit)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-err">{inr(grandDebit + (cbToCount?.actual ?? 0))}</td>
+                    <td className="px-4 py-2.5 text-right font-mono text-ok">{inr(grandCredit + (prevDayCount?.actual ?? 0))}</td>
                   </tr>
                 </tfoot>
               </table>
