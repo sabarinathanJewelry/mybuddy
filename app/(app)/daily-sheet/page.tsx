@@ -157,7 +157,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
       const client = supabase();
       const [salesRes, orderRes, miscCashRes, miscBankRes, advanceRes, bullionPayRes, oldGoldAdvRes] = await Promise.all([
         client.from("sales")
-          .select("id, bill_no, bill_date, total, change_due, change_mode, customers(name), sale_items(description, metal, net_wt), sale_payments(mode, amount, metal_wt)")
+          .select("id, bill_no, bill_date, total, customers(name), sale_items(description, metal, net_wt), sale_payments(mode, amount, metal_wt)")
           .gte("bill_date", fromDate).lte("bill_date", toDate)
           .eq("status", "confirmed").order("bill_date").order("created_at"),
         // Order payments grouped by order+date (handles old gold, UPI, cash, advance per order)
@@ -215,8 +215,8 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
         const balanceDue = Number(s.total) - allPaid;
 
         const customerName = (s.customers as any)?.name as string | null ?? null;
-        const changeDue = Number(s.change_due) || 0;
-        const changeMode = s.change_mode as string | null;
+        // Excess = payments exceed bill total → kept as customer advance
+        const excessPaid = allPaid - Number(s.total);
 
         const payments: { note: string; amount: number; mode: string }[] = [
           ...((s.sale_payments ?? []) as any[])
@@ -227,8 +227,8 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
               mode: p.mode as string,
             })),
           ...(balanceDue > 0.005 ? [{ note: "Balance Due", amount: balanceDue, mode: "balance" }] : []),
-          ...(changeDue > 0.005 && changeMode === "advance"
-            ? [{ note: `Advance${customerName ? ` — ${customerName}` : ""}`, amount: changeDue, mode: "advance_kept" }]
+          ...(excessPaid > 0.005
+            ? [{ note: `Advance kept${customerName ? ` — ${customerName}` : ""}`, amount: excessPaid, mode: "advance_kept" }]
             : []),
         ];
 

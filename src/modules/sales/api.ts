@@ -261,6 +261,8 @@ export function useSaveSale() {
           notes: draft.notes, status: "confirmed",
           sale_type: draft.sale_type ?? "fresh",
           exchange_ref_bill: draft.exchange_ref_bill ?? null,
+          change_due: draft.change_due ?? null,
+          change_mode: draft.change_mode ?? null,
         })
         .select().single();
       if (saleErr) throw saleErr;
@@ -324,6 +326,8 @@ export function useUpdateSale() {
         notes: draft.notes, subtotal, gst_amount: gstAmount, total: subtotal,
         sale_type: draft.sale_type ?? "fresh",
         exchange_ref_bill: draft.exchange_ref_bill ?? null,
+        change_due: draft.change_due ?? null,
+        change_mode: draft.change_mode ?? null,
       }).eq("id", id);
       if (saleErr) throw saleErr;
 
