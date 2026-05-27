@@ -124,9 +124,17 @@ function usePosition() {
 
 // ── Day sales ledger (cash book tab) ─────────────────────────────────────────
 const MISC_REF: Record<string, string> = {
-  transfer: "Transfer", expense: "Expense", intake: "Metal In",
-  loan_repayment: "Loan", chit: "Chit", writeoff: "Write-off",
-  deposit: "Deposit", payment: "Payment",
+  transfer:         "Transfer",
+  expense:          "Expense",
+  payment:          "Customer Payment",
+  chit_payment:     "Chit Payment",
+  cash_savings:     "Cash Bonus",
+  loan:             "Loan Received",
+  loan_payment:     "Loan Payment",
+  order:            "Order Advance",
+  bullion:          "Bullion",
+  old_metal_intake: "Old Gold / Silver",
+  supplier_payment: "Supplier",
 };
 
 function paymentNote(mode: string, metalWt: number): string {
