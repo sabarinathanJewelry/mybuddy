@@ -147,7 +147,7 @@ function paymentNote(mode: string, metalWt: number): string {
   if (mode === "upi")        return "UPI / GPay";
   if (mode === "bank")       return "Bank Transfer";
   if (mode === "advance")    return "Advance";
-  if (mode === "chit_metal") return "Metal Chit";
+  if (mode === "chit_metal") return `Metal Chit${wt} — scheme settlement (no cash)`;
   return mode;
 }
 
