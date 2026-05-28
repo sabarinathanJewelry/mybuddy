@@ -79,16 +79,17 @@ function useDaily(date: string) {
 }
 
 // Running all-time position (opening + all movements)
-function usePosition() {
+function usePosition(asOfDate: string) {
   return useQuery({
-    queryKey: ["position"],
+    queryKey: ["position", asOfDate],
     queryFn: async () => {
       const client = supabase();
       const [openingRes, cashAllRes, bankAllRes] = await Promise.all([
         client.from("opening_balances").select("balance_type, amount, effective_date")
+          .lte("effective_date", asOfDate)
           .order("effective_date", { ascending: false }),
-        client.from("cash_ledger").select("direction, amount"),
-        client.from("bank_ledger").select("direction, amount"),
+        client.from("cash_ledger").select("direction, amount").lte("tx_date", asOfDate),
+        client.from("bank_ledger").select("direction, amount").lte("tx_date", asOfDate),
       ]);
 
       // Take the latest opening entry per type
@@ -460,7 +461,7 @@ export default function DailySheetPage() {
   const date = useGlobalDate((s) => s.date);
   const qc = useQueryClient();
   const { data, isLoading } = useDaily(date);
-  const { data: pos } = usePosition();
+  const { data: pos } = usePosition(date);
   const { data: cashCount } = useCashCount(date);
   const [viewTab, setViewTab] = useState<ViewTab>("summary");
   const [includeBankOut, setIncludeBankOut] = useState(false);
@@ -1137,7 +1138,7 @@ export default function DailySheetPage() {
       {pos && pos.hasOpening && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-ink-dim uppercase tracking-wide">Current Position</h2>
+            <h2 className="text-sm font-semibold text-ink-dim uppercase tracking-wide">Position as of {date}</h2>
             <div className="flex gap-2">
               <button onClick={() => { setShowOpeningForm(true); setObCash(pos.openingCash); setObBank(pos.openingBank); setObGold(pos.openingGoldG); setObSilver(pos.openingSilverG); }}
                 className="text-xs text-ink-dim hover:text-gold">Edit Opening</button>
@@ -1157,13 +1158,13 @@ export default function DailySheetPage() {
               label="Cash in Hand (Calculated)"
               value={inr(pos.currentCash)}
               color={pos.currentCash >= 0 ? "text-ok" : "text-err"}
-              sub={`Opening ${inr(pos.openingCash)} + all movements`}
+              sub={`Opening ${inr(pos.openingCash)} + movements up to ${date}`}
             />
             <StatCard
               label="Bank Balance"
               value={inr(pos.currentBank)}
               color={pos.currentBank >= 0 ? "text-ok" : "text-err"}
-              sub={`Opening ${inr(pos.openingBank)} + all movements`}
+              sub={`Opening ${inr(pos.openingBank)} + movements up to ${date}`}
             />
           </div>
 
