@@ -595,12 +595,15 @@ export default function DailySheetPage() {
       if (e.src === "Bank" && e.direction === "in" && e.ref_type !== "transfer") return s + amt;
       return s;
     }, 0) +
-    bullionRows.filter((r: any) => !r.isSell).reduce((s: number, r: any) => s + r.amount, 0);
+    bullionRows.filter((r: any) => !r.isSell).reduce((s: number, r: any) => s + r.amount, 0) +
+    // Old gold advance: pass-through (gold value in = debit, no cash paid)
+    oldGoldAdvRows.reduce((s: number, r: any) => s + r.amount, 0);
 
   const grandCredit =
     saleRows.reduce((s, r) => s + r.credit, 0) +
     orderRows.reduce((s: number, r: any) => s + r.credit, 0) +
-    visibleMisc.filter((e: any) => e.direction === "in").reduce((s: number, e: any) => s + Number(e.amount), 0) +
+    visibleMisc.filter((e: any) => e.direction === "in" || e.direction === "advance_out")
+      .reduce((s: number, e: any) => s + Number(e.amount), 0) +
     bullionRows.filter((r: any) => r.isSell).reduce((s: number, r: any) => s + r.amount, 0) +
     oldGoldAdvRows.reduce((s: number, r: any) => s + r.amount, 0);
 
@@ -920,15 +923,22 @@ export default function DailySheetPage() {
                       </tr>
                     ))}
 
-                    {/* Standalone old gold/silver advance rows */}
+                    {/* Standalone old gold/silver advance rows — pass-through (no cash) */}
                     {oldGoldAdvRows.map((r: any) => (
                       <tr key={`og-adv-${r.id}`} className="border-b border-line bg-info/5 hover:bg-info/10">
                         <td className="px-4 py-2 text-sm text-info font-medium">
                           {r.desc}
                           {multiDay && <span className="ml-1.5 text-[10px] text-ink-dim">{r.payDate}</span>}
                         </td>
-                        <td className="px-3 py-2 text-xs text-info">Customer Advance</td>
-                        <td className="px-3 py-2" />
+                        <td className="px-3 py-2 text-xs text-info">Pass-through (no cash)</td>
+                        <td className="px-3 py-2 text-right font-mono text-xs text-info">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
+                              checked={selDrKeys.has(`dr-og-${r.id}`)}
+                              onChange={() => toggleDr(`dr-og-${r.id}`, r.amount)} />
+                            {inr(r.amount)}
+                          </div>
+                        </td>
                         <td className="px-4 py-2 text-right font-mono text-xs text-info">
                           <div className="flex items-center justify-end gap-1.5">
                             <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
@@ -945,7 +955,8 @@ export default function DailySheetPage() {
                       const isAdv = e.direction === "advance_out";
                       const isBankIn = e.src === "Bank" && e.direction === "in" && e.ref_type !== "transfer";
                       const mkey = `misc-${mi}`;
-                      const mCr = e.direction === "in" ? Number(e.amount) : 0;
+                      // advance_out is pass-through (no cash): debit=advance consumed, credit=chit/payment received
+                      const mCr = (e.direction === "in" || isAdv) ? Number(e.amount) : 0;
                       const mDr = (e.direction === "out" || isAdv || isBankIn) ? Number(e.amount) : 0;
                       return (
                         <tr key={mkey} className={`border-b border-line hover:bg-canvas/50 ${(isAdv || isBankIn) ? "bg-info/5" : ""}`}>
@@ -968,7 +979,7 @@ export default function DailySheetPage() {
                               </div>
                             ) : ""}
                           </td>
-                          <td className="px-4 py-2 text-right font-mono text-xs text-ok">
+                          <td className={`px-4 py-2 text-right font-mono text-xs ${isAdv ? "text-info" : "text-ok"}`}>
                             {mCr > 0 ? (
                               <div className="flex items-center justify-end gap-1.5">
                                 <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
