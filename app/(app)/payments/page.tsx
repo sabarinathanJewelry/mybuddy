@@ -210,9 +210,19 @@ export default function PaymentsPage() {
                       {p.notes && <div className="text-xs text-ink-dim truncate max-w-[180px]">{p.notes}</div>}
                     </td>
                     <td className="px-3 py-2.5 capitalize text-ink-dim">{p.mode}</td>
-                    <td className={clsx("px-3 py-2.5 text-right font-mono", p.direction === "in" ? "text-ok" : "text-err", p.amount === 0 && "font-bold")}>
+                    <td className={clsx(
+                      "px-3 py-2.5 text-right font-mono",
+                      p.amount === 0 && "font-bold",
+                      // non-cash modes (chit_metal, old_gold, old_silver) are scheme settlements — show in blue, not green
+                      (p.mode === "chit_metal" || p.mode === "old_gold" || p.mode === "old_silver")
+                        ? "text-info"
+                        : p.direction === "in" ? "text-ok" : "text-err"
+                    )}>
                       {p.direction === "in" ? "+" : "-"}{inr(p.amount)}
                       {p.amount === 0 && <span className="ml-1 text-xs">(fix this)</span>}
+                      {(p.mode === "chit_metal" || p.mode === "old_gold" || p.mode === "old_silver") && (
+                        <span className="ml-1 text-[10px] text-info font-normal">(no cash)</span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 text-right">
                       <div className="flex items-center justify-end gap-2">
