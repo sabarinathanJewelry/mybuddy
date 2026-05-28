@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSales, useDeleteSale } from "@/modules/sales/api";
 import { useT } from "@/i18n";
 import { useGlobalDate } from "@/stores/global-date";
-import { inr, shortDate } from "@/lib/format";
+import { inr, shortDate, grams } from "@/lib/format";
 
 export default function SalesPage() {
   const t = useT();
@@ -61,39 +61,47 @@ export default function SalesPage() {
         <p className="text-ink-dim text-sm">{t("loading")}</p>
       ) : (
         <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
-          <table className="w-full text-sm" style={{ minWidth: "520px" }}>
+          <table className="w-full text-sm" style={{ minWidth: "580px" }}>
             <thead>
               <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                 <th className="text-left px-4 py-2.5">{t("bill_no")}</th>
                 <th className="text-left px-3 py-2.5">{t("date")}</th>
                 <th className="text-left px-3 py-2.5 hidden sm:table-cell">{t("customers")}</th>
+                <th className="text-left px-3 py-2.5">Items</th>
+                <th className="text-right px-3 py-2.5">Wt</th>
                 <th className="text-right px-3 py-2.5">{t("total")}</th>
-                <th className="text-left px-3 py-2.5">{t("status")}</th>
                 <th className="px-3 py-2.5"></th>
               </tr>
             </thead>
             <tbody>
-              {sales?.map((s: any) => (
+              {sales?.map((s: any) => {
+                const items: any[] = s.sale_items ?? [];
+                const totalGrossWt = items.reduce((sum: number, i: any) => sum + (i.gross_wt || 0), 0);
+                const descriptions = items
+                  .map((i: any) => i.description?.trim())
+                  .filter(Boolean)
+                  .filter((d: string, idx: number, arr: string[]) => arr.indexOf(d) === idx);
+                return (
                 <tr key={s.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono text-info font-medium">{s.bill_no}</span>
                       {s.sale_type === "exchange" && (
-                        <span className="text-xs px-1.5 py-0.5 rounded bg-warn/15 text-warn font-medium">Exchange</span>
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-warn/15 text-warn font-medium">Exch</span>
                       )}
                     </div>
-                    {s.sale_type === "exchange" && s.exchange_ref_bill && (
-                      <p className="text-xs text-ink-dim mt-0.5">ref: {s.exchange_ref_bill}</p>
-                    )}
                   </td>
                   <td className="px-3 py-2.5 text-ink-dim">{shortDate(s.bill_date)}</td>
                   <td className="px-3 py-2.5 hidden sm:table-cell text-ink-mid">{s.customers?.name ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-right font-mono">{inr(s.total)}</td>
-                  <td className="px-3 py-2.5">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${s.status === "confirmed" ? "bg-ok-bg text-ok" : "bg-canvas text-ink-dim"}`}>
-                      {s.status}
-                    </span>
+                  <td className="px-3 py-2.5 text-ink-dim text-xs max-w-[180px]">
+                    {descriptions.length > 0
+                      ? descriptions.slice(0, 3).join(", ") + (descriptions.length > 3 ? ` +${descriptions.length - 3}` : "")
+                      : "—"}
                   </td>
+                  <td className="px-3 py-2.5 text-right text-xs text-ink-dim tabular-nums">
+                    {totalGrossWt > 0 ? grams(totalGrossWt) : "—"}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono">{inr(s.total)}</td>
                   <td className="px-3 py-2.5 text-right">
                     <div className="flex items-center justify-end gap-3">
                       <Link href={`/sales/${s.id}/edit`} className="text-xs text-gold hover:underline">Edit</Link>
@@ -110,10 +118,11 @@ export default function SalesPage() {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {!sales?.length && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-ink-dim">
+                  <td colSpan={7} className="px-4 py-8 text-center text-ink-dim">
                     {filterDate ? `No sales on ${shortDate(filterDate)}` : t("no_data")}
                   </td>
                 </tr>
