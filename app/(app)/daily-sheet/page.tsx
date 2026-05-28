@@ -191,7 +191,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .order("pay_date").order("created_at"),
         // Standalone old_gold/old_silver kept as advance (not linked to a sale)
         client.from("payments")
-          .select("id, pay_date, amount, mode, metal_wt, notes, created_at, customers(name)")
+          .select("id, pay_date, amount, mode, notes, created_at, customers(name)")
           .gte("pay_date", fromDate).lte("pay_date", toDate)
           .in("mode", ["old_gold", "old_silver"])
           .eq("direction", "in")
@@ -375,7 +375,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
       const oldGoldAdvRows = ((oldGoldAdvRes.data ?? []) as any[]).map((p: any) => {
         const cust = (p.customers as any)?.name ?? null;
         const metal = p.mode === "old_silver" ? "Old Silver" : "Old Gold";
-        const wt = Number(p.metal_wt) > 0 ? ` (${Number(p.metal_wt).toFixed(3)}g)` : "";
+        const wt = "";
         return {
           id: p.id as string,
           payDate: p.pay_date as string,
