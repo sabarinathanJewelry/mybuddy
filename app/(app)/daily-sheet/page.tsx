@@ -155,7 +155,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
     queryKey: ["day-sales-ledger", fromDate, toDate],
     queryFn: async () => {
       const client = supabase();
-      const [salesRes, orderRes, miscCashRes, miscBankRes, advanceRes, bullionPayRes, oldGoldAdvRes] = await Promise.all([
+      const [salesRes, orderRes, miscCashRes, miscBankRes, advanceRes, bullionPayRes, oldGoldAdvRes, standalonePayRes] = await Promise.all([
         client.from("sales")
           .select("id, bill_no, bill_date, total, customers(name), sale_items(description, metal, net_wt), sale_payments(mode, amount, metal_wt)")
           .gte("bill_date", fromDate).lte("bill_date", toDate)
@@ -172,7 +172,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .neq("ref_type", "sale").neq("ref_type", "order").neq("ref_type", "bullion")
           .order("tx_date").order("created_at"),
         client.from("bank_ledger")
-          .select("id, description, direction, amount, ref_type, tx_date, created_at")
+          .select("id, description, direction, amount, ref_type, ref_id, tx_date, created_at")
           .gte("tx_date", fromDate).lte("tx_date", toDate)
           .neq("ref_type", "sale").neq("ref_type", "order").neq("ref_type", "bullion")
           .order("tx_date").order("created_at"),
@@ -194,6 +194,14 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .select("id, pay_date, amount, mode, metal_wt, notes, created_at, customers(name)")
           .gte("pay_date", fromDate).lte("pay_date", toDate)
           .in("mode", ["old_gold", "old_silver"])
+          .eq("direction", "in")
+          .is("sale_id", null)
+          .order("pay_date").order("created_at"),
+        // Standalone UPI/bank customer payments — fallback for missing bank_ledger entries
+        client.from("payments")
+          .select("id, pay_date, amount, mode, direction, notes, created_at, customers(name)")
+          .gte("pay_date", fromDate).lte("pay_date", toDate)
+          .in("mode", ["upi", "bank"])
           .eq("direction", "in")
           .is("sale_id", null)
           .order("pay_date").order("created_at"),
@@ -308,10 +316,36 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
         src: "Advance",
       }));
 
+      // IDs already covered by bank_ledger payment entries — avoid double-counting
+      const blPaymentIds = new Set(
+        (miscBankRes.data ?? [])
+          .filter((e: any) => e.ref_type === "payment" && e.ref_id)
+          .map((e: any) => e.ref_id as string)
+      );
+
+      // Standalone UPI/bank payments missing from bank_ledger
+      const standalonePayEntries = (standalonePayRes.data ?? [])
+        .filter((p: any) => !blPaymentIds.has(p.id))
+        .map((p: any) => {
+          const cust = (p.customers as any)?.name ?? null;
+          const modeLabel = p.mode === "upi" ? "UPI / GPay" : "Bank Transfer";
+          return {
+            id: `sp-${p.id}`,
+            description: cust ? `${cust} — ${modeLabel}` : modeLabel,
+            direction: "in",
+            amount: Number(p.amount),
+            ref_type: "payment",
+            tx_date: p.pay_date,
+            created_at: p.created_at,
+            src: "Bank",
+          };
+        });
+
       const miscEntries = [
         ...(miscCashRes.data ?? []).map((e: any) => ({ ...e, src: "Cash" })),
         ...(miscBankRes.data ?? []).map((e: any) => ({ ...e, src: "Bank" })),
         ...advanceEntries,
+        ...standalonePayEntries,
       ].sort((a: any, b: any) => {
         const d = (a.tx_date ?? "").localeCompare(b.tx_date ?? "");
         return d !== 0 ? d : new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
