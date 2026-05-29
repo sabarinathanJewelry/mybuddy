@@ -85,7 +85,66 @@ ORDER BY created_at;
 
 
 -- ────────────────────────────────────────────────────────────
--- 7. BANK LEDGER: daily net for reconciliation
+-- 7. CASH DAILY RECONCILIATION: opening, cash_in, cash_out,
+--    calculated closing, actual count, and difference
+--    Change the date range as needed
+-- ────────────────────────────────────────────────────────────
+WITH
+ob AS (
+  SELECT amount, effective_date
+  FROM opening_balances
+  WHERE balance_type = 'cash' AND effective_date <= '2026-04-01'
+  ORDER BY effective_date DESC
+  LIMIT 1
+),
+prior_net AS (
+  SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE -amount END), 0) AS net
+  FROM cash_ledger
+  WHERE tx_date >= (SELECT effective_date FROM ob)
+    AND tx_date < '2026-04-01'
+),
+april_opening AS (
+  SELECT (SELECT amount FROM ob) + (SELECT net FROM prior_net) AS amount
+),
+daily AS (
+  SELECT
+    tx_date,
+    SUM(CASE WHEN direction='in'  THEN amount ELSE 0 END) AS cash_in,
+    SUM(CASE WHEN direction='out' THEN amount ELSE 0 END) AS cash_out,
+    SUM(CASE WHEN direction='in'  THEN amount ELSE -amount END) AS net
+  FROM cash_ledger
+  WHERE tx_date >= '2026-04-01' AND tx_date <= '2026-04-30'
+  GROUP BY tx_date
+),
+running AS (
+  SELECT
+    tx_date,
+    cash_in,
+    cash_out,
+    COALESCE(
+      (SELECT amount FROM april_opening) +
+      SUM(net) OVER (ORDER BY tx_date ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),
+      (SELECT amount FROM april_opening)
+    ) AS opening_cash,
+    (SELECT amount FROM april_opening) +
+      SUM(net) OVER (ORDER BY tx_date) AS calculated_closing
+  FROM daily
+)
+SELECT
+  r.tx_date,
+  ROUND(r.opening_cash::numeric, 2)        AS opening_cash,
+  ROUND(r.cash_in::numeric, 2)             AS cash_in,
+  ROUND(r.cash_out::numeric, 2)            AS cash_out,
+  ROUND(r.calculated_closing::numeric, 2)  AS calculated_closing,
+  cc.actual_amount                         AS actual_count,
+  ROUND((r.calculated_closing - COALESCE(cc.actual_amount, r.calculated_closing))::numeric, 2) AS difference
+FROM running r
+LEFT JOIN cash_counts cc ON cc.count_date = r.tx_date
+ORDER BY r.tx_date;
+
+
+-- ────────────────────────────────────────────────────────────
+-- 9. BANK LEDGER: daily net for reconciliation
 -- ────────────────────────────────────────────────────────────
 SELECT
   tx_date,
@@ -99,7 +158,7 @@ ORDER BY tx_date;
 
 
 -- ────────────────────────────────────────────────────────────
--- 8. CUSTOMER BALANCES: who owes and who has credit
+-- 10. CUSTOMER BALANCES: who owes and who has credit
 --    Negative balance = customer owes; positive = customer has advance
 -- ────────────────────────────────────────────────────────────
 SELECT name, opening_balance, total_sales, total_paid_in, total_paid_out, balance
