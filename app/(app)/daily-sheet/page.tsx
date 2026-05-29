@@ -158,7 +158,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
       const client = supabase();
       const [salesRes, orderRes, miscCashRes, miscBankRes, advanceRes, bullionPayRes, oldGoldAdvRes, standalonePayRes] = await Promise.all([
         client.from("sales")
-          .select("id, bill_no, bill_date, total, customers(name), sale_items(description, metal, net_wt), sale_payments(mode, amount, metal_wt)")
+          .select("id, bill_no, bill_date, total, change_due, change_mode, customers(name), sale_items(description, metal, net_wt), sale_payments(mode, amount, metal_wt)")
           .gte("bill_date", fromDate).lte("bill_date", toDate)
           .eq("status", "confirmed").order("bill_date").order("created_at"),
         // Order payments grouped by order+date (handles old gold, UPI, cash, advance per order)
@@ -237,7 +237,9 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
             })),
           ...(balanceDue > 0.005 ? [{ note: "Balance Due", amount: balanceDue, mode: "balance" }] : []),
           ...(excessPaid > 0.005
-            ? [{ note: `Advance kept${customerName ? ` — ${customerName}` : ""}`, amount: excessPaid, mode: "advance_kept" }]
+            ? (s.change_mode === "cash_back"
+                ? [{ note: `Change returned (cash)${customerName ? ` — ${customerName}` : ""}`, amount: excessPaid, mode: "change_cash" }]
+                : [{ note: `Advance kept${customerName ? ` — ${customerName}` : ""}`, amount: excessPaid, mode: "advance_kept" }])
             : []),
         ];
 
@@ -586,7 +588,7 @@ export default function DailySheetPage() {
   });
 
   const rowDebit = (payments: { amount: number; mode: string }[]) =>
-    payments.filter(p => p.mode !== "advance_kept").reduce((s, p) => s + p.amount, 0);
+    payments.filter(p => p.mode !== "advance_kept" && p.mode !== "change_cash").reduce((s, p) => s + p.amount, 0);
   const grandDebit =
     saleRows.reduce((s, r) => s + rowDebit(r.payments), 0) +
     orderRows.reduce((s: number, r: any) => s + rowDebit(r.payments), 0) +
@@ -798,10 +800,11 @@ export default function DailySheetPage() {
                         ...restPay.map((pay, pi) => {
                           const isBal = pay.mode === "balance";
                           const isAdv = pay.mode === "advance_kept";
+                          const isChange = pay.mode === "change_cash";
                           return (
                             <tr key={`${sale.id}-${pi + 1}`}
                               className={`hover:bg-canvas/50 ${isAdv ? "bg-info/5" : isBal ? "bg-warn/5" : "bg-canvas/20"} ${pi === restPay.length - 1 ? "border-b border-line" : ""}`}>
-                              <td className={`px-3 py-1.5 text-xs pl-4 ${isAdv ? "text-info font-medium" : isBal ? "text-warn font-medium" : "text-ink-dim"}`}>{pay.note}</td>
+                              <td className={`px-3 py-1.5 text-xs pl-4 ${isAdv ? "text-info font-medium" : isBal ? "text-warn font-medium" : isChange ? "text-ok font-medium" : "text-ink-dim"}`}>{pay.note}</td>
                               <td className={`px-3 py-1.5 text-right font-mono text-xs ${isBal ? "text-warn" : isAdv ? "" : "text-err"}`}>
                                 {!isAdv ? (
                                   <div className="flex items-center justify-end gap-1.5">
