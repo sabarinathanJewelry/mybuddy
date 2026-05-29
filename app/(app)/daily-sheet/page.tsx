@@ -156,7 +156,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
     queryKey: ["day-sales-ledger", fromDate, toDate],
     queryFn: async () => {
       const client = supabase();
-      const [salesRes, orderRes, miscCashRes, miscBankRes, advanceRes, bullionPayRes, oldGoldAdvRes, standalonePayRes] = await Promise.all([
+      const [salesRes, orderRes, newOrdersRes, miscCashRes, miscBankRes, advanceRes, bullionPayRes, oldGoldAdvRes, standalonePayRes] = await Promise.all([
         client.from("sales")
           .select("id, bill_no, bill_date, total, change_due, change_mode, customers(name), sale_items(description, metal, net_wt), sale_payments(mode, amount, metal_wt)")
           .gte("bill_date", fromDate).lte("bill_date", toDate)
@@ -167,6 +167,11 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .gte("pay_date", fromDate).lte("pay_date", toDate)
           .gt("amount", 0)
           .order("pay_date").order("created_at"),
+        // Orders created in this date range (to catch new orders with no same-day payment)
+        client.from("orders")
+          .select("id, order_no, order_date, total, final_total, advance_paid, customers(name)")
+          .gte("order_date", fromDate).lte("order_date", toDate)
+          .order("order_date").order("created_at"),
         client.from("cash_ledger")
           .select("id, description, direction, amount, ref_type, tx_date, created_at")
           .gte("tx_date", fromDate).lte("tx_date", toDate)
@@ -297,12 +302,37 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           }
         }
       }
-      // Add Balance Due only for new orders
+      // Add Balance Due only for new orders (those with same-day payments)
       for (const [key, row] of orderMap.entries()) {
         if (orderIsNew.get(key) && row.balanceDue > 0.005) {
           row.payments.push({ note: "Balance Due", amount: row.balanceDue, mode: "balance" });
         }
       }
+
+      // Merge orders created in this range that had NO same-day payment
+      // (they won't appear in order_payments, so we inject them directly)
+      for (const od of (newOrdersRes.data ?? []) as any[]) {
+        const key = `${od.id}::${od.order_date}`;
+        if (orderMap.has(key)) continue; // already covered by order_payments
+        const orderTotal = Number(od.final_total) || Number(od.total) || 0;
+        const advancePaid = Number(od.advance_paid) || 0;
+        const balanceDue = Math.max(0, orderTotal - advancePaid);
+        if (orderTotal === 0) continue; // skip orders with no estimated total
+        const row = {
+          orderId: od.id,
+          orderNo: od.order_no ?? "Order",
+          payDate: od.order_date as string,
+          customerName: (od.customers as any)?.name ?? null,
+          credit: orderTotal,
+          balanceDue,
+          payments: [] as { note: string; amount: number; mode: string }[],
+        };
+        if (balanceDue > 0.005) {
+          row.payments.push({ note: "Balance Due", amount: balanceDue, mode: "balance" });
+        }
+        orderMap.set(key, row);
+      }
+
       const orderRows = Array.from(orderMap.values())
         .sort((a, b) => a.payDate.localeCompare(b.payDate));
 
