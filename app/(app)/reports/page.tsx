@@ -458,6 +458,8 @@ export default function ReportsPage() {
   const [mergeMode, setMergeMode]   = useState(false);
   const [mergeSelected, setMergeSelected] = useState<Set<string>>(new Set());
   const [mergeTo, setMergeTo]       = useState("");
+  const [purchVaGold,   setPurchVaGold]   = useState<number | "">(0);
+  const [purchVaSilver, setPurchVaSilver] = useState<number | "">(0);
 
   const renameProduct = useRenameProduct();
   const mergeProducts = useMergeProducts();
@@ -639,29 +641,135 @@ export default function ReportsPage() {
           )}
 
           {/* Service income summary */}
-          <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
-            <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-ok bg-ok/5">
-              Service Income Breakdown (Making + VA + Stone/Diamond)
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-x divide-line text-sm">
-              {[
-                { label: "Making Charges (Gold)", value: gold.makingAmt, color: "text-gold" },
-                { label: "VA Charges (Gold)",     value: Math.max(0, gold.vaAmt), color: "text-gold" },
-                { label: "Making Charges (Silver)", value: silver.makingAmt, color: "text-ink-mid" },
-                { label: "VA Charges (Silver)",   value: Math.max(0, silver.vaAmt), color: "text-ink-mid" },
-              ].map(s => (
-                <div key={s.label} className="px-4 py-3">
-                  <p className="text-xs text-ink-dim">{s.label}</p>
-                  <p className={clsx("font-semibold", s.color)}>{inr(s.value)}</p>
+          {(() => {
+            const goldSaleVaAmt     = Math.max(0, gold.vaAmt);
+            const silverSaleVaAmt   = Math.max(0, silver.vaAmt);
+            const goldAvgSaleVaPct  = gold.metalValue   > 0 ? (gold.vaAmt   / gold.metalValue)   * 100 : 0;
+            const silverAvgSaleVaPct= silver.metalValue > 0 ? (silver.vaAmt / silver.metalValue) * 100 : 0;
+            const pVaG = Number(purchVaGold)   || 0;
+            const pVaS = Number(purchVaSilver) || 0;
+            const goldPurchVaCost   = pVaG > 0 ? (pVaG / 100) * gold.metalValue   : 0;
+            const silverPurchVaCost = pVaS > 0 ? (pVaS / 100) * silver.metalValue : 0;
+            const goldNetVa         = goldSaleVaAmt   - goldPurchVaCost;
+            const silverNetVa       = silverSaleVaAmt - silverPurchVaCost;
+            const hasEstimate       = pVaG > 0 || pVaS > 0;
+            const netServiceIncome  = gold.makingAmt + goldNetVa + gold.stoneAmt +
+                                      silver.makingAmt + silverNetVa + silver.stoneAmt;
+            return (
+              <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+                <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-ok bg-ok/5">
+                  Service Income Breakdown (Making + VA + Stone/Diamond)
                 </div>
-              ))}
-            </div>
-            <div className="px-4 py-3 border-t border-line bg-ok/5">
-              <span className="text-sm text-ink-dim">Total Service Income: </span>
-              <span className="text-lg font-bold text-ok">{inr(totalService)}</span>
-              <span className="ml-3 text-xs text-ink-dim">(this is the "guaranteed" margin — independent of metal price changes)</span>
-            </div>
-          </div>
+
+                {/* Revenue row */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-x divide-line text-sm">
+                  <div className="px-4 py-3">
+                    <p className="text-xs text-ink-dim">Making Charges (Gold)</p>
+                    <p className="font-semibold text-gold">{inr(gold.makingAmt)}</p>
+                  </div>
+                  <div className="px-4 py-3">
+                    <p className="text-xs text-ink-dim">VA Revenue (Gold)</p>
+                    <p className="font-semibold text-gold">{inr(goldSaleVaAmt)}</p>
+                    {goldAvgSaleVaPct > 0 && (
+                      <p className="text-[10px] text-ink-dim mt-0.5">avg {goldAvgSaleVaPct.toFixed(1)}% of metal value</p>
+                    )}
+                  </div>
+                  <div className="px-4 py-3">
+                    <p className="text-xs text-ink-dim">Making Charges (Silver)</p>
+                    <p className="font-semibold text-ink-mid">{inr(silver.makingAmt)}</p>
+                  </div>
+                  <div className="px-4 py-3">
+                    <p className="text-xs text-ink-dim">VA Revenue (Silver)</p>
+                    <p className="font-semibold text-ink-mid">{inr(silverSaleVaAmt)}</p>
+                    {silverAvgSaleVaPct > 0 && (
+                      <p className="text-[10px] text-ink-dim mt-0.5">avg {silverAvgSaleVaPct.toFixed(1)}% of metal value</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Purchase VA estimate input */}
+                <div className="border-t border-dashed border-line bg-canvas/50 px-4 py-3 space-y-3">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <p className="text-xs font-semibold text-ink-dim">Purchase VA% you paid (estimate):</p>
+                    <label className="flex items-center gap-2 text-xs text-ink-dim">
+                      Gold VA%
+                      <input
+                        type="number" min="0" max="20" step="0.5"
+                        value={purchVaGold === 0 ? "" : purchVaGold}
+                        placeholder="e.g. 6"
+                        onChange={e => setPurchVaGold(e.target.value === "" ? "" : Number(e.target.value))}
+                        className="w-20 border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold text-ink"
+                      />
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-ink-dim">
+                      Silver VA%
+                      <input
+                        type="number" min="0" max="20" step="0.5"
+                        value={purchVaSilver === 0 ? "" : purchVaSilver}
+                        placeholder="e.g. 4"
+                        onChange={e => setPurchVaSilver(e.target.value === "" ? "" : Number(e.target.value))}
+                        className="w-20 border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold text-ink"
+                      />
+                    </label>
+                    {hasEstimate && (
+                      <button onClick={() => { setPurchVaGold(0); setPurchVaSilver(0); }}
+                        className="text-xs text-ink-dim hover:text-err ml-auto">Clear</button>
+                    )}
+                  </div>
+
+                  {hasEstimate && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+                      {pVaG > 0 && (
+                        <>
+                          <div>
+                            <p className="text-xs text-ink-dim">Est. Purchase VA Cost (Gold)</p>
+                            <p className="font-semibold text-err text-sm">{inr(goldPurchVaCost)}</p>
+                            <p className="text-[10px] text-ink-dim">at {pVaG}% of metal value</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-ink-dim">Est. Net VA Income (Gold)</p>
+                            <p className={clsx("font-semibold text-sm", goldNetVa >= 0 ? "text-ok" : "text-err")}>{inr(goldNetVa)}</p>
+                            <p className="text-[10px] text-ink-dim">{goldAvgSaleVaPct.toFixed(1)}% sale − {pVaG}% purchase</p>
+                          </div>
+                        </>
+                      )}
+                      {pVaS > 0 && (
+                        <>
+                          <div>
+                            <p className="text-xs text-ink-dim">Est. Purchase VA Cost (Silver)</p>
+                            <p className="font-semibold text-err text-sm">{inr(silverPurchVaCost)}</p>
+                            <p className="text-[10px] text-ink-dim">at {pVaS}% of metal value</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-ink-dim">Est. Net VA Income (Silver)</p>
+                            <p className={clsx("font-semibold text-sm", silverNetVa >= 0 ? "text-ok" : "text-err")}>{inr(silverNetVa)}</p>
+                            <p className="text-[10px] text-ink-dim">{silverAvgSaleVaPct.toFixed(1)}% sale − {pVaS}% purchase</p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div className={clsx("px-4 py-3 border-t border-line", hasEstimate ? "bg-ok/5" : "bg-ok/5")}>
+                  {!hasEstimate ? (
+                    <>
+                      <span className="text-sm text-ink-dim">Total Service Revenue: </span>
+                      <span className="text-lg font-bold text-ok">{inr(totalService)}</span>
+                      <span className="ml-3 text-xs text-ink-dim">(VA is gross revenue — enter purchase VA% above to see net)</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-sm text-ink-dim">Est. Net Service Income: </span>
+                      <span className="text-lg font-bold text-ok">{inr(netServiceIncome)}</span>
+                      <span className="ml-3 text-xs text-warn">estimate — based on your purchase VA% inputs</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Expenses */}
           <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
