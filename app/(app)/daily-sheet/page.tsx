@@ -213,6 +213,24 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .order("pay_date").order("created_at"),
       ]);
 
+      // Collect all order IDs from both queries
+      const allOrderIds = new Set<string>();
+      (orderRes.data ?? []).forEach((p: any) => allOrderIds.add(p.order_id));
+      (newOrdersRes.data ?? []).forEach((o: any) => allOrderIds.add(o.id));
+
+      // Fetch sum of payments per order up to toDate (not current advance_paid which includes future payments)
+      const paidUpToDate: Record<string, number> = {};
+      if (allOrderIds.size > 0) {
+        const { data: pmtData } = await client.from("order_payments")
+          .select("order_id, amount")
+          .in("order_id", Array.from(allOrderIds))
+          .lte("pay_date", toDate)
+          .gt("amount", 0);
+        (pmtData ?? []).forEach((p: any) => {
+          paidUpToDate[p.order_id] = (paidUpToDate[p.order_id] ?? 0) + Number(p.amount);
+        });
+      }
+
       const saleRows = (salesRes.data ?? []).map((s: any) => {
         const items: any[] = s.sale_items ?? [];
         const itemDesc = items.length === 0
@@ -272,14 +290,15 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
         const isNew = (od?.order_date ?? "") === (p.pay_date as string);
         if (!orderMap.has(key)) {
           const orderTotal = isNew ? (Number(od?.final_total) || Number(od?.total) || 0) : 0;
+          const finalTotal = Number(od?.final_total) || Number(od?.total) || 0;
           orderMap.set(key, {
             orderId: p.order_id,
             orderNo: od?.order_no ?? "Order",
             payDate: p.pay_date as string,
             customerName: od?.customers?.name ?? null,
             credit: orderTotal,
-            finalTotal: Number(od?.final_total) || Number(od?.total) || 0,
-            advancePaid: Number(od?.advance_paid) || 0,
+            finalTotal,
+            advancePaid: paidUpToDate[p.order_id] ?? Number(od?.advance_paid) ?? 0,
             payments: [],
           });
         }
@@ -314,7 +333,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
         const key = `${od.id}::${od.order_date}`;
         if (orderMap.has(key)) continue; // already covered by order_payments
         const orderTotal = Number(od.final_total) || Number(od.total) || 0;
-        const advancePaid = Number(od.advance_paid) || 0;
+        const advancePaid = paidUpToDate[od.id] ?? Number(od.advance_paid) ?? 0;
         const balanceDue = Math.max(0, orderTotal - advancePaid);
         if (orderTotal === 0) continue; // skip orders with no estimated total
         const row = {
