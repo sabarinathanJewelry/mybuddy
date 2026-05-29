@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useGlobalDate } from "@/stores/global-date";
@@ -441,6 +442,87 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
   });
 }
 
+// Cash Flow tab — raw cash_ledger entries with source links
+const CF_LINKS: Record<string, (refId: string | null, meta: { billNo?: string | null; orderNo?: string | null }) => { href: string; label: string } | null> = {
+  sale:             (refId, m) => refId ? { href: `/sales/${refId}/edit`, label: m.billNo ?? "Sale" } : null,
+  order:            ()         => ({ href: "/orders",       label: "Orders" }),
+  expense:          ()         => ({ href: "/expenses",     label: "Expenses" }),
+  payment:          ()         => ({ href: "/payments",     label: "Payments" }),
+  old_metal_intake: ()         => ({ href: "/metal-flow",   label: "Metal Flow" }),
+  bullion:          ()         => ({ href: "/bullion",      label: "Bullion" }),
+  loan:             ()         => ({ href: "/loans",        label: "Loans" }),
+  loan_payment:     ()         => ({ href: "/loans",        label: "Loans" }),
+  chit_payment:     ()         => ({ href: "/chits",        label: "Chit Savings" }),
+  cash_savings:     ()         => ({ href: "/gold-chit",    label: "Gold Chit" }),
+  supplier_payment: ()         => ({ href: "/suppliers",    label: "Suppliers" }),
+  transfer:         ()         => null,
+};
+
+const CF_TYPE_LABEL: Record<string, string> = {
+  sale:             "Sale",
+  order:            "Order",
+  expense:          "Expense",
+  payment:          "Customer Payment",
+  old_metal_intake: "Old Metal",
+  bullion:          "Bullion",
+  loan:             "Loan",
+  loan_payment:     "Loan Payment",
+  chit_payment:     "Chit",
+  cash_savings:     "Gold Chit",
+  supplier_payment: "Supplier",
+  transfer:         "Transfer",
+};
+
+function useDayCashFlow(fromDate: string, toDate: string) {
+  return useQuery({
+    queryKey: ["day-cashflow", fromDate, toDate],
+    queryFn: async () => {
+      const client = supabase();
+      const { data: entries } = await client
+        .from("cash_ledger")
+        .select("id, tx_date, direction, amount, description, ref_type, ref_id, created_at")
+        .gte("tx_date", fromDate)
+        .lte("tx_date", toDate)
+        .order("tx_date")
+        .order("created_at");
+
+      const rows = (entries ?? []) as any[];
+      const saleIds = [...new Set(rows.filter(r => r.ref_type === "sale" && r.ref_id).map(r => r.ref_id as string))];
+      const orderIds = [...new Set(rows.filter(r => r.ref_type === "order" && r.ref_id).map(r => r.ref_id as string))];
+
+      const [salesRes, ordersRes] = await Promise.all([
+        saleIds.length > 0
+          ? client.from("sales").select("id, bill_no, customers(name)").in("id", saleIds)
+          : { data: [] as any[] },
+        orderIds.length > 0
+          ? client.from("orders").select("id, order_no, customers(name)").in("id", orderIds)
+          : { data: [] as any[] },
+      ]);
+
+      const saleInfo = new Map((salesRes.data ?? []).map((s: any) => [s.id, { billNo: s.bill_no as string | null, customer: (s.customers as any)?.name as string | null ?? null }]));
+      const orderInfo = new Map((ordersRes.data ?? []).map((o: any) => [o.id, { orderNo: o.order_no as string | null, customer: (o.customers as any)?.name as string | null ?? null }]));
+
+      return rows.map((r: any) => {
+        const sInfo = r.ref_type === "sale"  ? saleInfo.get(r.ref_id)  ?? null : null;
+        const oInfo = r.ref_type === "order" ? orderInfo.get(r.ref_id) ?? null : null;
+        return {
+          id:          r.id as string,
+          txDate:      r.tx_date as string,
+          direction:   r.direction as "in" | "out",
+          amount:      Number(r.amount),
+          description: (r.description ?? "") as string,
+          refType:     (r.ref_type ?? "") as string,
+          refId:       (r.ref_id ?? null) as string | null,
+          billNo:      sInfo?.billNo ?? null,
+          orderNo:     oInfo?.orderNo ?? null,
+          customer:    sInfo?.customer ?? oInfo?.customer ?? null,
+          createdAt:   r.created_at as string,
+        };
+      });
+    },
+  });
+}
+
 // Date-specific cash position: opening for fromDate, closing through toDate
 function useDateCashPosition(fromDate: string, toDate: string) {
   return useQuery({
@@ -505,7 +587,7 @@ function StatCard({ label, value, sub, color = "text-ink" }: StatCardProps) {
   );
 }
 
-type ViewTab = "summary" | "ledger";
+type ViewTab = "summary" | "ledger" | "cashflow";
 
 export default function DailySheetPage() {
   const t = useT();
@@ -520,6 +602,7 @@ export default function DailySheetPage() {
   const [cbTo,   setCbTo]   = useState(date);
   const { data: salesLedger, isLoading: ledgerLoading } = useDaySalesLedger(cbFrom, cbTo);
   const { data: cashPos } = useDateCashPosition(cbFrom, cbTo);
+  const { data: cashFlowRows = [], isLoading: cfLoading } = useDayCashFlow(cbFrom, cbTo);
   const multiDay = cbFrom !== cbTo;
 
   // Previous day cash count (for opening reference row)
@@ -673,12 +756,12 @@ export default function DailySheetPage() {
 
       {/* Tab switcher */}
       <div className="flex gap-1 border-b border-line pb-1">
-        {(["summary", "ledger"] as ViewTab[]).map(tab => (
+        {(["summary", "ledger", "cashflow"] as ViewTab[]).map(tab => (
           <button key={tab} onClick={() => setViewTab(tab)}
             className={`px-4 py-1.5 text-sm rounded-lg2 transition-colors ${
               viewTab === tab ? "bg-gold text-white" : "border border-line text-ink-dim hover:text-ink"
             }`}>
-            {tab === "summary" ? "Summary" : "Cash Book"}
+            {tab === "summary" ? "Summary" : tab === "ledger" ? "Cash Book" : "Cash Flow"}
           </button>
         ))}
       </div>
@@ -1114,6 +1197,133 @@ export default function DailySheetPage() {
             </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* ── CASH FLOW TAB ────────────────────────────────── */}
+      {viewTab === "cashflow" && (
+        <div className="space-y-4">
+          {/* Date range picker — shared with Cash Book */}
+          <div className="flex flex-wrap items-center gap-3 bg-white border border-line rounded-xl px-4 py-2.5 shadow-soft text-xs">
+            <span className="text-ink-dim font-medium">Period:</span>
+            <input type="date" value={cbFrom} onChange={e => setCbFrom(e.target.value)}
+              className="border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+            <span className="text-ink-dim">to</span>
+            <input type="date" value={cbTo} onChange={e => setCbTo(e.target.value)}
+              className="border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+            {cbFrom !== cbTo && (
+              <button onClick={() => { setCbFrom(date); setCbTo(date); }}
+                className="text-gold hover:underline">Reset to today</button>
+            )}
+          </div>
+
+          {cfLoading ? (
+            <p className="text-ink-dim text-sm">Loading…</p>
+          ) : (() => {
+            const totalIn  = (cashFlowRows as any[]).filter(r => r.direction === "in").reduce((s: number, r: any) => s + r.amount, 0);
+            const totalOut = (cashFlowRows as any[]).filter(r => r.direction === "out").reduce((s: number, r: any) => s + r.amount, 0);
+            const net = totalIn - totalOut;
+            return (
+              <>
+                {/* Summary strip */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-white rounded-xl border border-line p-4 shadow-soft text-center">
+                    <p className="text-xs text-ink-dim mb-1">Cash In</p>
+                    <p className="text-lg font-bold text-ok">{inr(totalIn)}</p>
+                    <p className="text-xs text-ink-dim mt-0.5">{(cashFlowRows as any[]).filter(r => r.direction === "in").length} entries</p>
+                  </div>
+                  <div className="bg-white rounded-xl border border-line p-4 shadow-soft text-center">
+                    <p className="text-xs text-ink-dim mb-1">Cash Out</p>
+                    <p className="text-lg font-bold text-err">{inr(totalOut)}</p>
+                    <p className="text-xs text-ink-dim mt-0.5">{(cashFlowRows as any[]).filter(r => r.direction === "out").length} entries</p>
+                  </div>
+                  <div className="bg-white rounded-xl border border-line p-4 shadow-soft text-center">
+                    <p className="text-xs text-ink-dim mb-1">Net</p>
+                    <p className={`text-lg font-bold ${net >= 0 ? "text-ok" : "text-err"}`}>{net >= 0 ? "+" : ""}{inr(net)}</p>
+                    <p className="text-xs text-ink-dim mt-0.5">{(cashFlowRows as any[]).length} total</p>
+                  </div>
+                </div>
+
+                {/* Flat entry list */}
+                <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+                  <table className="w-full text-sm" style={{ minWidth: "540px" }}>
+                    <thead>
+                      <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                        <th className="text-left px-4 py-2.5 w-16">Dir</th>
+                        <th className="text-right px-3 py-2.5 w-28">Amount</th>
+                        <th className="text-left px-3 py-2.5">Description</th>
+                        <th className="text-left px-3 py-2.5 w-28">Source</th>
+                        <th className="text-left px-4 py-2.5 w-24">Link</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(cashFlowRows as any[]).length === 0 ? (
+                        <tr><td colSpan={5} className="px-4 py-8 text-center text-ink-dim">No cash movements{cbFrom !== cbTo ? ` from ${cbFrom} to ${cbTo}` : ` on ${cbFrom}`}</td></tr>
+                      ) : (cashFlowRows as any[]).map((r: any) => {
+                        const linkMeta = { billNo: r.billNo, orderNo: r.orderNo };
+                        const linkInfo = CF_LINKS[r.refType]?.(r.refId, linkMeta) ?? null;
+                        const typeLabel = CF_TYPE_LABEL[r.refType] ?? r.refType ?? "Other";
+                        const desc = r.description || (r.customer ? `${r.customer}` : typeLabel);
+                        const subDesc = r.customer && r.description && !r.description.includes(r.customer) ? r.customer : null;
+                        return (
+                          <tr key={r.id} className="border-b border-line hover:bg-canvas/50">
+                            <td className="px-4 py-2.5">
+                              <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${
+                                r.direction === "in" ? "bg-ok/10 text-ok" : "bg-err/10 text-err"
+                              }`}>
+                                {r.direction === "in" ? "IN" : "OUT"}
+                              </span>
+                            </td>
+                            <td className={`px-3 py-2.5 text-right font-mono text-sm font-semibold ${r.direction === "in" ? "text-ok" : "text-err"}`}>
+                              {r.direction === "out" ? "-" : "+"}{inr(r.amount)}
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <div className="text-sm text-ink">{desc}</div>
+                              {subDesc && <div className="text-xs text-ink-dim mt-0.5">{subDesc}</div>}
+                              {cbFrom !== cbTo && (
+                                <div className="text-[10px] text-ink-dim mt-0.5">{r.txDate}</div>
+                              )}
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <span className="inline-block px-2 py-0.5 rounded-lg2 bg-canvas border border-line text-[10px] text-ink-dim">
+                                {typeLabel}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              {linkInfo ? (
+                                <Link href={linkInfo.href}
+                                  className="text-xs text-gold hover:underline whitespace-nowrap">
+                                  {linkInfo.label} →
+                                </Link>
+                              ) : (
+                                <span className="text-xs text-ink-dim">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    {(cashFlowRows as any[]).length > 0 && (
+                      <tfoot>
+                        <tr className="border-t-2 border-line bg-canvas">
+                          <td className="px-4 py-2.5 text-xs text-ink-dim uppercase tracking-wide font-semibold">Total</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-sm font-semibold">
+                            <div className="text-ok">{inr(totalIn)}</div>
+                            <div className="text-err text-xs">-{inr(totalOut)}</div>
+                          </td>
+                          <td colSpan={3} className="px-3 py-2.5">
+                            <span className={`font-semibold text-sm ${net >= 0 ? "text-ok" : "text-err"}`}>
+                              Net: {net >= 0 ? "+" : ""}{inr(net)}
+                            </span>
+                          </td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              </>
+            );
+          })()}
         </div>
       )}
 
