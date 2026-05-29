@@ -11,6 +11,7 @@ import { inr, grams, shortDate } from "@/lib/format";
 import type { Customer } from "@/modules/customers/types";
 import { clsx } from "clsx";
 import { fyForDate, billNoFor } from "@/lib/fy";
+import { useProducts, useProductGroups } from "@/modules/sales/products-api";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -318,6 +319,8 @@ export default function OrdersPage() {
   const boardRate = useBoardRate((s) => s.rate);
   const qc = useQueryClient();
   const { data: orders = [], isLoading } = useOrders();
+  const { data: products = [] } = useProducts(true);
+  const { data: productGroups = [] } = useProductGroups(true);
 
   // ── Create order form
   const [showForm, setShowForm] = useState(false);
@@ -673,8 +676,65 @@ export default function OrdersPage() {
             )}
             {orderItems.map((item, idx) => (
               <div key={item.id} className="bg-canvas border border-line rounded-lg2 p-3 grid grid-cols-2 sm:grid-cols-5 gap-2 items-end">
-                <div className="col-span-2">
-                  <label className="block text-xs text-ink-dim mb-1">Description</label>
+                <div className="col-span-2 space-y-1">
+                  <label className="block text-xs text-ink-dim">Description</label>
+                  {products.length > 0 && (
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const matched = products.find((p) => p.id === e.target.value);
+                        if (matched) {
+                          setOrderItems((prev) => prev.map((x, i) => i === idx ? { ...x, description: matched.name, metal: matched.metal } : x));
+                        }
+                      }}
+                      className="w-full border border-line rounded-lg2 px-2 py-1.5 text-xs text-ink-dim focus:outline-none focus:ring-1 focus:ring-gold"
+                    >
+                      <option value="">Pick product…</option>
+                      {(() => {
+                        const topGroups = productGroups.filter((g: { parent_id: string | null }) => !g.parent_id);
+                        const childGroups = (pid: string) => productGroups.filter((g: { parent_id: string | null }) => g.parent_id === pid);
+                        const ungrouped = products.filter((p: { group_id: string | null }) => !p.group_id);
+                        const rendered: React.ReactNode[] = [];
+                        topGroups.forEach((parent: { id: string; name: string }) => {
+                          const parentProds = products.filter((p: { group_id: string | null }) => p.group_id === parent.id);
+                          const children = childGroups(parent.id);
+                          if (children.length === 0 && parentProds.length > 0) {
+                            rendered.push(
+                              <optgroup key={parent.id} label={parent.name}>
+                                {parentProds.map((p: { id: string; name: string }) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                              </optgroup>
+                            );
+                          } else {
+                            if (parentProds.length > 0) {
+                              rendered.push(
+                                <optgroup key={parent.id} label={parent.name}>
+                                  {parentProds.map((p: { id: string; name: string }) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </optgroup>
+                              );
+                            }
+                            children.forEach((child: { id: string; name: string }) => {
+                              const childProds = products.filter((p: { group_id: string | null }) => p.group_id === child.id);
+                              if (childProds.length > 0) {
+                                rendered.push(
+                                  <optgroup key={child.id} label={`${parent.name} › ${child.name}`}>
+                                    {childProds.map((p: { id: string; name: string }) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                  </optgroup>
+                                );
+                              }
+                            });
+                          }
+                        });
+                        if (ungrouped.length > 0) {
+                          rendered.push(
+                            <optgroup key="__ungrouped" label="Other">
+                              {ungrouped.map((p: { id: string; name: string }) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </optgroup>
+                          );
+                        }
+                        return rendered;
+                      })()}
+                    </select>
+                  )}
                   <input value={item.description}
                     onChange={(e) => setOrderItems((prev) => prev.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))}
                     placeholder="Ring, chain, kolusu…"

@@ -2,7 +2,7 @@
 
 import { Fragment, useState } from "react";
 import Link from "next/link";
-import { useProducts, useSaveProduct, useDeleteProduct, type Product } from "@/modules/sales/products-api";
+import { useProducts, useSaveProduct, useDeleteProduct, useProductGroups, type Product } from "@/modules/sales/products-api";
 import { inr } from "@/lib/format";
 
 const METALS = [
@@ -16,10 +16,14 @@ const METALS = [
 
 const inp = "w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
 
-const BLANK = { name: "", metal: "gold_22k", default_purity_pct: "" as string | number, default_va_pct: 0, default_making_amt: 0, active: true };
+const BLANK = {
+  name: "", metal: "gold_22k", group_id: null as string | null,
+  default_purity_pct: "" as string | number, default_va_pct: 0, default_making_amt: 0, active: true,
+};
 
 export default function AdminProductsPage() {
   const { data: products = [], isLoading } = useProducts(false);
+  const { data: groups = [] } = useProductGroups(false);
   const save   = useSaveProduct();
   const remove = useDeleteProduct();
 
@@ -29,18 +33,30 @@ export default function AdminProductsPage() {
   const [editForm, setEditForm] = useState<typeof BLANK>({ ...BLANK });
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
+  const [filterGroupId, setFilterGroupId] = useState<string>("");
 
-  const visible = showInactive ? products : products.filter(p => p.active);
+  const activeGroups = groups.filter(g => g.active);
+
+  let visible = showInactive ? products : products.filter(p => p.active);
+  if (filterGroupId) visible = visible.filter(p => p.group_id === filterGroupId);
 
   function startEdit(p: Product) {
     setEditingId(p.id);
-    setEditForm({ name: p.name, metal: p.metal, default_purity_pct: p.default_purity_pct ?? "", default_va_pct: p.default_va_pct, default_making_amt: p.default_making_amt, active: p.active });
+    setEditForm({
+      name: p.name, metal: p.metal, group_id: p.group_id,
+      default_purity_pct: p.default_purity_pct ?? "",
+      default_va_pct: p.default_va_pct, default_making_amt: p.default_making_amt, active: p.active,
+    });
     setDeletingId(null);
   }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
-    await save.mutateAsync({ ...form, default_purity_pct: form.default_purity_pct !== "" ? Number(form.default_purity_pct) : null });
+    await save.mutateAsync({
+      ...form,
+      group_id: form.group_id || null,
+      default_purity_pct: form.default_purity_pct !== "" ? Number(form.default_purity_pct) : null,
+    });
     setForm({ ...BLANK });
     setShowForm(false);
   }
@@ -48,16 +64,48 @@ export default function AdminProductsPage() {
   async function handleEdit(e: React.FormEvent) {
     e.preventDefault();
     if (!editingId) return;
-    await save.mutateAsync({ id: editingId, ...editForm, default_purity_pct: editForm.default_purity_pct !== "" ? Number(editForm.default_purity_pct) : null });
+    await save.mutateAsync({
+      id: editingId, ...editForm,
+      group_id: editForm.group_id || null,
+      default_purity_pct: editForm.default_purity_pct !== "" ? Number(editForm.default_purity_pct) : null,
+    });
     setEditingId(null);
   }
 
+  const groupName = (gid: string | null) => gid ? (groups.find(g => g.id === gid)?.name ?? "—") : "—";
+  const metalLabel = (m: string) => METALS.find(x => x.value === m)?.label ?? m;
+
+  // Build grouped options for group selector: parent groups, then children indented
+  const topGroups = activeGroups.filter(g => !g.parent_id);
+  const childGroups = (parentId: string) => activeGroups.filter(g => g.parent_id === parentId);
+
+  function GroupSelect({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+    return (
+      <select value={value ?? ""} onChange={e => onChange(e.target.value || null)} className={inp}>
+        <option value="">— No group —</option>
+        {topGroups.map(parent => (
+          <Fragment key={parent.id}>
+            <option value={parent.id}>{parent.name}</option>
+            {childGroups(parent.id).map(child => (
+              <option key={child.id} value={child.id}>&nbsp;&nbsp;↳ {child.name}</option>
+            ))}
+          </Fragment>
+        ))}
+        {/* Groups without a top-level parent that aren't top-level themselves */}
+        {activeGroups.filter(g => g.parent_id && !topGroups.find(t => t.id === g.parent_id)).map(g => (
+          <option key={g.id} value={g.id}>{g.name}</option>
+        ))}
+      </select>
+    );
+  }
+
   return (
-    <div className="max-w-3xl mx-auto space-y-5">
+    <div className="max-w-4xl mx-auto space-y-5">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link href="/admin/users" className="text-xs text-gold hover:underline">← Admin</Link>
           <h1 className="text-xl font-bold text-ink">Product Catalogue</h1>
+          <Link href="/admin/product-groups" className="text-xs text-gold hover:underline">Manage Groups →</Link>
         </div>
         <button onClick={() => { setShowForm(v => !v); setEditingId(null); }}
           className="bg-gold text-white text-sm px-4 py-2 rounded-lg2">
@@ -65,7 +113,6 @@ export default function AdminProductsPage() {
         </button>
       </div>
 
-      {/* Add form */}
       {showForm && (
         <form onSubmit={handleAdd} className="bg-white border border-line rounded-xl p-4 shadow-soft space-y-3">
           <h3 className="text-sm font-semibold">New Product</h3>
@@ -74,6 +121,10 @@ export default function AdminProductsPage() {
               <label className="text-xs text-ink-dim block mb-1">Product Name *</label>
               <input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
                 placeholder="e.g. Gold Chain, Silver Anklet" className={inp} autoFocus />
+            </div>
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Group</label>
+              <GroupSelect value={form.group_id} onChange={v => setForm({ ...form, group_id: v })} />
             </div>
             <div>
               <label className="text-xs text-ink-dim block mb-1">Metal</label>
@@ -111,26 +162,39 @@ export default function AdminProductsPage() {
             <button type="button" onClick={() => setShowForm(false)}
               className="border border-line text-sm px-4 py-1.5 rounded-lg2">Cancel</button>
           </div>
-          {save.isError && <p className="text-xs text-err">Save failed — run migration 038 first.</p>}
+          {save.isError && <p className="text-xs text-err">Save failed — run migration 042 first.</p>}
         </form>
       )}
 
-      {/* Filter */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-ink-dim">{visible.length} products</p>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <p className="text-sm text-ink-dim">{visible.length} products</p>
+          <select value={filterGroupId} onChange={e => setFilterGroupId(e.target.value)}
+            className="border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold">
+            <option value="">All groups</option>
+            {topGroups.map(parent => (
+              <Fragment key={parent.id}>
+                <option value={parent.id}>{parent.name}</option>
+                {childGroups(parent.id).map(child => (
+                  <option key={child.id} value={child.id}>&nbsp;&nbsp;↳ {child.name}</option>
+                ))}
+              </Fragment>
+            ))}
+          </select>
+        </div>
         <label className="flex items-center gap-1.5 text-sm text-ink-dim cursor-pointer select-none">
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="accent-gold" />
           Show inactive
         </label>
       </div>
 
-      {/* Table */}
       {isLoading ? <p className="text-sm text-ink-dim">Loading…</p> : (
         <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                 <th className="text-left px-4 py-2.5">Name</th>
+                <th className="text-left px-3 py-2.5">Group</th>
                 <th className="text-left px-3 py-2.5">Metal</th>
                 <th className="text-right px-3 py-2.5">Purity%</th>
                 <th className="text-right px-3 py-2.5">VA%</th>
@@ -144,7 +208,8 @@ export default function AdminProductsPage() {
                 <Fragment key={p.id}>
                   <tr className={`border-b border-line last:border-0 hover:bg-canvas/50 ${!p.active ? "opacity-50" : ""}`}>
                     <td className="px-4 py-2.5 font-medium">{p.name}</td>
-                    <td className="px-3 py-2.5 text-ink-dim capitalize">{METALS.find(m => m.value === p.metal)?.label ?? p.metal}</td>
+                    <td className="px-3 py-2.5 text-ink-dim text-xs">{groupName(p.group_id)}</td>
+                    <td className="px-3 py-2.5 text-ink-dim capitalize">{metalLabel(p.metal)}</td>
                     <td className="px-3 py-2.5 text-right text-ink-dim">{p.default_purity_pct ?? "—"}</td>
                     <td className="px-3 py-2.5 text-right text-ink-dim">{p.default_va_pct > 0 ? p.default_va_pct : "—"}</td>
                     <td className="px-3 py-2.5 text-right text-ink-dim">{p.default_making_amt > 0 ? inr(p.default_making_amt) : "—"}</td>
@@ -160,14 +225,17 @@ export default function AdminProductsPage() {
                     </td>
                   </tr>
 
-                  {/* Inline edit */}
                   {editingId === p.id && (
                     <tr className="border-b border-line bg-gold/5">
-                      <td colSpan={7} className="px-4 py-3">
+                      <td colSpan={8} className="px-4 py-3">
                         <form onSubmit={handleEdit} className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                           <div className="col-span-2 sm:col-span-1">
                             <label className="text-xs text-ink-dim block mb-1">Name *</label>
                             <input required value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} className={inp} autoFocus />
+                          </div>
+                          <div>
+                            <label className="text-xs text-ink-dim block mb-1">Group</label>
+                            <GroupSelect value={editForm.group_id} onChange={v => setEditForm({ ...editForm, group_id: v })} />
                           </div>
                           <div>
                             <label className="text-xs text-ink-dim block mb-1">Metal</label>
@@ -209,10 +277,9 @@ export default function AdminProductsPage() {
                     </tr>
                   )}
 
-                  {/* Inline delete confirm */}
                   {deletingId === p.id && (
                     <tr className="border-b border-line bg-err/5">
-                      <td colSpan={7} className="px-4 py-3">
+                      <td colSpan={8} className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           <span className="text-sm text-err">Delete &ldquo;{p.name}&rdquo;?</span>
                           <button disabled={remove.isPending}
@@ -229,7 +296,7 @@ export default function AdminProductsPage() {
                 </Fragment>
               ))}
               {!visible.length && (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-ink-dim">No products yet. Add one above.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-ink-dim">No products yet. Add one above.</td></tr>
               )}
             </tbody>
           </table>

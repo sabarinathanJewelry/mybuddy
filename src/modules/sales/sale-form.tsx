@@ -13,7 +13,7 @@ import CustomerPicker from "@/modules/customers/customer-picker";
 import SupplierPicker from "@/modules/suppliers/supplier-picker";
 import type { Supplier } from "@/modules/suppliers/supplier-picker";
 import { useSaveSale, useUpdateSale, useSale } from "./api";
-import { useProducts } from "./products-api";
+import { useProducts, useProductGroups } from "./products-api";
 import type { SaleDraft, SaleItemDraft, SalePaymentDraft, Metal, PaymentMode, SaleSeries, SaleType } from "./types";
 import { useStaff } from "@/modules/attendance/api";
 import type { Customer } from "@/modules/customers/types";
@@ -311,6 +311,7 @@ export default function SaleForm({ saleId }: Props) {
   const isMixed   = hasGold && hasSilver;
 
   const { data: products = [] } = useProducts(true);
+  const { data: productGroups = [] } = useProductGroups(true);
   const { data: staffList = [] } = useStaff();
   const activeStaff = staffList.filter((s) => s.active);
 
@@ -569,32 +570,77 @@ export default function SaleForm({ saleId }: Props) {
 
               {/* Row 1: Description + Metal + Rate/Purity or Direct Value */}
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                <div className="col-span-2">
+                <div className="col-span-2 space-y-1">
                   <label className="text-xs text-ink-dim">Description</label>
-                  <input
-                    list={`products-${item.id}`}
-                    value={item.description}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      const matched = products.find((p) => p.name === val);
-                      if (matched) {
-                        updateItem(idx, {
-                          description: val,
-                          metal: matched.metal as Metal,
-                          purity_pct: matched.default_purity_pct ?? item.purity_pct,
-                          va_pct: matched.default_va_pct ?? item.va_pct,
-                          making_amt: matched.default_making_amt ?? item.making_amt,
+                  {products.length > 0 && (
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const matched = products.find((p) => p.id === e.target.value);
+                        if (matched) {
+                          updateItem(idx, {
+                            description: matched.name,
+                            metal: matched.metal as Metal,
+                            purity_pct: matched.default_purity_pct ?? item.purity_pct,
+                            va_pct: matched.default_va_pct ?? item.va_pct,
+                            making_amt: matched.default_making_amt ?? item.making_amt,
+                          });
+                        }
+                      }}
+                      className={`${inp} text-xs text-ink-dim`}
+                    >
+                      <option value="">Pick product…</option>
+                      {(() => {
+                        const topGroups = productGroups.filter(g => !g.parent_id);
+                        const childGroups = (pid: string) => productGroups.filter(g => g.parent_id === pid);
+                        const ungrouped = products.filter(p => !p.group_id);
+                        const rendered: React.ReactNode[] = [];
+                        topGroups.forEach(parent => {
+                          const parentProducts = products.filter(p => p.group_id === parent.id);
+                          const children = childGroups(parent.id);
+                          if (children.length === 0 && parentProducts.length > 0) {
+                            rendered.push(
+                              <optgroup key={parent.id} label={parent.name}>
+                                {parentProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                              </optgroup>
+                            );
+                          } else {
+                            if (parentProducts.length > 0) {
+                              rendered.push(
+                                <optgroup key={parent.id} label={parent.name}>
+                                  {parentProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                </optgroup>
+                              );
+                            }
+                            children.forEach(child => {
+                              const childProducts = products.filter(p => p.group_id === child.id);
+                              if (childProducts.length > 0) {
+                                rendered.push(
+                                  <optgroup key={child.id} label={`${parent.name} › ${child.name}`}>
+                                    {childProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                  </optgroup>
+                                );
+                              }
+                            });
+                          }
                         });
-                      } else {
-                        updateItem(idx, { description: val });
-                      }
-                    }}
+                        if (ungrouped.length > 0) {
+                          rendered.push(
+                            <optgroup key="__ungrouped" label="Other">
+                              {ungrouped.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </optgroup>
+                          );
+                        }
+                        return rendered;
+                      })()}
+                    </select>
+                  )}
+                  <input
+                    value={item.description}
+                    onChange={(e) => updateItem(idx, { description: e.target.value })}
                     placeholder="Item description"
                     className={inp}
                   />
-                  <datalist id={`products-${item.id}`}>
-                    {products.map((p) => <option key={p.id} value={p.name} />)}
-                  </datalist>
                 </div>
                 <div>
                   <label className="text-xs text-ink-dim">Metal</label>
