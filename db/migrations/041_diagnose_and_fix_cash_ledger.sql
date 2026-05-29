@@ -5,9 +5,8 @@
 -- SELECT cl.id, cl.tx_date, cl.direction, cl.amount, cl.description, cl.ref_type, cl.ref_id,
 --        p.mode, p.notes, p.sale_id
 -- FROM cash_ledger cl
--- LEFT JOIN payments p ON p.id::text = cl.ref_id AND cl.ref_type = 'payment'
--- WHERE cl.ref_type = 'payment'
---   AND p.sale_id IS NOT NULL
+-- JOIN payments p ON p.id = cl.ref_id AND cl.ref_type = 'payment'
+-- WHERE p.sale_id IS NOT NULL
 -- ORDER BY cl.tx_date;
 
 -- DELETE any cash_ledger entries that are linked to a payment which is itself
@@ -16,7 +15,7 @@
 DELETE FROM cash_ledger
 WHERE ref_type = 'payment'
   AND ref_id IN (
-    SELECT id::text FROM payments
+    SELECT id FROM payments
     WHERE sale_id IS NOT NULL
       AND direction = 'in'
   );
@@ -26,7 +25,7 @@ WHERE ref_type = 'payment'
 DELETE FROM bank_ledger
 WHERE ref_type = 'payment'
   AND ref_id IN (
-    SELECT id::text FROM payments
+    SELECT id FROM payments
     WHERE sale_id IS NOT NULL
       AND direction = 'in'
   );
