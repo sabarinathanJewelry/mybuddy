@@ -262,26 +262,24 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
       // Group order_payments by (order_id, pay_date)
       const orderMap = new Map<string, {
         orderId: string; orderNo: string; payDate: string;
-        customerName: string | null; credit: number; balanceDue: number;
+        customerName: string | null; credit: number;
+        finalTotal: number; advancePaid: number;
         payments: { note: string; amount: number; mode: string }[];
       }>();
-      const orderIsNew = new Map<string, boolean>(); // key → is new order (order_date === pay_date)
       for (const p of (orderRes.data ?? []) as any[]) {
         const key = `${p.order_id}::${p.pay_date}`;
         const od = p.orders as any;
         const isNew = (od?.order_date ?? "") === (p.pay_date as string);
         if (!orderMap.has(key)) {
-          orderIsNew.set(key, isNew);
           const orderTotal = isNew ? (Number(od?.final_total) || Number(od?.total) || 0) : 0;
-          const totalPaid  = isNew ? (Number(od?.advance_paid) || 0) : 0;
-          const balanceDue = isNew ? Math.max(0, orderTotal - totalPaid) : 0;
           orderMap.set(key, {
             orderId: p.order_id,
             orderNo: od?.order_no ?? "Order",
             payDate: p.pay_date as string,
             customerName: od?.customers?.name ?? null,
             credit: orderTotal,
-            balanceDue,
+            finalTotal: Number(od?.final_total) || Number(od?.total) || 0,
+            advancePaid: Number(od?.advance_paid) || 0,
             payments: [],
           });
         }
@@ -293,7 +291,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
             row.payments.push({ note: paymentNote(p.mode, Number(p.metal_wt ?? 0)), amount: amt, mode: p.mode as string });
           }
         } else {
-          // Delivery: total paid → Credit; non-cash → Debit (net = cash received)
+          // Delivery payment: amount → Credit; non-cash → Debit (net = cash received)
           if (p.mode !== "advance") {
             row.credit += amt;
             if (p.mode !== "cash") {
@@ -302,10 +300,11 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           }
         }
       }
-      // Add Balance Due only for new orders (those with same-day payments)
-      for (const [key, row] of orderMap.entries()) {
-        if (orderIsNew.get(key) && row.balanceDue > 0.005) {
-          row.payments.push({ note: "Balance Due", amount: row.balanceDue, mode: "balance" });
+      // Add Balance Due for any order where advance_paid < final_total (new or existing)
+      for (const row of orderMap.values()) {
+        const remaining = Math.max(0, row.finalTotal - row.advancePaid);
+        if (remaining > 0.005) {
+          row.payments.push({ note: "Balance Due", amount: remaining, mode: "balance" });
         }
       }
 
@@ -324,7 +323,8 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           payDate: od.order_date as string,
           customerName: (od.customers as any)?.name ?? null,
           credit: orderTotal,
-          balanceDue,
+          finalTotal: orderTotal,
+          advancePaid,
           payments: [] as { note: string; amount: number; mode: string }[],
         };
         if (balanceDue > 0.005) {
