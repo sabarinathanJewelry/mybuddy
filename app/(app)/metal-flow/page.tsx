@@ -750,7 +750,11 @@ export default function MetalFlowPage() {
                         </td>
                         <td className="px-3 py-2.5">
                           <div className="flex items-center gap-2 flex-wrap">
-                            {r.payout_amount > 0 ? (
+                            {r.source_type === "sale" || r.source_type === "order" ? (
+                              <span className="text-xs text-ink-dim">
+                                Via {r.source_type} — paid
+                              </span>
+                            ) : r.payout_amount > 0 ? (
                               <span className="text-xs text-ok font-medium">
                                 ✓ {r.payout_mode === "bank" ? "Bank" : "Cash"} paid
                               </span>
@@ -867,27 +871,29 @@ export default function MetalFlowPage() {
                                 </div>
                               </div>
 
-                              <div className="border-t border-line pt-3 space-y-2">
-                                <p className="text-xs font-medium text-ink-dim">Cash Payout to Customer</p>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                  <div>
-                                    <label className="block text-xs text-ink-dim mb-1">Amount Paid (₹)</label>
-                                    <input type="number" step="1" value={editIntakeForm.payout_amount || ""}
-                                      onFocus={e => e.target.select()}
-                                      onChange={e => setEditIntakeForm({ ...editIntakeForm, payout_amount: parseFloat(e.target.value) || 0 })}
-                                      className={inp} placeholder="0" />
-                                  </div>
-                                  <div>
-                                    <label className="block text-xs text-ink-dim mb-1">Paid via</label>
-                                    <select value={editIntakeForm.payout_mode}
-                                      onChange={e => setEditIntakeForm({ ...editIntakeForm, payout_mode: e.target.value as "cash" | "bank" })}
-                                      className={inp}>
-                                      <option value="cash">Cash</option>
-                                      <option value="bank">Bank / UPI</option>
-                                    </select>
+                              {(r.source_type !== "sale" && r.source_type !== "order") && (
+                                <div className="border-t border-line pt-3 space-y-2">
+                                  <p className="text-xs font-medium text-ink-dim">Cash Payout to Customer</p>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                    <div>
+                                      <label className="block text-xs text-ink-dim mb-1">Amount Paid (₹)</label>
+                                      <input type="number" step="1" value={editIntakeForm.payout_amount || ""}
+                                        onFocus={e => e.target.select()}
+                                        onChange={e => setEditIntakeForm({ ...editIntakeForm, payout_amount: parseFloat(e.target.value) || 0 })}
+                                        className={inp} placeholder="0" />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs text-ink-dim mb-1">Paid via</label>
+                                      <select value={editIntakeForm.payout_mode}
+                                        onChange={e => setEditIntakeForm({ ...editIntakeForm, payout_mode: e.target.value as "cash" | "bank" })}
+                                        className={inp}>
+                                        <option value="cash">Cash</option>
+                                        <option value="bank">Bank / UPI</option>
+                                      </select>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
+                              )}
 
                               <div className="flex gap-2">
                                 <button
