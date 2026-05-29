@@ -52,7 +52,7 @@ async function fanoutLedger(
       promises.push(Promise.resolve(client.from("payments").insert({
         pay_date: billDate,
         direction: "in",
-        mode: p.mode === "old_gold" || p.mode === "old_silver" ? "cash" : p.mode,
+        mode: p.mode,
         amount: p.amount,
         customer_id: customerId,
         sale_id: saleId,
