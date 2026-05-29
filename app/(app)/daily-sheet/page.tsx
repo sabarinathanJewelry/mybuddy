@@ -742,6 +742,20 @@ export default function DailySheetPage() {
     bullionRows.filter((r: any) => r.isSell).reduce((s: number, r: any) => s + r.amount, 0) +
     oldGoldAdvRows.reduce((s: number, r: any) => s + r.amount, 0);
 
+  // Net cash per row = credit - non-cash debits + advance_kept (kept cash) - change_cash already excluded from rowDebit
+  const saleNetCash = (sale: typeof saleRows[0]) => {
+    const advKept = sale.payments.filter(p => p.mode === "advance_kept").reduce((s, p) => s + p.amount, 0);
+    return sale.credit - rowDebit(sale.payments) + advKept;
+  };
+  const grandCash =
+    saleRows.reduce((s, r) => s + saleNetCash(r), 0) +
+    orderRows.reduce((s: number, r: any) => s + r.credit - rowDebit(r.payments), 0) +
+    bullionRows.reduce((s: number, r: any) => s + (r.isSell ? r.amount : -r.amount), 0) +
+    visibleMisc.reduce((s: number, e: any) => {
+      if (e.src !== "Cash" || e.direction === "advance_out") return s;
+      return s + (e.direction === "in" ? Number(e.amount) : -Number(e.amount));
+    }, 0);
+
   // Date-specific cash position (cash only, from useDateCashPosition)
   const openingCash  = cashPos?.openingCash ?? null;
   const closingCash  = cashPos?.closingCash ?? null;
@@ -843,13 +857,14 @@ export default function DailySheetPage() {
             <>
 
             <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
-              <table className="w-full text-sm" style={{ minWidth: "540px" }}>
+              <table className="w-full text-sm" style={{ minWidth: "620px" }}>
                 <thead>
                   <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                     <th className="text-left px-4 py-2.5">Item Description</th>
                     <th className="text-left px-3 py-2.5">Debit Note</th>
                     <th className="text-right px-3 py-2.5 text-err">Debit ✓</th>
-                    <th className="text-right px-4 py-2.5 text-ok">Credit ✓</th>
+                    <th className="text-right px-3 py-2.5 text-ok">Credit ✓</th>
+                    <th className="text-right px-3 py-2.5 text-ink-dim">Cash ₹</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -859,9 +874,10 @@ export default function DailySheetPage() {
                       <td className="px-4 py-2 font-semibold text-gold text-xs">Opening Balance (Cash)</td>
                       <td className="px-3 py-2 text-xs text-ink-dim">Closing Balance (Cash)</td>
                       <td className="px-3 py-2 text-right font-mono text-xs font-semibold text-gold">{inr(openingCash)}</td>
-                      <td className="px-4 py-2 text-right font-mono text-xs font-semibold text-gold">
+                      <td className="px-3 py-2 text-right font-mono text-xs font-semibold text-gold">
                         {closingCash !== null ? inr(closingCash) : ""}
                       </td>
+                      <td className="px-3 py-2" />
                     </tr>
                   )}
 
@@ -873,7 +889,7 @@ export default function DailySheetPage() {
                       </td>
                       <td className="px-3 py-2 text-xs text-ink-dim">Prev. day count</td>
                       <td className="px-3 py-2" />
-                      <td className="px-4 py-2 text-right font-mono text-xs font-semibold text-info">
+                      <td className="px-3 py-2 text-right font-mono text-xs font-semibold text-info">
                         <div className="flex items-center justify-end gap-1.5">
                           <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
                             checked={selCrKeys.has("cr-prev-count")}
@@ -881,11 +897,12 @@ export default function DailySheetPage() {
                           {inr(prevDayCount.actual)}
                         </div>
                       </td>
+                      <td className="px-3 py-2" />
                     </tr>
                   )}
 
                   {saleRows.length === 0 && orderRows.length === 0 && bullionRows.length === 0 && oldGoldAdvRows.length === 0 && visibleMisc.length === 0 ? (
-                    <tr><td colSpan={4} className="px-4 py-8 text-center text-ink-dim">No transactions{multiDay ? ` from ${cbFrom} to ${cbTo}` : ` on ${cbFrom}`}</td></tr>
+                    <tr><td colSpan={5} className="px-4 py-8 text-center text-ink-dim">No transactions{multiDay ? ` from ${cbFrom} to ${cbTo}` : ` on ${cbFrom}`}</td></tr>
                   ) : <>
                     {/* Sale rows — sub-rows rendered inline so rowSpan works */}
                     {saleRows.flatMap((sale) => {
@@ -896,6 +913,8 @@ export default function DailySheetPage() {
                         ? `${sale.itemDesc} (${sale.customerName})`
                         : sale.itemDesc;
                       const totalRows = 1 + restPay.length;
+                      const netCash = saleNetCash(sale);
+                      const cashZero = Math.abs(netCash) < 0.01;
 
                       return [
                         <tr key={`${sale.id}-0`}
@@ -920,13 +939,18 @@ export default function DailySheetPage() {
                               </div>
                             ) : ""}
                           </td>
-                          <td className="px-4 py-2.5 text-right font-mono text-xs font-semibold text-ok">
+                          <td className="px-3 py-2.5 text-right font-mono text-xs font-semibold text-ok">
                             <div className="flex items-center justify-end gap-1.5">
                               <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
                                 checked={selCrKeys.has(`cr-s-${sale.id}`)}
                                 onChange={() => toggleCr(`cr-s-${sale.id}`, sale.credit)} />
                               {inr(sale.credit)}
                             </div>
+                          </td>
+                          <td rowSpan={totalRows}
+                            className={`px-3 py-2.5 text-right font-mono text-xs font-semibold border-b border-line border-l border-line/30 ${cashZero ? "text-ink-dim" : netCash > 0 ? "text-ok" : "text-err"}`}
+                            style={{ verticalAlign: "middle" }}>
+                            {cashZero ? "—" : `${netCash > 0 ? "+" : ""}${inr(netCash)}`}
                           </td>
                         </tr>,
                         ...restPay.map((pay, pi) => {
@@ -971,6 +995,8 @@ export default function DailySheetPage() {
                       const label = ord.customerName
                         ? `${ord.customerName} — ${ord.orderNo}`
                         : ord.orderNo;
+                      const ordNetCash = ord.credit - rowDebit(ord.payments);
+                      const ordCashZero = Math.abs(ordNetCash) < 0.01;
                       return [
                         <tr key={`ord-${ord.orderId}-${ord.payDate}-0`}
                           className={`hover:bg-canvas/50 ${restPay.length === 0 ? "border-b border-line" : ""}`}>
@@ -994,7 +1020,7 @@ export default function DailySheetPage() {
                               </div>
                             ) : ""}
                           </td>
-                          <td className="px-4 py-2.5 text-right font-mono text-xs font-semibold text-ok">
+                          <td className="px-3 py-2.5 text-right font-mono text-xs font-semibold text-ok">
                             {ord.credit > 0 ? (
                               <div className="flex items-center justify-end gap-1.5">
                                 <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
@@ -1003,6 +1029,11 @@ export default function DailySheetPage() {
                                 {inr(ord.credit)}
                               </div>
                             ) : ""}
+                          </td>
+                          <td rowSpan={totalRows}
+                            className={`px-3 py-2.5 text-right font-mono text-xs font-semibold border-b border-line border-l border-line/30 ${ordCashZero ? "text-ink-dim" : ordNetCash > 0 ? "text-ok" : "text-err"}`}
+                            style={{ verticalAlign: "middle" }}>
+                            {ordCashZero ? "—" : `${ordNetCash > 0 ? "+" : ""}${inr(ordNetCash)}`}
                           </td>
                         </tr>,
                         ...restPay.map((pay: any, pi: number) => {
@@ -1019,7 +1050,7 @@ export default function DailySheetPage() {
                                   {inr(pay.amount)}
                                 </div>
                               </td>
-                              <td className="px-4 py-1.5" />
+                              <td className="px-3 py-1.5" />
                             </tr>
                           );
                         }),
@@ -1046,7 +1077,7 @@ export default function DailySheetPage() {
                             </div>
                           ) : ""}
                         </td>
-                        <td className="px-4 py-2 text-right font-mono text-xs text-ok">
+                        <td className="px-3 py-2 text-right font-mono text-xs text-ok">
                           {r.isSell ? (
                             <div className="flex items-center justify-end gap-1.5">
                               <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
@@ -1055,6 +1086,9 @@ export default function DailySheetPage() {
                               {inr(r.amount)}
                             </div>
                           ) : ""}
+                        </td>
+                        <td className={`px-3 py-2 text-right font-mono text-xs font-semibold ${r.isSell ? "text-ok" : "text-err"}`}>
+                          {r.isSell ? `+${inr(r.amount)}` : `-${inr(r.amount)}`}
                         </td>
                       </tr>
                     ))}
@@ -1075,7 +1109,7 @@ export default function DailySheetPage() {
                             {inr(r.amount)}
                           </div>
                         </td>
-                        <td className="px-4 py-2 text-right font-mono text-xs text-info">
+                        <td className="px-3 py-2 text-right font-mono text-xs text-info">
                           <div className="flex items-center justify-end gap-1.5">
                             <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
                               checked={selCrKeys.has(`cr-og-${r.id}`)}
@@ -1083,6 +1117,7 @@ export default function DailySheetPage() {
                             {inr(r.amount)}
                           </div>
                         </td>
+                        <td className="px-3 py-2 text-right font-mono text-xs text-ink-dim">—</td>
                       </tr>
                     ))}
 
@@ -1091,9 +1126,12 @@ export default function DailySheetPage() {
                       const isAdv = e.direction === "advance_out";
                       const isBankIn = e.src === "Bank" && e.direction === "in" && e.ref_type !== "transfer";
                       const mkey = `misc-${mi}`;
-                      // advance_out is pass-through (no cash): debit=advance consumed, credit=chit/payment received
                       const mCr = (e.direction === "in" || isAdv) ? Number(e.amount) : 0;
                       const mDr = (e.direction === "out" || isAdv || isBankIn) ? Number(e.amount) : 0;
+                      // Cash column: only Cash-sourced entries; advance/bank = no cash
+                      const mCash = (e.src === "Cash" && !isAdv)
+                        ? (e.direction === "in" ? Number(e.amount) : -Number(e.amount))
+                        : 0;
                       return (
                         <tr key={mkey} className={`border-b border-line hover:bg-canvas/50 ${(isAdv || isBankIn) ? "bg-info/5" : ""}`}>
                           <td className="px-4 py-2 text-sm">
@@ -1115,7 +1153,7 @@ export default function DailySheetPage() {
                               </div>
                             ) : ""}
                           </td>
-                          <td className={`px-4 py-2 text-right font-mono text-xs ${isAdv ? "text-info" : "text-ok"}`}>
+                          <td className={`px-3 py-2 text-right font-mono text-xs ${isAdv ? "text-info" : "text-ok"}`}>
                             {mCr > 0 ? (
                               <div className="flex items-center justify-end gap-1.5">
                                 <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
@@ -1124,6 +1162,9 @@ export default function DailySheetPage() {
                                 {inr(mCr)}
                               </div>
                             ) : ""}
+                          </td>
+                          <td className={`px-3 py-2 text-right font-mono text-xs font-semibold ${Math.abs(mCash) < 0.01 ? "text-ink-dim" : mCash > 0 ? "text-ok" : "text-err"}`}>
+                            {Math.abs(mCash) < 0.01 ? "—" : `${mCash > 0 ? "+" : ""}${inr(mCash)}`}
                           </td>
                         </tr>
                       );
@@ -1145,7 +1186,8 @@ export default function DailySheetPage() {
                           {inr(cbToCount.actual)}
                         </div>
                       </td>
-                      <td className="px-4 py-2" />
+                      <td className="px-3 py-2" />
+                      <td className="px-3 py-2" />
                     </tr>
                   )}
                 </tbody>
@@ -1173,22 +1215,27 @@ export default function DailySheetPage() {
                             )}
                           </td>
                           <td className="px-3 py-2 text-right font-mono text-xs font-semibold text-err">{selDr > 0 ? inr(selDr) : ""}</td>
-                          <td className="px-4 py-2 text-right font-mono text-xs font-semibold text-ok">{selCr > 0 ? inr(selCr) : ""}</td>
+                          <td className="px-3 py-2 text-right font-mono text-xs font-semibold text-ok">{selCr > 0 ? inr(selCr) : ""}</td>
+                          <td className="px-3 py-2" />
                         </tr>
                       )}
                       <tr className="border-t-2 border-line bg-canvas font-semibold">
                         <td className="px-4 py-2.5 text-xs text-ink-dim uppercase tracking-wide">Total</td>
                         <td className="px-3 py-2.5" />
                         <td className="px-3 py-2.5 text-right font-mono text-err">{inr(totalDebit)}</td>
-                        <td className="px-4 py-2.5 text-right font-mono text-ok">{inr(totalCredit)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-ok">{inr(totalCredit)}</td>
+                        <td className={`px-3 py-2.5 text-right font-mono text-sm font-bold ${grandCash >= 0 ? "text-ok" : "text-err"}`}>
+                          {grandCash >= 0 ? "+" : ""}{inr(grandCash)}
+                        </td>
                       </tr>
                       <tr className="bg-canvas">
                         <td className={`px-4 py-2 text-xs font-semibold ${color}`}>{label}</td>
                         <td className="px-3 py-2" />
                         <td className="px-3 py-2" />
-                        <td className={`px-4 py-2 text-right font-mono text-xs font-semibold ${color}`}>
+                        <td className={`px-3 py-2 text-right font-mono text-xs font-semibold ${color}`}>
                           {balanced ? "—" : (diff > 0 ? "+" : "") + inr(diff)}
                         </td>
+                        <td className="px-3 py-2 text-right text-[10px] text-ink-dim">net cash</td>
                       </tr>
                     </>);
                   })()}
