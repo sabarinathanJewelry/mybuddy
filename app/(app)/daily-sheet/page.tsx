@@ -164,7 +164,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .eq("status", "confirmed").order("bill_date").order("created_at"),
         // Order payments grouped by order+date (handles old gold, UPI, cash, advance per order)
         client.from("order_payments")
-          .select("id, order_id, pay_date, mode, amount, metal_wt, orders(order_no, order_date, total, final_total, advance_paid, customers(name))")
+          .select("id, order_id, pay_date, mode, amount, metal_wt, orders(order_no, order_date, total, final_total, advance_paid, customer_id, customers(name))")
           .gte("pay_date", fromDate).lte("pay_date", toDate)
           .gt("amount", 0)
           .order("pay_date").order("created_at"),
@@ -206,7 +206,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .order("pay_date").order("created_at"),
         // Standalone UPI/bank customer payments — fallback for missing bank_ledger entries
         client.from("payments")
-          .select("id, pay_date, amount, mode, direction, notes, created_at, customers(name)")
+          .select("id, pay_date, amount, mode, direction, notes, customer_id, created_at, customers(name)")
           .gte("pay_date", fromDate).lte("pay_date", toDate)
           .in("mode", ["upi", "bank"])
           .eq("direction", "in")
@@ -376,9 +376,24 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .map((e: any) => e.ref_id as string)
       );
 
+      // Fingerprints of UPI/bank order payments: customer|date|mode|amount
+      // Used to suppress standalone payment entries that are already in an order row
+      const orderPayFingerprints = new Set<string>(
+        (orderRes.data ?? [])
+          .filter((op: any) => op.mode === "upi" || op.mode === "bank")
+          .map((op: any) => {
+            const custId = (op.orders as any)?.customer_id ?? "";
+            return `${custId}|${op.pay_date}|${op.mode}|${op.amount}`;
+          })
+      );
+
       // Standalone UPI/bank payments missing from bank_ledger
       const standalonePayEntries = (standalonePayRes.data ?? [])
         .filter((p: any) => !blPaymentIds.has(p.id))
+        .filter((p: any) => {
+          if (!p.customer_id) return true;
+          return !orderPayFingerprints.has(`${p.customer_id}|${p.pay_date}|${p.mode}|${p.amount}`);
+        })
         .map((p: any) => {
           const cust = (p.customers as any)?.name ?? null;
           const modeLabel = p.mode === "upi" ? "UPI / GPay" : "Bank Transfer";
