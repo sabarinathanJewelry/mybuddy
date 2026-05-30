@@ -64,6 +64,11 @@ function MonthlyTab() {
   const [expandedId, setExpandedId]   = useState<string | null>(null);
   const [editingId, setEditingId]     = useState<string | null>(null);
   const [editForm, setEditForm]       = useState({ monthly_salary: 0, allowed_leaves: 1 });
+  const [weekendPenalty, setWeekendPenalty] = useState(false);
+  const [equalizeOt, setEqualizeOt]         = useState(true);
+  const [applyOt, setApplyOt]               = useState(false);
+  const [otRateAmt, setOtRateAmt]           = useState(50);
+  const [otRateMode, setOtRateMode]         = useState<"hour" | "minute">("hour");
 
   const { data = [], isLoading, refetch, isFetching } = useMonthlyAttendanceSummary(month);
   const update = useUpdateStaff();
@@ -76,12 +81,34 @@ function MonthlyTab() {
     if (newM <= today) setMonth(newM);
   }
 
+  function isWeekend(dateStr: string): boolean {
+    const [y, mo, d] = dateStr.split("-").map(Number);
+    return [0, 6].includes(new Date(Date.UTC(y, mo - 1, d)).getUTCDay());
+  }
+  function netLateMins(r: MonthlyEmployeeSummary): number {
+    return equalizeOt ? Math.max(0, r.total_late_minutes - r.total_ot_minutes) : r.total_late_minutes;
+  }
+  function netOtMins(r: MonthlyEmployeeSummary): number {
+    return equalizeOt ? Math.max(0, r.total_ot_minutes - r.total_late_minutes) : r.total_ot_minutes;
+  }
   function calcFine(r: MonthlyEmployeeSummary): number {
     if (!applyFine) return 0;
-    return fineMode === "day" ? lateFineAmt * r.late_days : lateFineAmt * r.total_late_minutes;
+    const nlm = netLateMins(r);
+    if (nlm <= 0) return 0;
+    return fineMode === "day" ? lateFineAmt * r.late_days : lateFineAmt * nlm;
+  }
+  function calcOtPay(r: MonthlyEmployeeSummary): number {
+    if (!applyOt) return 0;
+    const nom = netOtMins(r);
+    return otRateMode === "hour" ? otRateAmt * (nom / 60) : otRateAmt * nom;
+  }
+  function calcWeekendExtra(r: MonthlyEmployeeSummary): number {
+    if (!weekendPenalty) return 0;
+    const weekendAbsent = r.daily.filter(d => !d.first_in && isWeekend(d.date)).length;
+    return weekendAbsent * r.per_day_salary;
   }
   function calcNet(r: MonthlyEmployeeSummary): number {
-    return r.monthly_salary - r.leave_deduction - calcFine(r);
+    return r.monthly_salary - r.leave_deduction - calcWeekendExtra(r) - calcFine(r) + calcOtPay(r);
   }
 
   function startEdit(r: MonthlyEmployeeSummary) {
@@ -100,12 +127,13 @@ function MonthlyTab() {
     qc.invalidateQueries({ queryKey: ["monthly-attendance"] });
   }
 
-  const totalDays   = data[0]?.total_days ?? 0;
-  const totSalary   = data.reduce((s, r) => s + r.monthly_salary, 0);
-  const totLeaveDed = data.reduce((s, r) => s + r.leave_deduction, 0);
-  const totFine     = data.reduce((s, r) => s + calcFine(r), 0);
-  const totNet      = data.reduce((s, r) => s + calcNet(r), 0);
-  const totOtMins   = data.reduce((s, r) => s + r.total_ot_minutes, 0);
+  const totalDays    = data[0]?.total_days ?? 0;
+  const totSalary    = data.reduce((s, r) => s + r.monthly_salary, 0);
+  const totLeaveDed  = data.reduce((s, r) => s + r.leave_deduction, 0);
+  const totFine      = data.reduce((s, r) => s + calcFine(r), 0);
+  const totOtPay     = data.reduce((s, r) => s + calcOtPay(r), 0);
+  const totNet       = data.reduce((s, r) => s + calcNet(r), 0);
+  const totOtMins    = data.reduce((s, r) => s + r.total_ot_minutes, 0);
 
   return (
     <div className="space-y-4">
@@ -134,6 +162,7 @@ function MonthlyTab() {
       <div className="bg-canvas border border-line rounded-xl p-4 space-y-3">
         <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide">Report Settings</p>
         <div className="flex flex-wrap gap-5 items-end">
+          {/* Late fine */}
           <div>
             <label className="text-xs text-ink-dim block mb-1">Late Fine</label>
             <div className="flex items-center gap-1.5">
@@ -154,6 +183,28 @@ function MonthlyTab() {
               </label>
             </div>
           </div>
+          {/* OT pay */}
+          <div>
+            <label className="text-xs text-ink-dim block mb-1">OT Pay</label>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm text-ink-dim">₹</span>
+              <input type="number" value={otRateAmt} min={0}
+                onChange={e => setOtRateAmt(Number(e.target.value))}
+                className={inp + " w-20"} />
+              <span className="text-xs text-ink-dim">per</span>
+              <select value={otRateMode} onChange={e => setOtRateMode(e.target.value as "hour" | "minute")}
+                className={inp + " w-24"}>
+                <option value="hour">hour</option>
+                <option value="minute">minute</option>
+              </select>
+              <label className="flex items-center gap-1.5 text-sm cursor-pointer select-none ml-1">
+                <input type="checkbox" checked={applyOt} onChange={e => setApplyOt(e.target.checked)}
+                  className="accent-gold" />
+                Pay OT
+              </label>
+            </div>
+          </div>
+          {/* Bulk leaves */}
           <div>
             <label className="text-xs text-ink-dim block mb-1">Set allowed leaves for all staff</label>
             <div className="flex items-center gap-1.5">
@@ -166,10 +217,25 @@ function MonthlyTab() {
             </div>
           </div>
         </div>
+        {/* Toggle row */}
+        <div className="flex flex-wrap gap-4 items-center pt-1">
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
+            <input type="checkbox" checked={equalizeOt} onChange={e => setEqualizeOt(e.target.checked)}
+              className="accent-gold" />
+            <span className="text-ink-dim">Equalize Late &amp; OT</span>
+            <span className="text-[10px] text-ink-dim/60">(OT minutes offset late — fine only on net late)</span>
+          </label>
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
+            <input type="checkbox" checked={weekendPenalty} onChange={e => setWeekendPenalty(e.target.checked)}
+              className="accent-gold" />
+            <span className="text-ink-dim">Double deduction for Sat/Sun absent</span>
+            <span className="text-[10px] text-ink-dim/60">(extra 1× per-day salary on top of leave deduction)</span>
+          </label>
+        </div>
         <p className="text-[11px] text-ink-dim leading-relaxed">
-          Fine suggestion: <strong>₹50–200 / late day</strong> or <strong>₹3–10 / minute late</strong>.
-          ₹100/day on ₹25,000 ≈ 4% daily wage.
-          Leave deduction and late fine are independent — both or either can be applied.
+          Fine: <strong>₹50–200 / late day</strong> or <strong>₹3–10 / min late</strong>.
+          OT: <strong>₹50 / hr</strong> is a common starting rate.
+          When equalization is on, late and OT cancel each other out monthly before fine/pay are applied.
         </p>
       </div>
 
@@ -425,11 +491,29 @@ function MonthlyTab() {
                                     {r.leave_deduction > 0 ? `−${inr(Math.round(r.leave_deduction))}` : "—"}
                                   </span>
                                 </div>
+                                {weekendPenalty && (() => {
+                                  const wkAbs = r.daily.filter(d => !d.first_in && isWeekend(d.date)).length;
+                                  const wkExtra = calcWeekendExtra(r);
+                                  return wkAbs > 0 ? (
+                                    <div className="flex justify-between">
+                                      <span className="text-err">Sat/Sun absent ({wkAbs} day{wkAbs !== 1 ? "s" : ""}) ×2</span>
+                                      <span className="font-mono text-err font-medium">−{inr(Math.round(wkExtra))}</span>
+                                    </div>
+                                  ) : null;
+                                })()}
                                 <div className="flex justify-between">
                                   <span className={r.late_days > 0 ? "text-warn" : "text-ink-dim"}>
                                     Late ({r.late_days} day{r.late_days !== 1 ? "s" : ""}, {formatMins(r.total_late_minutes)})
                                   </span>
                                 </div>
+                                {equalizeOt && r.total_ot_minutes > 0 && (
+                                  <div className="flex justify-between text-ok pl-2">
+                                    <span>OT offset ({formatMins(r.total_ot_minutes)})</span>
+                                    <span className="text-[10px] text-ink-dim">
+                                      net late: {formatMins(netLateMins(r))}
+                                    </span>
+                                  </div>
+                                )}
                                 <div className="flex justify-between">
                                   <span className="text-ink-dim pl-2">
                                     {applyFine ? `Fine @₹${lateFineAmt}/${fineMode === "day" ? "day" : "min"}` : "Fine (disabled)"}
@@ -440,8 +524,12 @@ function MonthlyTab() {
                                 </div>
                                 {r.total_ot_minutes > 0 && (
                                   <div className="flex justify-between">
-                                    <span className="text-ok">OT ({formatMins(r.total_ot_minutes)})</span>
-                                    <span className="text-ok text-ink-dim text-[10px]">not calculated</span>
+                                    <span className="text-ok">
+                                      OT Pay ({formatMins(netOtMins(r))} net)
+                                    </span>
+                                    <span className={`font-mono ${calcOtPay(r) > 0 ? "text-ok font-medium" : "text-ink-dim text-[10px]"}`}>
+                                      {calcOtPay(r) > 0 ? `+${inr(Math.round(calcOtPay(r)))}` : "not applied"}
+                                    </span>
                                   </div>
                                 )}
                               </div>
