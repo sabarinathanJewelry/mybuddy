@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useAttendanceByDate, useStaff, useUpdateStaff, useDeleteStaff,
@@ -1565,7 +1565,6 @@ export default function AttendancePage() {
   const { isLocked: rawLocked, unlock } = useKiosk();
   const profile = useAuth((s) => s.profile);
   const { data: kioskSeq }         = useKioskSequence();
-  const { data: kioskSecret }      = useKioskSecret();
   const { data: myStaffProfile }   = useMyStaffProfile();
   const { data: pendingLeaveCount = 0 } = usePendingLeaveCount();
   const myBioUserId = myStaffProfile?.bio_user_id ?? null;
@@ -1574,36 +1573,6 @@ export default function AttendancePage() {
   // Effective lock only when a sequence is actually configured
   const isLocked = rawLocked && !!kioskSeq?.length;
   const [tapBuffer, setTapBuffer] = useState<KioskTap[]>([]);
-
-  // Recovery key input
-  const [showRecovery, setShowRecovery] = useState(false);
-  const [recoveryInput, setRecoveryInput] = useState("");
-  const [recoveryError, setRecoveryError] = useState(false);
-  const dotTapCount = useRef(0);
-  const dotTapTimer = useRef<ReturnType<typeof setTimeout>>();
-
-  function handleDotAreaClick() {
-    dotTapCount.current += 1;
-    clearTimeout(dotTapTimer.current);
-    dotTapTimer.current = setTimeout(() => { dotTapCount.current = 0; }, 800);
-    if (dotTapCount.current >= 3) {
-      dotTapCount.current = 0;
-      setRecoveryInput("");
-      setRecoveryError(false);
-      setShowRecovery(true);
-    }
-  }
-
-  function handleRecoverySubmit() {
-    if (kioskSecret && recoveryInput.trim() === kioskSecret) {
-      unlock();
-      setShowRecovery(false);
-      setRecoveryInput("");
-    } else {
-      setRecoveryError(true);
-      setRecoveryInput("");
-    }
-  }
 
   // Force attendance tab when locked
   useEffect(() => { if (isLocked) setTab("attendance"); }, [isLocked]);
@@ -1941,51 +1910,12 @@ export default function AttendancePage() {
 
           {/* Kiosk unlock progress dots — subtle indicator visible only to admin */}
           {isLocked && kioskSeq && kioskSeq.length > 0 && (
-            <div
-              className="fixed bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-50 p-2 cursor-default"
-              onClick={handleDotAreaClick}
-            >
+            <div className="fixed bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-50">
               {kioskSeq.map((_, i) => (
                 <div key={i} className={`w-1.5 h-1.5 rounded-full transition-colors ${
                   i < tapBuffer.length ? "bg-gold/70" : "bg-line"
                 }`} />
               ))}
-            </div>
-          )}
-
-          {/* Recovery key overlay */}
-          {isLocked && showRecovery && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40">
-              <div className="bg-white rounded-2xl shadow-soft p-6 w-80 space-y-4">
-                <p className="text-sm font-semibold text-ink">Enter Recovery Key</p>
-                <input
-                  type="password"
-                  autoFocus
-                  className={inp}
-                  placeholder="Secret key"
-                  value={recoveryInput}
-                  onChange={e => { setRecoveryInput(e.target.value); setRecoveryError(false); }}
-                  onKeyDown={e => e.key === "Enter" && handleRecoverySubmit()}
-                  autoComplete="off"
-                />
-                {recoveryError && (
-                  <p className="text-xs text-err">Incorrect key. Try again.</p>
-                )}
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleRecoverySubmit}
-                    className="flex-1 bg-gold text-white text-sm py-2 rounded-lg2"
-                  >
-                    Unlock
-                  </button>
-                  <button
-                    onClick={() => setShowRecovery(false)}
-                    className="flex-1 border border-line text-sm py-2 rounded-lg2"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
             </div>
           )}
         </>
