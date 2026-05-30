@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
@@ -653,6 +653,10 @@ export default function DailySheetPage() {
   const [transferDate, setTransferDate] = useState(date);
   const [transferNotes, setTransferNotes] = useState("");
 
+  // Transfer edit state
+  const [editTransferId, setEditTransferId] = useState<string | null>(null);
+  const [editTransferForm, setEditTransferForm] = useState({ amount: 0, tx_date: "", notes: "" });
+
   // Opening balance setup form
   const [showOpeningForm, setShowOpeningForm] = useState(false);
   const [obDate, setObDate] = useState(date);
@@ -681,6 +685,51 @@ export default function DailySheetPage() {
       qc.invalidateQueries({ queryKey: ["daily-sheet", date] });
       qc.invalidateQueries({ queryKey: ["position"] });
       setTransferAmt(0); setTransferNotes(""); setShowTransfer(false);
+    },
+  });
+
+  const deleteTransfer = useMutation({
+    mutationFn: async (e: any) => {
+      const client = supabase();
+      await Promise.all([
+        client.from("cash_ledger").delete().eq("id", e.id),
+        client.from("bank_ledger").delete()
+          .eq("ref_type", "transfer")
+          .eq("tx_date", e.tx_date)
+          .eq("amount", e.amount)
+          .eq("direction", "in"),
+      ]);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["daily-sheet", date] });
+      qc.invalidateQueries({ queryKey: ["position"] });
+    },
+  });
+
+  const updateTransfer = useMutation({
+    mutationFn: async ({ oldEntry, form }: { oldEntry: any; form: typeof editTransferForm }) => {
+      if (form.amount <= 0) throw new Error("Invalid amount");
+      const client = supabase();
+      const desc = form.notes ? `Cash → Bank: ${form.notes}` : "Cash → Bank transfer";
+      await Promise.all([
+        client.from("bank_ledger").delete()
+          .eq("ref_type", "transfer")
+          .eq("tx_date", oldEntry.tx_date)
+          .eq("amount", oldEntry.amount)
+          .eq("direction", "in"),
+        client.from("cash_ledger").update({
+          tx_date: form.tx_date, amount: form.amount, description: desc,
+        }).eq("id", oldEntry.id),
+      ]);
+      await client.from("bank_ledger").insert({
+        tx_date: form.tx_date, direction: "in", amount: form.amount,
+        description: desc, ref_type: "transfer",
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["daily-sheet", date] });
+      qc.invalidateQueries({ queryKey: ["position"] });
+      setEditTransferId(null);
     },
   });
 
@@ -1140,48 +1189,111 @@ export default function DailySheetPage() {
                     {visibleMisc.map((e: any, mi: number) => {
                       const isAdv = e.direction === "advance_out";
                       const isBankIn = e.src === "Bank" && e.direction === "in" && e.ref_type !== "transfer";
+                      const isTransfer = e.ref_type === "transfer" && e.src === "Cash";
                       const mkey = `misc-${mi}`;
                       const mCr = (e.direction === "in" || isAdv) ? Number(e.amount) : 0;
                       const mDr = (e.direction === "out" || isAdv || isBankIn) ? Number(e.amount) : 0;
-                      // Cash column: only Cash-sourced entries; advance/bank = no cash
                       const mCash = (e.src === "Cash" && !isAdv)
                         ? (e.direction === "in" ? Number(e.amount) : -Number(e.amount))
                         : 0;
+                      const isEditing = editTransferId === e.id;
                       return (
-                        <tr key={mkey} className={`border-b border-line hover:bg-canvas/50 ${(isAdv || isBankIn) ? "bg-info/5" : ""}`}>
-                          <td className="px-4 py-2 text-sm">
-                            {e.description || "—"}
-                            {multiDay && e.tx_date && (
-                              <span className="ml-1.5 text-[10px] text-ink-dim">{e.tx_date}</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-xs text-ink-dim">
-                            {e.src} · {MISC_REF[e.ref_type] ?? e.ref_type ?? ""}
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono text-xs">
-                            {mDr > 0 ? (
-                              <div className="flex items-center justify-end gap-1.5">
-                                <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
-                                  checked={selDrKeys.has(`dr-${mkey}`)}
-                                  onChange={() => toggleDr(`dr-${mkey}`, mDr)} />
-                                <span className={isAdv ? "text-info" : "text-err"}>{inr(mDr)}</span>
+                        <Fragment key={mkey}>
+                          <tr className={`border-b border-line hover:bg-canvas/50 ${(isAdv || isBankIn) ? "bg-info/5" : ""}`}>
+                            <td className="px-4 py-2 text-sm">
+                              <div className="flex items-center gap-2">
+                                <span>
+                                  {e.description || "—"}
+                                  {multiDay && e.tx_date && (
+                                    <span className="ml-1.5 text-[10px] text-ink-dim">{e.tx_date}</span>
+                                  )}
+                                </span>
+                                {isTransfer && (
+                                  <span className="flex items-center gap-1 ml-auto">
+                                    <button
+                                      className="text-[10px] text-gold hover:underline"
+                                      onClick={() => {
+                                        const notes = e.description?.startsWith("Cash → Bank: ") ? e.description.slice("Cash → Bank: ".length) : "";
+                                        setEditTransferForm({ amount: Number(e.amount), tx_date: e.tx_date, notes });
+                                        setEditTransferId(isEditing ? null : e.id);
+                                      }}
+                                    >
+                                      {isEditing ? "Cancel" : "Edit"}
+                                    </button>
+                                    <button
+                                      className="text-[10px] text-err hover:underline"
+                                      onClick={() => { if (confirm("Delete this transfer?")) deleteTransfer.mutate(e); }}
+                                    >
+                                      Delete
+                                    </button>
+                                  </span>
+                                )}
                               </div>
-                            ) : ""}
-                          </td>
-                          <td className={`px-3 py-2 text-right font-mono text-xs ${isAdv ? "text-info" : "text-ok"}`}>
-                            {mCr > 0 ? (
-                              <div className="flex items-center justify-end gap-1.5">
-                                <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
-                                  checked={selCrKeys.has(`cr-${mkey}`)}
-                                  onChange={() => toggleCr(`cr-${mkey}`, mCr)} />
-                                {inr(mCr)}
-                              </div>
-                            ) : ""}
-                          </td>
-                          <td className={`px-3 py-2 text-right font-mono text-xs font-semibold ${Math.abs(mCash) < 0.01 ? "text-ink-dim" : mCash > 0 ? "text-ok" : "text-err"}`}>
-                            {Math.abs(mCash) < 0.01 ? "—" : `${mCash > 0 ? "+" : ""}${inr(mCash)}`}
-                          </td>
-                        </tr>
+                            </td>
+                            <td className="px-3 py-2 text-xs text-ink-dim">
+                              {e.src} · {MISC_REF[e.ref_type] ?? e.ref_type ?? ""}
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono text-xs">
+                              {mDr > 0 ? (
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
+                                    checked={selDrKeys.has(`dr-${mkey}`)}
+                                    onChange={() => toggleDr(`dr-${mkey}`, mDr)} />
+                                  <span className={isAdv ? "text-info" : "text-err"}>{inr(mDr)}</span>
+                                </div>
+                              ) : ""}
+                            </td>
+                            <td className={`px-3 py-2 text-right font-mono text-xs ${isAdv ? "text-info" : "text-ok"}`}>
+                              {mCr > 0 ? (
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
+                                    checked={selCrKeys.has(`cr-${mkey}`)}
+                                    onChange={() => toggleCr(`cr-${mkey}`, mCr)} />
+                                  {inr(mCr)}
+                                </div>
+                              ) : ""}
+                            </td>
+                            <td className={`px-3 py-2 text-right font-mono text-xs font-semibold ${Math.abs(mCash) < 0.01 ? "text-ink-dim" : mCash > 0 ? "text-ok" : "text-err"}`}>
+                              {Math.abs(mCash) < 0.01 ? "—" : `${mCash > 0 ? "+" : ""}${inr(mCash)}`}
+                            </td>
+                          </tr>
+                          {isEditing && (
+                            <tr className="border-b border-line bg-canvas">
+                              <td colSpan={5} className="px-4 py-3">
+                                <div className="flex items-end gap-3 flex-wrap">
+                                  <div className="flex flex-col gap-1">
+                                    <label className="text-[10px] text-ink-dim">Date</label>
+                                    <input type="date" className={inp} style={{ width: 140 }}
+                                      value={editTransferForm.tx_date}
+                                      onChange={ev => setEditTransferForm(f => ({ ...f, tx_date: ev.target.value }))} />
+                                  </div>
+                                  <div className="flex flex-col gap-1">
+                                    <label className="text-[10px] text-ink-dim">Amount (₹)</label>
+                                    <input type="number" className={inp} style={{ width: 130 }}
+                                      value={editTransferForm.amount || ""}
+                                      onChange={ev => setEditTransferForm(f => ({ ...f, amount: Number(ev.target.value) }))} />
+                                  </div>
+                                  <div className="flex flex-col gap-1 flex-1" style={{ minWidth: 160 }}>
+                                    <label className="text-[10px] text-ink-dim">Notes (optional)</label>
+                                    <input type="text" className={inp}
+                                      value={editTransferForm.notes}
+                                      onChange={ev => setEditTransferForm(f => ({ ...f, notes: ev.target.value }))} />
+                                  </div>
+                                  <button
+                                    className="px-4 py-2 rounded-lg2 bg-gold text-white text-sm font-medium disabled:opacity-50"
+                                    disabled={updateTransfer.isPending}
+                                    onClick={() => updateTransfer.mutate({ oldEntry: e, form: editTransferForm })}
+                                  >
+                                    {updateTransfer.isPending ? "Saving…" : "Save"}
+                                  </button>
+                                </div>
+                                {updateTransfer.isError && (
+                                  <p className="text-xs text-err mt-1">{String((updateTransfer.error as any)?.message ?? "Error")}</p>
+                                )}
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
                       );
                     })}
                   </>}
