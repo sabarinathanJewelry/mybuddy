@@ -192,7 +192,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .order("pay_date").order("created_at"),
         // Bullion payments — sell=cash in, buy=cash out
         client.from("bullion_payments")
-          .select("id, trade_id, pay_date, mode, amount, bullion_trades(trade_type, party_name, metal, pure_wt, rate_per_g)")
+          .select("id, trade_id, pay_date, mode, amount, bullion_trades(trade_type, party_name, metal, pure_wt, rate_per_g, total_amount)")
           .gte("pay_date", fromDate).lte("pay_date", toDate)
           .gt("amount", 0)
           .order("pay_date").order("created_at"),
@@ -213,6 +213,17 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .is("sale_id", null)
           .order("pay_date").order("created_at"),
       ]);
+
+      // Fetch all-time paid totals per bullion trade (needed to compute outstanding balance)
+      const tradeIds = [...new Set((bullionPayRes.data ?? []).map((p: any) => p.trade_id as string))];
+      const tradePaidTotals: Record<string, number> = {};
+      if (tradeIds.length > 0) {
+        const { data: allBullPay } = await client.from("bullion_payments")
+          .select("trade_id, amount").in("trade_id", tradeIds).gt("amount", 0);
+        (allBullPay ?? []).forEach((p: any) => {
+          tradePaidTotals[p.trade_id] = (tradePaidTotals[p.trade_id] ?? 0) + Number(p.amount);
+        });
+      }
 
       // Collect all order IDs from both queries
       const allOrderIds = new Set<string>();
@@ -419,26 +430,34 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
         return d !== 0 ? d : new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
 
-      // Bullion rows — sell=credit, buy=debit; only cash mode affects cash box
-      const bullionRows = ((bullionPayRes.data ?? []) as any[])
-        .filter((p: any) => p.mode === "cash")
-        .map((p: any) => {
-          const bt = p.bullion_trades as any;
-          const isSell = bt?.trade_type === "sell";
-          const metal = (bt?.metal ?? "gold") as string;
-          const wt = Number(bt?.pure_wt) || 0;
-          const rate = Number(bt?.rate_per_g) || 0;
-          return {
-            id: p.id as string,
-            payDate: p.pay_date as string,
-            partyName: (bt?.party_name ?? "Bullion") as string,
-            metal,
-            desc: `${bt?.party_name ?? "Bullion"} — ${isSell ? "Sell" : "Buy"} ${wt > 0 ? `${wt.toFixed(3)}g` : ""}${rate > 0 ? ` @ ${inr(rate)}/g` : ""}`,
-            isSell,
-            amount: Number(p.amount),
-          };
-        })
-        .sort((a: any, b: any) => a.payDate.localeCompare(b.payDate));
+      // Bullion rows — grouped by trade; buy=debit, sell=credit; balance=outstanding
+      const tradeGroupMap = new Map<string, { bt: any; payments: any[] }>();
+      for (const p of (bullionPayRes.data ?? []) as any[]) {
+        const key = p.trade_id as string;
+        if (!tradeGroupMap.has(key)) tradeGroupMap.set(key, { bt: p.bullion_trades as any, payments: [] });
+        tradeGroupMap.get(key)!.payments.push(p);
+      }
+      const bullionRows = Array.from(tradeGroupMap.entries()).map(([tradeId, { bt, payments }]) => {
+        const isSell = bt?.trade_type === "sell";
+        const wt = Number(bt?.pure_wt) || 0;
+        const rate = Number(bt?.rate_per_g) || 0;
+        const totalAmount = Number(bt?.total_amount) || 0;
+        const totalPaidEver = tradePaidTotals[tradeId] ?? 0;
+        const balance = Math.max(0, totalAmount - totalPaidEver);
+        const cashPaidInRange = (payments as any[]).filter((p: any) => p.mode === "cash").reduce((s: number, p: any) => s + Number(p.amount), 0);
+        const payDate = (payments as any[]).reduce((latest: string, p: any) => p.pay_date > latest ? p.pay_date : latest, (payments[0] as any)?.pay_date ?? fromDate);
+        return {
+          id: tradeId,
+          payDate,
+          partyName: (bt?.party_name ?? "Bullion") as string,
+          metal: (bt?.metal ?? "gold") as string,
+          desc: `${bt?.party_name ?? "Bullion"} — ${isSell ? "Sell" : "Buy"} ${wt > 0 ? `${wt.toFixed(3)}g` : ""}${rate > 0 ? ` @ ${inr(rate)}/g` : ""}`,
+          isSell,
+          totalAmount,
+          cashPaidInRange,
+          balance,
+        };
+      }).sort((a, b) => a.payDate.localeCompare(b.payDate));
 
       const oldGoldAdvRows = ((oldGoldAdvRes.data ?? []) as any[]).map((p: any) => {
         const cust = (p.customers as any)?.name ?? null;
@@ -794,7 +813,7 @@ export default function DailySheetPage() {
       if (e.src === "Bank" && e.direction === "in" && e.ref_type !== "transfer") return s + amt;
       return s;
     }, 0) +
-    bullionRows.filter((r: any) => !r.isSell).reduce((s: number, r: any) => s + r.amount, 0) +
+    bullionRows.filter((r: any) => !r.isSell).reduce((s: number, r: any) => s + r.totalAmount, 0) +
     // Old gold advance: pass-through (gold value in = debit, no cash paid)
     oldGoldAdvRows.reduce((s: number, r: any) => s + r.amount, 0);
 
@@ -803,7 +822,7 @@ export default function DailySheetPage() {
     orderRows.reduce((s: number, r: any) => s + r.credit, 0) +
     visibleMisc.filter((e: any) => e.direction === "in" || e.direction === "advance_out")
       .reduce((s: number, e: any) => s + Number(e.amount), 0) +
-    bullionRows.filter((r: any) => r.isSell).reduce((s: number, r: any) => s + r.amount, 0) +
+    bullionRows.reduce((s: number, r: any) => s + (r.isSell ? r.totalAmount : r.balance), 0) +
     oldGoldAdvRows.reduce((s: number, r: any) => s + r.amount, 0);
 
   // Net cash per row = credit - non-cash debits + advance_kept (kept cash) - change_cash already excluded from rowDebit
@@ -814,7 +833,7 @@ export default function DailySheetPage() {
   const grandCash =
     saleRows.reduce((s, r) => s + saleNetCash(r), 0) +
     orderRows.reduce((s: number, r: any) => s + r.credit - rowDebit(r.payments), 0) +
-    bullionRows.reduce((s: number, r: any) => s + (r.isSell ? r.amount : -r.amount), 0) +
+    bullionRows.reduce((s: number, r: any) => s + (r.isSell ? r.cashPaidInRange : -r.cashPaidInRange), 0) +
     visibleMisc.reduce((s: number, e: any) => {
       if (e.src !== "Cash" || e.direction === "advance_out") return s;
       return s + (e.direction === "in" ? Number(e.amount) : -Number(e.amount));
@@ -833,7 +852,10 @@ export default function DailySheetPage() {
     orderRows.forEach((ord: any) => {
       if (ord.credit > 0) m.set(`cr-o-${ord.orderId}-${ord.payDate}`, ord.credit);
     });
-    bullionRows.filter((r: any) => r.isSell).forEach((r: any) => m.set(`cr-bull-${r.id}`, r.amount));
+    bullionRows.forEach((r: any) => {
+      if (r.isSell) m.set(`cr-bull-${r.id}`, r.totalAmount);
+      else if (r.balance > 0) m.set(`cr-bull-bal-${r.id}`, r.balance);
+    });
     oldGoldAdvRows.forEach((r: any) => m.set(`cr-og-${r.id}`, r.amount));
     visibleMisc.forEach((e: any, mi: number) => {
       const isAdv = e.direction === "advance_out";
@@ -857,7 +879,10 @@ export default function DailySheetPage() {
         m.set(key, pay.amount);
       });
     });
-    bullionRows.filter((r: any) => !r.isSell).forEach((r: any) => m.set(`dr-bull-${r.id}`, r.amount));
+    bullionRows.forEach((r: any) => {
+      if (!r.isSell) m.set(`dr-bull-${r.id}`, r.totalAmount);
+      else if (r.balance > 0) m.set(`dr-bull-bal-${r.id}`, r.balance);
+    });
     oldGoldAdvRows.forEach((r: any) => m.set(`dr-og-${r.id}`, r.amount));
     visibleMisc.forEach((e: any, mi: number) => {
       const isAdv = e.direction === "advance_out";
@@ -1201,41 +1226,77 @@ export default function DailySheetPage() {
                       ];
                     })}
 
-                    {/* Bullion rows — cash sell = Credit, cash buy = Debit */}
-                    {bullionRows.map((r: any) => (
-                      <tr key={`bull-${r.id}`} className="border-b border-line hover:bg-canvas/50">
-                        <td className="px-4 py-2 text-sm">
-                          {r.desc}
-                          {multiDay && <span className="ml-1.5 text-[10px] text-ink-dim">{r.payDate}</span>}
-                        </td>
-                        <td className="px-3 py-2 text-xs text-ink-dim">
-                          Bullion {r.isSell ? "Sale" : "Purchase"}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-xs text-err">
-                          {!r.isSell ? (
-                            <div className="flex items-center justify-end gap-1.5">
-                              <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
-                                checked={selDrKeys.has(`dr-bull-${r.id}`)}
-                                onChange={() => toggleDr(`dr-bull-${r.id}`, r.amount)} />
-                              {inr(r.amount)}
-                            </div>
-                          ) : ""}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-xs text-ok">
-                          {r.isSell ? (
-                            <div className="flex items-center justify-end gap-1.5">
-                              <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
-                                checked={selCrKeys.has(`cr-bull-${r.id}`)}
-                                onChange={() => toggleCr(`cr-bull-${r.id}`, r.amount)} />
-                              {inr(r.amount)}
-                            </div>
-                          ) : ""}
-                        </td>
-                        <td className={`px-3 py-2 text-right font-mono text-xs font-semibold ${r.isSell ? "text-ok" : "text-err"}`}>
-                          {r.isSell ? `+${inr(r.amount)}` : `-${inr(r.amount)}`}
-                        </td>
-                      </tr>
-                    ))}
+                    {/* Bullion rows — grouped by trade; buy=debit(total)+credit(balance), sell=credit(total)+debit(balance) */}
+                    {bullionRows.map((r: any) => {
+                      const hasBalance = r.balance > 0.005;
+                      const cashZero = Math.abs(r.cashPaidInRange) < 0.01;
+                      return (
+                        <Fragment key={`bull-${r.id}`}>
+                          <tr className={`hover:bg-canvas/50 ${!hasBalance ? "border-b border-line" : ""}`}>
+                            <td rowSpan={hasBalance ? 2 : 1}
+                              className="px-4 py-2 text-sm border-b border-line border-r border-line/30" style={{ verticalAlign: "top" }}>
+                              {r.desc}
+                              {multiDay && <span className="ml-1.5 text-[10px] text-ink-dim">{r.payDate}</span>}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-ink-dim">
+                              Bullion {r.isSell ? "Sale" : "Purchase"}
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono text-xs text-err">
+                              {!r.isSell ? (
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
+                                    checked={selDrKeys.has(`dr-bull-${r.id}`)}
+                                    onChange={() => toggleDr(`dr-bull-${r.id}`, r.totalAmount)} />
+                                  {inr(r.totalAmount)}
+                                </div>
+                              ) : ""}
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono text-xs text-ok">
+                              {r.isSell ? (
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
+                                    checked={selCrKeys.has(`cr-bull-${r.id}`)}
+                                    onChange={() => toggleCr(`cr-bull-${r.id}`, r.totalAmount)} />
+                                  {inr(r.totalAmount)}
+                                </div>
+                              ) : ""}
+                            </td>
+                            <td rowSpan={hasBalance ? 2 : 1}
+                              className={`px-3 py-2 text-right font-mono text-xs font-semibold border-b border-line border-l border-line/30 ${cashZero ? "text-ink-dim" : r.isSell ? "text-ok" : "text-err"}`}
+                              style={{ verticalAlign: "middle" }}>
+                              {cashZero ? "—" : (r.isSell ? `+${inr(r.cashPaidInRange)}` : `-${inr(r.cashPaidInRange)}`)}
+                            </td>
+                          </tr>
+                          {hasBalance && (
+                            <tr className="border-b border-line bg-warn/5">
+                              <td className="px-3 py-1.5 text-xs text-warn font-medium pl-4">
+                                {r.isSell ? "Balance Due (from buyer)" : "Balance Due (to supplier)"}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono text-xs text-warn">
+                                {r.isSell ? (
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
+                                      checked={selDrKeys.has(`dr-bull-bal-${r.id}`)}
+                                      onChange={() => toggleDr(`dr-bull-bal-${r.id}`, r.balance)} />
+                                    {inr(r.balance)}
+                                  </div>
+                                ) : ""}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono text-xs text-warn">
+                                {!r.isSell ? (
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
+                                      checked={selCrKeys.has(`cr-bull-bal-${r.id}`)}
+                                      onChange={() => toggleCr(`cr-bull-bal-${r.id}`, r.balance)} />
+                                    {inr(r.balance)}
+                                  </div>
+                                ) : ""}
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    })}
 
                     {/* Standalone old gold/silver advance rows — pass-through (no cash) */}
                     {oldGoldAdvRows.map((r: any) => (
