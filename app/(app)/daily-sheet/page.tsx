@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Fragment } from "react";
+import { useState, Fragment, useMemo } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
@@ -820,6 +820,66 @@ export default function DailySheetPage() {
       return s + (e.direction === "in" ? Number(e.amount) : -Number(e.amount));
     }, 0);
 
+  // All selectable keys — built from the same data used to render rows
+  const allCrEntries = useMemo<Map<string, number>>(() => {
+    const m = new Map<string, number>();
+    if (prevDayCount) m.set("cr-prev-count", prevDayCount.actual);
+    saleRows.forEach(sale => {
+      m.set(`cr-s-${sale.id}`, sale.credit);
+      sale.payments.forEach((pay, pi) => {
+        if (pay.mode === "advance_kept") m.set(`cr-sa-${sale.id}-${pi}`, pay.amount);
+      });
+    });
+    orderRows.forEach((ord: any) => {
+      if (ord.credit > 0) m.set(`cr-o-${ord.orderId}-${ord.payDate}`, ord.credit);
+    });
+    bullionRows.filter((r: any) => r.isSell).forEach((r: any) => m.set(`cr-bull-${r.id}`, r.amount));
+    oldGoldAdvRows.forEach((r: any) => m.set(`cr-og-${r.id}`, r.amount));
+    visibleMisc.forEach((e: any, mi: number) => {
+      const isAdv = e.direction === "advance_out";
+      if (e.direction === "in" || isAdv) m.set(`cr-misc-${mi}`, Number(e.amount));
+    });
+    return m;
+  }, [prevDayCount, saleRows, orderRows, bullionRows, oldGoldAdvRows, visibleMisc]);
+
+  const allDrEntries = useMemo<Map<string, number>>(() => {
+    const m = new Map<string, number>();
+    saleRows.forEach(sale => {
+      sale.payments.forEach((pay, pi) => {
+        if (pay.mode === "advance_kept" || pay.mode === "change_cash") return;
+        const key = pi === 0 ? `dr-s0-${sale.id}` : `dr-sr-${sale.id}-${pi - 1}`;
+        m.set(key, pay.amount);
+      });
+    });
+    orderRows.forEach((ord: any) => {
+      ord.payments.forEach((pay: any, pi: number) => {
+        const key = pi === 0 ? `dr-o0-${ord.orderId}-${ord.payDate}` : `dr-or-${ord.orderId}-${ord.payDate}-${pi - 1}`;
+        m.set(key, pay.amount);
+      });
+    });
+    bullionRows.filter((r: any) => !r.isSell).forEach((r: any) => m.set(`dr-bull-${r.id}`, r.amount));
+    oldGoldAdvRows.forEach((r: any) => m.set(`dr-og-${r.id}`, r.amount));
+    visibleMisc.forEach((e: any, mi: number) => {
+      const isAdv = e.direction === "advance_out";
+      const isBankIn = e.src === "Bank" && e.direction === "in" && e.ref_type !== "transfer";
+      if (e.direction === "out" || isAdv || isBankIn) m.set(`dr-misc-${mi}`, Number(e.amount));
+    });
+    if (cbToCount) m.set("dr-today-count", cbToCount.actual);
+    return m;
+  }, [saleRows, orderRows, bullionRows, oldGoldAdvRows, visibleMisc, cbToCount]);
+
+  const allCrSelected = allCrEntries.size > 0 && allCrEntries.size === selCrKeys.size;
+  const someCrSelected = selCrKeys.size > 0 && !allCrSelected;
+  const allDrSelected = allDrEntries.size > 0 && allDrEntries.size === selDrKeys.size;
+  const someDrSelected = selDrKeys.size > 0 && !allDrSelected;
+
+  function toggleAllCr() {
+    setSelCrKeys(allCrSelected ? new Map() : new Map(allCrEntries));
+  }
+  function toggleAllDr() {
+    setSelDrKeys(allDrSelected ? new Map() : new Map(allDrEntries));
+  }
+
   // Date-specific cash position (cash only, from useDateCashPosition)
   const openingCash  = cashPos?.openingCash ?? null;
   const closingCash  = cashPos?.closingCash ?? null;
@@ -926,8 +986,28 @@ export default function DailySheetPage() {
                   <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                     <th className="text-left px-4 py-2.5">Item Description</th>
                     <th className="text-left px-3 py-2.5">Debit Note</th>
-                    <th className="text-right px-3 py-2.5 text-err">Debit ✓</th>
-                    <th className="text-right px-3 py-2.5 text-ok">Credit ✓</th>
+                    <th className="text-right px-3 py-2.5 text-err">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <input type="checkbox"
+                          className="w-3.5 h-3.5 accent-gold cursor-pointer"
+                          checked={allDrSelected}
+                          ref={el => { if (el) el.indeterminate = someDrSelected; }}
+                          onChange={toggleAllDr}
+                          title={allDrSelected ? "Deselect all debit" : "Select all debit"} />
+                        <span>Debit ✓</span>
+                      </div>
+                    </th>
+                    <th className="text-right px-3 py-2.5 text-ok">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <input type="checkbox"
+                          className="w-3.5 h-3.5 accent-gold cursor-pointer"
+                          checked={allCrSelected}
+                          ref={el => { if (el) el.indeterminate = someCrSelected; }}
+                          onChange={toggleAllCr}
+                          title={allCrSelected ? "Deselect all credit" : "Select all credit"} />
+                        <span>Credit ✓</span>
+                      </div>
+                    </th>
                     <th className="text-right px-3 py-2.5 text-ink-dim">Cash ₹</th>
                   </tr>
                 </thead>

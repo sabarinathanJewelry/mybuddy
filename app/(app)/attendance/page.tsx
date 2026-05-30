@@ -1,11 +1,11 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useAttendanceByDate, useStaff, useUpdateStaff, useDeleteStaff,
   useMonthlyAttendanceSummary, useAllPermissions, useDecidePermission,
-  useKioskSequence, useSaveKioskSequence, useLastSyncTime,
+  useKioskSequence, useSaveKioskSequence, useKioskSecret, useSaveKioskSecret, useLastSyncTime,
   useLeavesByDate, useAllLeaveRequests, useMyLeaveRequests, usePendingLeaveCount,
   useMyStaffProfile, useSubmitLeaveRequest, useDecideLeaveRequest,
   useAppNotifications, useMarkNotificationRead, useMarkAllNotificationsRead,
@@ -1385,6 +1385,8 @@ function KioskConfig() {
   const saveSeq = useSaveKioskSequence();
   const { data: staff = [] } = useStaff();
   const lock = useKiosk((s) => s.lock);
+  const { data: savedSecret } = useKioskSecret();
+  const saveSecret = useSaveKioskSecret();
 
   const activeStaff = staff.filter((s) => s.active);
   const [editing, setEditing] = useState(false);
@@ -1394,6 +1396,10 @@ function KioskConfig() {
     { bio_user_id: "", action: "in" },
     { bio_user_id: "", action: "out" },
   ]);
+
+  const [editingSecret, setEditingSecret] = useState(false);
+  const [secretInput, setSecretInput] = useState("");
+  const [showSecret, setShowSecret] = useState(false);
 
   useEffect(() => {
     if (currentSeq.length === 4) setSteps(currentSeq);
@@ -1478,6 +1484,68 @@ function KioskConfig() {
           </div>
         </div>
       )}
+
+      {/* Recovery key */}
+      <div className="mt-3 pt-3 border-t border-line flex items-center justify-between">
+        <div>
+          <p className="text-xs font-medium text-ink">Recovery Key</p>
+          <p className="text-xs text-ink-dim mt-0.5">
+            {savedSecret
+              ? "Set — triple-tap the lock dots to enter it"
+              : "Not set — add one as a backup in case tap sequence fails"}
+          </p>
+        </div>
+        <button
+          onClick={() => { setSecretInput(""); setShowSecret(false); setEditingSecret(v => !v); }}
+          className="text-xs text-gold hover:underline shrink-0 ml-4"
+        >
+          {editingSecret ? "Cancel" : savedSecret ? "Change" : "Set"}
+        </button>
+      </div>
+
+      {editingSecret && (
+        <div className="mt-2 flex items-center gap-2">
+          <div className="relative flex-1">
+            <input
+              type={showSecret ? "text" : "password"}
+              className={inp + " pr-14"}
+              placeholder="Enter secret key"
+              value={secretInput}
+              onChange={e => setSecretInput(e.target.value)}
+              autoComplete="new-password"
+            />
+            <button
+              type="button"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-ink-dim hover:text-ink"
+              onClick={() => setShowSecret(v => !v)}
+            >
+              {showSecret ? "Hide" : "Show"}
+            </button>
+          </div>
+          <button
+            disabled={!secretInput.trim() || saveSecret.isPending}
+            onClick={async () => {
+              await saveSecret.mutateAsync(secretInput.trim());
+              setEditingSecret(false);
+            }}
+            className="bg-gold text-white text-xs px-3 py-2 rounded-lg2 disabled:opacity-40 shrink-0"
+          >
+            {saveSecret.isPending ? "Saving…" : "Save"}
+          </button>
+          {savedSecret && (
+            <button
+              onClick={async () => {
+                if (!confirm("Remove the recovery key?")) return;
+                await saveSecret.mutateAsync("");
+                setEditingSecret(false);
+              }}
+              className="text-xs text-err hover:underline shrink-0"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1497,6 +1565,7 @@ export default function AttendancePage() {
   const { isLocked: rawLocked, unlock } = useKiosk();
   const profile = useAuth((s) => s.profile);
   const { data: kioskSeq }         = useKioskSequence();
+  const { data: kioskSecret }      = useKioskSecret();
   const { data: myStaffProfile }   = useMyStaffProfile();
   const { data: pendingLeaveCount = 0 } = usePendingLeaveCount();
   const myBioUserId = myStaffProfile?.bio_user_id ?? null;
@@ -1505,6 +1574,36 @@ export default function AttendancePage() {
   // Effective lock only when a sequence is actually configured
   const isLocked = rawLocked && !!kioskSeq?.length;
   const [tapBuffer, setTapBuffer] = useState<KioskTap[]>([]);
+
+  // Recovery key input
+  const [showRecovery, setShowRecovery] = useState(false);
+  const [recoveryInput, setRecoveryInput] = useState("");
+  const [recoveryError, setRecoveryError] = useState(false);
+  const dotTapCount = useRef(0);
+  const dotTapTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  function handleDotAreaClick() {
+    dotTapCount.current += 1;
+    clearTimeout(dotTapTimer.current);
+    dotTapTimer.current = setTimeout(() => { dotTapCount.current = 0; }, 800);
+    if (dotTapCount.current >= 3) {
+      dotTapCount.current = 0;
+      setRecoveryInput("");
+      setRecoveryError(false);
+      setShowRecovery(true);
+    }
+  }
+
+  function handleRecoverySubmit() {
+    if (kioskSecret && recoveryInput.trim() === kioskSecret) {
+      unlock();
+      setShowRecovery(false);
+      setRecoveryInput("");
+    } else {
+      setRecoveryError(true);
+      setRecoveryInput("");
+    }
+  }
 
   // Force attendance tab when locked
   useEffect(() => { if (isLocked) setTab("attendance"); }, [isLocked]);
@@ -1842,12 +1941,51 @@ export default function AttendancePage() {
 
           {/* Kiosk unlock progress dots — subtle indicator visible only to admin */}
           {isLocked && kioskSeq && kioskSeq.length > 0 && (
-            <div className="fixed bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-50">
+            <div
+              className="fixed bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-50 p-2 cursor-default"
+              onClick={handleDotAreaClick}
+            >
               {kioskSeq.map((_, i) => (
                 <div key={i} className={`w-1.5 h-1.5 rounded-full transition-colors ${
                   i < tapBuffer.length ? "bg-gold/70" : "bg-line"
                 }`} />
               ))}
+            </div>
+          )}
+
+          {/* Recovery key overlay */}
+          {isLocked && showRecovery && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40">
+              <div className="bg-white rounded-2xl shadow-soft p-6 w-80 space-y-4">
+                <p className="text-sm font-semibold text-ink">Enter Recovery Key</p>
+                <input
+                  type="password"
+                  autoFocus
+                  className={inp}
+                  placeholder="Secret key"
+                  value={recoveryInput}
+                  onChange={e => { setRecoveryInput(e.target.value); setRecoveryError(false); }}
+                  onKeyDown={e => e.key === "Enter" && handleRecoverySubmit()}
+                  autoComplete="off"
+                />
+                {recoveryError && (
+                  <p className="text-xs text-err">Incorrect key. Try again.</p>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleRecoverySubmit}
+                    className="flex-1 bg-gold text-white text-sm py-2 rounded-lg2"
+                  >
+                    Unlock
+                  </button>
+                  <button
+                    onClick={() => setShowRecovery(false)}
+                    className="flex-1 border border-line text-sm py-2 rounded-lg2"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </>

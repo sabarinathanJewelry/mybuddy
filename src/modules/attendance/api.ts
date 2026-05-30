@@ -551,6 +551,35 @@ export function useSaveKioskSequence() {
   });
 }
 
+export function useKioskSecret() {
+  return useQuery<string | null>({
+    queryKey: ["kiosk-secret"],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("app_settings")
+        .select("value")
+        .eq("key", "kiosk_secret")
+        .single();
+      if (error) return null;
+      return (data?.value as string) ?? null;
+    },
+  });
+}
+
+export function useSaveKioskSecret() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (secret: string) => {
+      const { error } = await supabase()
+        .from("app_settings")
+        .upsert({ key: "kiosk_secret", value: secret });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["kiosk-secret"] }),
+  });
+}
+
 // ── Leave requests ────────────────────────────────────────────────────────────
 
 export type LeaveRequest = {
