@@ -445,6 +445,12 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
         const totalPaidEver = tradePaidTotals[tradeId] ?? 0;
         const balance = Math.max(0, totalAmount - totalPaidEver);
         const cashPaidInRange = (payments as any[]).filter((p: any) => p.mode === "cash").reduce((s: number, p: any) => s + Number(p.amount), 0);
+        // Group non-cash payments by mode (bank/UPI paid to supplier = credit for buy, debit for sell)
+        const ncMap = new Map<string, number>();
+        for (const p of payments as any[]) {
+          if (p.mode !== "cash") ncMap.set(p.mode, (ncMap.get(p.mode) ?? 0) + Number(p.amount));
+        }
+        const nonCashByMode = Array.from(ncMap.entries()).map(([mode, amount]) => ({ mode, amount }));
         const payDate = (payments as any[]).reduce((latest: string, p: any) => p.pay_date > latest ? p.pay_date : latest, (payments[0] as any)?.pay_date ?? fromDate);
         return {
           id: tradeId,
@@ -455,6 +461,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           isSell,
           totalAmount,
           cashPaidInRange,
+          nonCashByMode,
           balance,
         };
       }).sort((a, b) => a.payDate.localeCompare(b.payDate));
@@ -813,7 +820,7 @@ export default function DailySheetPage() {
       if (e.src === "Bank" && e.direction === "in" && e.ref_type !== "transfer") return s + amt;
       return s;
     }, 0) +
-    bullionRows.filter((r: any) => !r.isSell).reduce((s: number, r: any) => s + r.totalAmount, 0) +
+    bullionRows.filter((r: any) => !r.isSell).reduce((s: number, r: any) => s + r.totalAmount, 0) +  // buy: full cost in debit
     // Old gold advance: pass-through (gold value in = debit, no cash paid)
     oldGoldAdvRows.reduce((s: number, r: any) => s + r.amount, 0);
 
@@ -822,7 +829,12 @@ export default function DailySheetPage() {
     orderRows.reduce((s: number, r: any) => s + r.credit, 0) +
     visibleMisc.filter((e: any) => e.direction === "in" || e.direction === "advance_out")
       .reduce((s: number, e: any) => s + Number(e.amount), 0) +
-    bullionRows.reduce((s: number, r: any) => s + (r.isSell ? r.totalAmount : r.balance), 0) +
+    bullionRows.reduce((s: number, r: any) => {
+      if (r.isSell) return s + r.totalAmount;
+      // buy: non-cash payments (bank/UPI) + unpaid balance both appear in credit
+      const ncTotal = (r.nonCashByMode as { mode: string; amount: number }[]).reduce((a, nc) => a + nc.amount, 0);
+      return s + ncTotal + r.balance;
+    }, 0) +
     oldGoldAdvRows.reduce((s: number, r: any) => s + r.amount, 0);
 
   // Net cash per row = credit - non-cash debits + advance_kept (kept cash) - change_cash already excluded from rowDebit
@@ -853,8 +865,12 @@ export default function DailySheetPage() {
       if (ord.credit > 0) m.set(`cr-o-${ord.orderId}-${ord.payDate}`, ord.credit);
     });
     bullionRows.forEach((r: any) => {
-      if (r.isSell) m.set(`cr-bull-${r.id}`, r.totalAmount);
-      else if (r.balance > 0) m.set(`cr-bull-bal-${r.id}`, r.balance);
+      if (r.isSell) {
+        m.set(`cr-bull-${r.id}`, r.totalAmount);
+      } else {
+        (r.nonCashByMode as { mode: string; amount: number }[]).forEach(nc => m.set(`cr-bull-nc-${r.id}-${nc.mode}`, nc.amount));
+        if (r.balance > 0.005) m.set(`cr-bull-bal-${r.id}`, r.balance);
+      }
     });
     oldGoldAdvRows.forEach((r: any) => m.set(`cr-og-${r.id}`, r.amount));
     visibleMisc.forEach((e: any, mi: number) => {
@@ -880,8 +896,13 @@ export default function DailySheetPage() {
       });
     });
     bullionRows.forEach((r: any) => {
-      if (!r.isSell) m.set(`dr-bull-${r.id}`, r.totalAmount);
-      else if (r.balance > 0) m.set(`dr-bull-bal-${r.id}`, r.balance);
+      if (!r.isSell) {
+        m.set(`dr-bull-${r.id}`, r.totalAmount);
+      } else {
+        m.set(`cr-bull-${r.id}`, r.totalAmount);
+        (r.nonCashByMode as { mode: string; amount: number }[]).forEach(nc => m.set(`dr-bull-nc-${r.id}-${nc.mode}`, nc.amount));
+        if (r.balance > 0.005) m.set(`dr-bull-bal-${r.id}`, r.balance);
+      }
     });
     oldGoldAdvRows.forEach((r: any) => m.set(`dr-og-${r.id}`, r.amount));
     visibleMisc.forEach((e: any, mi: number) => {
@@ -1226,14 +1247,17 @@ export default function DailySheetPage() {
                       ];
                     })}
 
-                    {/* Bullion rows — grouped by trade; buy=debit(total)+credit(balance), sell=credit(total)+debit(balance) */}
+                    {/* Bullion rows — grouped by trade; buy: Debit=total, Credit=non-cash+balance; sell: Credit=total, Debit=non-cash+balance */}
                     {bullionRows.map((r: any) => {
+                      const nc: { mode: string; amount: number }[] = r.nonCashByMode;
                       const hasBalance = r.balance > 0.005;
+                      const subRows = nc.length + (hasBalance ? 1 : 0);
                       const cashZero = Math.abs(r.cashPaidInRange) < 0.01;
+                      const modeLabel = (m: string) => m === "upi" ? "UPI / GPay" : m === "bank" ? "Bank Transfer" : m;
                       return (
                         <Fragment key={`bull-${r.id}`}>
-                          <tr className={`hover:bg-canvas/50 ${!hasBalance ? "border-b border-line" : ""}`}>
-                            <td rowSpan={hasBalance ? 2 : 1}
+                          <tr className={`hover:bg-canvas/50 ${subRows === 0 ? "border-b border-line" : ""}`}>
+                            <td rowSpan={1 + subRows}
                               className="px-4 py-2 text-sm border-b border-line border-r border-line/30" style={{ verticalAlign: "top" }}>
                               {r.desc}
                               {multiDay && <span className="ml-1.5 text-[10px] text-ink-dim">{r.payDate}</span>}
@@ -1261,12 +1285,39 @@ export default function DailySheetPage() {
                                 </div>
                               ) : ""}
                             </td>
-                            <td rowSpan={hasBalance ? 2 : 1}
+                            <td rowSpan={1 + subRows}
                               className={`px-3 py-2 text-right font-mono text-xs font-semibold border-b border-line border-l border-line/30 ${cashZero ? "text-ink-dim" : r.isSell ? "text-ok" : "text-err"}`}
                               style={{ verticalAlign: "middle" }}>
                               {cashZero ? "—" : (r.isSell ? `+${inr(r.cashPaidInRange)}` : `-${inr(r.cashPaidInRange)}`)}
                             </td>
                           </tr>
+                          {/* Non-cash payment sub-rows */}
+                          {nc.map((p, pi) => (
+                            <tr key={`bull-nc-${r.id}-${pi}`} className={`bg-canvas/20 hover:bg-canvas/40 ${!hasBalance && pi === nc.length - 1 ? "border-b border-line" : ""}`}>
+                              <td className="px-3 py-1.5 text-xs text-ink-dim pl-4">{modeLabel(p.mode)}</td>
+                              <td className="px-3 py-1.5 text-right font-mono text-xs text-err">
+                                {r.isSell ? (
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
+                                      checked={selDrKeys.has(`dr-bull-nc-${r.id}-${p.mode}`)}
+                                      onChange={() => toggleDr(`dr-bull-nc-${r.id}-${p.mode}`, p.amount)} />
+                                    {inr(p.amount)}
+                                  </div>
+                                ) : ""}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono text-xs text-ok">
+                                {!r.isSell ? (
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
+                                      checked={selCrKeys.has(`cr-bull-nc-${r.id}-${p.mode}`)}
+                                      onChange={() => toggleCr(`cr-bull-nc-${r.id}-${p.mode}`, p.amount)} />
+                                    {inr(p.amount)}
+                                  </div>
+                                ) : ""}
+                              </td>
+                            </tr>
+                          ))}
+                          {/* Unpaid balance sub-row */}
                           {hasBalance && (
                             <tr className="border-b border-line bg-warn/5">
                               <td className="px-3 py-1.5 text-xs text-warn font-medium pl-4">
