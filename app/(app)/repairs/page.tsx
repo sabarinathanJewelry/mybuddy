@@ -48,6 +48,7 @@ type Repair = {
   payment_mode: string | null;
   delivered_at: string | null;
   notes: string | null;
+  signature_url: string | null;
   created_at: string;
 };
 
@@ -116,6 +117,7 @@ export default function RepairsPage() {
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   // Delivery form
   const [deliverRepairId, setDeliverRepairId] = useState<string | null>(null);
@@ -126,6 +128,55 @@ export default function RepairsPage() {
 
   // Print
   const [printRepair, setPrintRepair] = useState<Repair | null>(null);
+
+  // Signature pad
+  const sigCanvasRef = useRef<HTMLCanvasElement>(null);
+  const sigDrawing = useRef(false);
+  const sigLastPos = useRef<{ x: number; y: number } | null>(null);
+
+  function sigGetPos(e: React.TouchEvent | React.MouseEvent) {
+    const canvas = sigCanvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    if ("touches" in e) {
+      return { x: (e.touches[0].clientX - rect.left) * scaleX, y: (e.touches[0].clientY - rect.top) * scaleY };
+    }
+    return { x: ((e as React.MouseEvent).clientX - rect.left) * scaleX, y: ((e as React.MouseEvent).clientY - rect.top) * scaleY };
+  }
+  function sigStart(e: React.TouchEvent | React.MouseEvent) {
+    e.preventDefault();
+    sigDrawing.current = true;
+    sigLastPos.current = sigGetPos(e);
+  }
+  function sigMove(e: React.TouchEvent | React.MouseEvent) {
+    e.preventDefault();
+    if (!sigDrawing.current || !sigCanvasRef.current) return;
+    const ctx = sigCanvasRef.current.getContext("2d")!;
+    const pos = sigGetPos(e);
+    ctx.beginPath();
+    ctx.moveTo(sigLastPos.current!.x, sigLastPos.current!.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.strokeStyle = "#1a1a1a";
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.stroke();
+    sigLastPos.current = pos;
+  }
+  function sigEnd() { sigDrawing.current = false; sigLastPos.current = null; }
+  function sigClear() {
+    const canvas = sigCanvasRef.current;
+    if (!canvas) return;
+    canvas.getContext("2d")!.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  function sigHasContent() {
+    const canvas = sigCanvasRef.current;
+    if (!canvas) return false;
+    const data = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data;
+    for (let i = 3; i < data.length; i += 4) { if (data[i] > 10) return true; }
+    return false;
+  }
 
   // Detail expand
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -215,19 +266,39 @@ export default function RepairsPage() {
   const saveDelivery = useMutation({
     mutationFn: async () => {
       if (!deliverRepairId) return;
-      const { error } = await supabase().from("repairs").update({
+      const client = supabase();
+      let signature_url: string | null = null;
+
+      if (sigHasContent() && sigCanvasRef.current) {
+        const dataUrl = sigCanvasRef.current.toDataURL("image/png");
+        const res = await fetch(dataUrl);
+        const blob = await res.blob();
+        const path = `${deliverRepairId}-sig.png`;
+        const { data: uploaded, error: upErr } = await client.storage
+          .from("repair-photos").upload(path, blob, { upsert: true, contentType: "image/png" });
+        if (!upErr && uploaded) {
+          const { data: { publicUrl } } = client.storage.from("repair-photos").getPublicUrl(uploaded.path);
+          signature_url = publicUrl;
+        }
+      }
+
+      const update: any = {
         status: "delivered",
         delivery_weight: deliveryForm.delivery_weight ? Number(deliveryForm.delivery_weight) : null,
         final_amount: deliveryForm.final_amount ? Number(deliveryForm.final_amount) : null,
         payment_mode: deliveryForm.payment_mode || null,
         delivered_at: deliveryForm.delivered_at || today,
         updated_at: new Date().toISOString(),
-      }).eq("id", deliverRepairId);
+      };
+      if (signature_url) update.signature_url = signature_url;
+
+      const { error } = await client.from("repairs").update(update).eq("id", deliverRepairId);
       if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["repairs"] });
       setDeliverRepairId(null);
+      sigClear();
     },
   });
 
@@ -308,9 +379,20 @@ export default function RepairsPage() {
             <div><b>Status:</b> {STATUS_LABELS[printRepair.status]}</div>
             {printRepair.status === "delivered" && (
               <>
-                {printRepair.delivery_weight != null && <div><b>Weight Out:</b> {printRepair.delivery_weight.toFixed(3)}g</div>}
+                {printRepair.delivery_weight != null && (
+                  <div><b>Weight Out:</b> {printRepair.delivery_weight.toFixed(3)}g
+                    {printRepair.item_weight_in != null && ` (in: ${printRepair.item_weight_in.toFixed(3)}g)`}
+                  </div>
+                )}
                 {printRepair.final_amount != null && <div><b>Final Amount:</b> {inr(printRepair.final_amount)}</div>}
                 {printRepair.payment_mode && <div><b>Paid via:</b> {printRepair.payment_mode.toUpperCase()}</div>}
+                {printRepair.signature_url && (
+                  <div style={{ marginTop: 6 }}>
+                    <div><b>Customer Signature:</b></div>
+                    <img src={printRepair.signature_url} alt="Signature"
+                      style={{ maxHeight: 60, marginTop: 4, border: "1px solid #ccc" }} />
+                  </div>
+                )}
               </>
             )}
             {printRepair.received_by && (
@@ -473,12 +555,25 @@ export default function RepairsPage() {
                                 </div>
                               </div>
                               {r.status === "delivered" && (
-                                <div className="bg-ok/5 border border-ok/20 rounded-lg p-3 space-y-1 text-xs">
+                                <div className="bg-ok/5 border border-ok/20 rounded-lg p-3 space-y-2 text-xs">
                                   <p className="font-medium text-ok">Delivered</p>
                                   {r.delivered_at && <p>Date: {shortDate(r.delivered_at)}</p>}
-                                  {r.delivery_weight != null && <p>Weight out: {r.delivery_weight.toFixed(3)}g</p>}
+                                  {r.delivery_weight != null && (
+                                    <p>Weight out: <span className="font-semibold">{r.delivery_weight.toFixed(3)}g</span>
+                                      {r.item_weight_in != null && (
+                                        <span className="text-ink-dim ml-1">(in: {r.item_weight_in.toFixed(3)}g)</span>
+                                      )}
+                                    </p>
+                                  )}
                                   {r.final_amount != null && <p>Final amount: {inr(r.final_amount)}</p>}
                                   {r.payment_mode && <p>Paid via: {r.payment_mode.toUpperCase()}</p>}
+                                  {r.signature_url && (
+                                    <div>
+                                      <p className="text-ink-dim mb-1">Customer signature:</p>
+                                      <img src={r.signature_url} alt="Signature"
+                                        className="max-h-20 border border-line rounded bg-white p-1" />
+                                    </div>
+                                  )}
                                 </div>
                               )}
                               {/* Status advance buttons */}
@@ -600,22 +695,32 @@ export default function RepairsPage() {
               {/* Photo */}
               <div className="col-span-2 flex flex-col gap-1">
                 <label className="text-xs text-ink-dim">Item Photo</label>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 flex-wrap">
                   <button type="button" onClick={() => fileInputRef.current?.click()}
                     className="border border-line rounded-lg2 px-3 py-2 text-xs text-ink-dim hover:text-ink">
-                    {photoFile ? photoFile.name : "Choose photo…"}
+                    📁 Gallery
+                  </button>
+                  <button type="button" onClick={() => cameraInputRef.current?.click()}
+                    className="border border-line rounded-lg2 px-3 py-2 text-xs text-ink-dim hover:text-ink">
+                    📷 Camera
                   </button>
                   <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
-                      if (file) {
-                        setPhotoFile(file);
-                        setPhotoPreview(URL.createObjectURL(file));
-                      }
+                      if (file) { setPhotoFile(file); setPhotoPreview(URL.createObjectURL(file)); }
+                    }} />
+                  <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) { setPhotoFile(file); setPhotoPreview(URL.createObjectURL(file)); }
                     }} />
                   {photoPreview && (
-                    <img src={photoPreview} alt="Preview"
-                      className="h-14 w-14 object-cover rounded-lg border border-line" />
+                    <>
+                      <img src={photoPreview} alt="Preview"
+                        className="h-14 w-14 object-cover rounded-lg border border-line" />
+                      <button type="button" onClick={() => { setPhotoFile(null); setPhotoPreview(null); }}
+                        className="text-xs text-err hover:underline">Remove</button>
+                    </>
                   )}
                 </div>
               </div>
@@ -642,9 +747,11 @@ export default function RepairsPage() {
       {/* ── Delivery modal ── */}
       {deliverRepairId && deliverRepair && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl shadow-soft w-full max-w-sm mx-4 p-6 space-y-4">
-            <h2 className="text-base font-bold text-ink">Deliver — {deliverRepair.repair_no}</h2>
-            <p className="text-xs text-ink-dim">{deliverRepair.customer_name} · {deliverRepair.item_description}</p>
+          <div className="bg-white rounded-2xl shadow-soft w-full max-w-md mx-4 p-6 space-y-4">
+            <div>
+              <h2 className="text-base font-bold text-ink">Deliver — {deliverRepair.repair_no}</h2>
+              <p className="text-xs text-ink-dim mt-0.5">{deliverRepair.customer_name} · {deliverRepair.item_description}</p>
+            </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1">
@@ -653,9 +760,14 @@ export default function RepairsPage() {
                   onChange={(e) => setDeliveryForm((f) => ({ ...f, delivered_at: e.target.value }))} />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-ink-dim">Weight Returned (g)</label>
-                <input type="number" step="0.001" className={inp} value={deliveryForm.delivery_weight}
+                <label className="text-xs font-semibold text-ink">Return Weight (g) *</label>
+                <input type="number" step="0.001" className={inp + " border-gold/60 focus:ring-gold"}
+                  placeholder="0.000"
+                  value={deliveryForm.delivery_weight}
                   onChange={(e) => setDeliveryForm((f) => ({ ...f, delivery_weight: e.target.value }))} />
+                {deliverRepair.item_weight_in != null && (
+                  <span className="text-[10px] text-ink-dim">Received: {deliverRepair.item_weight_in.toFixed(3)}g</span>
+                )}
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs text-ink-dim">Final Amount (₹)</label>
@@ -673,13 +785,43 @@ export default function RepairsPage() {
               </div>
             </div>
 
+            {/* Signature pad */}
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-ink">Customer Signature</label>
+                <button type="button" onClick={sigClear}
+                  className="text-[10px] text-ink-dim hover:text-err">Clear</button>
+              </div>
+              <div className="border-2 border-line rounded-lg overflow-hidden bg-white touch-none"
+                style={{ cursor: "crosshair" }}>
+                <canvas
+                  ref={sigCanvasRef}
+                  width={400}
+                  height={150}
+                  className="w-full"
+                  style={{ display: "block" }}
+                  onMouseDown={sigStart}
+                  onMouseMove={sigMove}
+                  onMouseUp={sigEnd}
+                  onMouseLeave={sigEnd}
+                  onTouchStart={sigStart}
+                  onTouchMove={sigMove}
+                  onTouchEnd={sigEnd}
+                />
+              </div>
+              <p className="text-[10px] text-ink-dim">Sign above with finger or stylus</p>
+            </div>
+
+            {saveDelivery.isError && (
+              <p className="text-xs text-err">{String((saveDelivery.error as any)?.message ?? "Error")}</p>
+            )}
             <div className="flex gap-2">
               <button onClick={() => saveDelivery.mutate()}
                 disabled={saveDelivery.isPending}
                 className="flex-1 bg-ok text-white py-2 rounded-lg2 text-sm font-medium disabled:opacity-50">
                 {saveDelivery.isPending ? "Saving…" : "Confirm Delivery"}
               </button>
-              <button onClick={() => setDeliverRepairId(null)}
+              <button onClick={() => { setDeliverRepairId(null); sigClear(); }}
                 className="flex-1 border border-line py-2 rounded-lg2 text-sm">
                 Cancel
               </button>
