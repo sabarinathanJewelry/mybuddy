@@ -820,7 +820,7 @@ export default function DailySheetPage() {
       if (e.src === "Bank" && e.direction === "in" && e.ref_type !== "transfer") return s + amt;
       return s;
     }, 0) +
-    bullionRows.filter((r: any) => !r.isSell).reduce((s: number, r: any) => s + r.totalAmount, 0) +  // buy: full cost in debit
+    bullionRows.filter((r: any) => !r.isSell).reduce((s: number, r: any) => s + r.cashPaidInRange, 0) +  // buy: only cash paid in range
     // Old gold advance: pass-through (gold value in = debit, no cash paid)
     oldGoldAdvRows.reduce((s: number, r: any) => s + r.amount, 0);
 
@@ -829,12 +829,7 @@ export default function DailySheetPage() {
     orderRows.reduce((s: number, r: any) => s + r.credit, 0) +
     visibleMisc.filter((e: any) => e.direction === "in" || e.direction === "advance_out")
       .reduce((s: number, e: any) => s + Number(e.amount), 0) +
-    bullionRows.reduce((s: number, r: any) => {
-      if (r.isSell) return s + r.totalAmount;
-      // buy: non-cash payments (bank/UPI) + unpaid balance both appear in credit
-      const ncTotal = (r.nonCashByMode as { mode: string; amount: number }[]).reduce((a, nc) => a + nc.amount, 0);
-      return s + ncTotal + r.balance;
-    }, 0) +
+    bullionRows.filter((r: any) => r.isSell).reduce((s: number, r: any) => s + r.totalAmount, 0) +  // sell only; buy sub-rows are informational
     oldGoldAdvRows.reduce((s: number, r: any) => s + r.amount, 0);
 
   // Net cash per row = credit - non-cash debits + advance_kept (kept cash) - change_cash already excluded from rowDebit
@@ -865,12 +860,8 @@ export default function DailySheetPage() {
       if (ord.credit > 0) m.set(`cr-o-${ord.orderId}-${ord.payDate}`, ord.credit);
     });
     bullionRows.forEach((r: any) => {
-      if (r.isSell) {
-        m.set(`cr-bull-${r.id}`, r.totalAmount);
-      } else {
-        (r.nonCashByMode as { mode: string; amount: number }[]).forEach(nc => m.set(`cr-bull-nc-${r.id}-${nc.mode}`, nc.amount));
-        if (r.balance > 0.005) m.set(`cr-bull-bal-${r.id}`, r.balance);
-      }
+      if (r.isSell) m.set(`cr-bull-${r.id}`, r.totalAmount);
+      // buy: non-cash and balance sub-rows are informational only, no select-all entry
     });
     oldGoldAdvRows.forEach((r: any) => m.set(`cr-og-${r.id}`, r.amount));
     visibleMisc.forEach((e: any, mi: number) => {
@@ -897,9 +888,8 @@ export default function DailySheetPage() {
     });
     bullionRows.forEach((r: any) => {
       if (!r.isSell) {
-        m.set(`dr-bull-${r.id}`, r.totalAmount);
+        if (r.cashPaidInRange > 0.005) m.set(`dr-bull-${r.id}`, r.cashPaidInRange);
       } else {
-        m.set(`cr-bull-${r.id}`, r.totalAmount);
         (r.nonCashByMode as { mode: string; amount: number }[]).forEach(nc => m.set(`dr-bull-nc-${r.id}-${nc.mode}`, nc.amount));
         if (r.balance > 0.005) m.set(`dr-bull-bal-${r.id}`, r.balance);
       }
@@ -1265,16 +1255,18 @@ export default function DailySheetPage() {
                             <td className="px-3 py-2 text-xs text-ink-dim">
                               Bullion {r.isSell ? "Sale" : "Purchase"}
                             </td>
+                            {/* Debit: for buy = cash paid in range only; for sell = full trade total */}
                             <td className="px-3 py-2 text-right font-mono text-xs text-err">
-                              {!r.isSell ? (
+                              {!r.isSell && r.cashPaidInRange > 0.005 ? (
                                 <div className="flex items-center justify-end gap-1.5">
                                   <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
                                     checked={selDrKeys.has(`dr-bull-${r.id}`)}
-                                    onChange={() => toggleDr(`dr-bull-${r.id}`, r.totalAmount)} />
-                                  {inr(r.totalAmount)}
+                                    onChange={() => toggleDr(`dr-bull-${r.id}`, r.cashPaidInRange)} />
+                                  {inr(r.cashPaidInRange)}
                                 </div>
                               ) : ""}
                             </td>
+                            {/* Credit: for sell = full trade total */}
                             <td className="px-3 py-2 text-right font-mono text-xs text-ok">
                               {r.isSell ? (
                                 <div className="flex items-center justify-end gap-1.5">
@@ -1291,9 +1283,9 @@ export default function DailySheetPage() {
                               {cashZero ? "—" : (r.isSell ? `+${inr(r.cashPaidInRange)}` : `-${inr(r.cashPaidInRange)}`)}
                             </td>
                           </tr>
-                          {/* Non-cash payment sub-rows */}
+                          {/* Non-cash payment sub-rows — informational, no checkboxes */}
                           {nc.map((p, pi) => (
-                            <tr key={`bull-nc-${r.id}-${pi}`} className={`bg-canvas/20 hover:bg-canvas/40 ${!hasBalance && pi === nc.length - 1 ? "border-b border-line" : ""}`}>
+                            <tr key={`bull-nc-${r.id}-${pi}`} className={`bg-canvas/20 ${!hasBalance && pi === nc.length - 1 ? "border-b border-line" : ""}`}>
                               <td className="px-3 py-1.5 text-xs text-ink-dim pl-4">{modeLabel(p.mode)}</td>
                               <td className="px-3 py-1.5 text-right font-mono text-xs text-err">
                                 {r.isSell ? (
@@ -1305,19 +1297,13 @@ export default function DailySheetPage() {
                                   </div>
                                 ) : ""}
                               </td>
-                              <td className="px-3 py-1.5 text-right font-mono text-xs text-ok">
-                                {!r.isSell ? (
-                                  <div className="flex items-center justify-end gap-1.5">
-                                    <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
-                                      checked={selCrKeys.has(`cr-bull-nc-${r.id}-${p.mode}`)}
-                                      onChange={() => toggleCr(`cr-bull-nc-${r.id}-${p.mode}`, p.amount)} />
-                                    {inr(p.amount)}
-                                  </div>
-                                ) : ""}
+                              <td className="px-3 py-1.5 text-right font-mono text-xs text-ink-dim">
+                                {/* buy: non-cash paid to supplier — informational only */}
+                                {!r.isSell ? inr(p.amount) : ""}
                               </td>
                             </tr>
                           ))}
-                          {/* Unpaid balance sub-row */}
+                          {/* Unpaid balance sub-row — informational, no checkboxes for buy */}
                           {hasBalance && (
                             <tr className="border-b border-line bg-warn/5">
                               <td className="px-3 py-1.5 text-xs text-warn font-medium pl-4">
@@ -1334,14 +1320,8 @@ export default function DailySheetPage() {
                                 ) : ""}
                               </td>
                               <td className="px-3 py-1.5 text-right font-mono text-xs text-warn">
-                                {!r.isSell ? (
-                                  <div className="flex items-center justify-end gap-1.5">
-                                    <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
-                                      checked={selCrKeys.has(`cr-bull-bal-${r.id}`)}
-                                      onChange={() => toggleCr(`cr-bull-bal-${r.id}`, r.balance)} />
-                                    {inr(r.balance)}
-                                  </div>
-                                ) : ""}
+                                {/* buy: balance shown as info in credit column, no checkbox */}
+                                {!r.isSell ? inr(r.balance) : ""}
                               </td>
                             </tr>
                           )}
