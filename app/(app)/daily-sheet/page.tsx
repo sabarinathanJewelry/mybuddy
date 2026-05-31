@@ -157,7 +157,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
     queryKey: ["day-sales-ledger", fromDate, toDate],
     queryFn: async () => {
       const client = supabase();
-      const [salesRes, orderRes, newOrdersRes, miscCashRes, miscBankRes, advanceRes, bullionPayRes, oldGoldAdvRes, standalonePayRes] = await Promise.all([
+      const [salesRes, orderRes, newOrdersRes, miscCashRes, miscBankRes, advanceRes, bullionPayRes, bullionTradeRes, oldGoldAdvRes, standalonePayRes] = await Promise.all([
         client.from("sales")
           .select("id, bill_no, bill_date, total, change_due, change_mode, customers(name), sale_items(description, metal, net_wt), sale_payments(mode, amount, metal_wt)")
           .gte("bill_date", fromDate).lte("bill_date", toDate)
@@ -190,12 +190,17 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .eq("mode", "advance").eq("direction", "out").eq("is_advance", true)
           .not("notes", "ilike", "Order advance used%")
           .order("pay_date").order("created_at"),
-        // Bullion payments — sell=cash in, buy=cash out
+        // Bullion payments in range (by pay_date)
         client.from("bullion_payments")
           .select("id, trade_id, pay_date, mode, amount, bullion_trades(trade_type, party_name, metal, pure_wt, rate_per_g, total_amount)")
           .gte("pay_date", fromDate).lte("pay_date", toDate)
           .gt("amount", 0)
           .order("pay_date").order("created_at"),
+        // Bullion trades created in range — catches trades with no payment yet on that day
+        client.from("bullion_trades")
+          .select("id, trade_date, trade_type, party_name, metal, pure_wt, rate_per_g, total_amount")
+          .gte("trade_date", fromDate).lte("trade_date", toDate)
+          .order("trade_date").order("created_at"),
         // Standalone old_gold/old_silver kept as advance (not linked to a sale)
         client.from("payments")
           .select("id, pay_date, amount, mode, notes, created_at, customers(name)")
@@ -214,25 +219,30 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .order("pay_date").order("created_at"),
       ]);
 
-      // Fetch all-time paid totals per bullion trade (needed to compute outstanding balance)
-      const tradeIds = [...new Set((bullionPayRes.data ?? []).map((p: any) => p.trade_id as string))];
+      // Merge trade IDs from payments in range + trades created in range
+      const tradeIds = [...new Set([
+        ...(bullionPayRes.data ?? []).map((p: any) => p.trade_id as string),
+        ...(bullionTradeRes.data ?? []).map((t: any) => t.id as string),
+      ])];
+
+      // tradeDateMap: from the direct bullion_trades query (already has trade_date)
+      const tradeDateMap: Record<string, string> = {};
+      (bullionTradeRes.data ?? []).forEach((t: any) => {
+        tradeDateMap[t.id] = t.trade_date as string;
+      });
+
+      // tradeInfoMap: full trade details keyed by trade id (for trades with no payment)
+      const tradeInfoMap: Record<string, any> = {};
+      (bullionTradeRes.data ?? []).forEach((t: any) => { tradeInfoMap[t.id] = t; });
+
+      // tradePaidTotals: sum of all payments up to toDate (balance as-of range end)
       const tradePaidTotals: Record<string, number> = {};
       if (tradeIds.length > 0) {
         const { data: allBullPay } = await client.from("bullion_payments")
           .select("trade_id, amount").in("trade_id", tradeIds).gt("amount", 0)
-          .lte("pay_date", toDate); // balance as-of range end date
+          .lte("pay_date", toDate);
         (allBullPay ?? []).forEach((p: any) => {
           tradePaidTotals[p.trade_id] = (tradePaidTotals[p.trade_id] ?? 0) + Number(p.amount);
-        });
-      }
-
-      // Fetch trade_date separately to determine if trade falls in current range
-      const tradeDateMap: Record<string, string> = {};
-      if (tradeIds.length > 0) {
-        const { data: tradeRows } = await client.from("bullion_trades")
-          .select("id, trade_date").in("id", tradeIds);
-        (tradeRows ?? []).forEach((t: any) => {
-          tradeDateMap[t.id] = t.trade_date as string;
         });
       }
 
@@ -443,9 +453,20 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
 
       // Bullion rows — grouped by trade; buy=debit, sell=credit; balance=outstanding
       const tradeGroupMap = new Map<string, { bt: any; payments: any[] }>();
+      // Seed with trades created in range (catches trades with no payment yet)
+      for (const t of (bullionTradeRes.data ?? []) as any[]) {
+        if (!tradeGroupMap.has(t.id)) tradeGroupMap.set(t.id, { bt: t, payments: [] });
+      }
+      // Layer in actual payments (may add to existing entries or create new ones)
       for (const p of (bullionPayRes.data ?? []) as any[]) {
         const key = p.trade_id as string;
-        if (!tradeGroupMap.has(key)) tradeGroupMap.set(key, { bt: p.bullion_trades as any, payments: [] });
+        if (!tradeGroupMap.has(key)) {
+          // Payment in range but trade not in range — use bt from join
+          tradeGroupMap.set(key, { bt: p.bullion_trades as any, payments: [] });
+        } else if (!tradeGroupMap.get(key)!.bt?.party_name && p.bullion_trades) {
+          // Supplement bt from join if trade info was incomplete
+          tradeGroupMap.get(key)!.bt = p.bullion_trades;
+        }
         tradeGroupMap.get(key)!.payments.push(p);
       }
       const bullionRows = Array.from(tradeGroupMap.entries()).map(([tradeId, { bt, payments }]) => {
