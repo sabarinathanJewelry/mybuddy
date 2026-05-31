@@ -192,7 +192,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .order("pay_date").order("created_at"),
         // Bullion payments — sell=cash in, buy=cash out
         client.from("bullion_payments")
-          .select("id, trade_id, pay_date, mode, amount, bullion_trades(trade_type, party_name, metal, pure_wt, rate_per_g, total_amount, trade_date)")
+          .select("id, trade_id, pay_date, mode, amount, bullion_trades(trade_type, party_name, metal, pure_wt, rate_per_g, total_amount)")
           .gte("pay_date", fromDate).lte("pay_date", toDate)
           .gt("amount", 0)
           .order("pay_date").order("created_at"),
@@ -223,6 +223,16 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .lte("pay_date", toDate); // balance as-of range end date
         (allBullPay ?? []).forEach((p: any) => {
           tradePaidTotals[p.trade_id] = (tradePaidTotals[p.trade_id] ?? 0) + Number(p.amount);
+        });
+      }
+
+      // Fetch trade_date separately to determine if trade falls in current range
+      const tradeDateMap: Record<string, string> = {};
+      if (tradeIds.length > 0) {
+        const { data: tradeRows } = await client.from("bullion_trades")
+          .select("id, trade_date").in("id", tradeIds);
+        (tradeRows ?? []).forEach((t: any) => {
+          tradeDateMap[t.id] = t.trade_date as string;
         });
       }
 
@@ -452,10 +462,8 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
         }
         const nonCashByMode = Array.from(ncMap.entries()).map(([mode, amount]) => ({ mode, amount }));
         const payDate = (payments as any[]).reduce((latest: string, p: any) => p.pay_date > latest ? p.pay_date : latest, (payments[0] as any)?.pay_date ?? fromDate);
-        const tradeDate = (bt?.trade_date ?? "") as string;
-        // Trade date in range: show full trade picture (total + balance)
-        // Subsequent payment dates: show only what was paid
-        const isTradeInRange = tradeDate >= fromDate && tradeDate <= toDate;
+        const tradeDate = tradeDateMap[tradeId] ?? "";
+        const isTradeInRange = !!tradeDate && tradeDate >= fromDate && tradeDate <= toDate;
         return {
           id: tradeId,
           payDate,
