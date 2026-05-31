@@ -32,6 +32,17 @@ export default function SessionBootstrap({ children }: { children: React.ReactNo
   useEffect(() => {
     const client = supabase();
 
+    async function loadProfile() {
+      const { data: { session } } = await client.auth.getSession();
+      if (!session) return null;
+      const { data: profile } = await client
+        .from("profiles")
+        .select("id, display_name, role, language, repair_access")
+        .eq("id", session.user.id)
+        .single();
+      return profile;
+    }
+
     async function init() {
       const { data: { session } } = await client.auth.getSession();
       if (!session) {
@@ -39,12 +50,7 @@ export default function SessionBootstrap({ children }: { children: React.ReactNo
         return;
       }
 
-      const { data: profile } = await client
-        .from("profiles")
-        .select("id, display_name, role, language, repair_access")
-        .eq("id", session.user.id)
-        .single();
-
+      const profile = await loadProfile();
       if (profile) {
         setProfile(profile);
         if (profile.language) setLang(profile.language as "en" | "ta");
@@ -58,6 +64,10 @@ export default function SessionBootstrap({ children }: { children: React.ReactNo
 
     init();
 
+    // Re-fetch profile on window focus so permission changes take effect without re-login
+    function onFocus() { loadProfile().then(p => { if (p) setProfile(p); }); }
+    window.addEventListener("focus", onFocus);
+
     const { data: listener } = client.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_OUT") {
         setProfile(null);
@@ -65,7 +75,10 @@ export default function SessionBootstrap({ children }: { children: React.ReactNo
       }
     });
 
-    return () => listener.subscription.unsubscribe();
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      listener.subscription.unsubscribe();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
