@@ -343,12 +343,15 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
             row.payments.push({ note: paymentNote(p.mode, Number(p.metal_wt ?? 0)), amount: amt, mode: p.mode as string });
           }
         } else {
-          // Delivery payment: amount → Credit; non-cash → Debit (net = cash received)
-          if (p.mode !== "advance") {
-            row.credit += amt;
-            if (p.mode !== "cash") {
-              row.payments.push({ note: paymentNote(p.mode, Number(p.metal_wt ?? 0)), amount: amt, mode: p.mode as string });
-            }
+          // Delivery payment: amount → Credit; non-cash/advance → Debit sub-row
+          // mode=advance means customer's pre-paid advance is being applied — pass-through (net cash = 0)
+          row.credit += amt;
+          if (p.mode !== "cash") {
+            row.payments.push({
+              note: p.mode === "advance" ? "Advance applied" : paymentNote(p.mode, Number(p.metal_wt ?? 0)),
+              amount: amt,
+              mode: p.mode as string,
+            });
           }
         }
       }
@@ -1345,11 +1348,12 @@ export default function DailySheetPage() {
                         </tr>,
                         ...restPay.map((pay: any, pi: number) => {
                           const isBal = pay.mode === "balance";
+                          const isAdv = pay.mode === "advance";
                           return (
                             <tr key={`ord-${ord.orderId}-${ord.payDate}-${pi + 1}`}
-                              className={`hover:bg-canvas/50 ${isBal ? "bg-warn/5" : "bg-canvas/20"} ${pi === restPay.length - 1 ? "border-b border-line" : ""}`}>
-                              <td className={`px-3 py-1.5 text-xs pl-4 ${isBal ? "text-warn font-medium" : "text-ink-dim"}`}>{pay.note}</td>
-                              <td className={`px-3 py-1.5 text-right font-mono text-xs ${isBal ? "text-warn" : "text-err"}`}>
+                              className={`hover:bg-canvas/50 ${isBal ? "bg-warn/5" : isAdv ? "bg-info/5" : "bg-canvas/20"} ${pi === restPay.length - 1 ? "border-b border-line" : ""}`}>
+                              <td className={`px-3 py-1.5 text-xs pl-4 ${isBal ? "text-warn font-medium" : isAdv ? "text-info font-medium" : "text-ink-dim"}`}>{pay.note}</td>
+                              <td className={`px-3 py-1.5 text-right font-mono text-xs ${isBal ? "text-warn" : isAdv ? "text-info" : "text-err"}`}>
                                 <div className="flex items-center justify-end gap-1.5">
                                   <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
                                     checked={selDrKeys.has(`dr-or-${ord.orderId}-${ord.payDate}-${pi}`)}
