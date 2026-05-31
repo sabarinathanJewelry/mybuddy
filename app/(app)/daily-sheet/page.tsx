@@ -1213,8 +1213,11 @@ export default function DailySheetPage() {
                             <tr key={`${sale.id}-${pi + 1}`}
                               className={`hover:bg-canvas/50 ${isAdv ? "bg-info/5" : isBal ? "bg-warn/5" : "bg-canvas/20"} ${pi === restPay.length - 1 ? "border-b border-line" : ""}`}>
                               <td className={`px-3 py-1.5 text-xs pl-4 ${isAdv ? "text-info font-medium" : isBal ? "text-warn font-medium" : isChange ? "text-ok font-medium" : "text-ink-dim"}`}>{pay.note}</td>
-                              <td className={`px-3 py-1.5 text-right font-mono text-xs ${isBal ? "text-warn" : isAdv ? "" : "text-err"}`}>
-                                {!isAdv ? (
+                              <td className={`px-3 py-1.5 text-right font-mono text-xs ${isBal ? "text-warn" : isAdv ? "" : isChange ? "text-ok" : "text-err"}`}>
+                                {isChange ? (
+                                  // change returned: show amount as info only, no checkbox (excluded from totals)
+                                  <span className="text-ok">{inr(pay.amount)}</span>
+                                ) : !isAdv ? (
                                   <div className="flex items-center justify-end gap-1.5">
                                     <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
                                       checked={selDrKeys.has(`dr-sr-${sale.id}-${pi}`)}
