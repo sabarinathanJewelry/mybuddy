@@ -7,6 +7,7 @@ export interface Profile {
   display_name: string;
   role: "admin" | "staff";
   language: string;
+  repair_access?: boolean;
 }
 
 interface AuthStore {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/stores/auth";
 import { useT } from "@/i18n";
@@ -8,6 +8,7 @@ import { useT } from "@/i18n";
 export default function AdminUsersPage() {
   const t = useT();
   const profile = useAuth((s) => s.profile);
+  const qc = useQueryClient();
 
   const { data: profiles, isLoading } = useQuery({
     queryKey: ["profiles"],
@@ -16,6 +17,14 @@ export default function AdminUsersPage() {
       if (error) throw error;
       return data ?? [];
     },
+  });
+
+  const toggleRepairAccess = useMutation({
+    mutationFn: async ({ id, value }: { id: string; value: boolean }) => {
+      const { error } = await supabase().from("profiles").update({ repair_access: value }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["profiles"] }),
   });
 
   if (profile?.role !== "admin") {
@@ -47,6 +56,7 @@ where id = '<user-uuid>';`}
               <th className="text-left px-3 py-2.5">Role</th>
               <th className="text-left px-3 py-2.5">Language</th>
               <th className="text-left px-3 py-2.5">Game Login</th>
+              <th className="text-center px-3 py-2.5">Repairs</th>
             </tr></thead>
             <tbody>
               {(profiles as any[])?.map((p) => (
@@ -63,6 +73,22 @@ where id = '<user-uuid>';`}
                       <span className="text-xs text-ok">✓ Configured</span>
                     ) : (
                       <span className="text-xs text-ink-dim">Not set</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 text-center">
+                    {p.role === "admin" ? (
+                      <span className="text-xs text-gold">Always</span>
+                    ) : (
+                      <button
+                        onClick={() => toggleRepairAccess.mutate({ id: p.id, value: !p.repair_access })}
+                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                          p.repair_access
+                            ? "bg-ok/10 border-ok/30 text-ok"
+                            : "border-line text-ink-dim hover:border-gold hover:text-gold"
+                        }`}
+                      >
+                        {p.repair_access ? "Enabled" : "Disabled"}
+                      </button>
                     )}
                   </td>
                 </tr>

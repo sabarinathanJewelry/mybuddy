@@ -69,6 +69,7 @@ export default function Sidebar() {
   const { sidebarCollapsed, mobileSidebarOpen, toggleSidebar, setMobileSidebar } = useUI();
   const profile = useAuth((s) => s.profile);
   const isAdmin = profile?.role === "admin";
+  const canSeeRepairs = isAdmin || profile?.repair_access === true;
 
   async function handleLogout() {
     await supabase().auth.signOut();
@@ -96,6 +97,16 @@ export default function Sidebar() {
             active={pathname.startsWith(item.href)}
           />
         ))}
+
+        {canSeeRepairs && (
+          <NavItem
+            href="/repairs"
+            icon="🔧"
+            label={t("nav_repairs")}
+            collapsed={collapsed}
+            active={pathname.startsWith("/repairs")}
+          />
+        )}
 
         {isAdmin && (
           <>

@@ -41,7 +41,7 @@ export default function SessionBootstrap({ children }: { children: React.ReactNo
 
       const { data: profile } = await client
         .from("profiles")
-        .select("id, display_name, role, language")
+        .select("id, display_name, role, language, repair_access")
         .eq("id", session.user.id)
         .single();
 
