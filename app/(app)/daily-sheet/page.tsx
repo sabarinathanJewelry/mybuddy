@@ -639,6 +639,7 @@ export default function DailySheetPage() {
   const { data: cashCount } = useCashCount(date);
   const [viewTab, setViewTab] = useState<ViewTab>("summary");
   const [includeBankOut, setIncludeBankOut] = useState(false);
+  const [exchNetOnly, setExchNetOnly] = useState(false);
   const [cbFrom, setCbFrom] = useState(date);
   const [cbTo,   setCbTo]   = useState(date);
   const { data: salesLedger, isLoading: ledgerLoading } = useDaySalesLedger(cbFrom, cbTo);
@@ -811,8 +812,23 @@ export default function DailySheetPage() {
 
   const rowDebit = (payments: { amount: number; mode: string }[]) =>
     payments.filter(p => p.mode !== "advance_kept" && p.mode !== "change_cash").reduce((s, p) => s + p.amount, 0);
+
+  // Net cash per row = credit - non-cash debits + advance_kept (kept cash)
+  const saleNetCash = (sale: typeof saleRows[0]) => {
+    const advKept = sale.payments.filter(p => p.mode === "advance_kept").reduce((s, p) => s + p.amount, 0);
+    return sale.credit - rowDebit(sale.payments) + advKept;
+  };
+  const isExch = (sale: typeof saleRows[0]) =>
+    sale.payments.some(p => p.mode === "old_gold" || p.mode === "old_silver");
+
   const grandDebit =
-    saleRows.reduce((s, r) => s + rowDebit(r.payments), 0) +
+    saleRows.reduce((s, r) => {
+      if (exchNetOnly && isExch(r)) {
+        const net = saleNetCash(r);
+        return s + (net < 0 ? -net : 0);
+      }
+      return s + rowDebit(r.payments);
+    }, 0) +
     orderRows.reduce((s: number, r: any) => s + rowDebit(r.payments), 0) +
     visibleMisc.reduce((s: number, e: any) => {
       const amt = Number(e.amount);
@@ -820,25 +836,23 @@ export default function DailySheetPage() {
       if (e.src === "Bank" && e.direction === "in" && e.ref_type !== "transfer") return s + amt;
       return s;
     }, 0) +
-    bullionRows.filter((r: any) => !r.isSell).reduce((s: number, r: any) => s + r.cashPaidInRange, 0) +  // buy: only cash paid in range
-    // Old gold advance: pass-through (gold value in = debit, no cash paid)
+    bullionRows.filter((r: any) => !r.isSell).reduce((s: number, r: any) => s + r.cashPaidInRange, 0) +
     oldGoldAdvRows.reduce((s: number, r: any) => s + r.amount, 0);
 
   const grandCredit =
-    saleRows.reduce((s, r) => s + r.credit, 0) +
+    saleRows.reduce((s, r) => {
+      if (exchNetOnly && isExch(r)) {
+        const net = saleNetCash(r);
+        return s + (net > 0 ? net : 0);
+      }
+      return s + r.credit;
+    }, 0) +
     orderRows.reduce((s: number, r: any) => s + r.credit, 0) +
     visibleMisc.filter((e: any) => e.direction === "in" || e.direction === "advance_out")
       .reduce((s: number, e: any) => s + Number(e.amount), 0) +
-    bullionRows.filter((r: any) => r.isSell).reduce((s: number, r: any) => s + r.totalAmount, 0) +  // sell only; buy sub-rows are informational
+    bullionRows.filter((r: any) => r.isSell).reduce((s: number, r: any) => s + r.totalAmount, 0) +
     oldGoldAdvRows.reduce((s: number, r: any) => s + r.amount, 0);
-
-  // Net cash per row = credit - non-cash debits + advance_kept (kept cash) - change_cash already excluded from rowDebit
-  const saleNetCash = (sale: typeof saleRows[0]) => {
-    const advKept = sale.payments.filter(p => p.mode === "advance_kept").reduce((s, p) => s + p.amount, 0);
-    return sale.credit - rowDebit(sale.payments) + advKept;
-  };
-  const grandCash =
-    saleRows.reduce((s, r) => s + saleNetCash(r), 0) +
+  const grandCash = saleRows.reduce((s, r) => s + saleNetCash(r), 0) +
     orderRows.reduce((s: number, r: any) => s + r.credit - rowDebit(r.payments), 0) +
     bullionRows.reduce((s: number, r: any) => s + (r.isSell ? r.cashPaidInRange : -r.cashPaidInRange), 0) +
     visibleMisc.reduce((s: number, e: any) => {
@@ -851,10 +865,15 @@ export default function DailySheetPage() {
     const m = new Map<string, number>();
     if (prevDayCount) m.set("cr-prev-count", prevDayCount.actual);
     saleRows.forEach(sale => {
-      m.set(`cr-s-${sale.id}`, sale.credit);
-      sale.payments.forEach((pay, pi) => {
-        if (pay.mode === "advance_kept") m.set(`cr-sa-${sale.id}-${pi}`, pay.amount);
-      });
+      if (exchNetOnly && isExch(sale)) {
+        const net = saleNetCash(sale);
+        if (net > 0) m.set(`cr-s-${sale.id}`, net);
+      } else {
+        m.set(`cr-s-${sale.id}`, sale.credit);
+        sale.payments.forEach((pay, pi) => {
+          if (pay.mode === "advance_kept") m.set(`cr-sa-${sale.id}-${pi}`, pay.amount);
+        });
+      }
     });
     orderRows.forEach((ord: any) => {
       if (ord.credit > 0) m.set(`cr-o-${ord.orderId}-${ord.payDate}`, ord.credit);
@@ -869,11 +888,16 @@ export default function DailySheetPage() {
       if (e.direction === "in" || isAdv) m.set(`cr-misc-${mi}`, Number(e.amount));
     });
     return m;
-  }, [prevDayCount, saleRows, orderRows, bullionRows, oldGoldAdvRows, visibleMisc]);
+  }, [prevDayCount, saleRows, orderRows, bullionRows, oldGoldAdvRows, visibleMisc, exchNetOnly]);
 
   const allDrEntries = useMemo<Map<string, number>>(() => {
     const m = new Map<string, number>();
     saleRows.forEach(sale => {
+      if (exchNetOnly && isExch(sale)) {
+        const net = saleNetCash(sale);
+        if (net < 0) m.set(`dr-s0-${sale.id}`, -net);
+        return;
+      }
       sale.payments.forEach((pay, pi) => {
         if (pay.mode === "advance_kept" || pay.mode === "change_cash") return;
         const key = pi === 0 ? `dr-s0-${sale.id}` : `dr-sr-${sale.id}-${pi - 1}`;
@@ -902,7 +926,7 @@ export default function DailySheetPage() {
     });
     if (cbToCount) m.set("dr-today-count", cbToCount.actual);
     return m;
-  }, [saleRows, orderRows, bullionRows, oldGoldAdvRows, visibleMisc, cbToCount]);
+  }, [saleRows, orderRows, bullionRows, oldGoldAdvRows, visibleMisc, cbToCount, exchNetOnly]);
 
   const allCrSelected = allCrEntries.size > 0 && allCrEntries.size === selCrKeys.size;
   const someCrSelected = selCrKeys.size > 0 && !allCrSelected;
@@ -1003,6 +1027,11 @@ export default function DailySheetPage() {
               <button onClick={() => { setCbFrom(date); setCbTo(date); }}
                 className="text-gold hover:underline">Reset to today</button>
             )}
+            <label className="flex items-center gap-1.5 cursor-pointer select-none text-ink-dim">
+              <input type="checkbox" checked={exchNetOnly} onChange={e => setExchNetOnly(e.target.checked)}
+                className="accent-gold" />
+              Exchange: net only
+            </label>
             <label className="flex items-center gap-1.5 ml-auto cursor-pointer select-none text-ink-dim">
               <input type="checkbox" checked={includeBankOut} onChange={e => setIncludeBankOut(e.target.checked)}
                 className="accent-gold" />
@@ -1086,6 +1115,51 @@ export default function DailySheetPage() {
                   ) : <>
                     {/* Sale rows — sub-rows rendered inline so rowSpan works */}
                     {saleRows.flatMap((sale) => {
+                      const netCash = saleNetCash(sale);
+                      const cashZero = Math.abs(netCash) < 0.01;
+
+                      // Exchange net-only mode: collapse to a single row showing just the net
+                      if (exchNetOnly && isExch(sale)) {
+                        const label = sale.customerName ? `${sale.itemDesc} (${sale.customerName})` : sale.itemDesc;
+                        const showCr = netCash > 0.005;
+                        const showDr = netCash < -0.005;
+                        return [
+                          <tr key={`${sale.id}-0`} className="border-b border-line hover:bg-canvas/50">
+                            <td className="px-4 py-2.5 border-r border-line/30">
+                              <div className="text-sm font-medium">{label}</div>
+                              <div className="text-xs text-ink-dim mt-0.5">
+                                {sale.billNo}{multiDay ? ` · ${sale.billDate}` : ""}
+                                <span className="ml-1.5 text-[10px] text-info">Exchange (net)</span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2.5 text-xs text-ink-dim">Exchange net</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-xs text-err">
+                              {showDr ? (
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
+                                    checked={selDrKeys.has(`dr-s0-${sale.id}`)}
+                                    onChange={() => toggleDr(`dr-s0-${sale.id}`, -netCash)} />
+                                  {inr(-netCash)}
+                                </div>
+                              ) : ""}
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-mono text-xs text-ok">
+                              {showCr ? (
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <input type="checkbox" className="w-3.5 h-3.5 accent-gold cursor-pointer flex-shrink-0"
+                                    checked={selCrKeys.has(`cr-s-${sale.id}`)}
+                                    onChange={() => toggleCr(`cr-s-${sale.id}`, netCash)} />
+                                  {inr(netCash)}
+                                </div>
+                              ) : ""}
+                            </td>
+                            <td className={`px-3 py-2.5 text-right font-mono text-xs font-semibold ${cashZero ? "text-ink-dim" : netCash > 0 ? "text-ok" : "text-err"}`}>
+                              {cashZero ? "—" : `${netCash > 0 ? "+" : ""}${inr(netCash)}`}
+                            </td>
+                          </tr>,
+                        ];
+                      }
+
                       const allPay = sale.payments;
                       const firstPay = allPay[0];
                       const restPay  = allPay.slice(1);
@@ -1093,8 +1167,6 @@ export default function DailySheetPage() {
                         ? `${sale.itemDesc} (${sale.customerName})`
                         : sale.itemDesc;
                       const totalRows = 1 + restPay.length;
-                      const netCash = saleNetCash(sale);
-                      const cashZero = Math.abs(netCash) < 0.01;
 
                       return [
                         <tr key={`${sale.id}-0`}
