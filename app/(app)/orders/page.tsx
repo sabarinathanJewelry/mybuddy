@@ -12,6 +12,7 @@ import type { Customer } from "@/modules/customers/types";
 import { clsx } from "clsx";
 import { fyForDate, billNoFor } from "@/lib/fy";
 import { useProducts, useProductGroups } from "@/modules/sales/products-api";
+import { usePartnerAccounts } from "@/modules/partner-accounts/api";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -24,6 +25,7 @@ interface PaymentDraft {
   metal_wt: number;
   metal_purity: number;
   notes: string;
+  partner_account_id?: string;
 }
 
 interface OrderItemDraft {
@@ -217,7 +219,7 @@ function OrderItemsView({ orderId }: { orderId: string }) {
 // ─── Payment entry row component ─────────────────────────────────────────────
 
 function PaymentRow({
-  p, idx, payments, setPayments, boardRate, canRemove, advanceBalance,
+  p, idx, payments, setPayments, boardRate, canRemove, advanceBalance, partnerAccounts,
 }: {
   p: PaymentDraft;
   idx: number;
@@ -226,6 +228,7 @@ function PaymentRow({
   boardRate: any;
   canRemove: boolean;
   advanceBalance?: number;
+  partnerAccounts?: { id: string; name: string; account_type: string; account_no: string | null }[];
 }) {
   function update(patch: Partial<PaymentDraft>) {
     setPayments(payments.map((x, i) => (i === idx ? { ...x, ...patch } : x)));
@@ -293,6 +296,17 @@ function PaymentRow({
         <input value={p.notes} onChange={(e) => update({ notes: e.target.value })} placeholder="Optional"
           className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
       </div>
+      {(p.mode === "upi" || p.mode === "bank") && partnerAccounts && partnerAccounts.length > 0 && (
+        <div className="w-44">
+          <label className="block text-xs text-ink-dim mb-1">Received in</label>
+          <select value={p.partner_account_id ?? ""}
+            onChange={e => update({ partner_account_id: e.target.value || undefined })}
+            className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+            <option value="">Shop account</option>
+            {partnerAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </div>
+      )}
       {p.mode === "advance" && (
         <div className="self-end pb-2">
           {advanceBalance === undefined
@@ -321,6 +335,7 @@ export default function OrdersPage() {
   const { data: orders = [], isLoading } = useOrders();
   const { data: products = [] } = useProducts(true);
   const { data: productGroups = [] } = useProductGroups(true);
+  const { data: partnerAccounts = [] } = usePartnerAccounts();
 
   // ── Create order form
   const [showForm, setShowForm] = useState(false);
@@ -460,6 +475,7 @@ export default function OrdersPage() {
           mode: p.mode, amount: p.amount,
           metal_wt: p.metal_wt || null, metal_purity: p.metal_purity || null,
           notes: p.notes || null,
+          partner_account_id: p.partner_account_id || null,
         }))
       );
       await client.from("orders").update({
@@ -810,7 +826,8 @@ export default function OrdersPage() {
             {advPayments.map((p, idx) => (
               <PaymentRow key={p.id} p={p} idx={idx} payments={advPayments}
                 setPayments={setAdvPayments} boardRate={boardRate} canRemove={true}
-                advanceBalance={customer ? (advanceBalance ?? undefined) : undefined} />
+                advanceBalance={customer ? (advanceBalance ?? undefined) : undefined}
+                partnerAccounts={partnerAccounts} />
             ))}
             {advPayments.length > 0 && (
               <p className="text-xs text-ink-dim text-right">
@@ -1213,7 +1230,8 @@ export default function OrdersPage() {
                             <PaymentRow key={p.id} p={p} idx={idx} payments={addPayments}
                               setPayments={setAddPayments} boardRate={boardRate}
                               canRemove={addPayments.length > 1}
-                              advanceBalance={o.customer_id ? (advanceBalance ?? undefined) : undefined} />
+                              advanceBalance={o.customer_id ? (advanceBalance ?? undefined) : undefined}
+                              partnerAccounts={partnerAccounts} />
                           ))}
                         </div>
                         <button type="button" onClick={() => setAddPayments((p) => [...p, newPayment()])}
@@ -1275,7 +1293,8 @@ export default function OrdersPage() {
                           {finalPayments.map((p, idx) => (
                             <PaymentRow key={p.id} p={p} idx={idx} payments={finalPayments}
                               setPayments={setFinalPayments} boardRate={boardRate}
-                              canRemove={finalPayments.length > 0} />
+                              canRemove={finalPayments.length > 0}
+                              partnerAccounts={partnerAccounts} />
                           ))}
                         </div>
 

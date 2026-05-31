@@ -43,6 +43,7 @@ export interface SalePaymentDraft {
   metal_purity: number;
   rate: number; // avg deposit rate for chit_metal; 0 for other modes
   is_advance: boolean;
+  partner_account_id?: string; // if UPI/bank received in a partner account
   // Exchange return routing (only used when sale_type = "exchange")
   return_condition?: "good" | "damaged";
   kolusu_box_id?: string; // set when condition=good and returning to kolusu stock

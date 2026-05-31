@@ -16,6 +16,7 @@ import { useSaveSale, useUpdateSale, useSale } from "./api";
 import { useProducts, useProductGroups } from "./products-api";
 import type { SaleDraft, SaleItemDraft, SalePaymentDraft, Metal, PaymentMode, SaleSeries, SaleType } from "./types";
 import { useStaff } from "@/modules/attendance/api";
+import { usePartnerAccounts } from "@/modules/partner-accounts/api";
 import type { Customer } from "@/modules/customers/types";
 import { clsx } from "clsx";
 
@@ -313,6 +314,7 @@ export default function SaleForm({ saleId }: Props) {
   const { data: products = [] } = useProducts(true);
   const { data: productGroups = [] } = useProductGroups(true);
   const { data: staffList = [] } = useStaff();
+  const { data: partnerAccounts = [] } = usePartnerAccounts();
   const activeStaff = staffList.filter((s) => s.active);
 
   // Kolusu boxes — only fetched for exchange bills
@@ -863,6 +865,14 @@ export default function SaleForm({ saleId }: Props) {
                     step="0.01" className="w-28 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" placeholder="Avg Rate/g" />
                   <ChitHint customer={customer} metalWt={p.metal_wt || 0} />
                 </>
+              )}
+              {(p.mode === "upi" || p.mode === "bank") && partnerAccounts.length > 0 && (
+                <select value={p.partner_account_id ?? ""}
+                  onChange={e => setPayments(prev => prev.map((x, i) => i === idx ? { ...x, partner_account_id: e.target.value || undefined } : x))}
+                  className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                  <option value="">Shop account</option>
+                  {partnerAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
               )}
               <label className={clsx("flex items-center gap-1.5 text-xs cursor-pointer", p.mode === "chit_metal" && "hidden")}>
                 <input type="checkbox" checked={p.is_advance}

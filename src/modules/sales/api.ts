@@ -284,6 +284,7 @@ export function useSaveSale() {
             metal_wt: p.metal_wt || null, metal_purity: p.metal_purity || null,
             rate: p.rate || null,
             is_advance: p.is_advance,
+            partner_account_id: p.partner_account_id || null,
           }))
         );
         if (payErr) throw payErr;
@@ -385,6 +386,7 @@ export function useUpdateSale() {
             metal_wt: p.metal_wt || null, metal_purity: p.metal_purity || null,
             rate: p.rate || null,
             is_advance: p.is_advance,
+            partner_account_id: p.partner_account_id || null,
           }))
         );
         if (payErr) throw payErr;
