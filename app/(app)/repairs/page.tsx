@@ -49,8 +49,62 @@ type Repair = {
   delivered_at: string | null;
   notes: string | null;
   signature_url: string | null;
+  goldsmith_type: string | null;
+  goldsmith_name: string | null;
   created_at: string;
 };
+
+// Stage history for a single repair (lazy-loaded on expand)
+function useRepairHistory(repairId: string | null) {
+  return useQuery({
+    queryKey: ["repair_history", repairId],
+    enabled: !!repairId,
+    queryFn: async () => {
+      const { data } = await supabase()
+        .from("repair_stage_history")
+        .select("*")
+        .eq("repair_id", repairId!)
+        .order("created_at");
+      return (data ?? []) as any[];
+    },
+  });
+}
+
+// Repairs needing attention: ready-for-pickup + overdue stages (>24h)
+function useRepairAlerts() {
+  return useQuery({
+    queryKey: ["repair_alerts"],
+    refetchInterval: 2 * 60 * 1000,
+    queryFn: async () => {
+      const client = supabase();
+      const { data: repairs } = await client
+        .from("repairs")
+        .select("id, repair_no, customer_name, customer_phone, status, created_at")
+        .not("status", "eq", "delivered")
+        .order("created_at");
+      if (!repairs?.length) return { ready: [] as any[], overdue: [] as any[] };
+      const ids = (repairs as any[]).map((r: any) => r.id);
+      const { data: hist } = await client
+        .from("repair_stage_history")
+        .select("repair_id, created_at")
+        .in("repair_id", ids)
+        .order("created_at", { ascending: false });
+      const latestMap = new Map<string, string>();
+      for (const h of (hist ?? []) as any[]) {
+        if (!latestMap.has(h.repair_id)) latestMap.set(h.repair_id, h.created_at);
+      }
+      const now = Date.now();
+      const ready: any[] = [], overdue: any[] = [];
+      for (const r of repairs as any[]) {
+        if (r.status === "got_back") { ready.push(r); continue; }
+        const last = latestMap.get(r.id) ?? r.created_at;
+        const hrs = (now - new Date(last).getTime()) / 3_600_000;
+        if (hrs >= 24) overdue.push({ ...r, hours: Math.floor(hrs) });
+      }
+      return { ready, overdue };
+    },
+  });
+}
 
 function useRepairs() {
   return useQuery<Repair[]>({
@@ -178,8 +232,14 @@ export default function RepairsPage() {
     return false;
   }
 
-  // Detail expand
+  // Detail expand + stage history
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const { data: stageHistory = [] } = useRepairHistory(expandedId);
+  const { data: alerts } = useRepairAlerts();
+
+  // Goldsmith form shown when advancing to "sent_to_aasari"
+  const [goldsmithPending, setGoldsmithPending] = useState<{ repairId: string; fromStatus: string } | null>(null);
+  const [goldsmithForm, setGoldsmithForm] = useState({ type: "external" as "internal" | "external", name: "", notes: "" });
 
   function openNew() {
     setEditId(null);
@@ -212,10 +272,11 @@ export default function RepairsPage() {
 
       if (photoFile) {
         const ext = photoFile.name.split(".").pop();
-        const path = `${editId ?? "new"}-${Date.now()}.${ext}`;
+        const path = `repair-${editId ?? "new"}-${Date.now()}.${ext}`;
         const { data: uploaded, error: upErr } = await client.storage
           .from("repair-photos").upload(path, photoFile, { upsert: true });
-        if (!upErr && uploaded) {
+        if (upErr) throw new Error(`Photo upload failed: ${upErr.message}. Ensure the "repair-photos" bucket exists in Supabase Storage and is set to Public.`);
+        if (uploaded) {
           const { data: { publicUrl } } = client.storage.from("repair-photos").getPublicUrl(uploaded.path);
           photo_url = publicUrl;
         }
@@ -244,8 +305,13 @@ export default function RepairsPage() {
         const fy = fyForDate(form.in_date);
         payload.repair_no = await nextRepairNo(fy);
         payload.status = "received";
-        const { error } = await client.from("repairs").insert(payload);
+        const { data: newRepair, error } = await client.from("repairs").insert(payload).select("id").single();
         if (error) throw error;
+        // Record initial stage
+        await client.from("repair_stage_history").insert({
+          repair_id: newRepair.id, from_status: null, to_status: "received",
+          changed_by: profile?.display_name ?? "Admin",
+        });
       }
     },
     onSuccess: () => {
@@ -255,12 +321,28 @@ export default function RepairsPage() {
   });
 
   const advanceStatus = useMutation({
-    mutationFn: async ({ id, newStatus }: { id: string; newStatus: string }) => {
-      const { error } = await supabase().from("repairs")
-        .update({ status: newStatus, updated_at: new Date().toISOString() }).eq("id", id);
+    mutationFn: async ({ id, fromStatus, newStatus, gsType, gsName, notes }: {
+      id: string; fromStatus: string; newStatus: string;
+      gsType?: string; gsName?: string; notes?: string;
+    }) => {
+      const client = supabase();
+      const patch: any = { status: newStatus, updated_at: new Date().toISOString() };
+      if (gsType) { patch.goldsmith_type = gsType; patch.goldsmith_name = gsName || null; }
+      const { error } = await client.from("repairs").update(patch).eq("id", id);
       if (error) throw error;
+      await client.from("repair_stage_history").insert({
+        repair_id: id, from_status: fromStatus, to_status: newStatus,
+        changed_by: profile?.display_name ?? "Admin",
+        goldsmith_type: gsType || null, goldsmith_name: gsName || null,
+        notes: notes || null,
+      });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["repairs"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["repairs"] });
+      qc.invalidateQueries({ queryKey: ["repair_alerts"] });
+      qc.invalidateQueries({ queryKey: ["repair_alert_count"] });
+      qc.invalidateQueries({ queryKey: ["repair_history", expandedId] });
+    },
   });
 
   const saveDelivery = useMutation({
@@ -294,9 +376,16 @@ export default function RepairsPage() {
 
       const { error } = await client.from("repairs").update(update).eq("id", deliverRepairId);
       if (error) throw error;
+      const fromR = repairs.find(r => r.id === deliverRepairId);
+      await client.from("repair_stage_history").insert({
+        repair_id: deliverRepairId, from_status: fromR?.status ?? "got_back", to_status: "delivered",
+        changed_by: profile?.display_name ?? "Admin",
+      });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["repairs"] });
+      qc.invalidateQueries({ queryKey: ["repair_alerts"] });
+      qc.invalidateQueries({ queryKey: ["repair_alert_count"] });
       setDeliverRepairId(null);
       sigClear();
     },
@@ -409,6 +498,63 @@ export default function RepairsPage() {
         </div>
       )}
 
+      {/* Goldsmith form modal */}
+      {goldsmithPending && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-soft p-5 w-full max-w-sm space-y-4">
+            <h3 className="text-sm font-semibold text-ink">Send to Goldsmith</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-ink-dim block mb-1">Work type</label>
+                <div className="flex gap-3">
+                  {(["internal", "external"] as const).map(t => (
+                    <label key={t} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                      <input type="radio" checked={goldsmithForm.type === t} onChange={() => setGoldsmithForm(f => ({ ...f, type: t }))} />
+                      {t === "internal" ? "Internal (shop staff)" : "External goldsmith"}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              {goldsmithForm.type === "external" && (
+                <div>
+                  <label className="text-xs text-ink-dim block mb-1">Goldsmith name</label>
+                  <input value={goldsmithForm.name} onChange={e => setGoldsmithForm(f => ({ ...f, name: e.target.value }))}
+                    placeholder="Name of goldsmith (aasari)"
+                    className={inp} autoFocus />
+                </div>
+              )}
+              <div>
+                <label className="text-xs text-ink-dim block mb-1">Notes (optional)</label>
+                <input value={goldsmithForm.notes} onChange={e => setGoldsmithForm(f => ({ ...f, notes: e.target.value }))}
+                  placeholder="Any special instructions"
+                  className={inp} />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                disabled={advanceStatus.isPending}
+                onClick={() => {
+                  advanceStatus.mutate({
+                    id: goldsmithPending.repairId,
+                    fromStatus: goldsmithPending.fromStatus,
+                    newStatus: "sent_to_aasari",
+                    gsType: goldsmithForm.type,
+                    gsName: goldsmithForm.name,
+                    notes: goldsmithForm.notes,
+                  });
+                  setGoldsmithPending(null);
+                  setGoldsmithForm({ type: "external", name: "", notes: "" });
+                }}
+                className="bg-gold text-white text-sm px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                {advanceStatus.isPending ? "Sending…" : "Confirm"}
+              </button>
+              <button onClick={() => setGoldsmithPending(null)}
+                className="border border-line text-sm px-4 py-1.5 rounded-lg2">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Main page ── */}
       <div className="max-w-5xl mx-auto space-y-5 print:hidden">
         {/* Header */}
@@ -424,6 +570,36 @@ export default function RepairsPage() {
             </button>
           )}
         </div>
+
+        {/* Alert panel */}
+        {((alerts?.ready?.length ?? 0) > 0 || (alerts?.overdue?.length ?? 0) > 0) && (
+          <div className="space-y-2">
+            {(alerts?.ready ?? []).map((r: any) => (
+              <div key={r.id} className="flex items-center gap-3 bg-ok/5 border border-ok/30 rounded-lg2 px-4 py-2.5">
+                <span className="text-base">🔔</span>
+                <div className="flex-1 text-sm">
+                  <span className="font-semibold text-ok">Ready for pickup — </span>
+                  <span className="text-ink">{r.customer_name}</span>
+                  <span className="text-ink-dim ml-1.5 text-xs">{r.repair_no}</span>
+                  {r.customer_phone && (
+                    <a href={`tel:${r.customer_phone}`} className="ml-2 text-xs text-gold hover:underline">{r.customer_phone}</a>
+                  )}
+                </div>
+                <span className="text-xs text-ok font-medium whitespace-nowrap">Call customer</span>
+              </div>
+            ))}
+            {(alerts?.overdue ?? []).map((r: any) => (
+              <div key={r.id} className="flex items-center gap-3 bg-warn/5 border border-warn/30 rounded-lg2 px-4 py-2.5">
+                <span className="text-base">⏰</span>
+                <div className="flex-1 text-sm">
+                  <span className="font-semibold text-warn">Overdue {r.hours}h — </span>
+                  <span className="text-ink">{r.customer_name}</span>
+                  <span className="text-ink-dim ml-1.5 text-xs">{r.repair_no} · {STATUS_LABELS[r.status]}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Status filter tabs */}
         <div className="flex flex-wrap gap-2">
@@ -576,6 +752,35 @@ export default function RepairsPage() {
                                   )}
                                 </div>
                               )}
+                              {/* Goldsmith info */}
+                              {(r.goldsmith_type || r.goldsmith_name) && (
+                                <div className="text-xs text-ink-dim">
+                                  <span className="font-medium text-ink">Goldsmith: </span>
+                                  {r.goldsmith_type === "internal" ? "Internal work" : r.goldsmith_name || "External"}
+                                </div>
+                              )}
+                              {/* Stage history */}
+                              {stageHistory.length > 0 && expandedId === r.id && (
+                                <div>
+                                  <p className="text-xs font-medium text-ink-dim mb-1">Stage History</p>
+                                  <div className="space-y-0.5">
+                                    {stageHistory.map((h: any) => (
+                                      <div key={h.id} className="flex items-start gap-2 text-xs text-ink-dim">
+                                        <span className="text-[10px] text-ink-dim/60 w-28 shrink-0">
+                                          {new Date(h.created_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                                        </span>
+                                        <span>
+                                          {h.from_status ? `${STATUS_LABELS[h.from_status] ?? h.from_status} → ` : ""}
+                                          <span className="text-ink font-medium">{STATUS_LABELS[h.to_status] ?? h.to_status}</span>
+                                          {h.changed_by && <span className="text-ink-dim/70"> by {h.changed_by}</span>}
+                                          {h.goldsmith_name && <span className="text-ink-dim"> · {h.goldsmith_name}</span>}
+                                          {h.notes && <span className="text-ink-dim"> · {h.notes}</span>}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                               {/* Status advance buttons */}
                               {r.status !== "delivered" && (
                                 <div className="flex items-center gap-2 pt-1">
@@ -589,9 +794,20 @@ export default function RepairsPage() {
                                       className="bg-ok text-white text-xs px-3 py-1.5 rounded-lg2">
                                       Mark as Delivered
                                     </button>
+                                  ) : STATUS_FLOW[r.status] === "sent_to_aasari" ? (
+                                    <button
+                                      onClick={() => {
+                                        setGoldsmithPending({ repairId: r.id, fromStatus: r.status });
+                                        setGoldsmithForm({ type: "external", name: "", notes: "" });
+                                      }}
+                                      className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2">
+                                      → {STATUS_LABELS["sent_to_aasari"]}
+                                    </button>
                                   ) : STATUS_FLOW[r.status] ? (
                                     <button
-                                      onClick={() => advanceStatus.mutate({ id: r.id, newStatus: STATUS_FLOW[r.status]! })}
+                                      onClick={() => advanceStatus.mutate({
+                                        id: r.id, fromStatus: r.status, newStatus: STATUS_FLOW[r.status]!,
+                                      })}
                                       className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2">
                                       → {STATUS_LABELS[STATUS_FLOW[r.status]!]}
                                     </button>
@@ -602,8 +818,10 @@ export default function RepairsPage() {
                             {/* Right: photo */}
                             <div>
                               {r.photo_url ? (
-                                <img src={r.photo_url} alt="Item"
-                                  className="max-h-48 rounded-lg border border-line object-contain" />
+                                <a href={r.photo_url} target="_blank" rel="noreferrer">
+                                  <img src={r.photo_url} alt="Item"
+                                    className="max-h-48 w-full rounded-lg border border-line object-contain bg-canvas" />
+                                </a>
                               ) : (
                                 <div className="h-32 rounded-lg border border-line border-dashed flex items-center justify-center text-ink-dim text-xs">
                                   No photo

@@ -7,6 +7,7 @@ import { useAuth } from "@/stores/auth";
 import { useT } from "@/i18n";
 import { supabase } from "@/lib/supabase/client";
 import { clsx } from "clsx";
+import { useQuery } from "@tanstack/react-query";
 
 const NAV = [
   { href: "/dashboard",    icon: "⊞", key: "nav_dashboard" as const },
@@ -37,15 +38,50 @@ const ADMIN_NAV = [
   { href: "/admin/products",  icon: "📦", key: "nav_products" as const },
 ];
 
+function useRepairAlertCount(enabled: boolean) {
+  return useQuery({
+    queryKey: ["repair_alert_count"],
+    enabled,
+    refetchInterval: 2 * 60 * 1000, // check every 2 min
+    queryFn: async () => {
+      const client = supabase();
+      const { data: repairs } = await client
+        .from("repairs")
+        .select("id, status, created_at")
+        .not("status", "eq", "delivered");
+      if (!repairs?.length) return 0;
+      const ids = repairs.map((r: any) => r.id);
+      const { data: latest } = await client
+        .from("repair_stage_history")
+        .select("repair_id, created_at")
+        .in("repair_id", ids)
+        .order("created_at", { ascending: false });
+      const latestMap = new Map<string, string>();
+      for (const h of (latest ?? []) as any[]) {
+        if (!latestMap.has(h.repair_id)) latestMap.set(h.repair_id, h.created_at);
+      }
+      const now = Date.now();
+      let count = 0;
+      for (const r of repairs as any[]) {
+        if (r.status === "got_back") { count++; continue; }
+        const last = latestMap.get(r.id) ?? r.created_at;
+        if ((now - new Date(last).getTime()) / 3_600_000 >= 24) count++;
+      }
+      return count;
+    },
+  });
+}
+
 interface NavItemProps {
   href: string;
   icon: string;
   label: string;
   collapsed: boolean;
   active: boolean;
+  badge?: number;
 }
 
-function NavItem({ href, icon, label, collapsed, active }: NavItemProps) {
+function NavItem({ href, icon, label, collapsed, active, badge }: NavItemProps) {
   return (
     <Link
       href={href}
@@ -57,8 +93,20 @@ function NavItem({ href, icon, label, collapsed, active }: NavItemProps) {
           : "text-white/70 hover:bg-sidebar-hover hover:text-white"
       )}
     >
-      <span className="text-lg shrink-0">{icon}</span>
+      <span className="text-lg shrink-0 relative">
+        {icon}
+        {badge != null && badge > 0 && (
+          <span className="absolute -top-1 -right-1 bg-err text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none">
+            {badge > 9 ? "9+" : badge}
+          </span>
+        )}
+      </span>
       {!collapsed && <span className="truncate">{label}</span>}
+      {!collapsed && badge != null && badge > 0 && (
+        <span className="ml-auto bg-err text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+          {badge}
+        </span>
+      )}
     </Link>
   );
 }
@@ -70,6 +118,7 @@ export default function Sidebar() {
   const profile = useAuth((s) => s.profile);
   const isAdmin = profile?.role === "admin";
   const canSeeRepairs = isAdmin || profile?.repair_access === true;
+  const { data: repairAlerts = 0 } = useRepairAlertCount(canSeeRepairs);
 
   async function handleLogout() {
     await supabase().auth.signOut();
@@ -105,6 +154,7 @@ export default function Sidebar() {
             label={t("nav_repairs")}
             collapsed={collapsed}
             active={pathname.startsWith("/repairs")}
+            badge={repairAlerts}
           />
         )}
 
