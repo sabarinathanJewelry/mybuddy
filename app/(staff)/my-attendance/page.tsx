@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import {
   useMyPermissions, useCreatePermission,
@@ -271,6 +272,10 @@ export default function MyAttendancePage() {
             </p>
           )}
         </div>
+        <Link href="/my-repairs"
+          className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-gold hover:border-gold transition-colors">
+          Repairs
+        </Link>
         <button onClick={handleLogout}
           className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-err hover:border-err transition-colors">
           Logout
