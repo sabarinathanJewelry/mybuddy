@@ -181,22 +181,26 @@ function useOrderPayback(orderId: string | null, orderNo: string | null) {
     enabled: !!orderId,
     queryFn: async () => {
       const client = supabase();
-      const { data: cashEntry } = await client
+      // Use limit(1) — .maybeSingle() throws when duplicates exist
+      const { data: cashRows } = await client
         .from("cash_ledger")
         .select("id, amount")
         .eq("ref_type", "order")
         .eq("ref_id", orderId!)
         .eq("direction", "out")
-        .maybeSingle();
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const cashEntry = cashRows?.[0] ?? null;
       if (cashEntry) return { type: "cash" as const, amount: Number(cashEntry.amount) };
       if (orderNo) {
-        const { data: advEntry } = await client
+        const { data: advRows } = await client
           .from("payments")
           .select("id, amount")
           .eq("direction", "in")
           .eq("mode", "advance")
           .eq("notes", `Excess — ${orderNo}`)
-          .maybeSingle();
+          .limit(1);
+        const advEntry = advRows?.[0] ?? null;
         if (advEntry) return { type: "advance" as const, amount: Number(advEntry.amount) };
       }
       return null;
@@ -625,10 +629,15 @@ export default function OrdersPage() {
     },
   });
 
-  // ── Pay back excess cash when old gold > order total
+  // ── Pay back excess cash — delete-then-insert so re-clicks clean up duplicates
   const payBackCash = useMutation({
     mutationFn: async ({ orderId, orderNo, amount }: { orderId: string; orderNo: string; amount: number }) => {
-      const { error } = await supabase().from("cash_ledger").insert({
+      const client = supabase();
+      // Wipe any existing payback entries first (prevents duplicates)
+      await client.from("cash_ledger")
+        .delete()
+        .eq("ref_type", "order").eq("ref_id", orderId).eq("direction", "out");
+      const { error } = await client.from("cash_ledger").insert({
         tx_date: globalDate,
         direction: "out",
         amount,
@@ -637,6 +646,25 @@ export default function OrdersPage() {
         ref_id: orderId,
       });
       if (error) throw error;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["order_payback", vars.orderId] });
+      qc.invalidateQueries({ queryKey: ["day-sales-ledger"] });
+    },
+  });
+
+  // ── Clear wrong/duplicate payback so user can re-record correctly
+  const clearPayback = useMutation({
+    mutationFn: async ({ orderId, orderNo }: { orderId: string; orderNo: string }) => {
+      const client = supabase();
+      await Promise.allSettled([
+        client.from("cash_ledger")
+          .delete()
+          .eq("ref_type", "order").eq("ref_id", orderId).eq("direction", "out"),
+        client.from("payments")
+          .delete()
+          .eq("direction", "in").eq("mode", "advance").eq("notes", `Excess — ${orderNo}`),
+      ]);
     },
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ["order_payback", vars.orderId] });
@@ -1063,9 +1091,16 @@ export default function OrdersPage() {
                         <p className="font-medium text-ok">{inr(paidSoFar)}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-ink-dim">{balance < -0.01 ? "Overpaid" : "Balance Due"}</p>
-                        <p className={clsx("font-medium", balance > 0.01 ? "text-err" : balance < -0.01 ? "text-warn" : "text-ok")}>
-                          {balance > 0.01 ? inr(balance) : balance < -0.01 ? `Excess ${inr(-balance)}` : "Fully paid"}
+                        <p className="text-xs text-ink-dim">
+                          {balance < -0.01 ? (isExpanded && paybackEntry ? "Paid Back" : "Overpaid") : "Balance Due"}
+                        </p>
+                        <p className={clsx("font-medium",
+                          balance > 0.01 ? "text-err" :
+                          balance < -0.01 ? (isExpanded && paybackEntry ? "text-ok" : "text-warn") :
+                          "text-ok")}>
+                          {balance > 0.01 ? inr(balance) :
+                           balance < -0.01 ? `${isExpanded && paybackEntry ? "Done" : "Excess"} ${inr(-balance)}` :
+                           "Fully paid"}
                         </p>
                       </div>
                     </div>
@@ -1204,18 +1239,34 @@ export default function OrdersPage() {
 
                     {/* Excess payback — when old gold > order total */}
                     {balance < -0.01 && (
-                      <div className="bg-warn/5 border border-warn/30 rounded-lg2 px-4 py-3 space-y-2">
+                      <div className={`rounded-lg2 px-4 py-3 space-y-2 border ${paybackEntry ? "bg-ok/5 border-ok/30" : "bg-warn/5 border-warn/30"}`}>
                         <div className="flex items-center gap-3">
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-warn">Old gold value exceeds order total</p>
-                            <p className="text-xs text-ink-dim mt-0.5">
-                              Paid {inr(paidSoFar)} · Order {inr(effectiveTotal)} · Excess {inr(-balance)}
-                            </p>
+                            {paybackEntry ? (
+                              <>
+                                <p className="text-xs font-semibold text-ok">
+                                  ✓ {paybackEntry.type === "cash" ? "Cash paid back" : "Kept as customer advance"} — {inr(paybackEntry.amount)}
+                                </p>
+                                <p className="text-xs text-ink-dim mt-0.5">
+                                  Old gold {inr(paidSoFar)} · Order {inr(effectiveTotal)} · Excess {inr(-balance)}
+                                </p>
+                              </>
+                            ) : (
+                              <>
+                                <p className="text-xs font-semibold text-warn">Old gold value exceeds order total</p>
+                                <p className="text-xs text-ink-dim mt-0.5">
+                                  Paid {inr(paidSoFar)} · Order {inr(effectiveTotal)} · Excess {inr(-balance)}
+                                </p>
+                              </>
+                            )}
                           </div>
                           {paybackEntry && (
-                            <span className="text-xs text-ok font-semibold whitespace-nowrap">
-                              ✓ {paybackEntry.type === "cash" ? "Cash paid back" : "Kept as advance"} {inr(paybackEntry.amount)}
-                            </span>
+                            <button
+                              disabled={clearPayback.isPending}
+                              onClick={() => clearPayback.mutate({ orderId: o.id, orderNo: o.order_no })}
+                              className="text-xs text-ink-dim underline hover:text-err">
+                              {clearPayback.isPending ? "…" : "Fix"}
+                            </button>
                           )}
                         </div>
                         {!paybackEntry && (
