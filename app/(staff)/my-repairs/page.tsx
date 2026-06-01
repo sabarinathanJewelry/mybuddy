@@ -469,6 +469,15 @@ export default function MyRepairsPage() {
 
                   {expandedId === r.id && (
                     <div className="border-t border-line px-3 pb-3 pt-2 space-y-2">
+                      {r.photo_url && (
+                        <a href={r.photo_url} target="_blank" rel="noreferrer">
+                          <img
+                            src={r.photo_url}
+                            alt="Repair item"
+                            className="w-full max-h-64 object-contain rounded-lg border border-line bg-canvas"
+                          />
+                        </a>
+                      )}
                       {r.customer_phone && (
                         <a href={`tel:${r.customer_phone}`} className="block text-xs text-gold">
                           {r.customer_phone}

@@ -86,6 +86,7 @@ export default function MyAttendancePage() {
   const [rows, setRows]         = useState<DayRow[]>([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
+  const [canSeeRepairs, setCanSeeRepairs] = useState(false);
 
   const { data: lastSyncIso }   = useLastSyncTime();
 
@@ -145,7 +146,15 @@ export default function MyAttendancePage() {
 
   // Fetch staff info once on mount
   useEffect(() => {
-    supabase()
+    const client = supabase();
+    client.auth.getUser().then(async ({ data: { user } }) => {
+      if (user) {
+        const { data: profile } = await client
+          .from("profiles").select("repair_access").eq("id", user.id).single();
+        if (profile?.repair_access === true) setCanSeeRepairs(true);
+      }
+    });
+    client
       .from("staff")
       .select("bio_user_id, name, shift")
       .single()
@@ -272,10 +281,12 @@ export default function MyAttendancePage() {
             </p>
           )}
         </div>
-        <Link href="/my-repairs"
-          className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-gold hover:border-gold transition-colors">
-          Repairs
-        </Link>
+        {canSeeRepairs && (
+          <Link href="/my-repairs"
+            className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-gold hover:border-gold transition-colors">
+            Repairs
+          </Link>
+        )}
         <button onClick={handleLogout}
           className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-err hover:border-err transition-colors">
           Logout
