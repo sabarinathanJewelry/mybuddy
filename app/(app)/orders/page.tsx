@@ -612,6 +612,46 @@ export default function OrdersPage() {
     },
   });
 
+  // ── Delete entire order with cascading cleanup
+  const deleteOrder = useMutation({
+    mutationFn: async ({ orderId, orderNo }: { orderId: string; orderNo: string }) => {
+      const client = supabase();
+      const { data: intakes } = await client
+        .from("old_metal_intake")
+        .select("id, status")
+        .eq("source_type", "order")
+        .eq("source_id", orderId);
+      const usedIntakes = (intakes ?? []).filter((i: any) => i.status === "used" || i.status === "sold");
+      if (usedIntakes.length > 0) {
+        const go = window.confirm(
+          `Old gold for ${orderNo} has already been sent to the refinery and will NOT be deleted.\n\nAll other data (payments, ledger entries) will be permanently deleted.\n\nContinue?`
+        );
+        if (!go) return;
+      }
+      await Promise.allSettled([
+        client.from("cash_ledger").delete().eq("ref_type", "order").eq("ref_id", orderId),
+        client.from("bank_ledger").delete().eq("ref_type", "order").eq("ref_id", orderId),
+        client.from("old_metal_intake").delete().eq("source_type", "order").eq("source_id", orderId).eq("status", "pending"),
+      ]);
+      await client.from("order_payments").delete().eq("order_id", orderId);
+      await client.from("order_items").delete().eq("order_id", orderId);
+      await client.from("orders").delete().eq("id", orderId);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      setExpanded(null);
+    },
+  });
+
+  // ── Reactivate a cancelled order back to pending
+  const reactivateOrder = useMutation({
+    mutationFn: async ({ id }: { id: string }) => {
+      const { error } = await supabase().from("orders").update({ status: "pending" }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["orders"] }),
+  });
+
   // ── Delete order payment
   const deleteOrderPayment = useMutation({
     mutationFn: async ({ paymentId, orderId, orderNo }: { paymentId: string; orderId: string; orderNo: string }) => {
@@ -1165,6 +1205,15 @@ export default function OrdersPage() {
                           </button>
                         </>
                       )}
+                      {/* Reactivate cancelled order */}
+                      {o.status === "cancelled" && (
+                        <button
+                          onClick={() => reactivateOrder.mutate({ id: o.id })}
+                          disabled={reactivateOrder.isPending}
+                          className="text-sm bg-ok/10 text-ok border border-ok/30 px-4 py-1.5 rounded-lg2 hover:bg-ok/20 disabled:opacity-50">
+                          ↺ Reactivate
+                        </button>
+                      )}
                       {/* Edit order always available */}
                       {editOrderId !== o.id && (
                         <button
@@ -1184,6 +1233,19 @@ export default function OrdersPage() {
                           }}
                           className={clsx("text-sm border px-4 py-1.5 rounded-lg2", o.status === "delivered" || o.status === "cancelled" ? "ml-auto" : "", "border-gold/40 text-gold hover:bg-gold/5")}>
                           ✏ Edit Order
+                        </button>
+                      )}
+                      {/* Delete order — always available, cascading cleanup */}
+                      {editOrderId !== o.id && (
+                        <button
+                          disabled={deleteOrder.isPending}
+                          onClick={() => {
+                            if (window.confirm(`Permanently delete ${o.order_no}?\n\nThis will remove all payments, ledger entries, and pending old gold intakes. This cannot be undone.`)) {
+                              deleteOrder.mutate({ orderId: o.id, orderNo: o.order_no });
+                            }
+                          }}
+                          className="text-sm text-err border border-err/20 px-4 py-1.5 rounded-lg2 hover:bg-err/5 disabled:opacity-50 ml-auto">
+                          {deleteOrder.isPending ? "Deleting…" : "Delete Order"}
                         </button>
                       )}
                     </div>
