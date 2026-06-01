@@ -833,6 +833,21 @@ export default function OrdersPage() {
               <div key={item.id} className="bg-canvas border border-line rounded-lg2 p-3 grid grid-cols-2 sm:grid-cols-5 gap-2 items-end">
                 <div className="col-span-2 space-y-1">
                   <label className="block text-xs text-ink-dim">Description</label>
+                  {productGroups.length > 0 && (
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const grp = productGroups.find((g: any) => g.id === e.target.value);
+                        if (grp) setOrderItems((prev) => prev.map((x, i) => i === idx ? { ...x, description: grp.name, metal: grp.metal } : x));
+                      }}
+                      className="w-full border border-line rounded-lg2 px-2 py-1.5 text-xs text-ink-dim focus:outline-none focus:ring-1 focus:ring-gold"
+                    >
+                      <option value="">Group…</option>
+                      {(productGroups as any[]).filter((g: any) => g.active).map((g: any) => (
+                        <option key={g.id} value={g.id}>{g.name}</option>
+                      ))}
+                    </select>
+                  )}
                   {products.length > 0 && (
                     <select
                       value=""

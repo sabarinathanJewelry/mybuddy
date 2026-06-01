@@ -574,6 +574,21 @@ export default function SaleForm({ saleId }: Props) {
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                 <div className="col-span-2 space-y-1">
                   <label className="text-xs text-ink-dim">Description</label>
+                  {productGroups.length > 0 && (
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const grp = productGroups.find((g) => g.id === e.target.value);
+                        if (grp) updateItem(idx, { description: grp.name, metal: grp.metal as Metal });
+                      }}
+                      className={`${inp} text-xs text-ink-dim`}
+                    >
+                      <option value="">Group…</option>
+                      {productGroups.filter(g => g.active).map(g => (
+                        <option key={g.id} value={g.id}>{g.name}</option>
+                      ))}
+                    </select>
+                  )}
                   {products.length > 0 && (
                     <select
                       value=""

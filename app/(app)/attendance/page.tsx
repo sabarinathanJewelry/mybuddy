@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -1653,6 +1654,7 @@ export default function AttendancePage() {
       {/* Header */}
       <div className="flex items-center gap-3 flex-wrap">
         <h1 className="text-xl font-bold text-ink">Attendance</h1>
+        <Link href="/admin/staff-incentives" className="text-xs text-gold hover:underline">Incentives →</Link>
         <div className="flex-1" />
         {tab === "attendance" && (
           <label className="flex items-center gap-1.5 text-sm text-ink-dim cursor-pointer select-none">
