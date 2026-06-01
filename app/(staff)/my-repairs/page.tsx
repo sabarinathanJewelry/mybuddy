@@ -57,6 +57,9 @@ type Repair = {
   notes: string | null;
   goldsmith_type: string | null;
   goldsmith_name: string | null;
+  payment_status: string;
+  paid_amount: number;
+  paid_mode: string | null;
   created_at: string;
 };
 
@@ -108,6 +111,11 @@ export default function MyRepairsPage() {
   // Goldsmith form
   const [goldsmithPending, setGoldsmithPending] = useState<{ repairId: string; fromStatus: string } | null>(null);
   const [goldsmithForm, setGoldsmithForm] = useState({ type: "external" as "internal" | "external", name: "", notes: "" });
+  // Payment collection
+  const [paymentRepairId, setPaymentRepairId] = useState<string | null>(null);
+  const [payForm, setPayForm] = useState({ amount: "", mode: "cash" as "cash" | "upi" | "bank", date: today });
+  const [payError, setPayError] = useState<string | null>(null);
+  const [payLoading, setPayLoading] = useState(false);
 
   async function handleLogout() {
     await supabase().auth.signOut();
@@ -194,6 +202,34 @@ export default function MyRepairsPage() {
     }
     setAdvancingId(null);
     setDeliverForm({ final_amount: "", payment_mode: "cash", delivered_at: today });
+    loadRepairs();
+  }
+
+  async function savePayment(repair: Repair) {
+    const amt = parseFloat(payForm.amount) || 0;
+    if (amt <= 0) { setPayError("Enter a valid amount"); return; }
+    setPayLoading(true);
+    const client = supabase();
+    const newPaid = (repair.paid_amount ?? 0) + amt;
+    const effectiveTotal = repair.estimated_charge ?? 0;
+    const newStatus = effectiveTotal > 0 && newPaid >= effectiveTotal ? "paid" : "partial";
+    const { error } = await client.from("repairs").update({
+      paid_amount: newPaid, paid_mode: payForm.mode,
+      paid_at: new Date(payForm.date).toISOString(), payment_status: newStatus,
+    }).eq("id", repair.id);
+    if (!error) {
+      const desc = `Repair payment — ${repair.repair_no}`;
+      if (payForm.mode === "cash") {
+        await client.from("cash_ledger").insert({ tx_date: payForm.date, direction: "in", amount: amt, description: desc, ref_type: "repair", ref_id: repair.id });
+      } else {
+        await client.from("bank_ledger").insert({ tx_date: payForm.date, direction: "in", amount: amt, description: desc, ref_type: "repair", ref_id: repair.id });
+      }
+    }
+    setPayLoading(false);
+    if (error) { setPayError(error.message); return; }
+    setPaymentRepairId(null);
+    setPayForm({ amount: "", mode: "cash", date: today });
+    setPayError(null);
     loadRepairs();
   }
 
@@ -580,6 +616,11 @@ export default function MyRepairsPage() {
                         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${STATUS_COLORS[r.status]}`}>
                           {STATUS_LABELS[r.status]}
                         </span>
+                        {r.payment_status === "paid" ? (
+                          <span className="text-[10px] font-semibold text-ok">✓ Paid</span>
+                        ) : r.payment_status === "partial" ? (
+                          <span className="text-[10px] font-semibold text-warn">Partial</span>
+                        ) : null}
                       </div>
                       <p className="text-sm font-semibold text-ink truncate mt-0.5">{r.customer_name}</p>
                       <p className="text-xs text-ink-dim truncate">{r.item_description}</p>
@@ -654,6 +695,64 @@ export default function MyRepairsPage() {
                           </div>
                         </div>
                       )}
+
+                      {/* Payment */}
+                      <div className="border border-line rounded-lg2 p-2.5 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs">
+                            {r.payment_status === "paid" ? (
+                              <span className="font-semibold text-ok">✓ Paid {inr(r.paid_amount)} via {r.paid_mode}</span>
+                            ) : r.payment_status === "partial" ? (
+                              <span className="font-semibold text-warn">Partial: {inr(r.paid_amount)}{r.estimated_charge ? ` / ${inr(r.estimated_charge)}` : ""}</span>
+                            ) : (
+                              <span className="text-err font-medium">Unpaid{r.estimated_charge ? ` — ${inr(r.estimated_charge)}` : ""}</span>
+                            )}
+                          </span>
+                          {r.payment_status !== "paid" && paymentRepairId !== r.id && (
+                            <button
+                              onClick={() => {
+                                setPaymentRepairId(r.id);
+                                const rem = Math.max(0, (r.estimated_charge ?? 0) - (r.paid_amount ?? 0));
+                                setPayForm({ amount: rem > 0 ? String(rem) : "", mode: "cash", date: today });
+                                setPayError(null);
+                              }}
+                              className="text-xs bg-gold text-white px-2.5 py-1 rounded-lg2 whitespace-nowrap">
+                              Collect
+                            </button>
+                          )}
+                        </div>
+                        {paymentRepairId === r.id && (
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap gap-2 items-end">
+                              <input type="number" step="0.01" min="0" value={payForm.amount}
+                                onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))}
+                                onFocus={e => e.target.select()}
+                                placeholder="Amount" autoFocus
+                                className={`${inp} w-24`} />
+                              <select value={payForm.mode}
+                                onChange={e => setPayForm(f => ({ ...f, mode: e.target.value as any }))}
+                                className={inp}>
+                                <option value="cash">Cash</option>
+                                <option value="upi">UPI</option>
+                                <option value="bank">Bank</option>
+                              </select>
+                              <input type="date" value={payForm.date}
+                                onChange={e => setPayForm(f => ({ ...f, date: e.target.value }))}
+                                className={`${inp} w-32`} />
+                            </div>
+                            {payError && <p className="text-xs text-err">{payError}</p>}
+                            <div className="flex gap-2">
+                              <button disabled={payLoading}
+                                onClick={() => savePayment(r)}
+                                className="text-xs bg-ok text-white px-3 py-1.5 rounded-lg2 disabled:opacity-50">
+                                {payLoading ? "…" : "Save"}
+                              </button>
+                              <button onClick={() => { setPaymentRepairId(null); setPayError(null); }}
+                                className="text-xs border border-line px-3 py-1.5 rounded-lg2">Cancel</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
 
                       {r.status !== "delivered" && (
                         advancingId === r.id ? (

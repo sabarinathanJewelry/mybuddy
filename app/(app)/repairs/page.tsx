@@ -52,6 +52,10 @@ type Repair = {
   signature_url: string | null;
   goldsmith_type: string | null;
   goldsmith_name: string | null;
+  payment_status: "unpaid" | "partial" | "paid";
+  paid_amount: number;
+  paid_mode: string | null;
+  paid_at: string | null;
   created_at: string;
 };
 
@@ -241,6 +245,48 @@ export default function RepairsPage() {
   // Goldsmith form shown when advancing to "sent_to_aasari"
   const [goldsmithPending, setGoldsmithPending] = useState<{ repairId: string; fromStatus: string } | null>(null);
   const [goldsmithForm, setGoldsmithForm] = useState({ type: "external" as "internal" | "external", name: "", notes: "" });
+
+  // Payment collection
+  const [paymentRepairId, setPaymentRepairId] = useState<string | null>(null);
+  const [payForm, setPayForm] = useState({ amount: "", mode: "cash" as "cash" | "upi" | "bank", date: today });
+  const [payError, setPayError] = useState<string | null>(null);
+
+  const recordPayment = useMutation({
+    mutationFn: async ({ repair }: { repair: Repair }) => {
+      const amt = parseFloat(payForm.amount) || 0;
+      if (amt <= 0) throw new Error("Enter a valid amount");
+      const client = supabase();
+      const newPaid = (repair.paid_amount ?? 0) + amt;
+      const effectiveTotal = repair.final_amount ?? repair.estimated_charge ?? 0;
+      const newStatus: "partial" | "paid" = effectiveTotal > 0 && newPaid >= effectiveTotal ? "paid" : "partial";
+      await client.from("repairs").update({
+        paid_amount: newPaid,
+        paid_mode: payForm.mode,
+        paid_at: new Date(payForm.date).toISOString(),
+        payment_status: newStatus,
+      }).eq("id", repair.id);
+      // Record in cash/bank ledger so it appears in the daily cash book
+      const desc = `Repair payment — ${repair.repair_no}`;
+      if (payForm.mode === "cash") {
+        await client.from("cash_ledger").insert({
+          tx_date: payForm.date, direction: "in", amount: amt,
+          description: desc, ref_type: "repair", ref_id: repair.id,
+        });
+      } else {
+        await client.from("bank_ledger").insert({
+          tx_date: payForm.date, direction: "in", amount: amt,
+          description: desc, ref_type: "repair", ref_id: repair.id,
+        });
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["repairs"] });
+      setPaymentRepairId(null);
+      setPayForm({ amount: "", mode: "cash", date: today });
+      setPayError(null);
+    },
+    onError: (e: any) => setPayError(e.message),
+  });
 
   function openNew() {
     setEditId(null);
@@ -690,9 +736,18 @@ export default function RepairsPage() {
                         {r.estimated_out_date ? shortDate(r.estimated_out_date) : "—"}
                       </td>
                       <td className="px-3 py-2.5">
-                        <span className={`text-xs px-2 py-0.5 rounded-full border ${STATUS_COLORS[r.status]}`}>
-                          {STATUS_LABELS[r.status]}
-                        </span>
+                        <div className="flex flex-col gap-0.5">
+                          <span className={`text-xs px-2 py-0.5 rounded-full border w-fit ${STATUS_COLORS[r.status]}`}>
+                            {STATUS_LABELS[r.status]}
+                          </span>
+                          {r.payment_status === "paid" ? (
+                            <span className="text-[10px] font-semibold text-ok">✓ Paid</span>
+                          ) : r.payment_status === "partial" ? (
+                            <span className="text-[10px] font-semibold text-warn">Partial {inr(r.paid_amount)}</span>
+                          ) : r.estimated_charge ? (
+                            <span className="text-[10px] text-ink-dim">Unpaid</span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-3 py-2.5 text-xs text-ink-dim">
                         {r.assigned_to ? staffName(r.assigned_to) : "—"}
@@ -799,6 +854,79 @@ export default function RepairsPage() {
                                   </div>
                                 </div>
                               )}
+                              {/* Payment collection */}
+                              <div className="border border-line rounded-lg2 p-3 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="text-xs">
+                                    <span className="font-medium text-ink">Payment — </span>
+                                    {r.payment_status === "paid" ? (
+                                      <span className="text-ok font-semibold">✓ Paid {inr(r.paid_amount)} via {r.paid_mode}</span>
+                                    ) : r.payment_status === "partial" ? (
+                                      <span className="text-warn font-semibold">Partial: {inr(r.paid_amount)} of {inr(r.estimated_charge ?? 0)}</span>
+                                    ) : (
+                                      <span className="text-err font-medium">Unpaid</span>
+                                    )}
+                                    {r.estimated_charge != null && r.payment_status !== "paid" && (
+                                      <span className="text-ink-dim ml-1.5">Charge: {inr(r.estimated_charge)}</span>
+                                    )}
+                                  </div>
+                                  {r.payment_status !== "paid" && paymentRepairId !== r.id && (
+                                    <button
+                                      onClick={() => {
+                                        setPaymentRepairId(r.id);
+                                        const remaining = Math.max(0, (r.estimated_charge ?? 0) - (r.paid_amount ?? 0));
+                                        setPayForm({ amount: remaining > 0 ? String(remaining) : "", mode: "cash", date: today });
+                                        setPayError(null);
+                                      }}
+                                      className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2">
+                                      + Collect Payment
+                                    </button>
+                                  )}
+                                </div>
+                                {paymentRepairId === r.id && (
+                                  <div className="bg-canvas rounded-lg2 p-2 space-y-2 border border-line">
+                                    <div className="flex flex-wrap gap-2 items-end">
+                                      <div>
+                                        <label className="text-xs text-ink-dim block mb-1">Amount (₹) *</label>
+                                        <input type="number" step="0.01" min="0"
+                                          value={payForm.amount}
+                                          onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))}
+                                          onFocus={e => e.target.select()}
+                                          className="w-28 border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                                          autoFocus placeholder="0" />
+                                      </div>
+                                      <div>
+                                        <label className="text-xs text-ink-dim block mb-1">Mode</label>
+                                        <select value={payForm.mode}
+                                          onChange={e => setPayForm(f => ({ ...f, mode: e.target.value as any }))}
+                                          className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                                          <option value="cash">Cash</option>
+                                          <option value="upi">UPI / GPay</option>
+                                          <option value="bank">Bank Transfer</option>
+                                        </select>
+                                      </div>
+                                      <div>
+                                        <label className="text-xs text-ink-dim block mb-1">Date</label>
+                                        <input type="date" value={payForm.date}
+                                          onChange={e => setPayForm(f => ({ ...f, date: e.target.value }))}
+                                          className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold w-36" />
+                                      </div>
+                                    </div>
+                                    {payError && <p className="text-xs text-err">{payError}</p>}
+                                    <div className="flex gap-2">
+                                      <button
+                                        disabled={recordPayment.isPending}
+                                        onClick={() => recordPayment.mutate({ repair: r })}
+                                        className="text-xs bg-ok text-white px-3 py-1.5 rounded-lg2 disabled:opacity-50">
+                                        {recordPayment.isPending ? "Saving…" : "Save Payment"}
+                                      </button>
+                                      <button onClick={() => { setPaymentRepairId(null); setPayError(null); }}
+                                        className="text-xs border border-line px-3 py-1.5 rounded-lg2">Cancel</button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
                               {/* Status advance buttons */}
                               {r.status !== "delivered" && (
                                 <div className="flex items-center gap-2 pt-1">
