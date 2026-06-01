@@ -714,6 +714,7 @@ export default function DailySheetPage() {
   const [viewTab, setViewTab] = useState<ViewTab>("summary");
   const [includeBankOut, setIncludeBankOut] = useState(false);
   const [exchNetOnly, setExchNetOnly] = useState(false);
+  const [hideOrderAdvance, setHideOrderAdvance] = useState(true);
   const [cbFrom, setCbFrom] = useState(date);
   const [cbTo,   setCbTo]   = useState(date);
   const { data: salesLedger, isLoading: ledgerLoading } = useDaySalesLedger(cbFrom, cbTo);
@@ -864,6 +865,21 @@ export default function DailySheetPage() {
   const bullionRows    = (salesLedger?.bullionRows ?? []) as any[];
   const oldGoldAdvRows = (salesLedger?.oldGoldAdvRows ?? []) as any[];
 
+  // When hiding advance: strip advance-mode payments and reduce credit by the advance amount
+  const displayOrderRows = useMemo(() => {
+    if (!hideOrderAdvance) return orderRows;
+    return orderRows.map((r: any) => {
+      const advUsed = r.payments
+        .filter((p: any) => p.mode === "advance")
+        .reduce((s: number, p: any) => s + p.amount, 0);
+      return {
+        ...r,
+        payments: r.payments.filter((p: any) => p.mode !== "advance"),
+        credit: Math.max(0, r.credit - advUsed),
+      };
+    });
+  }, [orderRows, hideOrderAdvance]);
+
   // Separate credit / debit cross-check selections (independent)
   const [selCrKeys, setSelCrKeys] = useState<Map<string, number>>(new Map());
   const [selDrKeys, setSelDrKeys] = useState<Map<string, number>>(new Map());
@@ -903,7 +919,7 @@ export default function DailySheetPage() {
       }
       return s + rowDebit(r.payments);
     }, 0) +
-    orderRows.reduce((s: number, r: any) => s + rowDebit(r.payments), 0) +
+    displayOrderRows.reduce((s: number, r: any) => s + rowDebit(r.payments), 0) +
     visibleMisc.reduce((s: number, e: any) => {
       const amt = Number(e.amount);
       if (e.direction === "out" || e.direction === "advance_out") return s + amt;
@@ -922,7 +938,7 @@ export default function DailySheetPage() {
       }
       return s + r.credit;
     }, 0) +
-    orderRows.reduce((s: number, r: any) => s + r.credit, 0) +
+    displayOrderRows.reduce((s: number, r: any) => s + r.credit, 0) +
     visibleMisc.filter((e: any) => e.direction === "in" || e.direction === "advance_out")
       .reduce((s: number, e: any) => s + Number(e.amount), 0) +
     bullionRows.reduce((s: number, r: any) => {
@@ -933,7 +949,7 @@ export default function DailySheetPage() {
     }, 0) +
     oldGoldAdvRows.reduce((s: number, r: any) => s + r.amount, 0);
   const grandCash = saleRows.reduce((s, r) => s + saleNetCash(r), 0) +
-    orderRows.reduce((s: number, r: any) => s + r.credit - rowDebit(r.payments), 0) +
+    displayOrderRows.reduce((s: number, r: any) => s + r.credit - rowDebit(r.payments), 0) +
     bullionRows.reduce((s: number, r: any) => s + (r.isSell ? r.cashPaidInRange : -r.cashPaidInRange), 0) +
     visibleMisc.reduce((s: number, e: any) => {
       if (e.src !== "Cash" || e.direction === "advance_out") return s;
@@ -955,7 +971,7 @@ export default function DailySheetPage() {
         });
       }
     });
-    orderRows.forEach((ord: any) => {
+    displayOrderRows.forEach((ord: any) => {
       if (ord.credit > 0) m.set(`cr-o-${ord.orderId}-${ord.payDate}`, ord.credit);
     });
     bullionRows.forEach((r: any) => {
@@ -974,7 +990,7 @@ export default function DailySheetPage() {
       if (e.direction === "in" || isAdv) m.set(`cr-misc-${mi}`, Number(e.amount));
     });
     return m;
-  }, [prevDayCount, saleRows, orderRows, bullionRows, oldGoldAdvRows, visibleMisc, exchNetOnly]);
+  }, [prevDayCount, saleRows, displayOrderRows, bullionRows, oldGoldAdvRows, visibleMisc, exchNetOnly]);
 
   const allDrEntries = useMemo<Map<string, number>>(() => {
     const m = new Map<string, number>();
@@ -990,7 +1006,7 @@ export default function DailySheetPage() {
         m.set(key, pay.amount);
       });
     });
-    orderRows.forEach((ord: any) => {
+    displayOrderRows.forEach((ord: any) => {
       ord.payments.forEach((pay: any, pi: number) => {
         const key = pi === 0 ? `dr-o0-${ord.orderId}-${ord.payDate}` : `dr-or-${ord.orderId}-${ord.payDate}-${pi - 1}`;
         m.set(key, pay.amount);
@@ -1018,7 +1034,7 @@ export default function DailySheetPage() {
     });
     if (cbToCount) m.set("dr-today-count", cbToCount.actual);
     return m;
-  }, [saleRows, orderRows, bullionRows, oldGoldAdvRows, visibleMisc, cbToCount, exchNetOnly]);
+  }, [saleRows, displayOrderRows, bullionRows, oldGoldAdvRows, visibleMisc, cbToCount, exchNetOnly]);
 
   const allCrSelected = allCrEntries.size > 0 && allCrEntries.size === selCrKeys.size;
   const someCrSelected = selCrKeys.size > 0 && !allCrSelected;
@@ -1123,6 +1139,11 @@ export default function DailySheetPage() {
               <input type="checkbox" checked={exchNetOnly} onChange={e => setExchNetOnly(e.target.checked)}
                 className="accent-gold" />
               Exchange: net only
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer select-none text-ink-dim">
+              <input type="checkbox" checked={!hideOrderAdvance} onChange={e => setHideOrderAdvance(!e.target.checked)}
+                className="accent-gold" />
+              Show order advance
             </label>
             <label className="flex items-center gap-1.5 ml-auto cursor-pointer select-none text-ink-dim">
               <input type="checkbox" checked={includeBankOut} onChange={e => setIncludeBankOut(e.target.checked)}
@@ -1335,7 +1356,7 @@ export default function DailySheetPage() {
                     })}
 
                     {/* Order payment rows — same Credit/Debit logic as sales */}
-                    {orderRows.flatMap((ord: any) => {
+                    {displayOrderRows.flatMap((ord: any) => {
                       const firstPay = ord.payments[0];
                       const restPay  = ord.payments.slice(1);
                       const hasExcess = (ord.excessAmount ?? 0) > 0.005;
