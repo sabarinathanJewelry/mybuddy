@@ -324,6 +324,8 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
         finalTotal: number; advancePaid: number;
         payments: { note: string; amount: number; mode: string }[];
         excessAmount: number;
+        isNew: boolean;
+        dayPayments: number;
       }>();
       for (const p of (orderRes.data ?? []) as any[]) {
         const key = `${p.order_id}::${p.pay_date}`;
@@ -342,19 +344,20 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
             advancePaid: paidUpToDate[p.order_id] ?? Number(od?.advance_paid) ?? 0,
             payments: [],
             excessAmount: 0,
+            isNew,
+            dayPayments: 0,
           });
         }
         const row = orderMap.get(key)!;
         const amt = Number(p.amount);
+        row.dayPayments += amt;
         if (isNew) {
           // New order: non-cash modes go to Debit
           if (p.mode !== "cash" && p.mode !== "advance") {
             row.payments.push({ note: paymentNote(p.mode, Number(p.metal_wt ?? 0)), amount: amt, mode: p.mode as string });
           }
         } else {
-          // Delivery payment: amount → Credit; non-cash/advance → Debit sub-row
-          // mode=advance means customer's pre-paid advance is being applied — pass-through (net cash = 0)
-          row.credit += amt;
+          // Payment on existing order: non-cash → Debit; credit recalculated below
           if (p.mode !== "cash") {
             row.payments.push({
               note: p.mode === "advance" ? "Advance applied" : paymentNote(p.mode, Number(p.metal_wt ?? 0)),
@@ -364,11 +367,26 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           }
         }
       }
-      // Add Balance Due or mark excess for each order row
+
+      // For existing-order payment rows: credit = portion of order value settled today
+      // (not the raw payment amount, which may exceed the remaining order balance)
       for (const row of orderMap.values()) {
-        const remaining = Math.max(0, row.finalTotal - row.advancePaid);
-        if (remaining > 0.005) {
-          row.payments.push({ note: "Balance Due", amount: remaining, mode: "balance" });
+        if (!row.isNew && row.finalTotal > 0.005) {
+          const previouslyPaid = row.advancePaid - row.dayPayments;
+          const remainingBefore = Math.max(0, row.finalTotal - previouslyPaid);
+          row.credit = Math.min(row.dayPayments, remainingBefore);
+        }
+      }
+
+      // Balance Due (new orders only) / Excess for all orders
+      for (const row of orderMap.values()) {
+        if (row.isNew) {
+          const remaining = Math.max(0, row.finalTotal - row.advancePaid);
+          if (remaining > 0.005) {
+            row.payments.push({ note: "Balance Due", amount: remaining, mode: "balance" });
+          } else if (row.finalTotal > 0.005) {
+            row.excessAmount = Math.max(0, row.advancePaid - row.finalTotal);
+          }
         } else if (row.finalTotal > 0.005) {
           row.excessAmount = Math.max(0, row.advancePaid - row.finalTotal);
         }
@@ -393,6 +411,8 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           advancePaid,
           payments: [] as { note: string; amount: number; mode: string }[],
           excessAmount: 0,
+          isNew: true,
+          dayPayments: 0,
         };
         if (balanceDue > 0.005) {
           row.payments.push({ note: "Balance Due", amount: balanceDue, mode: "balance" });
