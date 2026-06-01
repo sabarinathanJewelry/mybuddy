@@ -37,8 +37,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Logged-in staff: only /my-attendance is allowed
-  if (isStaff && pathname !== "/my-attendance" && !pathname.startsWith("/api/")) {
+  // Logged-in staff: only staff-facing routes allowed
+  const staffAllowedPaths = ["/my-attendance", "/my-repairs"];
+  if (isStaff && !staffAllowedPaths.includes(pathname) && !pathname.startsWith("/api/")) {
     return NextResponse.redirect(new URL("/my-attendance", request.url));
   }
 
