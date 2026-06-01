@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { inr, shortDate } from "@/lib/format";
 import { fyForDate, billNoFor } from "@/lib/fy";
+import { compressImage, storagePath } from "@/lib/compress-image";
 
 const STATUS_LABELS: Record<string, string> = {
   received:       "Received",
@@ -178,10 +179,19 @@ export default function MyRepairsPage() {
       })
       .eq("id", repair.id);
     if (error) { setDeliverError(error.message); return; }
-    await supabase().from("repair_stage_history").insert({
+    const client = supabase();
+    await client.from("repair_stage_history").insert({
       repair_id: repair.id, from_status: repair.status, to_status: "delivered",
       changed_by: staff?.name ?? "Staff",
     });
+    // Delete item photo on delivery to free storage
+    if (repair.photo_url) {
+      const path = storagePath(repair.photo_url, "repair-photos");
+      if (path) {
+        await client.storage.from("repair-photos").remove([path]);
+        await client.from("repairs").update({ photo_url: null }).eq("id", repair.id);
+      }
+    }
     setAdvancingId(null);
     setDeliverForm({ final_amount: "", payment_mode: "cash", delivered_at: today });
     loadRepairs();
@@ -206,10 +216,13 @@ export default function MyRepairsPage() {
     const client = supabase();
     let photo_url: string | null = null;
     if (photoFile) {
-      const ext = photoFile.name.split(".").pop();
-      const path = `repair-${Date.now()}.${ext}`;
+      // Compress image before upload (~3MB → ~150KB)
+      let blob: Blob;
+      try { blob = await compressImage(photoFile); }
+      catch { setSaving(false); setFormError("Could not process photo. Try again."); return; }
+      const path = `repair-${Date.now()}.jpg`;
       const { data: uploaded, error: upErr } = await client.storage
-        .from("repair-photos").upload(path, photoFile, { upsert: true });
+        .from("repair-photos").upload(path, blob, { contentType: "image/jpeg", upsert: true });
       if (upErr) {
         setSaving(false);
         setFormError(`Photo upload failed: ${upErr.message}. Check that the "repair-photos" bucket exists in Supabase Storage and is set to Public.`);
@@ -477,7 +490,9 @@ export default function MyRepairsPage() {
                   />
                 </div>
                 <div className="col-span-2">
-                  <label className="text-xs text-ink-dim block mb-1">Photo</label>
+                  <label className="text-xs text-ink-dim block mb-1">
+                    Photo <span className="text-ink-dim/60">(1 per repair · auto-compressed)</span>
+                  </label>
                   <div className="flex items-center gap-3">
                     <input
                       ref={photoInputRef}
@@ -487,15 +502,22 @@ export default function MyRepairsPage() {
                       onChange={handlePhotoChange}
                       className="hidden"
                     />
-                    <button
-                      type="button"
-                      onClick={() => photoInputRef.current?.click()}
-                      className="text-xs border border-line rounded-lg2 px-3 py-1.5 hover:border-gold"
-                    >
-                      Take / Choose Photo
-                    </button>
-                    {photoPreview && (
-                      <img src={photoPreview} alt="preview" className="w-12 h-12 object-cover rounded-lg2 border border-line" />
+                    {!photoPreview ? (
+                      <button
+                        type="button"
+                        onClick={() => photoInputRef.current?.click()}
+                        className="text-xs border border-line rounded-lg2 px-3 py-1.5 hover:border-gold"
+                      >
+                        Take / Choose Photo
+                      </button>
+                    ) : (
+                      <>
+                        <img src={photoPreview} alt="preview" className="w-12 h-12 object-cover rounded-lg2 border border-line" />
+                        <button type="button" onClick={() => photoInputRef.current?.click()}
+                          className="text-xs text-gold hover:underline">Replace</button>
+                        <button type="button" onClick={() => { setPhotoFile(null); setPhotoPreview(null); }}
+                          className="text-xs text-err hover:underline">Remove</button>
+                      </>
                     )}
                   </div>
                 </div>

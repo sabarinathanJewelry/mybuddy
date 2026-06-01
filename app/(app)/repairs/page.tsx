@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/stores/auth";
 import { inr, shortDate } from "@/lib/format";
 import { fyForDate, billNoFor } from "@/lib/fy";
+import { compressImage, storagePath } from "@/lib/compress-image";
 
 const inp = "w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
 
@@ -271,10 +272,19 @@ export default function RepairsPage() {
       let photo_url: string | null = null;
 
       if (photoFile) {
-        const ext = photoFile.name.split(".").pop();
-        const path = `repair-${editId ?? "new"}-${Date.now()}.${ext}`;
+        // Delete existing photo first (1 photo per repair; free up storage)
+        if (editId) {
+          const existing = repairs.find((r) => r.id === editId);
+          if (existing?.photo_url) {
+            const oldPath = storagePath(existing.photo_url, "repair-photos");
+            if (oldPath) await client.storage.from("repair-photos").remove([oldPath]);
+          }
+        }
+        // Compress before upload (reduces ~3 MB → ~150 KB)
+        const compressed = await compressImage(photoFile);
+        const path = `repair-${editId ?? "new"}-${Date.now()}.jpg`;
         const { data: uploaded, error: upErr } = await client.storage
-          .from("repair-photos").upload(path, photoFile, { upsert: true });
+          .from("repair-photos").upload(path, compressed, { contentType: "image/jpeg", upsert: true });
         if (upErr) throw new Error(`Photo upload failed: ${upErr.message}. Ensure the "repair-photos" bucket exists in Supabase Storage and is set to Public.`);
         if (uploaded) {
           const { data: { publicUrl } } = client.storage.from("repair-photos").getPublicUrl(uploaded.path);
@@ -381,6 +391,14 @@ export default function RepairsPage() {
         repair_id: deliverRepairId, from_status: fromR?.status ?? "got_back", to_status: "delivered",
         changed_by: profile?.display_name ?? "Admin",
       });
+      // Signature captured → delete the item photo to free storage
+      if (sigHasContent() && fromR?.photo_url) {
+        const oldPath = storagePath(fromR.photo_url, "repair-photos");
+        if (oldPath) {
+          await client.storage.from("repair-photos").remove([oldPath]);
+          await client.from("repairs").update({ photo_url: null }).eq("id", deliverRepairId);
+        }
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["repairs"] });
@@ -910,18 +928,35 @@ export default function RepairsPage() {
                 <input className={inp} value={form.notes}
                   onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
               </div>
-              {/* Photo */}
+              {/* Photo — 1 per repair, compressed on upload */}
               <div className="col-span-2 flex flex-col gap-1">
-                <label className="text-xs text-ink-dim">Item Photo</label>
+                <label className="text-xs text-ink-dim">
+                  Item Photo <span className="text-ink-dim/60">(1 per repair · auto-compressed)</span>
+                </label>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <button type="button" onClick={() => fileInputRef.current?.click()}
-                    className="border border-line rounded-lg2 px-3 py-2 text-xs text-ink-dim hover:text-ink">
-                    📁 Gallery
-                  </button>
-                  <button type="button" onClick={() => cameraInputRef.current?.click()}
-                    className="border border-line rounded-lg2 px-3 py-2 text-xs text-ink-dim hover:text-ink">
-                    📷 Camera
-                  </button>
+                  {!photoPreview ? (
+                    <>
+                      <button type="button" onClick={() => fileInputRef.current?.click()}
+                        className="border border-line rounded-lg2 px-3 py-2 text-xs text-ink-dim hover:text-ink">
+                        📁 Gallery
+                      </button>
+                      <button type="button" onClick={() => cameraInputRef.current?.click()}
+                        className="border border-line rounded-lg2 px-3 py-2 text-xs text-ink-dim hover:text-ink">
+                        📷 Camera
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <img src={photoPreview} alt="Preview"
+                        className="h-14 w-14 object-cover rounded-lg border border-line" />
+                      <button type="button" onClick={() => cameraInputRef.current?.click()}
+                        className="border border-line rounded-lg2 px-2 py-1 text-xs text-gold hover:underline">
+                        Replace
+                      </button>
+                      <button type="button" onClick={() => { setPhotoFile(null); setPhotoPreview(null); }}
+                        className="text-xs text-err hover:underline">Remove</button>
+                    </>
+                  )}
                   <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
@@ -932,14 +967,6 @@ export default function RepairsPage() {
                       const file = e.target.files?.[0];
                       if (file) { setPhotoFile(file); setPhotoPreview(URL.createObjectURL(file)); }
                     }} />
-                  {photoPreview && (
-                    <>
-                      <img src={photoPreview} alt="Preview"
-                        className="h-14 w-14 object-cover rounded-lg border border-line" />
-                      <button type="button" onClick={() => { setPhotoFile(null); setPhotoPreview(null); }}
-                        className="text-xs text-err hover:underline">Remove</button>
-                    </>
-                  )}
                 </div>
               </div>
             </div>
