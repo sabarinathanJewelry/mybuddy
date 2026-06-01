@@ -157,7 +157,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
     queryKey: ["day-sales-ledger", fromDate, toDate],
     queryFn: async () => {
       const client = supabase();
-      const [salesRes, orderRes, newOrdersRes, miscCashRes, miscBankRes, advanceRes, bullionPayRes, bullionTradeRes, oldGoldAdvRes, standalonePayRes] = await Promise.all([
+      const [salesRes, orderRes, newOrdersRes, miscCashRes, miscBankRes, advanceRes, bullionPayRes, bullionTradeRes, oldGoldAdvRes, standalonePayRes, orderCashOutRes] = await Promise.all([
         client.from("sales")
           .select("id, bill_no, bill_date, total, change_due, change_mode, customers(name), sale_items(description, metal, net_wt), sale_payments(mode, amount, metal_wt)")
           .gte("bill_date", fromDate).lte("bill_date", toDate)
@@ -217,6 +217,13 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           .eq("direction", "in")
           .is("sale_id", null)
           .order("pay_date").order("created_at"),
+        // Cash returned to customer when old gold > order total (recorded via Pay Back button)
+        client.from("cash_ledger")
+          .select("id, description, direction, amount, ref_type, ref_id, tx_date, created_at")
+          .gte("tx_date", fromDate).lte("tx_date", toDate)
+          .eq("ref_type", "order")
+          .eq("direction", "out")
+          .order("tx_date").order("created_at"),
       ]);
 
       // Merge trade IDs from payments in range + trades created in range
@@ -316,6 +323,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
         customerName: string | null; credit: number;
         finalTotal: number; advancePaid: number;
         payments: { note: string; amount: number; mode: string }[];
+        excessAmount: number;
       }>();
       for (const p of (orderRes.data ?? []) as any[]) {
         const key = `${p.order_id}::${p.pay_date}`;
@@ -333,6 +341,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
             finalTotal,
             advancePaid: paidUpToDate[p.order_id] ?? Number(od?.advance_paid) ?? 0,
             payments: [],
+            excessAmount: 0,
           });
         }
         const row = orderMap.get(key)!;
@@ -355,11 +364,13 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           }
         }
       }
-      // Add Balance Due for any order where advance_paid < final_total (new or existing)
+      // Add Balance Due or mark excess for each order row
       for (const row of orderMap.values()) {
         const remaining = Math.max(0, row.finalTotal - row.advancePaid);
         if (remaining > 0.005) {
           row.payments.push({ note: "Balance Due", amount: remaining, mode: "balance" });
+        } else if (row.finalTotal > 0.005) {
+          row.excessAmount = Math.max(0, row.advancePaid - row.finalTotal);
         }
       }
 
@@ -381,6 +392,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           finalTotal: orderTotal,
           advancePaid,
           payments: [] as { note: string; amount: number; mode: string }[],
+          excessAmount: 0,
         };
         if (balanceDue > 0.005) {
           row.payments.push({ note: "Balance Due", amount: balanceDue, mode: "balance" });
@@ -444,11 +456,16 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           };
         });
 
+      const orderCashOutEntries = (orderCashOutRes.data ?? []).map((e: any) => ({
+        ...e, src: "Cash",
+      }));
+
       const miscEntries = [
         ...(miscCashRes.data ?? []).map((e: any) => ({ ...e, src: "Cash" })),
         ...(miscBankRes.data ?? []).map((e: any) => ({ ...e, src: "Bank" })),
         ...advanceEntries,
         ...standalonePayEntries,
+        ...orderCashOutEntries,
       ].sort((a: any, b: any) => {
         const d = (a.tx_date ?? "").localeCompare(b.tx_date ?? "");
         return d !== 0 ? d : new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
@@ -1301,7 +1318,8 @@ export default function DailySheetPage() {
                     {orderRows.flatMap((ord: any) => {
                       const firstPay = ord.payments[0];
                       const restPay  = ord.payments.slice(1);
-                      const totalRows = 1 + restPay.length;
+                      const hasExcess = (ord.excessAmount ?? 0) > 0.005;
+                      const totalRows = 1 + restPay.length + (hasExcess ? 1 : 0);
                       const label = ord.customerName
                         ? `${ord.customerName} — ${ord.orderNo}`
                         : ord.orderNo;
@@ -1349,9 +1367,10 @@ export default function DailySheetPage() {
                         ...restPay.map((pay: any, pi: number) => {
                           const isBal = pay.mode === "balance";
                           const isAdv = pay.mode === "advance";
+                          const isLast = pi === restPay.length - 1 && !hasExcess;
                           return (
                             <tr key={`ord-${ord.orderId}-${ord.payDate}-${pi + 1}`}
-                              className={`hover:bg-canvas/50 ${isBal ? "bg-warn/5" : isAdv ? "bg-info/5" : "bg-canvas/20"} ${pi === restPay.length - 1 ? "border-b border-line" : ""}`}>
+                              className={`hover:bg-canvas/50 ${isBal ? "bg-warn/5" : isAdv ? "bg-info/5" : "bg-canvas/20"} ${isLast ? "border-b border-line" : ""}`}>
                               <td className={`px-3 py-1.5 text-xs pl-4 ${isBal ? "text-warn font-medium" : isAdv ? "text-info font-medium" : "text-ink-dim"}`}>{pay.note}</td>
                               <td className={`px-3 py-1.5 text-right font-mono text-xs ${isBal ? "text-warn" : isAdv ? "text-info" : "text-err"}`}>
                                 <div className="flex items-center justify-end gap-1.5">
@@ -1365,6 +1384,18 @@ export default function DailySheetPage() {
                             </tr>
                           );
                         }),
+                        ...(hasExcess ? [
+                          <tr key={`ord-${ord.orderId}-${ord.payDate}-excess`}
+                            className="hover:bg-canvas/50 bg-warn/5 border-b border-line">
+                            <td className="px-3 py-1.5 text-xs pl-4 text-warn font-medium">
+                              Excess — refund to customer
+                            </td>
+                            <td className="px-3 py-1.5 text-right font-mono text-xs text-warn font-medium">
+                              {inr(ord.excessAmount)}
+                            </td>
+                            <td className="px-3 py-1.5" />
+                          </tr>,
+                        ] : []),
                       ];
                     })}
 
