@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import GroupCombobox from "@/components/ui/group-combobox";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
@@ -575,19 +576,12 @@ export default function SaleForm({ saleId }: Props) {
                 <div className="col-span-2 space-y-1">
                   <label className="text-xs text-ink-dim">Description</label>
                   {productGroups.length > 0 && (
-                    <select
-                      value=""
-                      onChange={(e) => {
-                        const grp = productGroups.find((g) => g.id === e.target.value);
-                        if (grp) updateItem(idx, { description: grp.name, metal: grp.metal as Metal });
-                      }}
-                      className={`${inp} text-xs text-ink-dim`}
-                    >
-                      <option value="">Group…</option>
-                      {productGroups.filter(g => g.active).map(g => (
-                        <option key={g.id} value={g.id}>{g.name}</option>
-                      ))}
-                    </select>
+                    <GroupCombobox
+                      groups={productGroups}
+                      metal={item.metal ?? "gold_22k"}
+                      onSelect={(grp) => updateItem(idx, { description: grp.name, metal: grp.metal as Metal })}
+                      placeholder="Search group…"
+                    />
                   )}
                   {products.length > 0 && (
                     <select
