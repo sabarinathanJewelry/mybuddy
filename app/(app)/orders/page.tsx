@@ -413,7 +413,8 @@ export default function OrdersPage() {
   const [editOrderForm, setEditOrderForm] = useState<{
     customer: Customer | null; order_date: string; delivery_date: string;
     description: string; estimated_wt: number; estimated_total: number; gst_included: boolean;
-  }>({ customer: null, order_date: "", delivery_date: "", description: "", estimated_wt: 0, estimated_total: 0, gst_included: false });
+    final_total: number; final_wt: number;
+  }>({ customer: null, order_date: "", delivery_date: "", description: "", estimated_wt: 0, estimated_total: 0, gst_included: false, final_total: 0, final_wt: 0 });
   const [addPayOrderId, setAddPayOrderId] = useState<string | null>(null);
   const [addPayments, setAddPayments] = useState<PaymentDraft[]>([newPayment()]);
   const [addPayDate, setAddPayDate] = useState(globalDate);
@@ -583,6 +584,8 @@ export default function OrdersPage() {
         estimated_wt: f.estimated_wt || null,
         total,
         gst_included: f.gst_included,
+        final_total: f.final_total > 0 ? parseFloat(f.final_total.toFixed(2)) : null,
+        final_wt: f.final_wt > 0 ? f.final_wt : null,
       }).eq("id", id);
       if (error) throw error;
     },
@@ -1356,6 +1359,8 @@ export default function OrdersPage() {
                               estimated_wt: Number(o.estimated_wt) || 0,
                               estimated_total: Number(o.total) || 0,
                               gst_included: o.gst_included ?? false,
+                              final_total: Number(o.final_total) || 0,
+                              final_wt: Number(o.final_wt) || 0,
                             });
                           }}
                           className={clsx("text-sm border px-4 py-1.5 rounded-lg2", o.status === "delivered" || o.status === "cancelled" ? "ml-auto" : "", "border-gold/40 text-gold hover:bg-gold/5")}>
@@ -1425,6 +1430,25 @@ export default function OrdersPage() {
                               </p>
                             )}
                           </div>
+                          {/* Final total / weight — always shown for delivered orders, or when values are set */}
+                          {(o.status === "delivered" || o.final_total || o.final_wt) && (
+                            <>
+                              <div>
+                                <label className="block text-xs text-ink-dim mb-1">Final Total (₹)</label>
+                                <input type="number" step="0.01" value={editOrderForm.final_total || ""}
+                                  onFocus={(e) => e.target.select()} placeholder="0"
+                                  onChange={(e) => setEditOrderForm({ ...editOrderForm, final_total: parseFloat(e.target.value) || 0 })}
+                                  className={inp} />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-ink-dim mb-1">Final Weight (g)</label>
+                                <input type="number" step="0.001" value={editOrderForm.final_wt || ""}
+                                  onFocus={(e) => e.target.select()} placeholder="0.000"
+                                  onChange={(e) => setEditOrderForm({ ...editOrderForm, final_wt: parseFloat(e.target.value) || 0 })}
+                                  className={inp} />
+                              </div>
+                            </>
+                          )}
                           <div className="col-span-2 sm:col-span-4">
                             <label className="block text-xs text-ink-dim mb-1">Description / Design</label>
                             <textarea value={editOrderForm.description}
