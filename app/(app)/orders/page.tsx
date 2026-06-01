@@ -174,6 +174,36 @@ function useOrderItems(orderId: string | null) {
   });
 }
 
+// Checks cash_ledger (cash payback) or payments (advance credit) for this order
+function useOrderPayback(orderId: string | null, orderNo: string | null) {
+  return useQuery({
+    queryKey: ["order_payback", orderId],
+    enabled: !!orderId,
+    queryFn: async () => {
+      const client = supabase();
+      const { data: cashEntry } = await client
+        .from("cash_ledger")
+        .select("id, amount")
+        .eq("ref_type", "order")
+        .eq("ref_id", orderId!)
+        .eq("direction", "out")
+        .maybeSingle();
+      if (cashEntry) return { type: "cash" as const, amount: Number(cashEntry.amount) };
+      if (orderNo) {
+        const { data: advEntry } = await client
+          .from("payments")
+          .select("id, amount")
+          .eq("direction", "in")
+          .eq("mode", "advance")
+          .eq("notes", `Excess — ${orderNo}`)
+          .maybeSingle();
+        if (advEntry) return { type: "advance" as const, amount: Number(advEntry.amount) };
+      }
+      return null;
+    },
+  });
+}
+
 // ─── Order items table (lazy — only loads when order is expanded) ────────────
 
 function OrderItemsView({ orderId }: { orderId: string }) {
@@ -367,6 +397,8 @@ export default function OrdersPage() {
   // ── Per-order UI state
   const [expanded, setExpanded] = useState<string | null>(null);
   const { data: expandedPayments = [] } = useOrderPayments(expanded);
+  const expandedOrderNo = (orders as any[]).find((o: any) => o.id === expanded)?.order_no ?? null;
+  const { data: paybackEntry } = useOrderPayback(expanded, expandedOrderNo);
   const [editingPayment, setEditingPayment] = useState<{
     id: string; orderId: string; orderNo: string;
     pay_date: string; mode: PayMode; amount: number;
@@ -594,10 +626,9 @@ export default function OrdersPage() {
   });
 
   // ── Pay back excess cash when old gold > order total
-  const [paidBackOrders, setPaidBackOrders] = useState<Set<string>>(new Set());
   const payBackCash = useMutation({
     mutationFn: async ({ orderId, orderNo, amount }: { orderId: string; orderNo: string; amount: number }) => {
-      await supabase().from("cash_ledger").insert({
+      const { error } = await supabase().from("cash_ledger").insert({
         tx_date: globalDate,
         direction: "out",
         amount,
@@ -605,10 +636,31 @@ export default function OrdersPage() {
         ref_type: "order",
         ref_id: orderId,
       });
+      if (error) throw error;
     },
     onSuccess: (_data, vars) => {
-      setPaidBackOrders((s) => new Set(s).add(vars.orderId));
+      qc.invalidateQueries({ queryKey: ["order_payback", vars.orderId] });
       qc.invalidateQueries({ queryKey: ["day-sales-ledger"] });
+    },
+  });
+
+  // ── Keep excess as customer advance instead of cash payback
+  const keepAsAdvance = useMutation({
+    mutationFn: async ({ orderNo, amount, customerId }: { orderNo: string; amount: number; customerId: string }) => {
+      const { error } = await supabase().from("payments").insert({
+        pay_date: globalDate,
+        direction: "in",
+        mode: "advance",
+        amount,
+        customer_id: customerId,
+        is_advance: true,
+        notes: `Excess — ${orderNo}`,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["order_payback", expanded] });
+      qc.invalidateQueries({ queryKey: ["customer_advance"] });
     },
   });
 
@@ -1152,22 +1204,37 @@ export default function OrdersPage() {
 
                     {/* Excess payback — when old gold > order total */}
                     {balance < -0.01 && (
-                      <div className="flex items-center gap-3 bg-warn/5 border border-warn/30 rounded-lg2 px-4 py-2.5">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold text-warn">Old gold value exceeds order total</p>
-                          <p className="text-xs text-ink-dim mt-0.5">
-                            Paid {inr(paidSoFar)} · Order {inr(effectiveTotal)} · Return {inr(-balance)} to customer
-                          </p>
+                      <div className="bg-warn/5 border border-warn/30 rounded-lg2 px-4 py-3 space-y-2">
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-warn">Old gold value exceeds order total</p>
+                            <p className="text-xs text-ink-dim mt-0.5">
+                              Paid {inr(paidSoFar)} · Order {inr(effectiveTotal)} · Excess {inr(-balance)}
+                            </p>
+                          </div>
+                          {paybackEntry && (
+                            <span className="text-xs text-ok font-semibold whitespace-nowrap">
+                              ✓ {paybackEntry.type === "cash" ? "Cash paid back" : "Kept as advance"} {inr(paybackEntry.amount)}
+                            </span>
+                          )}
                         </div>
-                        {paidBackOrders.has(o.id) ? (
-                          <span className="text-xs text-ok font-medium">Paid back</span>
-                        ) : (
-                          <button
-                            disabled={payBackCash.isPending}
-                            onClick={() => payBackCash.mutate({ orderId: o.id, orderNo: o.order_no, amount: -balance })}
-                            className="text-xs bg-warn text-white px-3 py-1.5 rounded-lg2 disabled:opacity-50 whitespace-nowrap">
-                            {payBackCash.isPending ? "Recording…" : `Pay Back ${inr(-balance)} Cash`}
-                          </button>
+                        {!paybackEntry && (
+                          <div className="flex gap-2 flex-wrap">
+                            <button
+                              disabled={payBackCash.isPending || keepAsAdvance.isPending}
+                              onClick={() => payBackCash.mutate({ orderId: o.id, orderNo: o.order_no, amount: -balance })}
+                              className="text-xs bg-warn text-white px-3 py-1.5 rounded-lg2 disabled:opacity-50 whitespace-nowrap">
+                              {payBackCash.isPending ? "Recording…" : `Pay Back ${inr(-balance)} Cash`}
+                            </button>
+                            {o.customer_id && (
+                              <button
+                                disabled={payBackCash.isPending || keepAsAdvance.isPending}
+                                onClick={() => keepAsAdvance.mutate({ orderNo: o.order_no, amount: -balance, customerId: o.customer_id })}
+                                className="text-xs bg-info/10 text-info border border-info/30 px-3 py-1.5 rounded-lg2 disabled:opacity-50 whitespace-nowrap">
+                                {keepAsAdvance.isPending ? "Recording…" : `Keep ${inr(-balance)} as Customer Advance`}
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     )}
