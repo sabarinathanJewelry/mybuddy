@@ -1,17 +1,27 @@
 -- Migration 050: Repair storage policies + payment tracking
 
 -- ── Storage policies for repair-photos bucket ──────────────────────────────
--- The bucket exists but has 0 policies → authenticated users can't upload.
--- Run this to allow all authenticated users to upload/read/delete.
+-- "CREATE POLICY IF NOT EXISTS" is not valid syntax — use DO blocks.
 
-CREATE POLICY IF NOT EXISTS "auth all repair-photos"
-  ON storage.objects FOR ALL TO authenticated
-  USING (bucket_id = 'repair-photos')
-  WITH CHECK (bucket_id = 'repair-photos');
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE policyname = 'auth all repair-photos'
+  ) THEN
+    CREATE POLICY "auth all repair-photos"
+      ON storage.objects FOR ALL TO authenticated
+      USING (bucket_id = 'repair-photos')
+      WITH CHECK (bucket_id = 'repair-photos');
+  END IF;
+END $$;
 
--- Public anonymous read (so the img src URLs work without auth tokens)
-CREATE POLICY IF NOT EXISTS "public read repair-photos"
-  ON storage.objects FOR SELECT USING (bucket_id = 'repair-photos');
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE policyname = 'public read repair-photos'
+  ) THEN
+    CREATE POLICY "public read repair-photos"
+      ON storage.objects FOR SELECT USING (bucket_id = 'repair-photos');
+  END IF;
+END $$;
 
 -- ── Payment tracking on repairs ────────────────────────────────────────────
 ALTER TABLE repairs
