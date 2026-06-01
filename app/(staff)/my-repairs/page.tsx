@@ -106,10 +106,12 @@ export default function MyRepairsPage() {
 
   useEffect(() => {
     const client = supabase();
-    Promise.all([
-      client.from("profiles").select("repair_access").single(),
-      client.from("staff").select("bio_user_id, name").single(),
-    ]).then(([profileRes, staffRes]) => {
+    client.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) { setCanAccess(false); setLoading(false); return; }
+      const [profileRes, staffRes] = await Promise.all([
+        client.from("profiles").select("repair_access").eq("id", user.id).single(),
+        client.from("staff").select("bio_user_id, name").single(),
+      ]);
       if (profileRes.data) setCanAccess(profileRes.data.repair_access === true);
       else setCanAccess(false);
       if (staffRes.data) setStaff(staffRes.data as StaffInfo);
