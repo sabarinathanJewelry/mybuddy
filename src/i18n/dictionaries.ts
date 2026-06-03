@@ -30,6 +30,7 @@ const en = {
   nav_admin: "Admin",
   nav_products: "Products",
   nav_incentive_calc: "Incentive Calc",
+  nav_payroll: "Payroll",
   nav_logout: "Logout",
   nav_info: "Info",
 
