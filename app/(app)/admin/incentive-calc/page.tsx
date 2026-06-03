@@ -2,6 +2,8 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase/client";
 import { inr } from "@/lib/format";
 import { clsx } from "clsx";
 
@@ -400,6 +402,7 @@ function InlineText({ value, onSave, width = 120 }: { value: string; onSave: (v:
 type ViewTab = "data" | "staff" | "settings";
 
 export default function IncentiveCalcPage() {
+  const qc = useQueryClient();
   const [raw, setRaw]           = useState("");
   const [rows, setRows]         = useState<CalcRow[] | null>(null);
   const [overrides, setOverrides] = useState<Record<number, RowOverride>>({});
@@ -410,12 +413,98 @@ export default function IncentiveCalcPage() {
   const [expandedStaff, setExpandedStaff] = useState<Set<string>>(new Set());
   const [masterEntries, setMasterEntries] = useState<MasterEntry[]>(INITIAL_MASTER);
   const [mapperEntries, setMapperEntries] = useState<MapperEntry[]>(INITIAL_MAPPER);
-  // New row forms for settings
   const [newMaster, setNewMaster] = useState<MasterEntry>({ code: "", rate: 0, minWastage: 0 });
   const [newMapper, setNewMapper] = useState<MapperEntry>({ erpName: "", incentiveCode: "", notes: "" });
   const [settingsSection, setSettingsSection] = useState<"master"|"mapper">("mapper");
+  const [period, setPeriod] = useState(() => {
+    const d = new Date();
+    return d.toLocaleString("en-IN", { month: "long", year: "numeric" });
+  });
+  const [savedSheetId, setSavedSheetId] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle"|"saving"|"saved">("idle");
 
   const inp = "border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold";
+
+  // ── Load saved sheets list
+  const { data: savedSheets = [] } = useQuery({
+    queryKey: ["incentive_sheets"],
+    queryFn: async () => {
+      const { data } = await supabase()
+        .from("incentive_sheets")
+        .select("id, period, created_at, updated_at")
+        .order("updated_at", { ascending: false });
+      return (data ?? []) as { id: string; period: string; created_at: string; updated_at: string }[];
+    },
+  });
+
+  // ── Save mutation
+  const saveSheet = useMutation({
+    mutationFn: async () => {
+      setSaveStatus("saving");
+      const payload = {
+        period,
+        raw_data: raw,
+        overrides,
+        default_split: defaultSplit,
+        mapper_entries: mapperEntries,
+        master_entries: masterEntries,
+        updated_at: new Date().toISOString(),
+      };
+      const client = supabase();
+      if (savedSheetId) {
+        const { error } = await client.from("incentive_sheets").update(payload).eq("id", savedSheetId);
+        if (error) throw error;
+      } else {
+        const { data, error } = await client.from("incentive_sheets").insert(payload).select("id").single();
+        if (error) throw error;
+        setSavedSheetId((data as any).id);
+      }
+    },
+    onSuccess: () => {
+      setSaveStatus("saved");
+      qc.invalidateQueries({ queryKey: ["incentive_sheets"] });
+      setTimeout(() => setSaveStatus("idle"), 2500);
+    },
+    onError: () => setSaveStatus("idle"),
+  });
+
+  // ── Load a saved sheet
+  async function loadSheet(id: string) {
+    const { data, error } = await supabase()
+      .from("incentive_sheets")
+      .select("*")
+      .eq("id", id)
+      .single();
+    if (error || !data) return;
+    const d = data as any;
+    setRaw(d.raw_data);
+    setOverrides(d.overrides ?? {});
+    setDefaultSplit(d.default_split ?? 70);
+    setPeriod(d.period);
+    if (d.mapper_entries) setMapperEntries(d.mapper_entries);
+    if (d.master_entries) setMasterEntries(d.master_entries);
+    setSavedSheetId(id);
+    setSaveStatus("idle");
+    // Re-parse
+    const r = parseErp(d.raw_data);
+    setRows(r);
+    setTab("data");
+    const names = new Set<string>();
+    r.forEach((x: CalcRow) => { if (x.sp1) names.add(x.sp1); if (x.sp2) names.add(x.sp2); });
+    setExpandedStaff(names);
+  }
+
+  // ── Delete a saved sheet
+  const deleteSheet = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase().from("incentive_sheets").delete().eq("id", id);
+      if (error) throw error;
+      if (savedSheetId === id) {
+        setSavedSheetId(null); setSaveStatus("idle");
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["incentive_sheets"] }),
+  });
 
   function parse() {
     const r = parseErp(raw);
@@ -424,6 +513,8 @@ export default function IncentiveCalcPage() {
     setFilterStaff("ALL");
     setFilterStatus("all");
     setTab("data");
+    setSavedSheetId(null);
+    setSaveStatus("idle");
     const names = new Set<string>();
     r.forEach(x => { if (x.sp1) names.add(x.sp1); if (x.sp2) names.add(x.sp2); });
     setExpandedStaff(names);
@@ -512,12 +603,51 @@ export default function IncentiveCalcPage() {
           <Link href="/admin/staff-incentives" className="text-xs text-gold hover:underline">← Staff Incentives</Link>
           <h1 className="text-xl font-bold text-ink">Incentive Calculator</h1>
         </div>
-        {rows && (
-          <span className="text-sm text-ink-dim">
-            {rows.length} rows · <span className="font-semibold text-gold">{inr(grandTotal)}</span> total
-          </span>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {rows && <span className="text-sm text-ink-dim">{rows.length} rows · <span className="font-semibold text-gold">{inr(grandTotal)}</span></span>}
+          {rows && (
+            <>
+              <input value={period} onChange={e => setPeriod(e.target.value)}
+                placeholder="Period (e.g. May 2026)"
+                className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold w-36" />
+              <button
+                disabled={saveStatus === "saving" || !period.trim()}
+                onClick={() => saveSheet.mutate()}
+                className={clsx("text-sm px-4 py-1.5 rounded-lg2 font-medium", {
+                  "bg-ok text-white": saveStatus === "saved",
+                  "bg-gold text-white disabled:opacity-50": saveStatus !== "saved",
+                })}>
+                {saveStatus === "saving" ? "Saving…" : saveStatus === "saved" ? "Saved ✓" : savedSheetId ? "Update" : "Save"}
+              </button>
+            </>
+          )}
+        </div>
       </div>
+
+      {/* Saved sheets */}
+      {savedSheets.length > 0 && (
+        <div className="bg-white rounded-xl border border-line shadow-soft px-4 py-3 space-y-2">
+          <p className="text-xs font-medium text-ink-dim uppercase tracking-wide">Saved Sheets — click to load</p>
+          <div className="flex flex-wrap gap-2">
+            {savedSheets.map(s => (
+              <div key={s.id} className={clsx("flex items-center gap-1.5 border rounded-lg2 px-3 py-1.5 text-xs", {
+                "border-gold/50 bg-gold/5 text-gold font-medium": s.id === savedSheetId,
+                "border-line text-ink-dim hover:border-gold/40 bg-white": s.id !== savedSheetId,
+              })}>
+                <button onClick={() => loadSheet(s.id)} className="hover:underline">{s.period}</button>
+                <span className="text-ink-dim/50">·</span>
+                <span className="text-[10px] text-ink-dim">
+                  {new Date(s.updated_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                </span>
+                {s.id !== savedSheetId && (
+                  <button onClick={() => { if (confirm(`Delete "${s.period}"?`)) deleteSheet.mutate(s.id); }}
+                    className="text-err/60 hover:text-err ml-0.5">×</button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Paste + split setting */}
       <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
