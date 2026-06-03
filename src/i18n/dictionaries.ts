@@ -29,6 +29,7 @@ const en = {
   nav_repairs: "Repairs",
   nav_admin: "Admin",
   nav_products: "Products",
+  nav_incentive_calc: "Incentive Calc",
   nav_logout: "Logout",
   nav_info: "Info",
 
