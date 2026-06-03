@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
+import { useMonthlyAttendanceSummary } from "@/modules/attendance/api";
 import { inr } from "@/lib/format";
 import { clsx } from "clsx";
 
@@ -14,54 +15,63 @@ interface PayEntry {
   basicSalary: number;
   noOfLeave: number;
   extraLeave: number;
+  deduction: number;      // stored and editable; auto-updates when extraLeave changes
   advance: number;
   incentive: number;
   arrear: number;
 }
 
 function derive(e: PayEntry) {
-  const deduction  = parseFloat((e.basicSalary / 30 * e.extraLeave).toFixed(2));
-  const calculated = parseFloat((e.basicSalary - deduction - e.advance + e.incentive + e.arrear).toFixed(2));
-  const salary     = Math.round(calculated);
-  return { deduction, calculated, salary };
+  const calculated = parseFloat((e.basicSalary - e.deduction - e.advance + e.incentive + e.arrear).toFixed(2));
+  return { calculated, salary: Math.round(calculated) };
 }
 
 function blankEntry(name = ""): PayEntry {
-  return { id: crypto.randomUUID(), name, basicSalary: 0, noOfLeave: 0, extraLeave: 0, advance: 0, incentive: 0, arrear: 0 };
+  return { id: crypto.randomUUID(), name, basicSalary: 0, noOfLeave: 0, extraLeave: 0, deduction: 0, advance: 0, incentive: 0, arrear: 0 };
+}
+
+// Convert "May 2026" → "2026-05"
+function periodToMonth(period: string): string | null {
+  const MONTHS = ["january","february","march","april","may","june","july","august","september","october","november","december"];
+  const parts = period.trim().split(/\s+/);
+  if (parts.length < 2) return null;
+  const mi = MONTHS.indexOf(parts[0].toLowerCase());
+  const y  = parseInt(parts[parts.length - 1]);
+  if (mi === -1 || isNaN(y)) return null;
+  return `${y}-${String(mi + 1).padStart(2, "0")}`;
 }
 
 // ─── Payslip HTML ──────────────────────────────────────────────────────────────
 function inrFmt(n: number) {
   return "₹" + Math.abs(n).toLocaleString("en-IN", { minimumFractionDigits: n % 1 !== 0 ? 2 : 0 });
 }
-
-function generatePayslip(entry: PayEntry, period: string) {
-  const d = derive(entry);
+function generatePayslip(e: PayEntry, period: string) {
+  const d = derive(e);
   return `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>Payslip — ${entry.name} — ${period}</title>
+<title>Payslip — ${e.name} — ${period}</title>
 <style>
 body{font-family:Arial,sans-serif;max-width:480px;margin:40px auto;color:#1a1a1a}
 h1{text-align:center;font-size:18px;margin:0;color:#b8860b}
 h2{text-align:center;font-size:13px;color:#666;margin:4px 0 20px}
-.name{font-size:16px;font-weight:bold;text-align:center;margin-bottom:16px}
+.nm{font-size:16px;font-weight:bold;text-align:center;margin-bottom:16px}
 table{width:100%;border-collapse:collapse}
 td{padding:7px 10px;border-bottom:1px solid #eee;font-size:13px}
 td:last-child{text-align:right}
 .ded td{color:#c0392b}.add td{color:#27ae60}
-.total td{border-top:2px solid #b8860b;font-weight:bold;font-size:15px;color:#b8860b}
+.tot td{border-top:2px solid #b8860b;font-weight:bold;font-size:15px;color:#b8860b}
 @media print{body{margin:20px}}
 </style></head><body>
 <h1>SABARINATHAN JEWELLERY</h1>
 <h2>Salary Slip — ${period}</h2>
-<p class="name">${entry.name}</p>
+<p class="nm">${e.name}</p>
 <table>
-<tr><td>Basic Salary</td><td>${inrFmt(entry.basicSalary)}</td></tr>
-${entry.noOfLeave > 0 ? `<tr><td style="color:#888;font-size:12px">Leave taken</td><td style="color:#888;font-size:12px">${entry.noOfLeave} day${entry.noOfLeave !== 1 ? "s" : ""}</td></tr>` : ""}
-${entry.extraLeave > 0 ? `<tr class="ded"><td>Deduction (${entry.extraLeave} extra leave${entry.extraLeave !== 1 ? "s" : ""})</td><td>− ${inrFmt(d.deduction)}</td></tr>` : ""}
-${entry.advance > 0 ? `<tr class="ded"><td>Advance recovered</td><td>− ${inrFmt(entry.advance)}</td></tr>` : ""}
-${entry.incentive > 0 ? `<tr class="add"><td>Incentive</td><td>+ ${inrFmt(entry.incentive)}</td></tr>` : ""}
-${entry.arrear > 0 ? `<tr class="add"><td>Arrear</td><td>+ ${inrFmt(entry.arrear)}</td></tr>` : ""}
-<tr class="total"><td>Net Salary</td><td>${inrFmt(d.salary)}</td></tr>
+<tr><td>Basic Salary</td><td>${inrFmt(e.basicSalary)}</td></tr>
+${e.noOfLeave > 0 ? `<tr><td style="color:#888;font-size:12px">Leaves taken</td><td style="color:#888;font-size:12px">${e.noOfLeave} day${e.noOfLeave !== 1 ? "s" : ""} (${e.extraLeave} excess)</td></tr>` : ""}
+${e.deduction > 0 ? `<tr class="ded"><td>Leave Deduction</td><td>− ${inrFmt(e.deduction)}</td></tr>` : ""}
+${e.advance > 0 ? `<tr class="ded"><td>Advance Recovered</td><td>− ${inrFmt(e.advance)}</td></tr>` : ""}
+${e.incentive > 0 ? `<tr class="add"><td>Incentive</td><td>+ ${inrFmt(e.incentive)}</td></tr>` : ""}
+${e.arrear > 0 ? `<tr class="add"><td>Arrear</td><td>+ ${inrFmt(e.arrear)}</td></tr>` : ""}
+<tr class="tot"><td>Net Salary</td><td>${inrFmt(d.salary)}</td></tr>
 </table>
 <p style="font-size:11px;color:#aaa;text-align:center;margin-top:24px">
 Generated ${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
@@ -70,82 +80,81 @@ Generated ${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short",y
 </body></html>`;
 }
 
-// ─── Inline number cell ─────────────────────────────────────────────────────────
+// ─── Shared input styles ────────────────────────────────────────────────────────
 const cinp = "border border-line rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold text-right w-full";
-function NumCell({ value, onChange, highlight }: { value: number; onChange: (v: number) => void; highlight?: boolean }) {
+function NumCell({ value, onChange, highlight, warn }: { value: number; onChange: (v: number) => void; highlight?: boolean; warn?: boolean }) {
   return (
     <input type="number" value={value || ""} placeholder="0"
       onFocus={e => e.target.select()}
       onChange={e => onChange(parseFloat(e.target.value) || 0)}
-      className={clsx(cinp, highlight && "bg-gold/5 font-medium")} />
+      className={clsx(cinp, highlight && "bg-gold/5 font-medium", warn && "bg-err/5 text-err font-medium")} />
   );
 }
 
-// ─── Incentive calc helper (mirrors incentive-calc page logic) ─────────────────
+// ─── Incentive calc (mirrors incentive-calc page) ──────────────────────────────
 function calcStaffIncentives(sheetData: any): Map<string, number> {
-  const rawData      = sheetData.raw_data as string;
-  const overrides    = sheetData.overrides ?? {};
+  const rawData = sheetData.raw_data as string;
+  const overrides = sheetData.overrides ?? {};
   const defaultSplit = sheetData.default_split ?? 70;
   const masterEntries = sheetData.master_entries ?? [];
   const mapperEntries = sheetData.mapper_entries ?? [];
-
   const lines = rawData.split("\n").map((l: string) => l.trimEnd());
   const hi = lines.findIndex((l: string) => /date/i.test(l) && /product/i.test(l) && /net.?wt/i.test(l));
   if (hi < 0) return new Map();
-
   const staffInc = new Map<string, number>();
   lines.slice(hi + 1).forEach((line: string, i: number) => {
     const c = line.split("\t");
-    const netWt   = parseFloat((c[8] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
+    const netWt = parseFloat((c[8] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
     if (netWt <= 0) return;
-
-    const ov      = overrides[i] ?? {};
+    const ov = overrides[i] ?? {};
     const balance = ov.balanceZero ? 0 : Math.max(0, parseFloat((c[7] ?? "").match(/[-\d.]+/)?.[0] ?? "0") || 0);
     if (balance > 0) return;
-
-    const sp1     = (c[5] ?? "").trim();
-    const sp2     = (c[6] ?? "").trim();
-    const split   = ov.sp1Share ?? defaultSplit;
+    const sp1 = (c[5] ?? "").trim();
+    const sp2 = (c[6] ?? "").trim();
+    const split = ov.sp1Share ?? defaultSplit;
     const product = (c[1] ?? "").trim().toUpperCase();
     const wastage = parseFloat((c[3] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
-
     const mapEntry = mapperEntries.find((m: any) => m.erpName?.toUpperCase() === product);
     let code = (mapEntry?.incentiveCode ?? product).toUpperCase();
     if (code === "92.5-S" && netWt >= 20) code = "92.5-L";
-
     const master = masterEntries.find((m: any) => m.code?.toUpperCase() === code);
     if (!master || master.rate <= 0) return;
     const minW = ov.minWastage ?? master.minWastage ?? 0;
     if (wastage < minW) return;
-
-    const total  = parseFloat((master.rate * netWt).toFixed(2));
+    const total = parseFloat((master.rate * netWt).toFixed(2));
     const sp1Inc = sp2 ? parseFloat((total * split / 100).toFixed(2)) : total;
     const sp2Inc = sp2 ? parseFloat((total * (100 - split) / 100).toFixed(2)) : 0;
     if (sp1) staffInc.set(sp1, (staffInc.get(sp1) ?? 0) + sp1Inc);
     if (sp2) staffInc.set(sp2, (staffInc.get(sp2) ?? 0) + sp2Inc);
   });
-
   return staffInc;
 }
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
-type LoadStep = "pick" | "map" | null;
+type LoadStep = "pick_incentive" | "map_names" | null;
 
 export default function PayrollPage() {
   const qc = useQueryClient();
+
   const [period, setPeriod] = useState(() => {
     const d = new Date(); d.setMonth(d.getMonth() - 1);
     return d.toLocaleString("en-IN", { month: "long", year: "numeric" });
   });
-  const [entries, setEntries]       = useState<PayEntry[]>([]);
+  const [entries, setEntries]           = useState<PayEntry[]>([]);
   const [savedSheetId, setSavedSheetId] = useState<string | null>(null);
-  const [saveStatus, setSaveStatus] = useState<"idle"|"saving"|"saved">("idle");
+  const [saveStatus, setSaveStatus]     = useState<"idle"|"saving"|"saved">("idle");
 
-  // Incentive load flow
+  // ── Incentive load flow
   const [loadStep, setLoadStep]     = useState<LoadStep>(null);
   const [pendingInc, setPendingInc] = useState<Map<string, number>>(new Map());
-  const [nameMap, setNameMap]       = useState<Record<string, string>>({}); // incentive name → staff name
+  const [nameMap, setNameMap]       = useState<Record<string, string>>({});
   const [mapSaving, setMapSaving]   = useState(false);
+
+  // ── Attendance load
+  const attMonth = periodToMonth(period) ?? "";
+  const { data: attSummary = [], isFetching: attLoading } = useMonthlyAttendanceSummary(attMonth);
+  const [attApplied, setAttApplied] = useState(false);
+  const prevAttRef = useRef<string>("");  // tracks last-applied month
 
   // ── Queries
   const { data: staffList = [] } = useQuery({
@@ -155,7 +164,6 @@ export default function PayrollPage() {
       return (data ?? []) as { id: string; name: string; monthly_salary: number }[];
     },
   });
-
   const { data: savedSheets = [] } = useQuery({
     queryKey: ["payroll_sheets"],
     queryFn: async () => {
@@ -163,7 +171,6 @@ export default function PayrollPage() {
       return (data ?? []) as { id: string; period: string; updated_at: string }[];
     },
   });
-
   const { data: incentiveSheets = [] } = useQuery({
     queryKey: ["incentive_sheets"],
     queryFn: async () => {
@@ -171,7 +178,6 @@ export default function PayrollPage() {
       return (data ?? []) as { id: string; period: string; updated_at: string }[];
     },
   });
-
   const { data: savedNameMap = [] } = useQuery({
     queryKey: ["staff_name_map"],
     queryFn: async () => {
@@ -180,74 +186,92 @@ export default function PayrollPage() {
     },
   });
 
-  // Staff name list for the mapper dropdowns
   const payrollNames = useMemo(() => {
     const fromStaff = staffList.map(s => s.name.toUpperCase());
     const fromEntries = entries.map(e => e.name).filter(Boolean);
     return [...new Set([...fromStaff, ...fromEntries])].sort();
   }, [staffList, entries]);
 
-  // ── Step 1: select incentive sheet → compute incentive totals → open mapper
+  // ── Apply attendance data to entries
+  function applyAttendance(summary: typeof attSummary) {
+    const byName = new Map(summary.map(s => [s.name.toUpperCase(), s]));
+    setEntries(prev => prev.map(e => {
+      const att = byName.get(e.name.toUpperCase());
+      if (!att) return e;
+      const noOfLeave  = att.absent_days;
+      const extraLeave = att.excess_leave_days;
+      const deduction  = parseFloat((att.leave_deduction ?? 0).toFixed(2));
+      return { ...e, noOfLeave, extraLeave, deduction };
+    }));
+  }
+
+  // ── Attendance load button
+  function loadAttendanceNow() {
+    if (!attMonth) { return; }
+    if (attLoading) return;
+    prevAttRef.current = attMonth;
+    setAttApplied(false);
+    // Data is already fetched by the hook; apply immediately
+    if (attSummary.length > 0) {
+      applyAttendance(attSummary);
+      setAttApplied(true);
+    }
+  }
+
+  // Watch for fresh attendance data to auto-apply after button click
+  useEffect(() => {
+    if (attLoading || attApplied || !prevAttRef.current) return;
+    if (prevAttRef.current !== attMonth || attSummary.length === 0) return;
+    applyAttendance(attSummary);
+    setAttApplied(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attSummary, attLoading]);
+
+  // ── Incentive load step 1: select sheet
   async function selectIncentiveSheet(id: string) {
-    const { data } = await supabase()
-      .from("incentive_sheets")
+    const { data } = await supabase().from("incentive_sheets")
       .select("master_entries, mapper_entries, raw_data, overrides, default_split")
       .eq("id", id).single();
     if (!data) return;
-
     const staffInc = calcStaffIncentives(data as any);
-
-    // Build initial nameMap from saved DB mappings + auto-match exact names
     const initial: Record<string, string> = {};
     for (const incName of staffInc.keys()) {
-      // 1. Check saved DB mapping
       const saved = savedNameMap.find(m => m.incentive_name === incName);
       if (saved) { initial[incName] = saved.staff_name; continue; }
-      // 2. Exact match (case-insensitive) against payroll names
       const exact = payrollNames.find(n => n === incName || n.toLowerCase() === incName.toLowerCase());
-      if (exact) { initial[incName] = exact; continue; }
-      // 3. Leave blank for user to fill
-      initial[incName] = "";
+      initial[incName] = exact ?? "";
     }
-
     setPendingInc(staffInc);
     setNameMap(initial);
-    setLoadStep("map");
+    setLoadStep("map_names");
   }
 
-  // ── Step 2: save mappings to DB and apply to entries
+  // ── Incentive load step 2: apply with mappings
   async function applyMapping() {
     setMapSaving(true);
-    const client = supabase();
-
-    // Upsert all mappings (only where target is set)
     const toSave = Object.entries(nameMap)
-      .filter(([, target]) => target.trim())
+      .filter(([, t]) => t.trim())
       .map(([incentive_name, staff_name]) => ({ incentive_name, staff_name: staff_name.trim() }));
     if (toSave.length > 0) {
-      await client.from("staff_name_map").upsert(toSave, { onConflict: "incentive_name" });
+      await supabase().from("staff_name_map").upsert(toSave, { onConflict: "incentive_name" });
       qc.invalidateQueries({ queryKey: ["staff_name_map"] });
     }
-
-    // Apply mapped incentives to entries
-    const resolved = new Map<string, number>(); // staff name → incentive
+    const resolved = new Map<string, number>();
     for (const [incName, amount] of pendingInc.entries()) {
-      const target = nameMap[incName]?.trim() || incName;
-      if (target) resolved.set(target.toUpperCase(), (resolved.get(target.toUpperCase()) ?? 0) + amount);
+      const target = (nameMap[incName]?.trim() || incName).toUpperCase();
+      if (target) resolved.set(target, (resolved.get(target) ?? 0) + amount);
     }
     const rounded = new Map([...resolved.entries()].map(([k, v]) => [k, Math.round(v)]));
-
     setEntries(prev => prev.map(e => {
       const inc = rounded.get(e.name.toUpperCase());
       return inc !== undefined ? { ...e, incentive: inc } : e;
     }));
-
     setMapSaving(false);
     setLoadStep(null);
     setPendingInc(new Map());
   }
 
-  // ── Save payroll sheet
+  // ── Save payroll
   const saveSheet = useMutation({
     mutationFn: async () => {
       setSaveStatus("saving");
@@ -293,8 +317,25 @@ export default function PayrollPage() {
     setEntries(prev => [...prev, ...newRows]);
   }
 
-  function update(id: string, patch: Partial<PayEntry>) {
+  // ── Entry update helpers
+  function updateField(id: string, patch: Partial<PayEntry>) {
     setEntries(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
+  }
+  function updateExtraLeave(id: string, v: number) {
+    // Auto-recalculate deduction when extra leave changes
+    setEntries(prev => prev.map(e => {
+      if (e.id !== id) return e;
+      const deduction = parseFloat((e.basicSalary / 30 * v).toFixed(2));
+      return { ...e, extraLeave: v, deduction };
+    }));
+  }
+  function updateBasicSalary(id: string, v: number) {
+    // If extra leave exists, recalculate deduction
+    setEntries(prev => prev.map(e => {
+      if (e.id !== id) return e;
+      const deduction = e.extraLeave > 0 ? parseFloat((v / 30 * e.extraLeave).toFixed(2)) : e.deduction;
+      return { ...e, basicSalary: v, deduction };
+    }));
   }
 
   function downloadPayslip(entry: PayEntry) {
@@ -306,13 +347,12 @@ export default function PayrollPage() {
 
   const totals = useMemo(() => entries.reduce((acc, e) => {
     const d = derive(e);
-    return { basic: acc.basic + e.basicSalary, deduction: acc.deduction + d.deduction, advance: acc.advance + e.advance, incentive: acc.incentive + e.incentive, arrear: acc.arrear + e.arrear, salary: acc.salary + d.salary };
+    return { basic: acc.basic + e.basicSalary, deduction: acc.deduction + e.deduction, advance: acc.advance + e.advance, incentive: acc.incentive + e.incentive, arrear: acc.arrear + e.arrear, salary: acc.salary + d.salary };
   }, { basic: 0, deduction: 0, advance: 0, incentive: 0, arrear: 0, salary: 0 }), [entries]);
 
-  const inp = "border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
-
-  // ── unmatched = incentive names with no mapping and no payroll row
   const unmatchedCount = Object.entries(nameMap).filter(([, v]) => !v.trim()).length;
+  const inp = "border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
+  const canLoadAtt = !!attMonth && entries.length > 0;
 
   return (
     <div className="max-w-7xl mx-auto space-y-4">
@@ -370,14 +410,33 @@ export default function PayrollPage() {
           className="text-sm border border-line px-4 py-1.5 rounded-lg2 hover:border-gold text-ink-dim">
           + Add Row
         </button>
-        <button onClick={() => setLoadStep("pick")} disabled={incentiveSheets.length === 0}
-          className="text-sm bg-info/10 text-info border border-info/30 px-4 py-1.5 rounded-lg2 hover:bg-info/20 disabled:opacity-40">
+        <button
+          onClick={loadAttendanceNow}
+          disabled={!canLoadAtt}
+          title={!attMonth ? "Set a valid period (e.g. May 2026) first" : ""}
+          className={clsx("text-sm px-4 py-1.5 rounded-lg2 border font-medium transition-colors", {
+            "bg-info/10 text-info border-info/30 hover:bg-info/20": canLoadAtt && !attLoading,
+            "opacity-40 border-line text-ink-dim cursor-not-allowed": !canLoadAtt,
+            "border-info/30 text-info/60": attLoading,
+          })}>
+          {attLoading ? "Loading…" : attApplied ? `✓ Attendance Loaded (${attMonth})` : `↓ Load Attendance (${attMonth || "set period"})`}
+        </button>
+        <button onClick={() => setLoadStep("pick_incentive")} disabled={incentiveSheets.length === 0}
+          className="text-sm bg-ok/10 text-ok border border-ok/30 px-4 py-1.5 rounded-lg2 hover:bg-ok/20 disabled:opacity-40">
           ↓ Load Incentive
         </button>
       </div>
 
+      {/* Attendance loaded banner */}
+      {attApplied && (
+        <div className="bg-info/5 border border-info/30 rounded-xl px-4 py-2.5 text-xs text-info flex items-center justify-between">
+          <span>Attendance loaded for <strong>{attMonth}</strong> — leaves, extra leaves and deductions have been filled. Edit any cell directly.</span>
+          <button onClick={() => setAttApplied(false)} className="text-info/60 hover:text-info ml-4">✕</button>
+        </div>
+      )}
+
       {/* ── MODAL: pick incentive sheet ── */}
-      {loadStep === "pick" && (
+      {loadStep === "pick_incentive" && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl border border-line shadow-soft p-5 w-full max-w-sm space-y-3">
             <h2 className="font-semibold text-sm">Select Incentive Sheet</h2>
@@ -396,56 +455,46 @@ export default function PayrollPage() {
       )}
 
       {/* ── MODAL: name mapper ── */}
-      {loadStep === "map" && (
+      {loadStep === "map_names" && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl border border-line shadow-soft p-5 w-full max-w-2xl space-y-4">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="font-semibold text-sm">Map Incentive Names → Staff Names</h2>
-                <p className="text-xs text-ink-dim mt-1">
-                  Match each name from the incentive sheet to the correct staff member. Mappings are saved permanently.
-                </p>
+                <p className="text-xs text-ink-dim mt-1">Mappings are saved permanently for future use.</p>
               </div>
               {unmatchedCount > 0 && (
-                <span className="text-xs bg-warn/10 text-warn border border-warn/30 px-2 py-1 rounded-lg2 whitespace-nowrap shrink-0">
+                <span className="text-xs bg-warn/10 text-warn border border-warn/30 px-2 py-1 rounded-lg2 shrink-0">
                   {unmatchedCount} unmapped
                 </span>
               )}
             </div>
-
             <div className="overflow-y-auto max-h-96">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-xs text-ink-dim border-b border-line">
-                    <th className="text-left py-2 pr-4">Incentive Sheet Name</th>
-                    <th className="text-left py-2 pr-4">Amount</th>
-                    <th className="text-left py-2">→ Payroll Staff Name</th>
+                    <th className="text-left py-2 pr-4">Incentive Name</th>
+                    <th className="text-right py-2 pr-4">Amount</th>
+                    <th className="text-left py-2">→ Staff Name</th>
                   </tr>
                 </thead>
                 <tbody>
                   {[...pendingInc.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([incName, amount]) => {
                     const mapped = nameMap[incName] ?? "";
-                    const isUnmapped = !mapped.trim();
                     return (
-                      <tr key={incName} className={clsx("border-b border-line last:border-0", isUnmapped && "bg-warn/5")}>
-                        <td className="py-2 pr-4 font-medium font-mono text-xs">{incName}</td>
-                        <td className="py-2 pr-4 text-ok font-mono text-xs">{inr(Math.round(amount))}</td>
+                      <tr key={incName} className={clsx("border-b border-line last:border-0", !mapped.trim() && "bg-warn/5")}>
+                        <td className="py-2 pr-4 font-mono text-xs font-medium">{incName}</td>
+                        <td className="py-2 pr-4 text-ok font-mono text-xs text-right">{inr(Math.round(amount))}</td>
                         <td className="py-2">
                           <div className="flex items-center gap-2">
-                            <select
-                              value={mapped}
-                              onChange={e => setNameMap(prev => ({ ...prev, [incName]: e.target.value }))}
+                            <select value={mapped} onChange={e => setNameMap(p => ({ ...p, [incName]: e.target.value }))}
                               className="border border-line rounded-lg2 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold flex-1">
-                              <option value="">— Select staff —</option>
+                              <option value="">— Select —</option>
                               {payrollNames.map(n => <option key={n} value={n}>{n}</option>)}
                             </select>
-                            {/* Also allow typing a custom name */}
-                            <input
-                              value={mapped}
-                              onChange={e => setNameMap(prev => ({ ...prev, [incName]: e.target.value.toUpperCase() }))}
-                              placeholder="or type name"
-                              className="border border-line rounded-lg2 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold w-32 uppercase"
-                            />
+                            <input value={mapped} placeholder="or type"
+                              onChange={e => setNameMap(p => ({ ...p, [incName]: e.target.value.toUpperCase() }))}
+                              className="border border-line rounded-lg2 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold w-28 uppercase" />
                           </div>
                         </td>
                       </tr>
@@ -454,22 +503,18 @@ export default function PayrollPage() {
                 </tbody>
               </table>
             </div>
-
             <div className="flex gap-2 pt-1 border-t border-line">
               <button onClick={applyMapping} disabled={mapSaving}
                 className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
-                {mapSaving ? "Saving…" : "Save Mappings & Apply"}
+                {mapSaving ? "Saving…" : "Save & Apply"}
               </button>
-              <button onClick={() => setLoadStep(null)} className="border border-line text-sm px-4 py-2 rounded-lg2 text-ink-dim">
-                Cancel
-              </button>
-              <p className="text-xs text-ink-dim self-center ml-2">Mappings are saved for future use.</p>
+              <button onClick={() => setLoadStep(null)} className="border border-line text-sm px-4 py-2 rounded-lg2 text-ink-dim">Cancel</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Table */}
+      {/* ── Main table ── */}
       {entries.length === 0 ? (
         <div className="bg-canvas rounded-xl border border-line px-6 py-12 text-center text-ink-dim text-sm space-y-2">
           <p>No rows yet.</p>
@@ -477,14 +522,14 @@ export default function PayrollPage() {
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
-          <table className="w-full text-sm" style={{ minWidth: 1000 }}>
+          <table className="w-full text-sm" style={{ minWidth: 1060 }}>
             <thead>
               <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                 <th className="text-left px-3 py-2.5 sticky left-0 bg-canvas z-10 min-w-[130px]">Name</th>
-                <th className="text-right px-2 py-2.5">Leaves</th>
+                <th className="text-right px-2 py-2.5">Leaves<br/>Taken</th>
                 <th className="text-right px-2 py-2.5">Extra<br/>Leaves</th>
                 <th className="text-right px-2 py-2.5">Basic<br/>Salary</th>
-                <th className="text-right px-2 py-2.5 text-err">Deduction</th>
+                <th className="text-right px-2 py-2.5 text-err">Deduction<br/><span className="font-normal text-ink-dim">(editable)</span></th>
                 <th className="text-right px-2 py-2.5 text-err">Advance</th>
                 <th className="text-right px-2 py-2.5 text-ok">Incentive</th>
                 <th className="text-right px-2 py-2.5 text-ok">Arrear</th>
@@ -496,21 +541,51 @@ export default function PayrollPage() {
             <tbody>
               {entries.map(e => {
                 const d = derive(e);
+                // Auto-deduction based on formula, shown as hint if differs from stored
+                const autoDeduction = parseFloat((e.basicSalary / 30 * e.extraLeave).toFixed(2));
+                const deductionDiffers = e.deduction !== autoDeduction && e.extraLeave > 0;
+
                 return (
                   <tr key={e.id} className="border-b border-line last:border-0 hover:bg-canvas/30">
                     <td className="px-3 py-1.5 sticky left-0 bg-white z-10">
-                      <input value={e.name} onChange={ev => update(e.id, { name: ev.target.value.toUpperCase() })}
+                      <input value={e.name} onChange={ev => updateField(e.id, { name: ev.target.value.toUpperCase() })}
                         className="border border-line rounded px-2 py-1 text-xs uppercase w-full focus:outline-none focus:ring-1 focus:ring-gold font-medium" />
                     </td>
-                    <td className="px-2 py-1.5 w-20"><NumCell value={e.noOfLeave} onChange={v => update(e.id, { noOfLeave: v })} /></td>
-                    <td className="px-2 py-1.5 w-20"><NumCell value={e.extraLeave} onChange={v => update(e.id, { extraLeave: v })} highlight={e.extraLeave > 0} /></td>
-                    <td className="px-2 py-1.5 w-28"><NumCell value={e.basicSalary} onChange={v => update(e.id, { basicSalary: v })} /></td>
-                    <td className="px-2 py-1.5 text-right text-err font-mono text-xs whitespace-nowrap">{d.deduction > 0 ? inr(d.deduction) : "—"}</td>
-                    <td className="px-2 py-1.5 w-24"><NumCell value={e.advance} onChange={v => update(e.id, { advance: v })} highlight={e.advance > 0} /></td>
-                    <td className="px-2 py-1.5 w-24"><NumCell value={e.incentive} onChange={v => update(e.id, { incentive: v })} highlight={e.incentive > 0} /></td>
-                    <td className="px-2 py-1.5 w-24"><NumCell value={e.arrear} onChange={v => update(e.id, { arrear: v })} highlight={e.arrear > 0} /></td>
-                    <td className="px-2 py-1.5 text-right font-mono text-xs text-ink-dim whitespace-nowrap">{inr(d.calculated)}</td>
-                    <td className="px-3 py-1.5 text-right font-mono font-bold text-gold bg-gold/5 whitespace-nowrap">{inr(d.salary)}</td>
+                    <td className="px-2 py-1.5 w-20">
+                      <NumCell value={e.noOfLeave} onChange={v => updateField(e.id, { noOfLeave: v })} />
+                    </td>
+                    <td className="px-2 py-1.5 w-20">
+                      <NumCell value={e.extraLeave} onChange={v => updateExtraLeave(e.id, v)} highlight={e.extraLeave > 0} />
+                    </td>
+                    <td className="px-2 py-1.5 w-28">
+                      <NumCell value={e.basicSalary} onChange={v => updateBasicSalary(e.id, v)} />
+                    </td>
+                    <td className="px-2 py-1.5 w-28">
+                      <div className="space-y-0.5">
+                        <NumCell value={e.deduction} onChange={v => updateField(e.id, { deduction: v })} warn={e.deduction > 0} />
+                        {deductionDiffers && (
+                          <button onClick={() => updateField(e.id, { deduction: autoDeduction })}
+                            className="text-[10px] text-info hover:underline w-full text-right block">
+                            auto: {inr(autoDeduction)}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-2 py-1.5 w-24">
+                      <NumCell value={e.advance} onChange={v => updateField(e.id, { advance: v })} highlight={e.advance > 0} />
+                    </td>
+                    <td className="px-2 py-1.5 w-24">
+                      <NumCell value={e.incentive} onChange={v => updateField(e.id, { incentive: v })} highlight={e.incentive > 0} />
+                    </td>
+                    <td className="px-2 py-1.5 w-24">
+                      <NumCell value={e.arrear} onChange={v => updateField(e.id, { arrear: v })} highlight={e.arrear > 0} />
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-mono text-xs text-ink-dim whitespace-nowrap">
+                      {inr(d.calculated)}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-mono font-bold text-gold bg-gold/5 whitespace-nowrap">
+                      {inr(d.salary)}
+                    </td>
                     <td className="px-2 py-1.5">
                       <div className="flex items-center gap-1 justify-end">
                         <button onClick={() => downloadPayslip(e)}
