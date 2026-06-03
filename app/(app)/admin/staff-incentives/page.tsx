@@ -99,6 +99,9 @@ export default function StaffIncentivesPage() {
         <div className="flex items-center gap-3">
           <Link href="/attendance" className="text-xs text-gold hover:underline">← Attendance</Link>
           <h1 className="text-xl font-bold text-ink">Staff Incentives</h1>
+          <Link href="/admin/incentive-calc" className="text-xs bg-gold/10 text-gold border border-gold/30 px-3 py-1 rounded-lg2 hover:bg-gold/20">
+            ERP Calculator →
+          </Link>
         </div>
       </div>
 
