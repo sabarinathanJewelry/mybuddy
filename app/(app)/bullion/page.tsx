@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase/client";
 import { useGlobalDate } from "@/stores/global-date";
 import { useT } from "@/i18n";
 import { inr, grams, shortDate } from "@/lib/format";
+import SupplierPicker, { type Supplier } from "@/modules/suppliers/supplier-picker";
 
 const inp = "w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
 
@@ -18,6 +19,15 @@ const PAY_MODES = [
 
 type TradeType = "buy" | "sell";
 type Metal = "gold" | "silver";
+type PurityPreset = "999" | "916" | "750" | "585" | "custom";
+
+const PURITY_PRESETS: { key: PurityPreset; label: string; value: number }[] = [
+  { key: "999", label: "999 Pure",  value: 99.9  },
+  { key: "916", label: "22K 91.6%", value: 91.6  },
+  { key: "750", label: "18K 75%",   value: 75.0  },
+  { key: "585", label: "14K 58.5%", value: 58.5  },
+  { key: "custom", label: "Custom", value: 0     },
+];
 
 // Supabase returns numeric columns as strings — coerce everything via Number()
 function sumBy(arr: any[], filter: (r: any) => boolean, key: string): number {
@@ -89,26 +99,48 @@ export default function BullionPage() {
   const [showForm, setShowForm] = useState(false);
   const [tradeType, setTradeType] = useState<TradeType>("buy");
   const [metal, setMetal] = useState<Metal>("gold");
-  const [partyName, setPartyName] = useState("");
+  const [supplier, setSupplier] = useState<Supplier | null>(null);
+  const [partyName, setPartyName] = useState("");   // fallback free-text
   const [tradeDate, setTradeDate] = useState(globalDate);
+  // Purity / weight
+  const [purityPreset, setPurityPreset] = useState<PurityPreset>("999");
+  const [customPurity, setCustomPurity] = useState(91.6);
+  const [grossWt, setGrossWt] = useState(0);
   const [pureWt, setPureWt] = useState(0);
   const [ratePerG, setRatePerG] = useState(0);
   const [totalAmt, setTotalAmt] = useState(0);
-  // "total" = user last typed in total field, rate is auto-computed
-  // "rate"  = user last typed in rate field, total is auto-computed
   const [activeField, setActiveField] = useState<"rate" | "total">("total");
   const [firstPayAmt, setFirstPayAmt] = useState(0);
   const [firstPayMode, setFirstPayMode] = useState("cash");
   const [formNotes, setFormNotes] = useState("");
 
-  function onWtChange(val: number) {
+  function effectivePurity(): number {
+    if (purityPreset === "custom") return customPurity;
+    return PURITY_PRESETS.find(p => p.key === purityPreset)?.value ?? 99.9;
+  }
+  const isPure = effectivePurity() >= 99.5;
+
+  // When gross weight changes, recalculate pure weight then re-derive rate/total
+  function onGrossWtChange(val: number) {
+    setGrossWt(val);
+    const pure = isPure ? val : parseFloat((val * effectivePurity() / 100).toFixed(4));
+    setPureWt(pure);
+    if (activeField === "total" && totalAmt > 0 && pure > 0) {
+      setRatePerG(parseFloat((totalAmt / pure).toFixed(2)));
+    } else if (activeField === "rate" && ratePerG > 0) {
+      setTotalAmt(parseFloat((pure * ratePerG).toFixed(2)));
+    }
+  }
+  function onPureWtChange(val: number) {
     setPureWt(val);
+    if (isPure) setGrossWt(val);
     if (activeField === "total" && totalAmt > 0 && val > 0) {
       setRatePerG(parseFloat((totalAmt / val).toFixed(2)));
     } else if (activeField === "rate" && ratePerG > 0) {
       setTotalAmt(parseFloat((val * ratePerG).toFixed(2)));
     }
   }
+  function onWtChange(val: number) { onGrossWtChange(val); }
   function onRateChange(val: number) {
     setRatePerG(val);
     setActiveField("rate");
@@ -118,6 +150,12 @@ export default function BullionPage() {
     setTotalAmt(val);
     setActiveField("total");
     if (pureWt > 0) setRatePerG(parseFloat((val / pureWt).toFixed(2)));
+  }
+  function onPurityPresetChange(preset: PurityPreset) {
+    setPurityPreset(preset);
+    const pct = PURITY_PRESETS.find(p => p.key === preset)?.value ?? customPurity;
+    const pure = (pct >= 99.5 || preset === "custom") ? grossWt : parseFloat((grossWt * pct / 100).toFixed(4));
+    if (preset !== "custom") { setPureWt(pure); }
   }
 
   // Add payment panel
@@ -136,7 +174,8 @@ export default function BullionPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   function resetForm() {
-    setPartyName(""); setPureWt(0); setRatePerG(0); setTotalAmt(0);
+    setSupplier(null); setPartyName(""); setGrossWt(0); setPureWt(0); setRatePerG(0); setTotalAmt(0);
+    setPurityPreset("999"); setCustomPurity(91.6);
     setActiveField("total"); setFirstPayAmt(0); setFirstPayMode("cash"); setFormNotes("");
     setFirstOffsetWt(0); setFirstOffsetRate(0);
     setTradeDate(globalDate); setShowForm(false); setEditingId(null);
@@ -147,7 +186,13 @@ export default function BullionPage() {
     setTradeType(r.trade_type as TradeType);
     setMetal(r.metal as Metal);
     setPartyName(r.party_name ?? "");
+    setSupplier(r.supplier_id ? { id: r.supplier_id, name: r.party_name, phone: null } : null);
     setTradeDate(r.trade_date ?? globalDate);
+    const pur = Number(r.purity) || 99.9;
+    const existingPreset = PURITY_PRESETS.find(p => Math.abs(p.value - pur) < 0.1 && p.key !== "custom");
+    setPurityPreset(existingPreset?.key ?? "custom");
+    setCustomPurity(pur);
+    setGrossWt(Number(r.gross_wt) || Number(r.pure_wt) || 0);
     setPureWt(Number(r.pure_wt) || 0);
     setRatePerG(Number(r.rate_per_g) || 0);
     setTotalAmt(Number(r.total_amount) || 0);
@@ -159,26 +204,28 @@ export default function BullionPage() {
 
   const saveTrade = useMutation({
     mutationFn: async () => {
-      if (!partyName || pureWt <= 0 || totalAmt <= 0 || ratePerG <= 0) throw new Error("Invalid input");
+      if ((!supplier && !partyName) || pureWt <= 0 || totalAmt <= 0 || ratePerG <= 0) throw new Error("Invalid input");
       const client = supabase();
 
+      const effectiveName = supplier?.name || partyName;
+      const pct = effectivePurity();
+      const tradePayload = {
+        trade_date: tradeDate, trade_type: tradeType,
+        party_name: effectiveName, metal,
+        supplier_id: supplier?.id ?? null,
+        gross_wt: grossWt > 0 ? grossWt : pureWt,
+        purity: pct,
+        pure_wt: pureWt, rate_per_g: ratePerG, total_amount: totalAmt,
+        notes: formNotes || null,
+      };
+
       if (editingId) {
-        const { error } = await client.from("bullion_trades").update({
-          trade_date: tradeDate, trade_type: tradeType,
-          party_name: partyName, metal,
-          pure_wt: pureWt, rate_per_g: ratePerG, total_amount: totalAmt,
-          notes: formNotes || null,
-        }).eq("id", editingId);
+        const { error } = await client.from("bullion_trades").update(tradePayload).eq("id", editingId);
         if (error) throw error;
         return;
       }
 
-      const { data: row, error } = await client.from("bullion_trades").insert({
-        trade_date: tradeDate, trade_type: tradeType,
-        party_name: partyName, metal,
-        pure_wt: pureWt, rate_per_g: ratePerG, total_amount: totalAmt,
-        notes: formNotes || null,
-      }).select().single();
+      const { data: row, error } = await client.from("bullion_trades").insert(tradePayload).select().single();
       if (error) throw error;
 
       const desc = `Bullion ${tradeType}: ${partyName}`;
@@ -349,72 +396,135 @@ export default function BullionPage() {
             {editingId ? `Edit ${tradeType === "buy" ? "Purchase" : "Sale"}` : tradeType === "buy" ? "🔶 Buy from Bullion Dealer" : "💰 Sell to Bullion Dealer"}
           </h3>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <label className="block text-xs text-ink-dim mb-1">Party / Dealer Name *</label>
-              <input value={partyName} onChange={(e) => setPartyName(e.target.value)}
-                className={inp} placeholder="Bullion dealer name" />
-            </div>
+          <div className="space-y-3">
+            {/* Supplier picker */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="block text-xs text-ink-dim mb-1">Supplier / Dealer *</label>
+                <SupplierPicker value={supplier} onChange={(s) => { setSupplier(s); setPartyName(s.name); }} />
+                {!supplier && (
+                  <input value={partyName} onChange={(e) => setPartyName(e.target.value)}
+                    className={`${inp} mt-1.5`} placeholder="Or type name if not in supplier list…" />
+                )}
+              </div>
 
-            <div>
-              <label className="block text-xs text-ink-dim mb-1">Metal</label>
-              <div className="flex gap-2">
-                {(["gold", "silver"] as const).map((m) => (
-                  <button key={m} type="button" onClick={() => setMetal(m)}
-                    className={`flex-1 py-2 rounded-lg2 text-sm font-medium border transition-colors ${
-                      metal === m
-                        ? m === "gold" ? "bg-gold/10 border-gold text-gold" : "bg-ink-mid/10 border-ink-mid text-ink-mid"
-                        : "border-line text-ink-dim hover:border-gold"
-                    }`}>
-                    {m === "gold" ? "Gold" : "Silver"}
-                  </button>
-                ))}
+              <div>
+                <label className="block text-xs text-ink-dim mb-1">Metal</label>
+                <div className="flex gap-2">
+                  {(["gold", "silver"] as const).map((m) => (
+                    <button key={m} type="button" onClick={() => setMetal(m)}
+                      className={`flex-1 py-2 rounded-lg2 text-sm font-medium border transition-colors ${
+                        metal === m
+                          ? m === "gold" ? "bg-gold/10 border-gold text-gold" : "bg-ink-mid/10 border-ink-mid text-ink-mid"
+                          : "border-line text-ink-dim hover:border-gold"
+                      }`}>
+                      {m === "gold" ? "Gold" : "Silver"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-ink-dim mb-1">Date</label>
+                <input type="date" value={tradeDate} onChange={(e) => setTradeDate(e.target.value)} className={inp} />
               </div>
             </div>
 
+            {/* Purity preset */}
             <div>
-              <label className="block text-xs text-ink-dim mb-1">Date</label>
-              <input type="date" value={tradeDate}
-                onChange={(e) => setTradeDate(e.target.value)} className={inp} />
+              <label className="block text-xs text-ink-dim mb-1">Purity / Metal Type</label>
+              <div className="flex gap-1.5 flex-wrap">
+                {PURITY_PRESETS.map(p => (
+                  <button key={p.key} type="button"
+                    onClick={() => onPurityPresetChange(p.key)}
+                    className={`px-3 py-1.5 rounded-lg2 text-xs font-medium border transition-colors ${
+                      purityPreset === p.key
+                        ? "bg-gold/10 border-gold text-gold"
+                        : "border-line text-ink-dim hover:border-gold"
+                    }`}>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              {purityPreset === "custom" && (
+                <div className="mt-2 flex items-center gap-2">
+                  <input type="number" step="0.1" min="1" max="100"
+                    value={customPurity || ""}
+                    onFocus={e => e.target.select()}
+                    onChange={e => {
+                      const v = parseFloat(e.target.value) || 0;
+                      setCustomPurity(v);
+                      const pure = parseFloat((grossWt * v / 100).toFixed(4));
+                      setPureWt(pure);
+                      if (activeField === "rate" && ratePerG > 0) setTotalAmt(parseFloat((pure * ratePerG).toFixed(2)));
+                      if (activeField === "total" && totalAmt > 0 && pure > 0) setRatePerG(parseFloat((totalAmt / pure).toFixed(2)));
+                    }}
+                    className="border border-line rounded-lg2 px-3 py-1.5 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-gold text-right" />
+                  <span className="text-xs text-ink-dim">%</span>
+                </div>
+              )}
             </div>
 
-            {/* Weight */}
-            <div>
-              <label className="block text-xs text-ink-dim mb-1">Pure Weight (g) *</label>
-              <input type="number" step="0.001" value={pureWt || ""}
-                placeholder="0" onFocus={(e) => e.target.select()}
-                onChange={(e) => onWtChange(parseFloat(e.target.value) || 0)}
-                className={inp} />
+            {/* Weight inputs */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-ink-dim mb-1">
+                  {isPure ? "Weight (g) *" : "Gross Weight (g) *"}
+                </label>
+                <input type="number" step="0.001" value={grossWt || ""}
+                  placeholder="0.000" onFocus={e => e.target.select()}
+                  onChange={e => onGrossWtChange(parseFloat(e.target.value) || 0)}
+                  className={inp} />
+              </div>
+
+              {!isPure && (
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">
+                    Pure Weight (g) <span className="text-gold">(auto — {effectivePurity()}%)</span>
+                  </label>
+                  <input type="number" step="0.001" value={pureWt || ""}
+                    placeholder="0.000" onFocus={e => e.target.select()}
+                    onChange={e => onPureWtChange(parseFloat(e.target.value) || 0)}
+                    className={`${inp} bg-gold/5`} />
+                  {grossWt > 0 && (
+                    <p className="text-xs text-ink-dim mt-0.5">
+                      {grams(grossWt)} × {effectivePurity()}% = {grams(pureWt)}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Rate */}
+              <div>
+                <label className="block text-xs text-ink-dim mb-1">
+                  Rate per pure gram (₹)
+                  {activeField === "total" && pureWt > 0 && <span className="ml-1 text-gold">(auto)</span>}
+                </label>
+                <input type="number" step="0.01" value={ratePerG || ""}
+                  placeholder="0" onFocus={e => e.target.select()}
+                  onChange={e => onRateChange(parseFloat(e.target.value) || 0)}
+                  className={inp} />
+              </div>
+
+              {/* Total */}
+              <div>
+                <label className="block text-xs text-ink-dim mb-1">
+                  Total Amount (₹) *
+                  {activeField === "rate" && pureWt > 0 && <span className="ml-1 text-gold">(auto)</span>}
+                </label>
+                <input type="number" step="0.01" value={totalAmt || ""}
+                  placeholder="0" onFocus={e => e.target.select()}
+                  onChange={e => onTotalChange(parseFloat(e.target.value) || 0)}
+                  className={`${inp} font-semibold`} />
+              </div>
             </div>
 
-            {/* Rate — auto-computed when total is entered */}
-            <div>
-              <label className="block text-xs text-ink-dim mb-1">
-                Rate per gram (₹)
-                {activeField === "total" && pureWt > 0 && <span className="ml-1 text-gold">(auto)</span>}
-              </label>
-              <input type="number" step="0.01" value={ratePerG || ""}
-                placeholder="0" onFocus={(e) => e.target.select()}
-                onChange={(e) => onRateChange(parseFloat(e.target.value) || 0)}
-                className={inp} />
-            </div>
-
-            {/* Total — auto-computed when rate is entered */}
-            <div className="col-span-2">
-              <label className="block text-xs text-ink-dim mb-1">
-                Total Amount (₹) *
-                {activeField === "rate" && pureWt > 0 && <span className="ml-1 text-gold">(auto)</span>}
-              </label>
-              <input type="number" step="0.01" value={totalAmt || ""}
-                placeholder="Enter total OR enter rate above" onFocus={(e) => e.target.select()}
-                onChange={(e) => onTotalChange(parseFloat(e.target.value) || 0)}
-                className={`${inp} font-semibold`} />
-              <p className="text-xs text-ink-dim mt-1">
-                {pureWt > 0 && ratePerG > 0 && totalAmt > 0
-                  ? `${grams(pureWt)} × ${inr(ratePerG)}/g = ${inr(totalAmt)}`
-                  : "Enter weight + total, OR weight + rate — the third field auto-computes"}
+            {pureWt > 0 && ratePerG > 0 && totalAmt > 0 && (
+              <p className="text-xs text-ink-dim bg-canvas rounded-lg2 px-3 py-2">
+                {!isPure && `Gross ${grams(grossWt)} × ${effectivePurity()}% = `}
+                {grams(pureWt)} pure × {inr(ratePerG)}/g = <strong className="text-gold">{inr(totalAmt)}</strong>
               </p>
-            </div>
+            )}
           </div>
 
           {/* Optional first payment — only for new trades */}
@@ -494,7 +604,7 @@ export default function BullionPage() {
 
           <div className="flex gap-2">
             <button
-              disabled={saveTrade.isPending || !partyName || pureWt <= 0 || totalAmt <= 0 || ratePerG <= 0}
+              disabled={saveTrade.isPending || (!supplier && !partyName) || pureWt <= 0 || totalAmt <= 0 || ratePerG <= 0}
               onClick={() => saveTrade.mutate()}
               className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
               {saveTrade.isPending ? "Saving…" : editingId ? "Save Changes" : `Record ${tradeType === "buy" ? "Purchase" : "Sale"}`}
@@ -652,11 +762,23 @@ export default function BullionPage() {
                         {r.trade_type === "buy" ? "Buy" : "Sell"}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5 font-medium">{r.party_name}</td>
-                    <td className="px-3 py-2.5 capitalize">
-                      <span className={r.metal === "gold" ? "text-gold" : "text-ink-mid"}>{r.metal}</span>
+                    <td className="px-3 py-2.5">
+                      <p className="font-medium">{r.party_name}</p>
                     </td>
-                    <td className="px-3 py-2.5 text-right font-mono">{grams(Number(r.pure_wt))}</td>
+                    <td className="px-3 py-2.5 capitalize">
+                      <div>
+                        <span className={r.metal === "gold" ? "text-gold" : "text-ink-mid"}>{r.metal}</span>
+                        {r.purity && Number(r.purity) < 99 && (
+                          <span className="ml-1 text-[10px] text-ink-dim">{Number(r.purity)}%</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono">
+                      <div>{grams(Number(r.pure_wt))}</div>
+                      {r.gross_wt && Number(r.gross_wt) !== Number(r.pure_wt) && (
+                        <div className="text-[10px] text-ink-dim">gross: {grams(Number(r.gross_wt))}</div>
+                      )}
+                    </td>
                     <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{inr(Number(r.rate_per_g))}</td>
                     <td className="px-3 py-2.5 text-right font-mono font-semibold">{inr(Number(r.total_amount))}</td>
                     <td className="px-3 py-2.5 text-right font-mono text-ok">
