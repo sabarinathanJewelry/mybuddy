@@ -49,7 +49,7 @@ function useBatches() {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("melt_batches")
-        .select("*, melt_batch_items(id, gross_wt, purity_pct, pure_wt, intake_id)")
+        .select("*, melt_batch_items(id, gross_wt, purity_pct, pure_wt, intake_id), debris_wt")
         .order("batch_date", { ascending: false })
         .limit(50);
       if (error) throw error;
@@ -190,7 +190,7 @@ export default function MetalFlowPage() {
   const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
   const [showNewBatch, setShowNewBatch] = useState(false);
   const [newBatch, setNewBatch] = useState({ batch_no: "", batch_date: globalDate, metal: "gold_22k", notes: "" });
-  const [refineryForm, setRefineryForm] = useState<{ batchId: string; output_wt: number; loss_wt: number; output_purity_pct: number } | null>(null);
+  const [refineryForm, setRefineryForm] = useState<{ batchId: string; total_output_wt: number; debris_wt: number; output_wt: number; loss_wt: number; output_purity_pct: number } | null>(null);
 
   // Reserve & dispatches
   const { data: reserveData } = useReserve();
@@ -227,6 +227,9 @@ export default function MetalFlowPage() {
   const silverRefined    = reserveData?.silverRefined    ?? 0;
   const silverBullionIn  = reserveData?.silverBullionIn  ?? 0;
   const silverDispatched = reserveData?.silverDispatched ?? 0;
+  // Debris accumulated in debris box (from all refined batches)
+  const totalDebrisGold   = batches.filter((b: any) => b.status === "refined" && b.metal?.startsWith("gold")).reduce((s: number, b: any) => s + (Number(b.debris_wt) || 0), 0);
+  const totalDebrisSilver = batches.filter((b: any) => b.status === "refined" && b.metal?.startsWith("silver")).reduce((s: number, b: any) => s + (Number(b.debris_wt) || 0), 0);
   const suppliers = suppliersData as { id: string; name: string }[];
 
   // ── Mutations ──
@@ -462,11 +465,14 @@ export default function MetalFlowPage() {
   const recordRefinery = useMutation({
     mutationFn: async (d: NonNullable<typeof refineryForm>) => {
       const purity = d.output_purity_pct || 91.6;
-      const pure_wt_999 = parseFloat((d.output_wt * (purity / 100)).toFixed(3));
+      // net usable = total from refinery − debris; reserve uses only usable portion
+      const netUsable  = parseFloat(d.output_wt.toFixed(3));
+      const pure_wt_999 = parseFloat((netUsable * (purity / 100)).toFixed(3));
       const { error } = await supabase().from("melt_batches").update({
-        melt_wt: parseFloat(d.output_wt.toFixed(3)),   // actual after-melt weight (46.69g)
-        output_wt: pure_wt_999,                          // 999-pure equivalent for reserve (42.511g)
-        loss_wt: parseFloat(d.loss_wt.toFixed(3)),
+        melt_wt:   netUsable,                // usable melted weight (after removing debris)
+        output_wt: pure_wt_999,              // 999-pure equivalent of usable — goes to reserve
+        loss_wt:   parseFloat(d.loss_wt.toFixed(3)),
+        debris_wt: parseFloat((d.debris_wt || 0).toFixed(3)),
         output_purity_pct: purity,
         status: "refined",
       }).eq("id", d.batchId);
@@ -1106,7 +1112,7 @@ export default function MetalFlowPage() {
                             <button
                               onClick={() => {
                                 const grossTotal = (b.melt_batch_items ?? []).reduce((s: number, i: any) => s + (Number(i.gross_wt) || 0), 0);
-                                setRefineryForm({ batchId: b.id, output_wt: grossTotal, loss_wt: 0, output_purity_pct: 91.6 });
+                                setRefineryForm({ batchId: b.id, total_output_wt: grossTotal, debris_wt: 0, output_wt: grossTotal, loss_wt: 0, output_purity_pct: 91.6 });
                               }}
                               className="text-sm bg-ok/10 text-ok border border-ok/30 px-4 py-1.5 rounded-lg2 hover:bg-ok/20">
                               ✓ Record Refinery Return
@@ -1121,13 +1127,18 @@ export default function MetalFlowPage() {
                         {b.status === "refined" && (
                           <div className="flex items-center gap-3 flex-wrap">
                             <span className="text-sm text-ok font-medium">
-                              ✓ Melt: {grams(b.melt_wt ?? b.output_wt)} @ {b.output_purity_pct ?? 91.6}%
+                              ✓ Usable: {grams(b.melt_wt ?? b.output_wt)} @ {b.output_purity_pct ?? 91.6}%
                               → 999 pure: {grams(b.output_wt)}
+                              {Number(b.debris_wt) > 0 && <span className="text-warn ml-2">| Debris: {grams(b.debris_wt)}</span>}
                               {b.loss_wt > 0 && <span className="text-ink-dim ml-2">(loss: {grams(b.loss_wt)})</span>}
                             </span>
                             {!refineryForm && (
                               <button
-                                onClick={() => setRefineryForm({ batchId: b.id, output_wt: b.melt_wt ?? b.output_wt, loss_wt: b.loss_wt ?? 0, output_purity_pct: b.output_purity_pct ?? 91.6 })}
+                                onClick={() => {
+                                  const usable = Number(b.melt_wt ?? b.output_wt) || 0;
+                                  const debris = Number(b.debris_wt) || 0;
+                                  setRefineryForm({ batchId: b.id, total_output_wt: usable + debris, debris_wt: debris, output_wt: usable, loss_wt: Number(b.loss_wt) || 0, output_purity_pct: Number(b.output_purity_pct) || 91.6 });
+                                }}
                                 className="text-xs text-gold hover:underline">
                                 Edit
                               </button>
@@ -1139,32 +1150,75 @@ export default function MetalFlowPage() {
                       {/* Refinery return form */}
                       {refineryForm !== null && refineryForm.batchId === b.id && (() => {
                         const grossTotal = (b.melt_batch_items ?? []).reduce((s: number, i: any) => s + (Number(i.gross_wt) || 0), 0);
-                        const pure999 = parseFloat((refineryForm.output_wt * (refineryForm.output_purity_pct / 100)).toFixed(3));
+                        const netUsable = refineryForm.output_wt;
+                        const pure999   = parseFloat((netUsable * (refineryForm.output_purity_pct / 100)).toFixed(3));
                         return (
                           <div className="bg-ok/5 border border-ok/20 rounded-lg2 p-4 space-y-3">
                             <h4 className="text-sm font-semibold text-ok">Refinery Return — {b.batch_no}</h4>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                              {/* Read-only: input gross */}
                               <div>
-                                <label className="block text-xs text-ink-dim mb-1">Old Gold (Gross)</label>
-                                <p className="text-sm font-mono font-semibold">{grams(grossTotal)}</p>
+                                <label className="block text-xs text-ink-dim mb-1">Sent to Refinery (gross)</label>
+                                <p className="text-sm font-mono font-semibold text-ink border border-line rounded-lg2 px-3 py-2 bg-canvas">{grams(grossTotal)}</p>
                               </div>
+
+                              {/* Total returned from refinery */}
                               <div>
-                                <label className="block text-xs text-ink-dim mb-1">After Melting (g) *</label>
-                                <input type="number" step="0.001" value={refineryForm.output_wt || ""}
+                                <label className="block text-xs text-ink-dim mb-1">Total Returned from Refinery (g) *</label>
+                                <input type="number" step="0.001" value={refineryForm.total_output_wt || ""}
                                   onFocus={(e) => e.target.select()}
+                                  placeholder="e.g. 158.040"
                                   onChange={(e) => {
-                                    const melt = parseFloat(e.target.value) || 0;
-                                    setRefineryForm({ ...refineryForm, output_wt: melt, loss_wt: parseFloat(Math.max(0, grossTotal - melt).toFixed(3)) });
+                                    const total = parseFloat(e.target.value) || 0;
+                                    const debris = refineryForm.debris_wt || 0;
+                                    const usable = parseFloat(Math.max(0, total - debris).toFixed(3));
+                                    const loss   = parseFloat(Math.max(0, grossTotal - total).toFixed(3));
+                                    setRefineryForm({ ...refineryForm, total_output_wt: total, output_wt: usable, loss_wt: loss });
                                   }}
                                   className={inp} />
                               </div>
+
+                              {/* Loss */}
                               <div>
-                                <label className="block text-xs text-ink-dim mb-1">Dust / Loss (g)</label>
+                                <label className="block text-xs text-ink-dim mb-1">Dust / Loss (g) <span className="text-gold">(auto)</span></label>
                                 <input type="number" step="0.001" value={refineryForm.loss_wt || ""}
                                   onFocus={(e) => e.target.select()}
                                   onChange={(e) => setRefineryForm({ ...refineryForm, loss_wt: parseFloat(e.target.value) || 0 })}
                                   className={inp} />
                               </div>
+
+                              {/* Debris */}
+                              <div>
+                                <label className="block text-xs text-ink-dim mb-1">Debris / Fragments (g)</label>
+                                <input type="number" step="0.001" value={refineryForm.debris_wt || ""}
+                                  onFocus={(e) => e.target.select()}
+                                  placeholder="Small pieces for debris box"
+                                  onChange={(e) => {
+                                    const debris = parseFloat(e.target.value) || 0;
+                                    const usable = parseFloat(Math.max(0, refineryForm.total_output_wt - debris).toFixed(3));
+                                    setRefineryForm({ ...refineryForm, debris_wt: debris, output_wt: usable });
+                                  }}
+                                  className={inp} />
+                                <p className="text-xs text-ink-dim mt-0.5">Goes to debris box — excluded from reserve</p>
+                              </div>
+
+                              {/* Net usable (auto) */}
+                              <div>
+                                <label className="block text-xs text-ink-dim mb-1">Net Usable (g) <span className="text-gold">(auto)</span></label>
+                                <input type="number" step="0.001" value={netUsable || ""}
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) => {
+                                    const usable = parseFloat(e.target.value) || 0;
+                                    setRefineryForm({ ...refineryForm, output_wt: usable });
+                                  }}
+                                  className={`${inp} bg-ok/5 font-semibold`} />
+                                {refineryForm.debris_wt > 0 && (
+                                  <p className="text-xs text-ink-dim mt-0.5">{grams(refineryForm.total_output_wt)} − {grams(refineryForm.debris_wt)} debris</p>
+                                )}
+                              </div>
+
+                              {/* Purity */}
                               <div>
                                 <label className="block text-xs text-ink-dim mb-1">Purity %</label>
                                 <input type="number" step="0.01" value={refineryForm.output_purity_pct || ""}
@@ -1173,15 +1227,25 @@ export default function MetalFlowPage() {
                                   className={inp} />
                               </div>
                             </div>
-                            <div className="flex items-center gap-6 text-sm">
-                              <span className="text-ink-dim">999 Pure → reserve:</span>
-                              <span className="text-ok font-bold font-mono">{grams(pure999)}</span>
-                              <span className="text-ink-dim text-xs">({refineryForm.output_wt}g × {refineryForm.output_purity_pct}%)</span>
+
+                            {/* Summary line */}
+                            <div className="bg-ok/5 rounded-lg2 px-3 py-2 text-xs space-y-1">
+                              <div className="flex items-center gap-4 flex-wrap">
+                                <span className="text-ink-dim">Net usable: <strong className="text-ink font-mono">{grams(netUsable)}</strong></span>
+                                <span className="text-ink-dim">× {refineryForm.output_purity_pct}% =</span>
+                                <span className="text-ok font-bold font-mono">→ {grams(pure999)} (999 pure → reserve)</span>
+                              </div>
+                              {refineryForm.debris_wt > 0 && (
+                                <div className="text-warn font-medium">
+                                  + {grams(refineryForm.debris_wt)} debris in box (excluded from reserve — add to next batch when ready)
+                                </div>
+                              )}
                             </div>
+
                             <div className="flex gap-2">
                               <button disabled={!refineryForm.output_wt || recordRefinery.isPending}
                                 onClick={() => recordRefinery.mutate(refineryForm)}
-                                className="bg-ok text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">Save</button>
+                                className="bg-ok text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">Save Refinery Result</button>
                               <button onClick={() => setRefineryForm(null)}
                                 className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
                             </div>
@@ -1201,6 +1265,32 @@ export default function MetalFlowPage() {
       {/* ── RESERVE & DISPATCH TAB ─────────────────────────────── */}
       {tab === "reserve" && (
         <div className="space-y-4">
+          {/* Debris box summary */}
+          {(totalDebrisGold > 0 || totalDebrisSilver > 0) && (
+            <div className="bg-warn/5 border border-warn/30 rounded-xl p-4 shadow-soft">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold text-warn uppercase tracking-wide mb-1">Debris Box Accumulated</p>
+                  <p className="text-xs text-ink-dim">Fragments from refinery — ready to add to next melt batch when enough is collected.</p>
+                </div>
+                <div className="flex gap-4 text-right shrink-0">
+                  {totalDebrisGold > 0 && (
+                    <div>
+                      <p className="text-xs text-ink-dim">Gold</p>
+                      <p className="text-lg font-bold text-warn">{grams(totalDebrisGold)}</p>
+                    </div>
+                  )}
+                  {totalDebrisSilver > 0 && (
+                    <div>
+                      <p className="text-xs text-ink-dim">Silver</p>
+                      <p className="text-lg font-bold text-warn">{grams(totalDebrisSilver)}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Reserve balance */}
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-gold/5 border border-gold/20 rounded-xl p-5 shadow-soft">
