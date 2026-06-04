@@ -232,6 +232,9 @@ export default function MetalFlowPage() {
   const totalDebrisSilver = batches.filter((b: any) => b.status === "refined" && b.metal?.startsWith("silver")).reduce((s: number, b: any) => s + (Number(b.debris_wt) || 0), 0);
   const suppliers = suppliersData as { id: string; name: string }[];
 
+  // Debris → intake form
+  const [debrisIntakeForm, setDebrisIntakeForm] = useState<{ metal: "gold" | "silver"; gross_wt: number; purity_pct: number; pure_wt: number; notes: string } | null>(null);
+
   // ── Mutations ──
 
   const markSold = useMutation({
@@ -243,6 +246,38 @@ export default function MetalFlowPage() {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["metal_intake"] }),
+  });
+
+  const sendDebrisToIntake = useMutation({
+    mutationFn: async (d: NonNullable<typeof debrisIntakeForm>) => {
+      const client = supabase();
+      // 1. Create intake record for the debris
+      const metal_code = d.metal === "gold" ? "gold_22k" : "silver";
+      const { error } = await client.from("old_metal_intake").insert({
+        intake_date: globalDate,
+        metal: metal_code,
+        gross_wt: parseFloat(d.gross_wt.toFixed(3)),
+        purity_pct: d.purity_pct,
+        pure_wt: parseFloat(d.pure_wt.toFixed(3)),
+        source_type: "batch_debris",
+        status: "pending",
+        notes: d.notes || `Debris from melt batches — ${d.gross_wt.toFixed(3)}g`,
+      });
+      if (error) throw error;
+
+      // 2. Zero out debris_wt on all contributing batches for this metal
+      const contributingBatchIds = batches
+        .filter((b: any) => b.status === "refined" && b.metal?.startsWith(d.metal) && Number(b.debris_wt) > 0)
+        .map((b: any) => b.id as string);
+      if (contributingBatchIds.length > 0) {
+        await client.from("melt_batches").update({ debris_wt: 0 }).in("id", contributingBatchIds);
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["metal_intake"] });
+      qc.invalidateQueries({ queryKey: ["melt_batches"] });
+      setDebrisIntakeForm(null);
+    },
   });
 
   const createBatch = useMutation({
@@ -772,7 +807,9 @@ export default function MetalFlowPage() {
                         </td>
                         <td className="px-3 py-2.5">
                           <div className="flex items-center gap-2 flex-wrap">
-                            {r.source_type === "sale" || r.source_type === "order" ? (
+                            {r.source_type === "batch_debris" ? (
+                              <span className="text-xs text-warn font-medium">Debris box</span>
+                            ) : r.source_type === "sale" || r.source_type === "order" ? (
                               <span className="text-xs text-ink-dim">
                                 Via {r.source_type} — paid
                               </span>
@@ -1267,27 +1304,118 @@ export default function MetalFlowPage() {
         <div className="space-y-4">
           {/* Debris box summary */}
           {(totalDebrisGold > 0 || totalDebrisSilver > 0) && (
-            <div className="bg-warn/5 border border-warn/30 rounded-xl p-4 shadow-soft">
-              <div className="flex items-start justify-between gap-4">
+            <div className="bg-warn/5 border border-warn/30 rounded-xl p-4 shadow-soft space-y-3">
+              <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
                   <p className="text-xs font-semibold text-warn uppercase tracking-wide mb-1">Debris Box Accumulated</p>
-                  <p className="text-xs text-ink-dim">Fragments from refinery — ready to add to next melt batch when enough is collected.</p>
+                  <p className="text-xs text-ink-dim">Fragments from refinery — send to intake to add to the next melt batch.</p>
                 </div>
-                <div className="flex gap-4 text-right shrink-0">
+                <div className="flex items-center gap-4 flex-wrap">
                   {totalDebrisGold > 0 && (
-                    <div>
+                    <div className="text-right">
                       <p className="text-xs text-ink-dim">Gold</p>
                       <p className="text-lg font-bold text-warn">{grams(totalDebrisGold)}</p>
                     </div>
                   )}
                   {totalDebrisSilver > 0 && (
-                    <div>
+                    <div className="text-right">
                       <p className="text-xs text-ink-dim">Silver</p>
                       <p className="text-lg font-bold text-warn">{grams(totalDebrisSilver)}</p>
                     </div>
                   )}
+                  <div className="flex gap-2">
+                    {totalDebrisGold > 0 && !debrisIntakeForm && (
+                      <button
+                        onClick={() => setDebrisIntakeForm({
+                          metal: "gold", gross_wt: totalDebrisGold, purity_pct: 91.6,
+                          pure_wt: parseFloat((totalDebrisGold * 0.916).toFixed(3)), notes: "",
+                        })}
+                        className="text-xs bg-warn text-white px-3 py-1.5 rounded-lg2 hover:bg-warn/80 whitespace-nowrap">
+                        → Send Gold to Intake
+                      </button>
+                    )}
+                    {totalDebrisSilver > 0 && !debrisIntakeForm && (
+                      <button
+                        onClick={() => setDebrisIntakeForm({
+                          metal: "silver", gross_wt: totalDebrisSilver, purity_pct: 92.5,
+                          pure_wt: parseFloat((totalDebrisSilver * 0.925).toFixed(3)), notes: "",
+                        })}
+                        className="text-xs bg-warn text-white px-3 py-1.5 rounded-lg2 hover:bg-warn/80 whitespace-nowrap">
+                        → Send Silver to Intake
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
+
+              {/* Inline form to confirm and create the intake record */}
+              {debrisIntakeForm && (
+                <div className="border-t border-warn/20 pt-3 space-y-3">
+                  <p className="text-xs font-semibold text-warn">
+                    Create Old Metal Intake from Debris Box — {debrisIntakeForm.metal === "gold" ? "Gold" : "Silver"}
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-xs text-ink-dim mb-1">Gross Weight (g)</label>
+                      <input type="number" step="0.001" value={debrisIntakeForm.gross_wt || ""}
+                        onFocus={e => e.target.select()}
+                        onChange={e => {
+                          const g = parseFloat(e.target.value) || 0;
+                          setDebrisIntakeForm({ ...debrisIntakeForm, gross_wt: g, pure_wt: parseFloat((g * debrisIntakeForm.purity_pct / 100).toFixed(3)) });
+                        }}
+                        className={inp} />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-ink-dim mb-1">Purity %</label>
+                      <div className="flex gap-1 mb-1">
+                        {(debrisIntakeForm.metal === "gold"
+                          ? [["22K", 91.6], ["18K", 75.0], ["24K", 99.9]]
+                          : [["92.5", 92.5], ["99.9", 99.9]]
+                        ).map(([label, val]) => (
+                          <button key={label as string} type="button"
+                            onClick={() => {
+                              const pct = val as number;
+                              setDebrisIntakeForm({ ...debrisIntakeForm, purity_pct: pct, pure_wt: parseFloat((debrisIntakeForm.gross_wt * pct / 100).toFixed(3)) });
+                            }}
+                            className={`text-xs px-2 py-0.5 rounded border transition-colors ${debrisIntakeForm.purity_pct === val ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:border-gold"}`}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      <input type="number" step="0.01" value={debrisIntakeForm.purity_pct || ""}
+                        onFocus={e => e.target.select()}
+                        onChange={e => {
+                          const pct = parseFloat(e.target.value) || 0;
+                          setDebrisIntakeForm({ ...debrisIntakeForm, purity_pct: pct, pure_wt: parseFloat((debrisIntakeForm.gross_wt * pct / 100).toFixed(3)) });
+                        }}
+                        className={inp} />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-ink-dim mb-1">Pure Wt (g)</label>
+                      <div className={`${inp} bg-canvas font-mono text-gold font-semibold text-right`}>
+                        {grams(debrisIntakeForm.pure_wt)}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-ink-dim mb-1">Notes (optional)</label>
+                      <input value={debrisIntakeForm.notes}
+                        onChange={e => setDebrisIntakeForm({ ...debrisIntakeForm, notes: e.target.value })}
+                        className={inp} placeholder="Debris from batches…" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      disabled={sendDebrisToIntake.isPending || debrisIntakeForm.gross_wt <= 0}
+                      onClick={() => sendDebrisToIntake.mutate(debrisIntakeForm)}
+                      className="bg-warn text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
+                      {sendDebrisToIntake.isPending ? "Saving…" : "Add to Old Metal Intake"}
+                    </button>
+                    <button onClick={() => setDebrisIntakeForm(null)}
+                      className="border border-line text-sm px-4 py-2 rounded-lg2 text-ink-dim">Cancel</button>
+                  </div>
+                  <p className="text-xs text-ink-dim">This creates a pending intake record and clears the debris box. Then go to the Intake tab → select it → add to your next batch.</p>
+                </div>
+              )}
             </div>
           )}
 
