@@ -19,6 +19,8 @@ interface PayEntry {
   advance: number;
   incentive: number;
   arrear: number;
+  paid?: boolean;
+  payMode?: "cash" | "bank";
 }
 
 function derive(e: PayEntry) {
@@ -198,6 +200,9 @@ export default function PayrollPage() {
   const [pendingInc, setPendingInc] = useState<Map<string, number>>(new Map());
   const [nameMap, setNameMap]       = useState<Record<string, string>>({});
   const [mapSaving, setMapSaving]   = useState(false);
+
+  // ── Payment status
+  const [payingId, setPayingId] = useState<string | null>(null);
 
   // ── Incentive sheet lock tracking
   const [incSheetId, setIncSheetId]         = useState<string | null>(null);
@@ -430,8 +435,18 @@ export default function PayrollPage() {
 
   const totals = useMemo(() => entries.reduce((acc, e) => {
     const d = derive(e);
-    return { basic: acc.basic + e.basicSalary, deduction: acc.deduction + e.deduction, advance: acc.advance + e.advance, incentive: acc.incentive + e.incentive, arrear: acc.arrear + e.arrear, salary: acc.salary + d.salary };
-  }, { basic: 0, deduction: 0, advance: 0, incentive: 0, arrear: 0, salary: 0 }), [entries]);
+    return {
+      basic: acc.basic + e.basicSalary,
+      deduction: acc.deduction + e.deduction,
+      advance: acc.advance + e.advance,
+      incentive: acc.incentive + e.incentive,
+      arrear: acc.arrear + e.arrear,
+      salary: acc.salary + d.salary,
+      paidCash: acc.paidCash + (e.paid && e.payMode === "cash" ? derive(e).salary : 0),
+      paidBank: acc.paidBank + (e.paid && e.payMode === "bank" ? derive(e).salary : 0),
+      paidCount: acc.paidCount + (e.paid ? 1 : 0),
+    };
+  }, { basic: 0, deduction: 0, advance: 0, incentive: 0, arrear: 0, salary: 0, paidCash: 0, paidBank: 0, paidCount: 0 }), [entries]);
 
   const unmatchedCount = Object.entries(nameMap).filter(([, v]) => !v.trim()).length;
   const inp = "border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
@@ -447,7 +462,14 @@ export default function PayrollPage() {
           <h1 className="text-xl font-bold text-ink">Payroll</h1>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {entries.length > 0 && <span className="text-sm text-ink-dim">{entries.length} staff · <span className="font-semibold text-gold">{inr(totals.salary)}</span></span>}
+          {entries.length > 0 && (
+            <span className="text-sm text-ink-dim">
+              {entries.length} staff · <span className="font-semibold text-gold">{inr(totals.salary)}</span>
+              {totals.paidCount > 0 && (
+                <span className="ml-2 text-ok font-medium">{totals.paidCount} paid</span>
+              )}
+            </span>
+          )}
           <input value={period} onChange={e => setPeriod(e.target.value)} placeholder="Period (e.g. May 2026)" className={`${inp} w-36`} />
           <button disabled={entries.length === 0 || saveStatus === "saving" || !period.trim()}
             onClick={() => saveSheet.mutate()}
@@ -639,12 +661,12 @@ export default function PayrollPage() {
             <tbody>
               {entries.map(e => {
                 const d = derive(e);
-                // Auto-deduction based on formula, shown as hint if differs from stored
                 const autoDeduction = parseFloat((e.basicSalary / 30 * e.extraLeave).toFixed(2));
                 const deductionDiffers = e.deduction !== autoDeduction && e.extraLeave > 0;
+                const isPaying = payingId === e.id;
 
                 return (
-                  <tr key={e.id} className="border-b border-line last:border-0 hover:bg-canvas/30">
+                  <tr key={e.id} className={clsx("border-b border-line last:border-0", e.paid ? "bg-ok/5" : "hover:bg-canvas/30")}>
                     <td className="px-3 py-1.5 sticky left-0 bg-white z-10">
                       <input value={e.name} onChange={ev => updateField(e.id, { name: ev.target.value.toUpperCase() })}
                         className="border border-line rounded px-2 py-1 text-xs uppercase w-full focus:outline-none focus:ring-1 focus:ring-gold font-medium" />
@@ -685,7 +707,7 @@ export default function PayrollPage() {
                       {inr(d.salary)}
                     </td>
                     <td className="px-2 py-1.5">
-                      <div className="flex items-center gap-1 justify-end">
+                      <div className="flex items-center gap-1 justify-end flex-wrap">
                         <button onClick={() => downloadPayslip(e)}
                           className="text-[10px] text-info border border-info/30 px-2 py-1 rounded hover:bg-info/10 whitespace-nowrap">
                           Payslip
@@ -699,11 +721,41 @@ export default function PayrollPage() {
                             <button
                               disabled={lockStaffRows.isPending}
                               onClick={() => lockStaffRows.mutate(e.name)}
-                              title="Lock incentive rows for this staff (mark incentive as paid)"
+                              title="Lock incentive rows for this staff"
                               className="text-[10px] text-warn border border-warn/30 px-2 py-1 rounded hover:bg-warn/10 whitespace-nowrap disabled:opacity-50">
                               Lock
                             </button>
                           )
+                        )}
+                        {/* Payment status */}
+                        {e.paid ? (
+                          <span className="inline-flex items-center gap-1">
+                            <span className="text-[10px] text-ok border border-ok/40 px-2 py-1 rounded bg-ok/10 whitespace-nowrap font-medium">
+                              Paid · {e.payMode === "bank" ? "Bank" : "Cash"}
+                            </span>
+                            <button
+                              onClick={() => updateField(e.id, { paid: false, payMode: undefined })}
+                              title="Undo payment status"
+                              className="text-[10px] text-ink-dim hover:text-err">↩</button>
+                          </span>
+                        ) : isPaying ? (
+                          <span className="inline-flex items-center gap-1">
+                            <button onClick={() => { updateField(e.id, { paid: true, payMode: "cash" }); setPayingId(null); }}
+                              className="text-[10px] bg-ok text-white px-2 py-1 rounded hover:bg-ok/80 whitespace-nowrap">
+                              Cash
+                            </button>
+                            <button onClick={() => { updateField(e.id, { paid: true, payMode: "bank" }); setPayingId(null); }}
+                              className="text-[10px] bg-info text-white px-2 py-1 rounded hover:bg-info/80 whitespace-nowrap">
+                              Bank
+                            </button>
+                            <button onClick={() => setPayingId(null)}
+                              className="text-[10px] text-ink-dim hover:text-err">✕</button>
+                          </span>
+                        ) : (
+                          <button onClick={() => setPayingId(e.id)}
+                            className="text-[10px] text-ok border border-ok/30 px-2 py-1 rounded hover:bg-ok/10 whitespace-nowrap">
+                            Mark Paid
+                          </button>
                         )}
                         <button onClick={() => setEntries(p => p.filter(x => x.id !== e.id))}
                           className="text-[10px] text-err/60 hover:text-err px-1">×</button>
@@ -728,6 +780,35 @@ export default function PayrollPage() {
               </tr>
             </tfoot>
           </table>
+        </div>
+      )}
+
+      {/* Payment summary */}
+      {entries.length > 0 && totals.paidCount > 0 && (
+        <div className="bg-white rounded-xl border border-line shadow-soft px-4 py-3">
+          <p className="text-xs font-medium text-ink-dim uppercase tracking-wide mb-2">Payment Summary</p>
+          <div className="flex flex-wrap gap-4 text-sm">
+            <div>
+              <span className="text-ink-dim text-xs">Paid (Cash)</span>
+              <p className="font-bold text-ok">{inr(totals.paidCash)}</p>
+            </div>
+            <div>
+              <span className="text-ink-dim text-xs">Paid (Bank Transfer)</span>
+              <p className="font-bold text-info">{inr(totals.paidBank)}</p>
+            </div>
+            <div>
+              <span className="text-ink-dim text-xs">Total Paid</span>
+              <p className="font-bold text-ink">{inr(totals.paidCash + totals.paidBank)}</p>
+            </div>
+            <div>
+              <span className="text-ink-dim text-xs">Pending</span>
+              <p className="font-bold text-err">{inr(totals.salary - totals.paidCash - totals.paidBank)}</p>
+            </div>
+            <div>
+              <span className="text-ink-dim text-xs">Staff Paid</span>
+              <p className="font-bold text-ink">{totals.paidCount} / {entries.length}</p>
+            </div>
+          </div>
         </div>
       )}
     </div>
