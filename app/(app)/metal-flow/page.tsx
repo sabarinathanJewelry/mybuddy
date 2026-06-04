@@ -171,7 +171,7 @@ export default function MetalFlowPage() {
   const [editIntakeId, setEditIntakeId] = useState<string | null>(null);
   const [editIntakeForm, setEditIntakeForm] = useState<{ intake_date: string; customer_id: string; metal: string; gross_wt: number; purity_pct: number; pure_wt: number; notes: string; payout_amount: number; payout_mode: "cash" | "bank" } | null>(null);
   const [metalFilter, setMetalFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "used">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "used" | "sold">("all");
   const defaultIntakeForm = () => ({
     intake_date: globalDate,
     customer_id: "",
@@ -230,6 +230,17 @@ export default function MetalFlowPage() {
   const suppliers = suppliersData as { id: string; name: string }[];
 
   // ── Mutations ──
+
+  const markSold = useMutation({
+    mutationFn: async ({ id, undo }: { id: string; undo?: boolean }) => {
+      const { error } = await supabase()
+        .from("old_metal_intake")
+        .update({ status: undo ? "pending" : "sold" })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["metal_intake"] }),
+  });
 
   const createBatch = useMutation({
     mutationFn: async (d: typeof newBatch) => {
@@ -529,11 +540,12 @@ export default function MetalFlowPage() {
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-ink-dim font-medium w-12">Status</span>
-              {([["all", "All"], ["pending", "Ready to Melt"], ["used", "Used"]] as const).map(([v, l]) => (
+              {([["all", "All"], ["pending", "Ready to Melt"], ["used", "Used"], ["sold", "Sold to Supplier"]] as const).map(([v, l]) => (
                 <button key={v} onClick={() => setStatusFilter(v)}
                   className={`text-xs px-3 py-1 rounded-full border transition-colors ${statusFilter === v
                     ? v === "pending" ? "bg-warn text-white border-warn"
-                    : v === "used" ? "bg-ok text-white border-ok"
+                    : v === "used"    ? "bg-ok text-white border-ok"
+                    : v === "sold"    ? "bg-info text-white border-info"
                     : "bg-ink text-white border-ink"
                     : "border-line text-ink-dim hover:border-gold"}`}>
                   {l}
@@ -745,8 +757,12 @@ export default function MetalFlowPage() {
                         <td className="px-3 py-2.5">
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                             r.status === "pending" ? "bg-warn/10 text-warn" :
-                            r.status === "used" ? "bg-ok/10 text-ok" : "bg-line text-ink-dim"
-                          }`}>{r.status}</span>
+                            r.status === "used"    ? "bg-ok/10 text-ok"    :
+                            r.status === "sold"    ? "bg-info/10 text-info" :
+                            "bg-line text-ink-dim"
+                          }`}>
+                            {r.status === "sold" ? "Sold to supplier" : r.status}
+                          </span>
                         </td>
                         <td className="px-3 py-2.5">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -763,6 +779,25 @@ export default function MetalFlowPage() {
                                 onClick={() => { setPayoutRowId(r.id); setPayoutForm({ amount: 0, mode: "cash" }); }}
                                 className="text-xs text-gold hover:underline">
                                 + Pay Out
+                              </button>
+                            )}
+                            {r.status === "pending" && (
+                              <button
+                                disabled={markSold.isPending}
+                                onClick={() => {
+                                  if (confirm(`Mark ${grams(r.gross_wt)} (${r.metal?.replace(/_/g, " ")}) as sold to supplier?\n\nThis removes it from the pending list. Make sure you've recorded the corresponding bullion sell trade.`)) {
+                                    markSold.mutate({ id: r.id });
+                                  }
+                                }}
+                                className="text-xs text-info border border-info/30 px-2 py-0.5 rounded hover:bg-info/10 whitespace-nowrap disabled:opacity-50">
+                                Sold to Supplier
+                              </button>
+                            )}
+                            {r.status === "sold" && (
+                              <button
+                                onClick={() => markSold.mutate({ id: r.id, undo: true })}
+                                className="text-xs text-ink-dim hover:text-warn hover:underline">
+                                Undo
                               </button>
                             )}
                             {r.status === "pending" && (
