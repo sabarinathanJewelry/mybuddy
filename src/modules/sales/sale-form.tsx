@@ -254,9 +254,11 @@ export default function SaleForm({ saleId }: Props) {
     }));
   }
 
-  function handleDistribute() {
+  function handleDistribute(forceNoGst = false) {
     if (!desiredTotal) return;
-    const nonMpr = items.filter((i) => !i.is_value_entry);
+    const nonMpr = items
+      .filter((i) => !i.is_value_entry)
+      .map((item) => forceNoGst ? { ...item, gst_enabled: false, gst_pct: 0 } : item);
     const mprTotal = items.filter((i) => i.is_value_entry).reduce((s, i) => s + i.line_total, 0);
     const target = desiredTotal - mprTotal;
     const computed = nonMpr.map((item) => ({ ...item, ...computeLine(item) }));
@@ -796,11 +798,31 @@ export default function SaleForm({ saleId }: Props) {
         <Num value={desiredTotal} onChange={setDesiredTotal} step="0.01"
           className="border border-line rounded-lg2 px-3 py-2 text-sm w-44 focus:outline-none focus:ring-1 focus:ring-gold"
           placeholder="Desired total…" />
-        <button type="button" onClick={handleDistribute}
+        <button type="button" onClick={() => handleDistribute()}
           className="text-xs bg-gold/10 text-gold border border-gold/30 px-3 py-2 rounded-lg2 hover:bg-gold/20">
           {t("distribute_va")}
         </button>
       </div>
+      {desiredTotal > 0 && (() => {
+        const nonMprItems = items.filter((i) => !i.is_value_entry);
+        const mprT = items.filter((i) => i.is_value_entry).reduce((s, i) => s + i.line_total, 0);
+        const minWithGst = mprT + nonMprItems.reduce((s, item) => s + computeLine({ ...item, va_pct: 0 }).line_total, 0);
+        const minNoGst = mprT + nonMprItems.reduce((s, item) => s + computeLine({ ...item, va_pct: 0, gst_enabled: false, gst_pct: 0 }).line_total, 0);
+        if (desiredTotal >= minWithGst) return null;
+        return (
+          <div className="text-xs flex flex-wrap items-center gap-2">
+            <span className="text-warn">Below base+GST — VA will go negative.</span>
+            {desiredTotal >= minNoGst ? (
+              <button type="button" onClick={() => handleDistribute(true)}
+                className="text-gold underline">
+                Remove GST + Distribute
+              </button>
+            ) : (
+              <span className="text-err">Below cost even without GST.</span>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Payments */}
       <div>
