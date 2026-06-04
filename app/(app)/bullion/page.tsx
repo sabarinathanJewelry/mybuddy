@@ -10,9 +10,10 @@ import { inr, grams, shortDate } from "@/lib/format";
 const inp = "w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
 
 const PAY_MODES = [
-  { value: "cash",  label: "Cash" },
-  { value: "upi",   label: "UPI/GPay" },
-  { value: "bank",  label: "Bank" },
+  { value: "cash",           label: "Cash" },
+  { value: "upi",            label: "UPI/GPay" },
+  { value: "bank",           label: "Bank" },
+  { value: "balance_offset", label: "Balance Offset (non-cash)" },
 ];
 
 type TradeType = "buy" | "sell";
@@ -124,6 +125,12 @@ export default function BullionPage() {
   const [payAmount, setPayAmount] = useState(0);
   const [payMode, setPayMode] = useState("cash");
   const [payDate, setPayDate] = useState(globalDate);
+  // Balance offset fields (used when payMode === "balance_offset")
+  const [offsetWt, setOffsetWt] = useState(0);
+  const [offsetRate, setOffsetRate] = useState(0);
+  // First-payment offset on trade creation (for sell trades)
+  const [firstOffsetWt, setFirstOffsetWt] = useState(0);
+  const [firstOffsetRate, setFirstOffsetRate] = useState(0);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -131,6 +138,7 @@ export default function BullionPage() {
   function resetForm() {
     setPartyName(""); setPureWt(0); setRatePerG(0); setTotalAmt(0);
     setActiveField("total"); setFirstPayAmt(0); setFirstPayMode("cash"); setFormNotes("");
+    setFirstOffsetWt(0); setFirstOffsetRate(0);
     setTradeDate(globalDate); setShowForm(false); setEditingId(null);
   }
 
@@ -173,24 +181,35 @@ export default function BullionPage() {
       }).select().single();
       if (error) throw error;
 
+      const desc = `Bullion ${tradeType}: ${partyName}`;
+      const direction = tradeType === "buy" ? "out" : "in";
+
       if (firstPayAmt > 0) {
         await client.from("bullion_payments").insert({
           trade_id: row.id, pay_date: tradeDate,
           amount: firstPayAmt, mode: firstPayMode,
         });
-        const direction = tradeType === "buy" ? "out" : "in";
-        const desc = `Bullion ${tradeType}: ${partyName}`;
         if (firstPayMode === "cash") {
           await client.from("cash_ledger").insert({
             tx_date: tradeDate, direction, amount: firstPayAmt,
             description: desc, ref_type: "bullion", ref_id: row.id,
           });
-        } else {
+        } else if (firstPayMode !== "balance_offset") {
           await client.from("bank_ledger").insert({
             tx_date: tradeDate, direction, amount: firstPayAmt,
             description: desc, ref_type: "bullion", ref_id: row.id,
           });
         }
+      }
+
+      // Balance offset on creation (for sell trades)
+      const firstOffsetAmt = parseFloat((firstOffsetWt * firstOffsetRate).toFixed(2));
+      if (firstOffsetWt > 0 && firstOffsetRate > 0 && firstOffsetAmt > 0) {
+        await client.from("bullion_payments").insert({
+          trade_id: row.id, pay_date: tradeDate,
+          amount: firstOffsetAmt, mode: "balance_offset",
+          notes: `Offset: ${firstOffsetWt}g @ ₹${firstOffsetRate}/g`,
+        });
       }
     },
     onSuccess: () => {
@@ -220,40 +239,65 @@ export default function BullionPage() {
 
   const addPayment = useMutation({
     mutationFn: async () => {
-      if (!payingTradeId || payAmount <= 0) throw new Error("Invalid");
       const client = supabase();
       const trade = (trades ?? []).find((t: any) => t.id === payingTradeId);
-      if (!trade) throw new Error("Trade not found");
+      if (!trade || !payingTradeId) throw new Error("Trade not found");
+
+      const isOffset = payMode === "balance_offset";
+      // For offset: compute amount from weight × rate
+      const effectiveAmt = isOffset
+        ? parseFloat((offsetWt * offsetRate).toFixed(2))
+        : payAmount;
+      if (effectiveAmt <= 0) throw new Error("Invalid amount");
+
+      const offsetNotes = isOffset
+        ? `Offset: ${offsetWt}g @ ₹${offsetRate}/g`
+        : undefined;
 
       await client.from("bullion_payments").insert({
         trade_id: payingTradeId, pay_date: payDate,
-        amount: payAmount, mode: payMode,
+        amount: effectiveAmt, mode: payMode,
+        notes: offsetNotes ?? null,
       });
 
-      const direction = trade.trade_type === "buy" ? "out" : "in";
-      const desc = `Bullion ${trade.trade_type}: ${trade.party_name}`;
-      if (payMode === "cash") {
-        await client.from("cash_ledger").insert({
-          tx_date: payDate, direction, amount: payAmount,
-          description: desc, ref_type: "bullion", ref_id: trade.id,
-        });
-      } else {
-        await client.from("bank_ledger").insert({
-          tx_date: payDate, direction, amount: payAmount,
-          description: desc, ref_type: "bullion", ref_id: trade.id,
-        });
+      // Only hit the cash/bank ledger for real money movements
+      if (!isOffset) {
+        const direction = trade.trade_type === "buy" ? "out" : "in";
+        const desc = `Bullion ${trade.trade_type}: ${trade.party_name}`;
+        if (payMode === "cash") {
+          await client.from("cash_ledger").insert({
+            tx_date: payDate, direction, amount: effectiveAmt,
+            description: desc, ref_type: "bullion", ref_id: trade.id,
+          });
+        } else {
+          await client.from("bank_ledger").insert({
+            tx_date: payDate, direction, amount: effectiveAmt,
+            description: desc, ref_type: "bullion", ref_id: trade.id,
+          });
+        }
       }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["bullion_trades"] });
       setPayingTradeId(null); setPayAmount(0); setPayDate(globalDate);
+      setOffsetWt(0); setOffsetRate(0);
     },
   });
 
   const rows = (trades ?? []) as any[];
 
+  function cashPaidFor(row: any): number {
+    return ((row.bullion_payments ?? []) as any[])
+      .filter((p: any) => p.mode !== "balance_offset")
+      .reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0);
+  }
+  function offsetFor(row: any): number {
+    return ((row.bullion_payments ?? []) as any[])
+      .filter((p: any) => p.mode === "balance_offset")
+      .reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0);
+  }
   function paidFor(row: any): number {
-    return ((row.bullion_payments ?? []) as any[]).reduce((s: number, p: any) => s + (Number(p.amount) || 0), 0);
+    return cashPaidFor(row) + offsetFor(row);
   }
   function pendingFor(row: any): number {
     return Number(row.total_amount) - paidFor(row);
@@ -381,7 +425,7 @@ export default function BullionPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs text-ink-dim mb-1">
-                  {tradeType === "buy" ? "Amount Paid" : "Amount Received"}
+                  {tradeType === "buy" ? "Amount Paid (cash/bank)" : "Cash / Bank Received"}
                 </label>
                 <input type="number" step="0.01" value={firstPayAmt || ""}
                   placeholder="0" onFocus={(e) => e.target.select()}
@@ -391,15 +435,55 @@ export default function BullionPage() {
               <div>
                 <label className="block text-xs text-ink-dim mb-1">Mode</label>
                 <select value={firstPayMode} onChange={(e) => setFirstPayMode(e.target.value)} className={inp}>
-                  {PAY_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  {PAY_MODES.filter(m => m.value !== "balance_offset").map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
               </div>
             </div>
-            {firstPayAmt > 0 && totalAmt > 0 && (
-              <p className="text-xs text-ink-dim">
-                Pending after this: <strong className="text-err">{inr(totalAmt - firstPayAmt)}</strong>
-              </p>
+
+            {/* Balance offset — sell trades only */}
+            {tradeType === "sell" && (
+              <div className="bg-info/5 border border-info/20 rounded-lg2 p-3 space-y-2">
+                <p className="text-xs font-medium text-info">Balance Offset (non-cash netting)</p>
+                <p className="text-xs text-ink-dim">Use when you owe the supplier gold/silver and are deducting its value from this sale.</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Owed Weight (g)</label>
+                    <input type="number" step="0.001" value={firstOffsetWt || ""}
+                      placeholder="0.000" onFocus={(e) => e.target.select()}
+                      onChange={(e) => setFirstOffsetWt(parseFloat(e.target.value) || 0)}
+                      className={inp} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Rate (₹/g)</label>
+                    <input type="number" step="0.01" value={firstOffsetRate || ""}
+                      placeholder="0" onFocus={(e) => e.target.select()}
+                      onChange={(e) => setFirstOffsetRate(parseFloat(e.target.value) || 0)}
+                      className={inp} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Offset Amount</label>
+                    <div className={`${inp} bg-canvas font-mono font-semibold text-info text-right`}>
+                      {firstOffsetWt > 0 && firstOffsetRate > 0
+                        ? inr(parseFloat((firstOffsetWt * firstOffsetRate).toFixed(2)))
+                        : "—"}
+                    </div>
+                  </div>
+                </div>
+              </div>
             )}
+
+            {(firstPayAmt > 0 || (firstOffsetWt > 0 && firstOffsetRate > 0)) && totalAmt > 0 && (() => {
+              const offsetAmt = parseFloat((firstOffsetWt * firstOffsetRate).toFixed(2));
+              const totalPaid = firstPayAmt + offsetAmt;
+              const pending   = totalAmt - totalPaid;
+              return (
+                <div className="text-xs text-ink-dim space-y-0.5">
+                  {firstPayAmt > 0 && <p>Cash/Bank: <strong className="text-ok">{inr(firstPayAmt)}</strong></p>}
+                  {offsetAmt > 0 && <p>Offset: <strong className="text-info">{inr(offsetAmt)}</strong></p>}
+                  <p>Pending after this: <strong className={pending > 0.01 ? "text-err" : "text-ok"}>{pending > 0.01 ? inr(pending) : "Fully settled ✓"}</strong></p>
+                </div>
+              );
+            })()}
           </div>}
 
           <div>
@@ -443,31 +527,66 @@ export default function BullionPage() {
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs text-ink-dim mb-1">Amount</label>
-                <input type="number" step="0.01" value={payAmount || ""}
-                  placeholder="0" onFocus={(e) => e.target.select()}
-                  onChange={(e) => setPayAmount(parseFloat(e.target.value) || 0)} className={inp} />
-              </div>
-              <div>
                 <label className="block text-xs text-ink-dim mb-1">Mode</label>
-                <select value={payMode} onChange={(e) => setPayMode(e.target.value)} className={inp}>
+                <select value={payMode} onChange={(e) => { setPayMode(e.target.value); setOffsetWt(0); setOffsetRate(0); setPayAmount(0); }} className={inp}>
                   {PAY_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
               </div>
               <div>
                 <label className="block text-xs text-ink-dim mb-1">Date</label>
-                <input type="date" value={payDate}
-                  onChange={(e) => setPayDate(e.target.value)} className={inp} />
+                <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} className={inp} />
               </div>
+              {payMode !== "balance_offset" ? (
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Amount (₹)</label>
+                  <input type="number" step="0.01" value={payAmount || ""}
+                    placeholder="0" onFocus={(e) => e.target.select()}
+                    onChange={(e) => setPayAmount(parseFloat(e.target.value) || 0)} className={inp} />
+                </div>
+              ) : (
+                <div className="col-span-1">
+                  <label className="block text-xs text-ink-dim mb-1">Offset Amount</label>
+                  <div className={`${inp} bg-canvas font-mono text-info font-semibold text-right`}>
+                    {offsetWt > 0 && offsetRate > 0 ? inr(parseFloat((offsetWt * offsetRate).toFixed(2))) : "—"}
+                  </div>
+                </div>
+              )}
             </div>
+
+            {/* Offset weight + rate fields */}
+            {payMode === "balance_offset" && (
+              <div className="bg-info/5 border border-info/20 rounded-lg2 p-3 space-y-2">
+                <p className="text-xs font-medium text-info">Balance Offset — non-cash netting against outstanding balance</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Owed Weight (g)</label>
+                    <input type="number" step="0.001" value={offsetWt || ""}
+                      placeholder="e.g. 18.390" onFocus={(e) => e.target.select()}
+                      onChange={(e) => setOffsetWt(parseFloat(e.target.value) || 0)} className={inp} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Rate (₹/g)</label>
+                    <input type="number" step="0.01" value={offsetRate || ""}
+                      placeholder="e.g. 15050" onFocus={(e) => e.target.select()}
+                      onChange={(e) => setOffsetRate(parseFloat(e.target.value) || 0)} className={inp} />
+                  </div>
+                </div>
+                {offsetWt > 0 && offsetRate > 0 && (
+                  <p className="text-xs text-info font-medium">
+                    {grams(offsetWt)} × {inr(offsetRate)}/g = <strong>{inr(parseFloat((offsetWt * offsetRate).toFixed(2)))}</strong> — will be deducted from supplier's payment (no cash entry)
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="flex gap-2">
               <button
-                disabled={addPayment.isPending || payAmount <= 0}
+                disabled={addPayment.isPending || (payMode === "balance_offset" ? offsetWt <= 0 || offsetRate <= 0 : payAmount <= 0)}
                 onClick={() => addPayment.mutate()}
                 className="bg-ok text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
-                {addPayment.isPending ? "Saving…" : "Record Payment"}
+                {addPayment.isPending ? "Saving…" : payMode === "balance_offset" ? "Record Offset" : "Record Payment"}
               </button>
-              <button onClick={() => setPayingTradeId(null)}
+              <button onClick={() => { setPayingTradeId(null); setOffsetWt(0); setOffsetRate(0); }}
                 className="border border-line text-sm px-5 py-2 rounded-lg2">Cancel</button>
             </div>
           </div>
@@ -512,15 +631,19 @@ export default function BullionPage() {
                 <th className="text-right px-3 py-2.5">Weight</th>
                 <th className="text-right px-3 py-2.5">Rate/g</th>
                 <th className="text-right px-3 py-2.5">Total</th>
-                <th className="text-right px-3 py-2.5">Paid</th>
+                <th className="text-right px-3 py-2.5 text-ok">Cash Paid</th>
+                <th className="text-right px-3 py-2.5 text-info">Offset</th>
                 <th className="text-right px-3 py-2.5">Pending</th>
                 <th className="px-3 py-2.5" />
               </tr>
             </thead>
             <tbody>
               {rows.map((r: any) => {
-                const paid = paidFor(r);
-                const pend = pendingFor(r);
+                const cash   = cashPaidFor(r);
+                const offset = offsetFor(r);
+                const pend   = pendingFor(r);
+                // Show offset payments as tooltip/sub-line
+                const offPays = ((r.bullion_payments ?? []) as any[]).filter((p: any) => p.mode === "balance_offset");
                 return (
                   <tr key={r.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
                     <td className="px-4 py-2.5 text-ink-dim">{shortDate(r.trade_date)}</td>
@@ -536,23 +659,30 @@ export default function BullionPage() {
                     <td className="px-3 py-2.5 text-right font-mono">{grams(Number(r.pure_wt))}</td>
                     <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{inr(Number(r.rate_per_g))}</td>
                     <td className="px-3 py-2.5 text-right font-mono font-semibold">{inr(Number(r.total_amount))}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-ok">{inr(paid)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-ok">
+                      {cash > 0 ? inr(cash) : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono text-info">
+                      {offset > 0 ? (
+                        <span title={offPays.map((p: any) => p.notes || "Offset").join(", ")}>
+                          {inr(offset)}
+                        </span>
+                      ) : "—"}
+                    </td>
                     <td className="px-3 py-2.5 text-right font-mono">
-                      <span className={pend > 0.01 ? "text-err font-semibold" : "text-ink-dim"}>{inr(pend)}</span>
+                      <span className={pend > 0.01 ? "text-err font-semibold" : "text-ink-dim"}>{pend > 0.01 ? inr(pend) : "✓"}</span>
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2">
                         {pend > 0.01 && (
                           <button
-                            onClick={() => { setPayingTradeId(r.id); setPayAmount(0); setPayDate(globalDate); }}
+                            onClick={() => { setPayingTradeId(r.id); setPayAmount(0); setOffsetWt(0); setOffsetRate(0); setPayDate(globalDate); setPayMode("cash"); }}
                             className="text-xs text-gold hover:underline whitespace-nowrap">
                             + Pay
                           </button>
                         )}
-                        <button onClick={() => openEdit(r)}
-                          className="text-xs text-info hover:underline">Edit</button>
-                        <button onClick={() => setDeletingId(r.id)}
-                          className="text-xs text-err hover:underline">Del</button>
+                        <button onClick={() => openEdit(r)} className="text-xs text-info hover:underline">Edit</button>
+                        <button onClick={() => setDeletingId(r.id)} className="text-xs text-err hover:underline">Del</button>
                       </div>
                     </td>
                   </tr>
