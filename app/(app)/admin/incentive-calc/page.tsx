@@ -408,7 +408,7 @@ export default function IncentiveCalcPage() {
   const [overrides, setOverrides] = useState<Record<number, RowOverride>>({});
   const [tab, setTab]           = useState<ViewTab>("data");
   const [filterStaff, setFilterStaff] = useState("ALL");
-  const [filterStatus, setFilterStatus] = useState<"all"|"eligible"|"balance"|"lowwaste"|"unmapped">("all");
+  const [filterStatus, setFilterStatus] = useState<"all"|"eligible"|"balance"|"lowwaste"|"unmapped"|"locked">("all");
   const [defaultSplit, setDefaultSplit] = useState(70);
   const [expandedStaff, setExpandedStaff] = useState<Set<string>>(new Set());
   const [masterEntries, setMasterEntries] = useState<MasterEntry[]>(INITIAL_MASTER);
@@ -422,6 +422,7 @@ export default function IncentiveCalcPage() {
   });
   const [savedSheetId, setSavedSheetId] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle"|"saving"|"saved">("idle");
+  const [lockedRows, setLockedRows] = useState<Record<string, { staff: string; period: string }>>({});
 
   const inp = "border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold";
 
@@ -481,6 +482,7 @@ export default function IncentiveCalcPage() {
     setOverrides(d.overrides ?? {});
     setDefaultSplit(d.default_split ?? 70);
     setPeriod(d.period);
+    setLockedRows(d.locked_rows ?? {});
     if (d.mapper_entries) setMapperEntries(d.mapper_entries);
     if (d.master_entries) setMasterEntries(d.master_entries);
     setSavedSheetId(id);
@@ -510,6 +512,7 @@ export default function IncentiveCalcPage() {
     const r = parseErp(raw);
     setRows(r);
     setOverrides({});
+    setLockedRows({});
     setFilterStaff("ALL");
     setFilterStatus("all");
     setTab("data");
@@ -558,12 +561,14 @@ export default function IncentiveCalcPage() {
     if (filterStatus === "balance"   && eff.balance <= 0) return false;
     if (filterStatus === "lowwaste"  && (eff.balance > 0 || eff.eligible || !eff.mapped)) return false;
     if (filterStatus === "unmapped"  && eff.mapped) return false;
+    if (filterStatus === "locked"    && !lockedRows[String(row.idx)]) return false;
     return true;
-  }), [computed, filterStaff, filterStatus]);
+  }), [computed, filterStaff, filterStatus, lockedRows]);
 
   const balanceCount  = computed.filter(({ eff }) => eff.balance > 0).length;
   const lowWasteCount = computed.filter(({ row, eff }) => eff.mapped && eff.balance <= 0 && !eff.eligible).length;
   const unmappedCount = unmappedProducts.length;
+  const lockedCount   = Object.keys(lockedRows).length;
 
   // ── Master CRUD
   function updateMaster(idx: number, patch: Partial<MasterEntry>) {
@@ -728,6 +733,7 @@ export default function IncentiveCalcPage() {
                 { val: "balance",  label: `Has Balance (${balanceCount})` },
                 { val: "lowwaste", label: `Low Wastage (${lowWasteCount})` },
                 { val: "unmapped", label: `Unmapped (${unmappedCount})` },
+                ...(lockedCount > 0 ? [{ val: "locked" as const, label: `Locked (${lockedCount})` }] : []),
               ] as { val: typeof filterStatus; label: string }[]).map(opt => (
                 <button key={opt.val} onClick={() => setFilterStatus(opt.val)}
                   className={clsx("px-2.5 py-1 rounded-lg2", {
@@ -766,12 +772,14 @@ export default function IncentiveCalcPage() {
                   const ov = overrides[row.idx];
                   const minChanged   = ov?.minWastage !== undefined;
                   const splitChanged = ov?.sp1Share !== undefined;
+                  const lockInfo     = lockedRows[String(row.idx)];
 
                   return (
                     <tr key={row.idx} className={clsx("border-b border-line last:border-0", {
-                      "bg-err/5":  eff.balance > 0,
-                      "bg-warn/5": !eff.eligible && eff.balance <= 0 && eff.mapped,
-                      "bg-canvas/30": eff.eligible,
+                      "bg-ok/5 opacity-60": !!lockInfo,
+                      "bg-err/5":  !lockInfo && eff.balance > 0,
+                      "bg-warn/5": !lockInfo && !eff.eligible && eff.balance <= 0 && eff.mapped,
+                      "bg-canvas/30": !lockInfo && eff.eligible,
                       "opacity-60": !eff.mapped,
                     })}>
                       <td className="px-3 py-1.5 text-ink-dim whitespace-nowrap">{row.date}</td>
@@ -781,6 +789,11 @@ export default function IncentiveCalcPage() {
                           <span className="text-info text-[10px] ml-1">→ {eff.incentiveCode}</span>
                         )}
                         {!eff.mapped && <span className="text-err text-[10px] ml-1">unmapped</span>}
+                        {lockInfo && (
+                          <span className="ml-1.5 text-[10px] text-ok border border-ok/30 px-1.5 py-0.5 rounded bg-ok/10">
+                            paid · {lockInfo.period}
+                          </span>
+                        )}
                       </td>
                       <td className={clsx("px-2 py-1.5 text-right", { "text-ok": eff.eligible, "text-err": !eff.eligible && eff.balance <= 0, "text-ink-dim": eff.balance > 0 })}>
                         {row.wastage > 0 ? `${row.wastage}%` : "—"}
@@ -854,20 +867,32 @@ export default function IncentiveCalcPage() {
             </div>
           )}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {[...staffTotals.entries()].sort((a, b) => b[1] - a[1]).map(([name, total]) => (
+            {[...staffTotals.entries()].sort((a, b) => b[1] - a[1]).map(([name, total]) => {
+              const staffRowsAll = computed.filter(({ row }) => row.sp1 === name || row.sp2 === name);
+              const lockedAmt = staffRowsAll.reduce((s, { row, eff }) => {
+                if (!lockedRows[String(row.idx)]) return s;
+                return s + (row.sp1 === name ? eff.sp1Inc : eff.sp2Inc);
+              }, 0);
+              const isFullyLocked = lockedAmt > 0 && total === 0;
+              return (
               <button key={name} onClick={() => setExpandedStaff(prev => {
                 const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n;
               })} className={clsx("rounded-xl border p-3 text-left shadow-soft transition-colors", {
-                "border-gold/50 bg-gold/5": expandedStaff.has(name),
-                "border-line bg-white hover:border-gold/30": !expandedStaff.has(name),
+                "border-ok/50 bg-ok/5": isFullyLocked,
+                "border-gold/50 bg-gold/5": expandedStaff.has(name) && !isFullyLocked,
+                "border-line bg-white hover:border-gold/30": !expandedStaff.has(name) && !isFullyLocked,
               })}>
                 <p className="text-xs text-ink-dim truncate">{name}</p>
-                <p className="text-base font-bold text-gold">{inr(total)}</p>
+                <p className={clsx("text-base font-bold", isFullyLocked ? "text-ok" : "text-gold")}>{inr(total)}</p>
+                {lockedAmt > 0 && (
+                  <p className="text-[10px] text-ok mt-0.5">Paid: {inr(lockedAmt)}</p>
+                )}
                 <p className="text-[10px] text-ink-dim mt-0.5">
-                  {computed.filter(({ row }) => row.sp1 === name || row.sp2 === name).length} sales · {expandedStaff.has(name) ? "▲" : "▼"}
+                  {staffRowsAll.length} sales · {expandedStaff.has(name) ? "▲" : "▼"}
                 </p>
               </button>
-            ))}
+              );
+            })}
           </div>
           {[...staffTotals.entries()].sort((a, b) => b[1] - a[1]).map(([name, total]) => {
             if (!expandedStaff.has(name)) return null;
@@ -894,14 +919,20 @@ export default function IncentiveCalcPage() {
                     </thead>
                     <tbody>
                       {staffRows.map(({ row, eff }) => {
-                        const isSp1   = row.sp1 === name;
-                        const myShare = isSp1 ? eff.sp1Inc : eff.sp2Inc;
+                        const isSp1    = row.sp1 === name;
+                        const myShare  = isSp1 ? eff.sp1Inc : eff.sp2Inc;
+                        const lockInfo = lockedRows[String(row.idx)];
                         return (
-                          <tr key={row.idx} className={clsx("border-b border-line last:border-0", { "opacity-40": !eff.eligible, "hover:bg-canvas/50": eff.eligible })}>
+                          <tr key={row.idx} className={clsx("border-b border-line last:border-0", {
+                            "bg-ok/5 opacity-60": !!lockInfo,
+                            "opacity-40": !lockInfo && !eff.eligible,
+                            "hover:bg-canvas/50": !lockInfo && eff.eligible,
+                          })}>
                             <td className="px-3 py-1.5 text-ink-dim whitespace-nowrap">{row.date}</td>
                             <td className="px-3 py-1.5 font-medium">
                               {row.product}
                               {eff.mapped && eff.incentiveCode !== row.product && <span className="text-info text-[10px] ml-1">→ {eff.incentiveCode}</span>}
+                              {lockInfo && <span className="ml-1 text-[10px] text-ok border border-ok/30 px-1 py-0.5 rounded bg-ok/10">paid</span>}
                             </td>
                             <td className={clsx("px-2 py-1.5 text-right", eff.eligible ? "text-ok" : "text-err")}>
                               {row.wastage > 0 ? `${row.wastage}%` : "—"} / {eff.minWastage}%

@@ -92,7 +92,11 @@ function NumCell({ value, onChange, highlight, warn }: { value: number; onChange
 }
 
 // ─── Incentive calc (mirrors incentive-calc page) ──────────────────────────────
-function calcStaffIncentives(sheetData: any): Map<string, number> {
+// lockedRows: { "rowIdx": { staff, period } } — rows already paid; skip them
+function calcStaffIncentives(
+  sheetData: any,
+  lockedRows: Record<string, { staff: string; period: string }> = {}
+): Map<string, number> {
   const rawData = sheetData.raw_data as string;
   const overrides = sheetData.overrides ?? {};
   const defaultSplit = sheetData.default_split ?? 70;
@@ -103,6 +107,7 @@ function calcStaffIncentives(sheetData: any): Map<string, number> {
   if (hi < 0) return new Map();
   const staffInc = new Map<string, number>();
   lines.slice(hi + 1).forEach((line: string, i: number) => {
+    if (lockedRows[String(i)]) return; // already paid in a previous period
     const c = line.split("\t");
     const netWt = parseFloat((c[8] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
     if (netWt <= 0) return;
@@ -130,6 +135,48 @@ function calcStaffIncentives(sheetData: any): Map<string, number> {
   return staffInc;
 }
 
+// Returns row indices that are eligible (balance=0, wastage ok, has rate) for a given staff member
+function getEligibleRowsForStaff(
+  sheetData: any,
+  staffName: string,
+  lockedRows: Record<string, { staff: string; period: string }>
+): number[] {
+  const rawData = sheetData.raw_data as string;
+  const overrides = sheetData.overrides ?? {};
+  const defaultSplit = sheetData.default_split ?? 70;
+  const masterEntries = sheetData.master_entries ?? [];
+  const mapperEntries = sheetData.mapper_entries ?? [];
+  const lines = rawData.split("\n").map((l: string) => l.trimEnd());
+  const hi = lines.findIndex((l: string) => /date/i.test(l) && /product/i.test(l) && /net.?wt/i.test(l));
+  if (hi < 0) return [];
+  const indices: number[] = [];
+  lines.slice(hi + 1).forEach((line: string, i: number) => {
+    if (lockedRows[String(i)]) return;
+    const c = line.split("\t");
+    const netWt = parseFloat((c[8] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
+    if (netWt <= 0) return;
+    const ov = overrides[i] ?? {};
+    const balance = ov.balanceZero ? 0 : Math.max(0, parseFloat((c[7] ?? "").match(/[-\d.]+/)?.[0] ?? "0") || 0);
+    if (balance > 0) return;
+    const sp1 = (c[5] ?? "").trim();
+    const sp2 = (c[6] ?? "").trim();
+    if (sp1 !== staffName && sp2 !== staffName) return;
+    const split = ov.sp1Share ?? defaultSplit;
+    const product = (c[1] ?? "").trim().toUpperCase();
+    const wastage = parseFloat((c[3] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
+    const mapEntry = mapperEntries.find((m: any) => m.erpName?.toUpperCase() === product);
+    let code = (mapEntry?.incentiveCode ?? product).toUpperCase();
+    if (code === "92.5-S" && netWt >= 20) code = "92.5-L";
+    const master = masterEntries.find((m: any) => m.code?.toUpperCase() === code);
+    if (!master || master.rate <= 0) return;
+    const minW = ov.minWastage ?? master.minWastage ?? 0;
+    if (wastage < minW) return;
+    void split; // split used in calc, row is eligible
+    indices.push(i);
+  });
+  return indices;
+}
+
 // ─── Main page ─────────────────────────────────────────────────────────────────
 type LoadStep = "pick_incentive" | "map_names" | null;
 
@@ -149,6 +196,12 @@ export default function PayrollPage() {
   const [pendingInc, setPendingInc] = useState<Map<string, number>>(new Map());
   const [nameMap, setNameMap]       = useState<Record<string, string>>({});
   const [mapSaving, setMapSaving]   = useState(false);
+
+  // ── Incentive sheet lock tracking
+  const [incSheetId, setIncSheetId]         = useState<string | null>(null);
+  const [incSheetData, setIncSheetData]     = useState<any>(null);
+  const [incLockedRows, setIncLockedRows]   = useState<Record<string, { staff: string; period: string }>>({});
+  const [lockedStaff, setLockedStaff]       = useState<Set<string>>(new Set());
 
   // ── Attendance load
   const attMonth = periodToMonth(period) ?? "";
@@ -230,10 +283,15 @@ export default function PayrollPage() {
   // ── Incentive load step 1: select sheet
   async function selectIncentiveSheet(id: string) {
     const { data } = await supabase().from("incentive_sheets")
-      .select("master_entries, mapper_entries, raw_data, overrides, default_split")
+      .select("master_entries, mapper_entries, raw_data, overrides, default_split, locked_rows")
       .eq("id", id).single();
     if (!data) return;
-    const staffInc = calcStaffIncentives(data as any);
+    const d = data as any;
+    const locked = d.locked_rows ?? {};
+    setIncSheetId(id);
+    setIncSheetData(d);
+    setIncLockedRows(locked);
+    const staffInc = calcStaffIncentives(d, locked);
     const initial: Record<string, string> = {};
     for (const incName of staffInc.keys()) {
       const saved = savedNameMap.find(m => m.incentive_name === incName);
@@ -270,6 +328,29 @@ export default function PayrollPage() {
     setLoadStep(null);
     setPendingInc(new Map());
   }
+
+  // ── Lock incentive rows for a staff member (called on "Mark Paid")
+  const lockStaffRows = useMutation({
+    mutationFn: async (staffName: string) => {
+      if (!incSheetId || !incSheetData) throw new Error("No incentive sheet loaded");
+      const rowIndices = getEligibleRowsForStaff(incSheetData, staffName, incLockedRows);
+      if (rowIndices.length === 0) return staffName;
+      const newLocked = { ...incLockedRows };
+      for (const idx of rowIndices) {
+        newLocked[String(idx)] = { staff: staffName, period };
+      }
+      const { error } = await supabase()
+        .from("incentive_sheets")
+        .update({ locked_rows: newLocked })
+        .eq("id", incSheetId);
+      if (error) throw error;
+      setIncLockedRows(newLocked);
+      return staffName;
+    },
+    onSuccess: (staffName) => {
+      setLockedStaff(prev => new Set([...prev, staffName]));
+    },
+  });
 
   // ── Save payroll
   const saveSheet = useMutation({
@@ -514,6 +595,21 @@ export default function PayrollPage() {
         </div>
       )}
 
+      {/* Incentive sheet lock status banner */}
+      {incSheetId && (() => {
+        const totalLocked = Object.keys(incLockedRows).length;
+        const lockedCount = lockedStaff.size;
+        return (
+          <div className="bg-ok/5 border border-ok/30 rounded-xl px-4 py-2.5 text-xs text-ok flex items-center justify-between flex-wrap gap-2">
+            <span>
+              Incentive sheet loaded · <strong>{totalLocked}</strong> row{totalLocked !== 1 ? "s" : ""} already locked from previous payments
+              {lockedCount > 0 && <> · <strong>{lockedCount}</strong> staff locked this session</>}
+            </span>
+            <span className="text-ink-dim">Click <strong className="text-warn">Lock</strong> next to each staff after payslip is issued to mark their incentive rows as paid.</span>
+          </div>
+        );
+      })()}
+
       {/* ── Main table ── */}
       {entries.length === 0 ? (
         <div className="bg-canvas rounded-xl border border-line px-6 py-12 text-center text-ink-dim text-sm space-y-2">
@@ -592,6 +688,21 @@ export default function PayrollPage() {
                           className="text-[10px] text-info border border-info/30 px-2 py-1 rounded hover:bg-info/10 whitespace-nowrap">
                           Payslip
                         </button>
+                        {incSheetId && e.incentive > 0 && (
+                          lockedStaff.has(e.name) ? (
+                            <span className="text-[10px] text-ok border border-ok/30 px-2 py-1 rounded whitespace-nowrap bg-ok/5">
+                              Locked
+                            </span>
+                          ) : (
+                            <button
+                              disabled={lockStaffRows.isPending}
+                              onClick={() => lockStaffRows.mutate(e.name)}
+                              title="Lock incentive rows for this staff (mark incentive as paid)"
+                              className="text-[10px] text-warn border border-warn/30 px-2 py-1 rounded hover:bg-warn/10 whitespace-nowrap disabled:opacity-50">
+                              Lock
+                            </button>
+                          )
+                        )}
                         <button onClick={() => setEntries(p => p.filter(x => x.id !== e.id))}
                           className="text-[10px] text-err/60 hover:text-err px-1">×</button>
                       </div>
