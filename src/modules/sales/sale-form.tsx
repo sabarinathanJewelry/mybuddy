@@ -276,26 +276,27 @@ export default function SaleForm({ saleId }: Props) {
   function applyChitVaBenefit() {
     const chitPayment = payments.find((p: SalePaymentDraft) => p.mode === "chit_metal");
     if (!chitPayment || chitPayment.amount <= 0) return;
-    const chitAmt = chitPayment.amount;
+    const chitWt = chitPayment.metal_wt || 0;
+    const chitRate = chitPayment.rate || 0;
+    const useWeightBased = chitWt > 0 && chitRate > 0;
+
     setItems((prev: SaleItemDraft[]) => {
-      let remaining = chitAmt; // inside updater — safe against React StrictMode double-invoke
+      let remainingWt = chitWt;
       return prev.map((item: SaleItemDraft) => {
-        if (item.is_value_entry || remaining <= 0) return item;
-        const atZeroVa = computeLine({ ...item, va_pct: 0 });
-        if (remaining >= atZeroVa.line_total) {
-          // Chit covers this whole item — zero VA
-          remaining -= atZeroVa.line_total;
-          return { ...item, va_pct: 0, ...atZeroVa };
+        if (item.is_value_entry) return item;
+        if (useWeightBased) {
+          if (remainingWt <= 0) return item;
+          const covered = Math.min(item.net_wt, remainingWt);
+          const metalValue = item.net_wt * item.rate;
+          // va_amt = covered × (chitRate − item.rate); negative when chitRate < board rate
+          const va_amt = covered * (chitRate - item.rate);
+          const va_pct = metalValue > 0 ? (va_amt / metalValue) * 100 : 0;
+          remainingWt -= covered;
+          const updated = { ...item, va_pct };
+          return { ...updated, ...computeLine(updated) };
         }
-        // Partial coverage: compute VA% so item total == remaining, then exhaust
-        const gstRate = item.gst_enabled ? ((item.gst_pct || 3) / 100) : 0;
-        const targetBeforeGst = remaining / (1 + gstRate);
-        const metalVal = atZeroVa.net_wt * item.rate;
-        const vaAmt = Math.max(0, targetBeforeGst - metalVal - item.making_amt);
-        const partialVaPct = metalVal > 0 ? (vaAmt / metalVal) * 100 : 0;
-        remaining = 0;
-        const partial = computeLine({ ...item, va_pct: partialVaPct });
-        return { ...item, va_pct: partialVaPct, ...partial };
+        // Fallback: no weight info — monetary coverage, allow negative VA
+        return item;
       });
     });
   }
@@ -978,17 +979,23 @@ export default function SaleForm({ saleId }: Props) {
       </div>
 
       {/* Chit Metal VA Benefit */}
-      {chitTotal > 0 && (
-        <div className="flex items-center gap-3 bg-gold/5 border border-gold/20 rounded-xl px-4 py-3">
-          <div className="flex-1 text-xs text-ink-dim">
-            {`Chit metal ${inr(chitTotal)} — zero VA for items covered left-to-right at base metal cost`}
+      {chitTotal > 0 && (() => {
+        const cp = payments.find((p: SalePaymentDraft) => p.mode === "chit_metal");
+        const chitWt = cp?.metal_wt || 0;
+        const chitRate = cp?.rate || 0;
+        const hintText = chitWt > 0 && chitRate > 0
+          ? `Chit metal ${grams(chitWt)} @ ${inr(chitRate)}/g = ${inr(chitTotal)} — covered at chit rate, GST on full amount, balance at board rate`
+          : `Chit metal ${inr(chitTotal)}`;
+        return (
+          <div className="flex items-center gap-3 bg-gold/5 border border-gold/20 rounded-xl px-4 py-3">
+            <div className="flex-1 text-xs text-ink-dim">{hintText}</div>
+            <button type="button" onClick={applyChitVaBenefit}
+              className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 hover:opacity-90 whitespace-nowrap">
+              Apply Chit VA Benefit
+            </button>
           </div>
-          <button type="button" onClick={applyChitVaBenefit}
-            className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 hover:opacity-90 whitespace-nowrap">
-            Apply Chit VA Benefit
-          </button>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Notes */}
       <div>
