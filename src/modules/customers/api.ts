@@ -37,6 +37,22 @@ export function useCustomer(id: string | null) {
   });
 }
 
+export function useCustomerBalance(id: string | null | undefined) {
+  return useQuery<number | null>({
+    queryKey: ["customer_balance", id ?? null],
+    enabled: !!id,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("customer_balances")
+        .select("balance")
+        .eq("id", id!)
+        .single();
+      if (error) throw error;
+      return data?.balance ?? null;
+    },
+  });
+}
+
 export function useUpsertCustomer() {
   const qc = useQueryClient();
   return useMutation({

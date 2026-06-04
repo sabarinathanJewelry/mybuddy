@@ -11,6 +11,7 @@ import { useBoardRate } from "@/stores/board-rate";
 import { computeLine, distributeTotalByVa, rateForMetal } from "@/lib/sales-calc";
 import { inr, grams, shortDate } from "@/lib/format";
 import CustomerPicker from "@/modules/customers/customer-picker";
+import CustomerBalanceBadge from "@/modules/customers/customer-balance-badge";
 import SupplierPicker from "@/modules/suppliers/supplier-picker";
 import type { Supplier } from "@/modules/suppliers/supplier-picker";
 import { useSaveSale, useUpdateSale, useSale } from "./api";
@@ -411,6 +412,7 @@ export default function SaleForm({ saleId }: Props) {
         <div className="col-span-2">
           <label className="block text-xs font-medium text-ink-dim mb-1">{t("customers")}</label>
           <CustomerPicker value={customer} onChange={setCustomer} />
+          {customer && <CustomerBalanceBadge customerId={customer.id} />}
         </div>
         <div>
           <label className="block text-xs font-medium text-ink-dim mb-1">{t("date")}</label>

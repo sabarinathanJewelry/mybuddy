@@ -5,6 +5,7 @@ import GroupCombobox from "@/components/ui/group-combobox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import CustomerPicker from "@/modules/customers/customer-picker";
+import CustomerBalanceBadge from "@/modules/customers/customer-balance-badge";
 import { useGlobalDate } from "@/stores/global-date";
 import { useBoardRate } from "@/stores/board-rate";
 import { useT } from "@/i18n";
@@ -783,6 +784,7 @@ export default function OrdersPage() {
             <div className="col-span-2 sm:col-span-4">
               <label className="block text-xs text-ink-dim mb-1">{t("customers")}</label>
               <CustomerPicker value={customer} onChange={setCustomer} />
+              {customer && <CustomerBalanceBadge customerId={customer.id} />}
             </div>
             <div>
               <label className="block text-xs text-ink-dim mb-1">Order Date</label>
@@ -1390,6 +1392,7 @@ export default function OrdersPage() {
                           <div className="col-span-2 sm:col-span-4">
                             <label className="block text-xs text-ink-dim mb-1">{t("customers")}</label>
                             <CustomerPicker value={editOrderForm.customer} onChange={(c) => setEditOrderForm({ ...editOrderForm, customer: c })} />
+                            {editOrderForm.customer && <CustomerBalanceBadge customerId={editOrderForm.customer.id} />}
                           </div>
                           <div>
                             <label className="block text-xs text-ink-dim mb-1">Order Date</label>

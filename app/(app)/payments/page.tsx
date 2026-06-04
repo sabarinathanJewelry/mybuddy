@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 import { usePayments, useSavePayment, useUpdatePayment, useDeletePayment } from "@/modules/payments/api";
 import type { PaymentFilters } from "@/modules/payments/api";
 import CustomerPicker from "@/modules/customers/customer-picker";
+import CustomerBalanceBadge from "@/modules/customers/customer-balance-badge";
 import {
   usePartnerAccounts, usePartnerBalances, usePartnerSettlements,
   useSavePartnerAccount, useDeletePartnerAccount, useAddSettlement, useDeleteSettlement,
@@ -306,6 +307,7 @@ export default function PaymentsPage() {
                 <div className="col-span-2">
                   <label className="block text-xs font-medium text-ink-dim mb-1">{t("customers")}</label>
                   <CustomerPicker value={customer} onChange={setCustomer} />
+                  {customer && <CustomerBalanceBadge customerId={customer.id} />}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-ink-dim mb-1">{t("date")}</label>
