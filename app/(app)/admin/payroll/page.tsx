@@ -118,7 +118,8 @@ function calcStaffIncentives(
     const sp2 = (c[6] ?? "").trim();
     const split = ov.sp1Share ?? defaultSplit;
     const product = (c[1] ?? "").trim().toUpperCase();
-    const wastage = parseFloat((c[3] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
+    const rawWastage = parseFloat((c[3] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
+    const wastage = ov.wastage ?? rawWastage;
     const mapEntry = mapperEntries.find((m: any) => m.erpName?.toUpperCase() === product);
     let code = (mapEntry?.incentiveCode ?? product).toUpperCase();
     if (code === "92.5-S" && netWt >= 20) code = "92.5-L";
@@ -163,14 +164,15 @@ function getEligibleRowsForStaff(
     if (sp1 !== staffName && sp2 !== staffName) return;
     const split = ov.sp1Share ?? defaultSplit;
     const product = (c[1] ?? "").trim().toUpperCase();
-    const wastage = parseFloat((c[3] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
+    const rawWastage2 = parseFloat((c[3] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
+    const wastage2 = ov.wastage ?? rawWastage2;
     const mapEntry = mapperEntries.find((m: any) => m.erpName?.toUpperCase() === product);
     let code = (mapEntry?.incentiveCode ?? product).toUpperCase();
     if (code === "92.5-S" && netWt >= 20) code = "92.5-L";
     const master = masterEntries.find((m: any) => m.code?.toUpperCase() === code);
     if (!master || master.rate <= 0) return;
     const minW = ov.minWastage ?? master.minWastage ?? 0;
-    if (wastage < minW) return;
+    if (wastage2 < minW) return;
     void split; // split used in calc, row is eligible
     indices.push(i);
   });

@@ -14,7 +14,7 @@ interface CalcRow {
   idx: number; date: string; product: string; wastage: number;
   netWt: number; balance: number; sp1: string; sp2: string;
 }
-interface RowOverride  { balanceZero?: boolean; minWastage?: number; sp1Share?: number }
+interface RowOverride  { balanceZero?: boolean; minWastage?: number; sp1Share?: number; wastage?: number }
 
 // ─── Initial Master Rate Table (official incentive codes only) ─────────────────
 const INITIAL_MASTER: MasterEntry[] = [
@@ -353,11 +353,12 @@ function calcRow(
   const minWastage = ov?.minWastage ?? masterEntry?.minWastage ?? 0;
   const balance    = ov?.balanceZero ? 0 : row.balance;
   const sp1Share   = ov?.sp1Share   ?? defaultSplit;
-  const eligible   = !!masterEntry && rate > 0 && row.wastage >= minWastage && balance <= 0;
+  const wastage    = ov?.wastage    ?? row.wastage;
+  const eligible   = !!masterEntry && rate > 0 && wastage >= minWastage && balance <= 0;
   const totalInc   = eligible ? parseFloat((rate * row.netWt).toFixed(2)) : 0;
   const sp1Inc     = row.sp2 ? parseFloat((totalInc * sp1Share / 100).toFixed(2)) : totalInc;
   const sp2Inc     = row.sp2 ? parseFloat((totalInc * (100 - sp1Share) / 100).toFixed(2)) : 0;
-  return { rate, minWastage, balance, sp1Share, eligible, totalInc, sp1Inc, sp2Inc, incentiveCode, mapped };
+  return { rate, minWastage, balance, sp1Share, wastage, eligible, totalInc, sp1Inc, sp2Inc, incentiveCode, mapped };
 }
 
 // ─── Small inline editor ────────────────────────────────────────────────────────
@@ -770,9 +771,10 @@ export default function IncentiveCalcPage() {
                 )}
                 {filteredRows.map(({ row, eff }) => {
                   const ov = overrides[row.idx];
-                  const minChanged   = ov?.minWastage !== undefined;
-                  const splitChanged = ov?.sp1Share !== undefined;
-                  const lockInfo     = lockedRows[String(row.idx)];
+                  const minChanged     = ov?.minWastage !== undefined;
+                  const splitChanged   = ov?.sp1Share !== undefined;
+                  const wastageChanged = ov?.wastage !== undefined;
+                  const lockInfo       = lockedRows[String(row.idx)];
 
                   return (
                     <tr key={row.idx} className={clsx("border-b border-line last:border-0", {
@@ -796,7 +798,16 @@ export default function IncentiveCalcPage() {
                         )}
                       </td>
                       <td className={clsx("px-2 py-1.5 text-right", { "text-ok": eff.eligible, "text-err": !eff.eligible && eff.balance <= 0, "text-ink-dim": eff.balance > 0 })}>
-                        {row.wastage > 0 ? `${row.wastage}%` : "—"}
+                        <span className={wastageChanged ? "text-info font-bold" : ""}>
+                          <InlineNum
+                            value={eff.wastage}
+                            onSave={v => setOv(row.idx, { wastage: v })}
+                          />%
+                        </span>
+                        {wastageChanged && (
+                          <button onClick={() => setOv(row.idx, { wastage: undefined })}
+                            className="text-[10px] text-ink-dim hover:text-err ml-1">↩</button>
+                        )}
                       </td>
                       <td className="px-2 py-1.5 text-right">
                         <span className={minChanged ? "text-info font-bold" : "text-ink-dim"}>
@@ -935,7 +946,7 @@ export default function IncentiveCalcPage() {
                               {lockInfo && <span className="ml-1 text-[10px] text-ok border border-ok/30 px-1 py-0.5 rounded bg-ok/10">paid</span>}
                             </td>
                             <td className={clsx("px-2 py-1.5 text-right", eff.eligible ? "text-ok" : "text-err")}>
-                              {row.wastage > 0 ? `${row.wastage}%` : "—"} / {eff.minWastage}%
+                              {eff.wastage > 0 ? `${eff.wastage}%` : "—"} / {eff.minWastage}%
                             </td>
                             <td className="px-2 py-1.5 text-right">{row.netWt.toFixed(3)}g</td>
                             <td className="px-2 py-1.5 text-center">
