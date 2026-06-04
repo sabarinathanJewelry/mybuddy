@@ -94,7 +94,7 @@ export default function MyAttendancePage() {
   const { data: permissions = [], refetch: refetchPerms } = useMyPermissions();
   const createPerm = useCreatePermission();
   const [showPermForm, setShowPermForm] = useState(false);
-  const [permForm, setPermForm] = useState({ permission_date: todayStr, late_minutes: 30, reason: "" });
+  const [permForm, setPermForm] = useState({ permission_date: todayStr, from_time: "09:00", to_time: "09:30", reason: "" });
   const [permError, setPermError] = useState<string | null>(null);
 
   const thisMonth      = todayStr.slice(0, 7);
@@ -129,15 +129,22 @@ export default function MyAttendancePage() {
     }
   }
 
+  function calcPermMinutes(from: string, to: string) {
+    const [fh, fm] = from.split(":").map(Number);
+    const [th, tm] = to.split(":").map(Number);
+    return (th * 60 + tm) - (fh * 60 + fm);
+  }
+
   async function submitPermission() {
     setPermError(null);
     if (!staff) return;
     if (!canRequest) { setPermError("You have already used 2 permissions this month."); return; }
-    if (permForm.late_minutes < 1 || permForm.late_minutes > 120) { setPermError("Late minutes must be between 1 and 120."); return; }
+    const lateMin = calcPermMinutes(permForm.from_time, permForm.to_time);
+    if (lateMin < 1) { setPermError("To time must be after from time."); return; }
     try {
-      await createPerm.mutateAsync({ ...permForm, bio_user_id: staff.bio_user_id });
+      await createPerm.mutateAsync({ ...permForm, late_minutes: lateMin, bio_user_id: staff.bio_user_id });
       setShowPermForm(false);
-      setPermForm({ permission_date: todayStr, late_minutes: 30, reason: "" });
+      setPermForm({ permission_date: todayStr, from_time: "09:00", to_time: "09:30", reason: "" });
       refetchPerms();
     } catch {
       setPermError("Failed to submit. Please try again.");
@@ -591,20 +598,32 @@ export default function MyAttendancePage() {
 
             {showPermForm && (
               <div className="bg-canvas rounded-lg2 p-3 space-y-2 border border-line">
-                <p className="text-xs font-medium text-ink-dim">New Permission Request (max 2 hrs late)</p>
+                <p className="text-xs font-medium text-ink-dim">New Permission Request</p>
                 <div className="flex flex-wrap gap-2 items-end">
                   <div>
                     <label className="text-xs text-ink-dim block mb-1">Date</label>
-                    <input type="date" value={permForm.permission_date} max={todayStr}
+                    <input type="date" value={permForm.permission_date}
                       onChange={e => setPermForm(f => ({ ...f, permission_date: e.target.value }))}
                       className={inpCls} />
                   </div>
                   <div>
-                    <label className="text-xs text-ink-dim block mb-1">I will be late by (minutes)</label>
-                    <input type="number" min={1} max={120} value={permForm.late_minutes}
-                      onChange={e => setPermForm(f => ({ ...f, late_minutes: Number(e.target.value) }))}
-                      className={`${inpCls} w-20`} />
+                    <label className="text-xs text-ink-dim block mb-1">From</label>
+                    <input type="time" value={permForm.from_time}
+                      onChange={e => setPermForm(f => ({ ...f, from_time: e.target.value }))}
+                      className={inpCls} />
                   </div>
+                  <div>
+                    <label className="text-xs text-ink-dim block mb-1">To</label>
+                    <input type="time" value={permForm.to_time}
+                      onChange={e => setPermForm(f => ({ ...f, to_time: e.target.value }))}
+                      className={inpCls} />
+                  </div>
+                  {(() => {
+                    const mins = calcPermMinutes(permForm.from_time, permForm.to_time);
+                    return mins > 0 ? (
+                      <span className="text-xs text-ink-dim pb-1.5">{mins} min</span>
+                    ) : null;
+                  })()}
                   <div className="flex-1 min-w-[140px]">
                     <label className="text-xs text-ink-dim block mb-1">Reason</label>
                     <input type="text" value={permForm.reason} placeholder="Briefly explain…"
@@ -629,7 +648,11 @@ export default function MyAttendancePage() {
                 {(permissions as PermissionRequest[]).slice(0, 6).map(p => (
                   <div key={p.id} className="flex items-center gap-3 text-xs py-1 border-b border-line last:border-0">
                     <span className="text-ink-dim w-20">{p.permission_date}</span>
-                    <span className="text-ink">{p.late_minutes}m late</span>
+                    <span className="text-ink">
+                      {p.from_time && p.to_time
+                        ? `${p.from_time.slice(0, 5)} – ${p.to_time.slice(0, 5)} (${p.late_minutes}m)`
+                        : `${p.late_minutes}m`}
+                    </span>
                     <span className="flex-1 text-ink-dim truncate">{p.reason || "—"}</span>
                     <span className={`font-semibold px-1.5 py-0.5 rounded text-[10px] ${
                       p.status === "approved" ? "bg-ok/10 text-ok" :

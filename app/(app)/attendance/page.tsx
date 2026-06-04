@@ -659,7 +659,7 @@ function RequestsTab() {
               <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                 <th className="text-left px-4 py-2.5">Staff</th>
                 <th className="text-left px-3 py-2.5">Date</th>
-                <th className="text-right px-3 py-2.5">Late (min)</th>
+                <th className="text-left px-3 py-2.5">Time</th>
                 <th className="text-left px-3 py-2.5">Reason</th>
                 <th className="text-center px-3 py-2.5">Status</th>
                 <th className="px-3 py-2.5" />
@@ -671,7 +671,11 @@ function RequestsTab() {
                   <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
                     <td className="px-4 py-2.5 font-medium">{(r as any).staff?.name ?? r.bio_user_id}</td>
                     <td className="px-3 py-2.5 text-ink-dim">{shortDate(r.permission_date)}</td>
-                    <td className="px-3 py-2.5 text-right font-mono">{r.late_minutes}m</td>
+                    <td className="px-3 py-2.5 text-ink-dim">
+                      {r.from_time && r.to_time
+                        ? `${r.from_time.slice(0, 5)} – ${r.to_time.slice(0, 5)} (${r.late_minutes}m)`
+                        : `${r.late_minutes}m`}
+                    </td>
                     <td className="px-3 py-2.5 text-ink-dim max-w-[200px] truncate">{r.reason || "—"}</td>
                     <td className="px-3 py-2.5 text-center">
                       <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${STATUS_STYLE[r.status]}`}>

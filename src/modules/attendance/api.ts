@@ -435,6 +435,8 @@ export type PermissionRequest = {
   id: string;
   bio_user_id: string;
   permission_date: string;
+  from_time: string | null;
+  to_time: string | null;
   late_minutes: number;
   reason: string | null;
   status: "pending" | "approved" | "rejected";
@@ -477,7 +479,7 @@ export function useAllPermissions() {
 export function useCreatePermission() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (req: { bio_user_id: string; permission_date: string; late_minutes: number; reason: string }) => {
+    mutationFn: async (req: { bio_user_id: string; permission_date: string; from_time: string; to_time: string; late_minutes: number; reason: string }) => {
       const { error } = await supabase().from("permission_requests").insert(req);
       if (error) throw error;
     },
