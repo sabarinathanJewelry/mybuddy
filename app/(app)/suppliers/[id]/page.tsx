@@ -32,7 +32,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const [editOpening, setEditOpening] = useState({ opening_balance: 0, gold_opening_g: 0, silver_opening_g: 0 });
 
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
-  const [purchaseForm, setPurchaseForm] = useState({ purchase_date: globalDate, bill_no: "", metal: "gold_22k", gross_wt: 0, purity_pct: 91.6, rate: 0, amount: 0, notes: "" });
+  const [purchaseForm, setPurchaseForm] = useState({ purchase_date: globalDate, bill_no: "", description: "", metal: "gold_22k", gross_wt: 0, purity_pct: 91.6, rate: 0, charges_g: 0, amount: 0, notes: "" });
 
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ pay_date: globalDate, mode: "cash", amount: 0, metal_wt: 0, metal_purity: 91.6, cut_rate: 0, notes: "" });
@@ -76,9 +76,22 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
 
   async function handlePurchaseSave(e: React.FormEvent) {
     e.preventDefault();
-    const pure_wt = purchaseForm.gross_wt * (purchaseForm.purity_pct / 100);
+    const base_pure = parseFloat((purchaseForm.gross_wt * purchaseForm.purity_pct / 100).toFixed(4));
+    const pure_wt   = parseFloat((base_pure + purchaseForm.charges_g).toFixed(4));
     await savePurchase.mutateAsync({ ...purchaseForm, supplier_id: id, pure_wt });
+    setPurchaseForm({ purchase_date: globalDate, bill_no: "", description: "", metal: "gold_22k", gross_wt: 0, purity_pct: 91.6, rate: 0, charges_g: 0, amount: 0, notes: "" });
     setShowPurchaseForm(false);
+  }
+
+  // Helper to update purchase form and auto-recalculate amount
+  function updatePurchaseForm(patch: Partial<typeof purchaseForm>) {
+    setPurchaseForm(prev => {
+      const next = { ...prev, ...patch };
+      const base_pure = next.gross_wt * next.purity_pct / 100;
+      const final_pure = base_pure + next.charges_g;
+      const amount = next.rate > 0 ? parseFloat((final_pure * next.rate).toFixed(2)) : next.amount;
+      return { ...next, amount };
+    });
   }
 
   async function handlePaymentSave(e: React.FormEvent) {
@@ -210,51 +223,131 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       {tab === "purchases" && !isLoading && (
         <div className="space-y-3">
           <button onClick={() => setShowPurchaseForm(!showPurchaseForm)} className="text-xs text-gold hover:underline">+ Add Purchase</button>
-          {showPurchaseForm && (
+          {showPurchaseForm && (() => {
+            const basePure   = parseFloat((purchaseForm.gross_wt * purchaseForm.purity_pct / 100).toFixed(4));
+            const finalPure  = parseFloat((basePure + purchaseForm.charges_g).toFixed(4));
+            return (
             <form onSubmit={handlePurchaseSave} className="bg-white border border-line rounded-xl p-4 shadow-soft space-y-3">
+              {/* Row 1: Date / Metal / Item name */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <div><label className="text-xs text-ink-dim">Date</label>
-                  <input type="date" value={purchaseForm.purchase_date} onChange={(e) => setPurchaseForm({ ...purchaseForm, purchase_date: e.target.value })} className={inp} /></div>
+                  <input type="date" value={purchaseForm.purchase_date}
+                    onChange={(e) => updatePurchaseForm({ purchase_date: e.target.value })} className={inp} /></div>
                 <div><label className="text-xs text-ink-dim">Metal</label>
-                  <select value={purchaseForm.metal} onChange={(e) => setPurchaseForm({ ...purchaseForm, metal: e.target.value })} className={inp}>
+                  <select value={purchaseForm.metal}
+                    onChange={(e) => updatePurchaseForm({ metal: e.target.value })} className={inp}>
                     {METALS.map((m) => <option key={m} value={m}>{m}</option>)}
                   </select></div>
-                {[
-                  { label: "Gross Wt", key: "gross_wt", step: "0.001" },
-                  { label: "Purity%", key: "purity_pct", step: "0.01" },
-                  { label: "Rate/g", key: "rate", step: "0.01" },
-                  { label: "Amount", key: "amount", step: "0.01" },
-                ].map((f) => (
-                  <div key={f.key}><label className="text-xs text-ink-dim">{f.label}</label>
-                    <input type="number" step={f.step} value={(purchaseForm as any)[f.key]}
-                      onChange={(e) => setPurchaseForm({ ...purchaseForm, [f.key]: parseFloat(e.target.value) || 0 })}
-                      className={inp} /></div>
-                ))}
+                <div className="sm:col-span-1">
+                  <label className="text-xs text-ink-dim">Item Name</label>
+                  <input type="text" placeholder="e.g. Bahubali Chain"
+                    value={purchaseForm.description}
+                    onChange={(e) => updatePurchaseForm({ description: e.target.value })}
+                    className={inp} />
+                </div>
               </div>
+
+              {/* Row 2: Gross Wt / Cost Touch% / Rate/g */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div><label className="text-xs text-ink-dim">Gross Wt (g)</label>
+                  <input type="number" step="0.001" placeholder="0.000"
+                    value={purchaseForm.gross_wt || ""}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => updatePurchaseForm({ gross_wt: parseFloat(e.target.value) || 0 })}
+                    className={inp} /></div>
+                <div><label className="text-xs text-ink-dim">Cost Touch %</label>
+                  <input type="number" step="0.01" placeholder="91.6"
+                    value={purchaseForm.purity_pct || ""}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => updatePurchaseForm({ purity_pct: parseFloat(e.target.value) || 0 })}
+                    className={inp} /></div>
+                <div><label className="text-xs text-ink-dim">Rate / g (₹)</label>
+                  <input type="number" step="0.01" placeholder="0"
+                    value={purchaseForm.rate || ""}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => updatePurchaseForm({ rate: parseFloat(e.target.value) || 0 })}
+                    className={inp} /></div>
+              </div>
+
+              {/* Row 3: Charges (g) / Amount */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs text-ink-dim">Charges in g <span className="text-ink-dim/50">(HM / cert / stone / postal)</span></label>
+                  <input type="number" step="0.001" placeholder="0.000"
+                    value={purchaseForm.charges_g || ""}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => updatePurchaseForm({ charges_g: parseFloat(e.target.value) || 0 })}
+                    className={inp} />
+                </div>
+                <div>
+                  <label className="text-xs text-ink-dim">Amount (₹) <span className="text-ink-dim/50">auto</span></label>
+                  <input type="number" step="0.01"
+                    value={purchaseForm.amount || ""}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => setPurchaseForm(p => ({ ...p, amount: parseFloat(e.target.value) || 0 }))}
+                    className={inp} />
+                </div>
+              </div>
+
+              {/* Live pure weight calculation */}
+              {purchaseForm.gross_wt > 0 && (
+                <div className="bg-gold/5 border border-gold/20 rounded-lg2 px-4 py-3 text-sm space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-ink-dim">Base Pure ({purchaseForm.purity_pct}% of {purchaseForm.gross_wt}g)</span>
+                    <span className="font-mono">{basePure.toFixed(4)} g</span>
+                  </div>
+                  {purchaseForm.charges_g > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-ink-dim">+ Charges</span>
+                      <span className="font-mono">+ {purchaseForm.charges_g.toFixed(4)} g</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-semibold border-t border-gold/20 pt-1">
+                    <span>Final Pure Wt</span>
+                    <span className="font-mono text-gold">{finalPure.toFixed(4)} g</span>
+                  </div>
+                  {purchaseForm.rate > 0 && (
+                    <div className="flex justify-between text-ok">
+                      <span className="text-xs">Amount ({finalPure.toFixed(4)} × ₹{purchaseForm.rate})</span>
+                      <span className="font-mono font-semibold">{inr(finalPure * purchaseForm.rate)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex gap-2">
-                <button type="submit" className="bg-gold text-white text-sm px-4 py-1.5 rounded-lg2">{t("save")}</button>
+                <button type="submit" disabled={savePurchase.isPending} className="bg-gold text-white text-sm px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                  {savePurchase.isPending ? "Saving…" : t("save")}
+                </button>
                 <button type="button" onClick={() => setShowPurchaseForm(false)} className="border border-line text-sm px-4 py-1.5 rounded-lg2">{t("cancel")}</button>
               </div>
             </form>
-          )}
+            );
+          })()}
           <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
             <table className="w-full text-sm">
               <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                 <th className="text-left px-4 py-2.5">{t("date")}</th>
+                <th className="text-left px-3 py-2.5">Item</th>
                 <th className="text-left px-3 py-2.5">Metal</th>
                 <th className="text-right px-3 py-2.5">Gross</th>
+                <th className="text-right px-3 py-2.5">Touch%</th>
+                <th className="text-right px-3 py-2.5 text-gold">Pure Wt</th>
                 <th className="text-right px-3 py-2.5">{t("amount")}</th>
               </tr></thead>
               <tbody>
                 {view?.purchases.map((p: any) => (
                   <tr key={p.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
                     <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.purchase_date)}</td>
-                    <td className="px-3 py-2.5 capitalize">{p.metal?.replace("_", " ")}</td>
-                    <td className="px-3 py-2.5 text-right">{grams(p.gross_wt ?? 0)}</td>
+                    <td className="px-3 py-2.5 font-medium">{p.description || <span className="text-ink-dim">—</span>}</td>
+                    <td className="px-3 py-2.5 capitalize text-ink-dim">{p.metal?.replace("_", " ")}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(p.gross_wt ?? 0)}</td>
+                    <td className="px-3 py-2.5 text-right text-ink-dim">{p.purity_pct ? `${p.purity_pct}%` : "—"}</td>
+                    <td className="px-3 py-2.5 text-right font-mono font-semibold text-gold">{grams(p.pure_wt ?? 0)}</td>
                     <td className="px-3 py-2.5 text-right font-mono">{inr(p.amount)}</td>
                   </tr>
                 ))}
-                {!view?.purchases.length && <tr><td colSpan={4} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
+                {!view?.purchases.length && <tr><td colSpan={7} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
               </tbody>
             </table>
           </div>
