@@ -24,7 +24,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const savePurchase   = useSaveSupplierPurchase();
   const updatePurchase = useUpdateSupplierPurchase();
 
-  const blankEditPurchase = () => ({ purchase_date: "", bill_no: "", description: "", metal: "gold_22k", gross_wt: 0, tag_wt: 0, stone_wt: 0, stone_rate: 0, purity_pct: 91.6, rate: 0, charges_g: 0, charges_per_piece: 0, piece_count: 0, amount: 0, notes: "" });
+  const blankEditPurchase = () => ({ purchase_date: "", bill_no: "", description: "", metal: "gold_22k", gross_wt: 0, tag_wt: 0, stone_wt: 0, stone_rate: 0, stone_to_cash: false, purity_pct: 91.6, rate: 0, charges_g: 0, charges_per_piece: 0, piece_count: 0, charges_to_cash: false, amount: 0, notes: "" });
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
   const [editPurchaseForm, setEditPurchaseForm] = useState(blankEditPurchase());
 
@@ -39,11 +39,13 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       tag_wt: Number(p.tag_wt) || 0,
       stone_wt: Number(p.stone_wt) || 0,
       stone_rate: Number(p.stone_rate) || 0,
+      stone_to_cash: Boolean(p.stone_to_cash),
       purity_pct: Number(p.purity_pct) || 91.6,
       rate: Number(p.rate) || 0,
       charges_g: Number(p.charges_g) || 0,
       charges_per_piece: Number(p.charges_per_piece) || 0,
       piece_count: Number(p.piece_count) || 0,
+      charges_to_cash: Boolean(p.charges_to_cash),
       amount: Number(p.amount) || 0,
       notes: p.notes ?? "",
     });
@@ -53,13 +55,14 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
     setEditPurchaseForm(prev => {
       const next           = { ...prev, ...patch };
       const net_wt         = next.gross_wt - (next.tag_wt || 0) - (next.stone_wt || 0);
-      const stone_gold_g   = next.rate > 0 && next.stone_wt > 0 && next.stone_rate > 0
-        ? (next.stone_wt * next.stone_rate) / next.rate : 0;
-      const charges_rs_g   = next.rate > 0 && next.charges_per_piece > 0 && next.piece_count > 0
-        ? (next.charges_per_piece * next.piece_count) / next.rate : 0;
+      const stone_val_rs   = next.stone_wt > 0 && next.stone_rate > 0 ? next.stone_wt * next.stone_rate : 0;
+      const charges_val_rs = next.charges_per_piece > 0 && next.piece_count > 0 ? next.charges_per_piece * next.piece_count : 0;
+      const stone_gold_g   = !next.stone_to_cash && next.rate > 0 ? stone_val_rs / next.rate : 0;
+      const charges_rs_g   = !next.charges_to_cash && next.rate > 0 ? charges_val_rs / next.rate : 0;
       const base_pure      = net_wt * next.purity_pct / 100;
       const final_pure     = base_pure + stone_gold_g + charges_rs_g + next.charges_g;
-      const amount         = next.rate > 0 ? parseFloat((final_pure * next.rate).toFixed(2)) : next.amount;
+      const cash_extras    = (next.stone_to_cash ? stone_val_rs : 0) + (next.charges_to_cash ? charges_val_rs : 0);
+      const amount         = next.rate > 0 ? parseFloat((final_pure * next.rate + cash_extras).toFixed(2)) : next.amount;
       return { ...next, amount };
     });
   }
@@ -69,10 +72,10 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
     if (!editingPurchaseId) return;
     const ep             = editPurchaseForm;
     const net_wt         = parseFloat((ep.gross_wt - (ep.tag_wt || 0) - (ep.stone_wt || 0)).toFixed(4));
-    const stone_gold_g   = ep.rate > 0 && ep.stone_wt > 0 && ep.stone_rate > 0
-      ? parseFloat(((ep.stone_wt * ep.stone_rate) / ep.rate).toFixed(4)) : 0;
-    const charges_rs_g   = ep.rate > 0 && ep.charges_per_piece > 0 && ep.piece_count > 0
-      ? parseFloat(((ep.charges_per_piece * ep.piece_count) / ep.rate).toFixed(4)) : 0;
+    const stone_val_rs   = ep.stone_wt > 0 && ep.stone_rate > 0 ? ep.stone_wt * ep.stone_rate : 0;
+    const charges_val_rs = ep.charges_per_piece > 0 && ep.piece_count > 0 ? ep.charges_per_piece * ep.piece_count : 0;
+    const stone_gold_g   = !ep.stone_to_cash && ep.rate > 0 ? parseFloat((stone_val_rs / ep.rate).toFixed(4)) : 0;
+    const charges_rs_g   = !ep.charges_to_cash && ep.rate > 0 ? parseFloat((charges_val_rs / ep.rate).toFixed(4)) : 0;
     const base_pure      = parseFloat((net_wt * ep.purity_pct / 100).toFixed(4));
     const pure_wt        = parseFloat((base_pure + stone_gold_g + charges_rs_g + ep.charges_g).toFixed(4));
     await updatePurchase.mutateAsync({ id: editingPurchaseId, supplierId: id, data: { ...ep, pure_wt } });
@@ -87,7 +90,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const [showEditOpening, setShowEditOpening] = useState(false);
   const [editOpening, setEditOpening] = useState({ opening_balance: 0, gold_opening_g: 0, silver_opening_g: 0 });
 
-  const blankPurchaseItem = () => ({ description: "", gross_wt: 0, tag_wt: 0, stone_wt: 0, stone_rate: 0, purity_pct: 91.6, rate: 0, charges_g: 0, charges_per_piece: 0, piece_count: 0, amount: 0, notes: "" });
+  const blankPurchaseItem = () => ({ description: "", gross_wt: 0, tag_wt: 0, stone_wt: 0, stone_rate: 0, stone_to_cash: false, purity_pct: 91.6, rate: 0, charges_g: 0, charges_per_piece: 0, piece_count: 0, charges_to_cash: false, amount: 0, notes: "" });
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
   const [purchaseForm, setPurchaseForm] = useState({ purchase_date: globalDate, bill_no: "", metal: "gold_22k" });
   const [purchaseItems, setPurchaseItems] = useState([blankPurchaseItem()]);
@@ -139,10 +142,10 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
     for (const item of purchaseItems) {
       if (!item.gross_wt) continue;
       const net_wt        = parseFloat((item.gross_wt - (item.tag_wt || 0) - item.stone_wt).toFixed(4));
-      const stone_gold_g  = item.rate > 0 && item.stone_wt > 0 && item.stone_rate > 0
-        ? parseFloat(((item.stone_wt * item.stone_rate) / item.rate).toFixed(4)) : 0;
-      const charges_rs_g  = item.rate > 0 && item.charges_per_piece > 0 && item.piece_count > 0
-        ? parseFloat(((item.charges_per_piece * item.piece_count) / item.rate).toFixed(4)) : 0;
+      const stone_val_rs  = item.stone_wt > 0 && item.stone_rate > 0 ? item.stone_wt * item.stone_rate : 0;
+      const chg_val_rs    = item.charges_per_piece > 0 && item.piece_count > 0 ? item.charges_per_piece * item.piece_count : 0;
+      const stone_gold_g  = !item.stone_to_cash && item.rate > 0 ? parseFloat((stone_val_rs / item.rate).toFixed(4)) : 0;
+      const charges_rs_g  = !item.charges_to_cash && item.rate > 0 ? parseFloat((chg_val_rs / item.rate).toFixed(4)) : 0;
       const base_pure     = parseFloat((net_wt * item.purity_pct / 100).toFixed(4));
       const pure_wt       = parseFloat((base_pure + stone_gold_g + charges_rs_g + item.charges_g).toFixed(4));
       await savePurchase.mutateAsync({
@@ -155,11 +158,13 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
         tag_wt: item.tag_wt,
         stone_wt: item.stone_wt,
         stone_rate: item.stone_rate,
+        stone_to_cash: item.stone_to_cash,
         purity_pct: item.purity_pct,
         rate: item.rate,
         charges_g: item.charges_g,
         charges_per_piece: item.charges_per_piece,
         piece_count: item.piece_count,
+        charges_to_cash: item.charges_to_cash,
         amount: item.amount,
         pure_wt,
         notes: item.notes,
@@ -173,15 +178,16 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   function updatePurchaseItem(idx: number, patch: Record<string, unknown>) {
     setPurchaseItems(prev => prev.map((item, i) => {
       if (i !== idx) return item;
-      const next           = { ...item, ...patch };
+      const next            = { ...item, ...patch };
       if (next.rate > 0) {
-        const net          = next.gross_wt - (next.tag_wt || 0) - next.stone_wt;
-        const stone_gold_g = next.stone_wt > 0 && next.stone_rate > 0
-          ? (next.stone_wt * next.stone_rate) / next.rate : 0;
-        const charges_rs_g = next.charges_per_piece > 0 && next.piece_count > 0
-          ? (next.charges_per_piece * next.piece_count) / next.rate : 0;
-        const pure         = net * next.purity_pct / 100 + stone_gold_g + charges_rs_g + next.charges_g;
-        next.amount        = parseFloat((pure * next.rate).toFixed(2));
+        const net           = next.gross_wt - (next.tag_wt || 0) - next.stone_wt;
+        const stone_val_rs  = next.stone_wt > 0 && next.stone_rate > 0 ? next.stone_wt * next.stone_rate : 0;
+        const chg_val_rs    = next.charges_per_piece > 0 && next.piece_count > 0 ? next.charges_per_piece * next.piece_count : 0;
+        const stone_gold_g  = !next.stone_to_cash ? stone_val_rs / next.rate : 0;
+        const charges_rs_g  = !next.charges_to_cash ? chg_val_rs / next.rate : 0;
+        const pure          = net * next.purity_pct / 100 + stone_gold_g + charges_rs_g + next.charges_g;
+        const cash_extras   = (next.stone_to_cash ? stone_val_rs : 0) + (next.charges_to_cash ? chg_val_rs : 0);
+        next.amount         = parseFloat((pure * next.rate + cash_extras).toFixed(2));
       }
       return next;
     }));
@@ -341,12 +347,13 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
               {/* Item rows */}
               {purchaseItems.map((item, idx) => {
                 const netWt         = item.gross_wt - (item.tag_wt || 0) - item.stone_wt;
-                const stoneGoldG    = item.rate > 0 && item.stone_wt > 0 && item.stone_rate > 0
-                  ? (item.stone_wt * item.stone_rate) / item.rate : 0;
-                const chargesRsG    = item.rate > 0 && item.charges_per_piece > 0 && item.piece_count > 0
-                  ? (item.charges_per_piece * item.piece_count) / item.rate : 0;
+                const stoneValRs    = item.stone_wt > 0 && item.stone_rate > 0 ? item.stone_wt * item.stone_rate : 0;
+                const chgValRs      = item.charges_per_piece > 0 && item.piece_count > 0 ? item.charges_per_piece * item.piece_count : 0;
+                const stoneGoldG    = !item.stone_to_cash && item.rate > 0 ? stoneValRs / item.rate : 0;
+                const chargesRsG    = !item.charges_to_cash && item.rate > 0 ? chgValRs / item.rate : 0;
                 const basePure      = netWt * item.purity_pct / 100;
                 const finalPure     = basePure + stoneGoldG + chargesRsG + item.charges_g;
+                const cashExtras    = (item.stone_to_cash ? stoneValRs : 0) + (item.charges_to_cash ? chgValRs : 0);
                 return (
                   <div key={idx} className="border border-line rounded-lg2 p-3 space-y-2 relative">
                     <div className="flex justify-between items-center mb-1">
@@ -394,11 +401,23 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                           onFocus={(e) => e.target.select()}
                           onChange={(e) => updatePurchaseItem(idx, { stone_wt: parseFloat(e.target.value) || 0 })}
                           className={inp} /></div>
-                      <div><label className="text-xs text-ink-dim">Stone ₹/g</label>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-xs text-ink-dim">Stone ₹/g</label>
+                          {item.stone_wt > 0 && item.stone_rate > 0 && (
+                            <div className="flex rounded overflow-hidden border border-line text-xs">
+                              <button type="button" onClick={() => updatePurchaseItem(idx, { stone_to_cash: false })}
+                                className={`px-2 py-0.5 ${!item.stone_to_cash ? "bg-gold text-white" : "text-ink-dim hover:bg-canvas"}`}>→ Pure</button>
+                              <button type="button" onClick={() => updatePurchaseItem(idx, { stone_to_cash: true })}
+                                className={`px-2 py-0.5 border-l border-line ${item.stone_to_cash ? "bg-info text-white" : "text-ink-dim hover:bg-canvas"}`}>→ Cash</button>
+                            </div>
+                          )}
+                        </div>
                         <input type="number" step="0.01" placeholder="0" value={item.stone_rate || ""}
                           onFocus={(e) => e.target.select()}
                           onChange={(e) => updatePurchaseItem(idx, { stone_rate: parseFloat(e.target.value) || 0 })}
-                          className={inp} /></div>
+                          className={inp} />
+                      </div>
                       <div><label className="text-xs text-ink-dim">Net Wt (g)</label>
                         <p className="text-sm font-mono py-2 font-semibold text-ink">{netWt.toFixed(4)} g</p>
                       </div>
@@ -406,11 +425,23 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
 
                     {/* HM / cert charges in ₹ */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-canvas/60 rounded-lg2 p-2">
-                      <div><label className="text-xs text-ink-dim">HM/Cert ₹/piece</label>
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-xs text-ink-dim">HM/Cert ₹/piece</label>
+                          {item.charges_per_piece > 0 && item.piece_count > 0 && (
+                            <div className="flex rounded overflow-hidden border border-line text-xs">
+                              <button type="button" onClick={() => updatePurchaseItem(idx, { charges_to_cash: false })}
+                                className={`px-2 py-0.5 ${!item.charges_to_cash ? "bg-gold text-white" : "text-ink-dim hover:bg-canvas"}`}>→ Pure</button>
+                              <button type="button" onClick={() => updatePurchaseItem(idx, { charges_to_cash: true })}
+                                className={`px-2 py-0.5 border-l border-line ${item.charges_to_cash ? "bg-info text-white" : "text-ink-dim hover:bg-canvas"}`}>→ Cash</button>
+                            </div>
+                          )}
+                        </div>
                         <input type="number" step="0.01" placeholder="0" value={item.charges_per_piece || ""}
                           onFocus={(e) => e.target.select()}
                           onChange={(e) => updatePurchaseItem(idx, { charges_per_piece: parseFloat(e.target.value) || 0 })}
-                          className={inp} /></div>
+                          className={inp} />
+                      </div>
                       <div><label className="text-xs text-ink-dim">Pieces</label>
                         <input type="number" step="1" placeholder="0" value={item.piece_count || ""}
                           onFocus={(e) => e.target.select()}
@@ -424,7 +455,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                       {item.charges_per_piece > 0 && item.piece_count > 0 && (
                         <div className="flex flex-col justify-center">
                           <p className="text-xs text-ink-dim">{item.piece_count} × ₹{item.charges_per_piece} = ₹{(item.charges_per_piece * item.piece_count).toFixed(0)}</p>
-                          {item.rate > 0 && <p className="text-xs font-semibold text-info">= {chargesRsG.toFixed(4)} g equiv</p>}
+                          {item.rate > 0 && !item.charges_to_cash && <p className="text-xs font-semibold text-gold">= {chargesRsG.toFixed(4)} g</p>}
+                          {item.charges_to_cash && <p className="text-xs font-semibold text-info">→ cash ₹{(item.charges_per_piece * item.piece_count).toFixed(0)}</p>}
                         </div>
                       )}
                     </div>
@@ -449,14 +481,26 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                         </div>
                         {stoneGoldG > 0 && (
                           <div className="flex justify-between text-info">
-                            <span>+ Stone equiv ({item.stone_wt}g × ₹{item.stone_rate} ÷ ₹{item.rate}/g)</span>
+                            <span>+ Stone → Pure ({item.stone_wt}g × ₹{item.stone_rate} ÷ ₹{item.rate}/g)</span>
                             <span className="font-mono">+ {stoneGoldG.toFixed(4)} g</span>
+                          </div>
+                        )}
+                        {item.stone_to_cash && stoneValRs > 0 && (
+                          <div className="flex justify-between text-info">
+                            <span>+ Stone → Cash ({item.stone_wt}g × ₹{item.stone_rate})</span>
+                            <span className="font-mono text-info">₹{stoneValRs.toFixed(0)} cash</span>
                           </div>
                         )}
                         {chargesRsG > 0 && (
                           <div className="flex justify-between text-info">
-                            <span>+ HM/cert ({item.piece_count} × ₹{item.charges_per_piece} = ₹{(item.piece_count * item.charges_per_piece).toFixed(0)} ÷ ₹{item.rate}/g)</span>
+                            <span>+ HM → Pure ({item.piece_count} × ₹{item.charges_per_piece} ÷ ₹{item.rate}/g)</span>
                             <span className="font-mono">+ {chargesRsG.toFixed(4)} g</span>
+                          </div>
+                        )}
+                        {item.charges_to_cash && chgValRs > 0 && (
+                          <div className="flex justify-between text-info">
+                            <span>+ HM → Cash ({item.piece_count} × ₹{item.charges_per_piece})</span>
+                            <span className="font-mono text-info">₹{chgValRs.toFixed(0)} cash</span>
                           </div>
                         )}
                         {item.charges_g > 0 && (
@@ -471,8 +515,11 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                         </div>
                         {item.rate > 0 && (
                           <div className="flex justify-between text-ok">
-                            <span>Amount ({finalPure.toFixed(4)} × ₹{item.rate})</span>
-                            <span className="font-mono font-semibold">{inr(finalPure * item.rate)}</span>
+                            <span>
+                              Amount ({finalPure.toFixed(4)} × ₹{item.rate}
+                              {cashExtras > 0 ? ` + ₹${cashExtras.toFixed(0)} cash` : ""})
+                            </span>
+                            <span className="font-mono font-semibold">{inr(finalPure * item.rate + cashExtras)}</span>
                           </div>
                         )}
                       </div>
@@ -498,10 +545,10 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                 <div className="flex justify-between text-sm text-ink-dim bg-canvas rounded-lg2 px-3 py-2">
                   <span>Total Pure: <strong className="text-gold">{purchaseItems.reduce((s, item) => {
                     const net      = item.gross_wt - (item.tag_wt || 0) - item.stone_wt;
-                    const stoneG   = item.rate > 0 && item.stone_wt > 0 && item.stone_rate > 0
-                      ? (item.stone_wt * item.stone_rate) / item.rate : 0;
-                    const chgRsG   = item.rate > 0 && item.charges_per_piece > 0 && item.piece_count > 0
-                      ? (item.charges_per_piece * item.piece_count) / item.rate : 0;
+                    const sv       = item.stone_wt > 0 && item.stone_rate > 0 ? item.stone_wt * item.stone_rate : 0;
+                    const cv       = item.charges_per_piece > 0 && item.piece_count > 0 ? item.charges_per_piece * item.piece_count : 0;
+                    const stoneG   = !item.stone_to_cash && item.rate > 0 ? sv / item.rate : 0;
+                    const chgRsG   = !item.charges_to_cash && item.rate > 0 ? cv / item.rate : 0;
                     return s + net * item.purity_pct / 100 + stoneG + chgRsG + item.charges_g;
                   }, 0).toFixed(4)} g</strong></span>
                   <span>Total: <strong>{inr(purchaseItems.reduce((s, item) => s + item.amount, 0))}</strong></span>
