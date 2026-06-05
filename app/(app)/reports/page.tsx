@@ -313,12 +313,10 @@ function purchaseSection(purchases: any[], metals: string[]) {
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
-function MetalCard({ title, color, data, purchases }: {
+function MetalCard({ title, color, data }: {
   title: string; color: string;
   data: ReturnType<typeof metalSection>;
-  purchases: ReturnType<typeof purchaseSection>;
 }) {
-  const grossProfit = data.revenueExGst - purchases.amount;
   return (
     <div className={clsx("bg-white rounded-xl border border-line shadow-soft overflow-x-auto")}>
       <div className={clsx("px-4 py-2.5 border-b border-line font-semibold text-sm", color)}>
@@ -372,26 +370,6 @@ function MetalCard({ title, color, data, purchases }: {
         <div className="px-4 py-3">
           <p className="text-xs text-ink-dim">Service Income Total</p>
           <p className="font-bold text-ok">{inr(data.makingAmt + Math.max(0, data.vaAmt) + data.stoneAmt)}</p>
-        </div>
-      </div>
-      {/* Purchases row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-x divide-line text-sm border-t border-dashed border-line bg-canvas/50">
-        <div className="px-4 py-3">
-          <p className="text-xs text-ink-dim">Purchased from Suppliers</p>
-          <p className="font-semibold text-err">{inr(purchases.amount)}</p>
-        </div>
-        <div className="px-4 py-3">
-          <p className="text-xs text-ink-dim">Purchased Weight</p>
-          <p className="font-semibold">{grams(purchases.grossWt)}</p>
-        </div>
-        <div className="px-4 py-3 sm:col-span-2">
-          <p className="text-xs text-ink-dim">Gross Profit (Revenue excl GST − Purchases)</p>
-          <p className={clsx("text-lg font-bold", grossProfit >= 0 ? "text-ok" : "text-err")}>
-            {inr(grossProfit)}
-            <span className={clsx("ml-2 text-xs font-normal", grossProfit >= 0 ? "text-ok" : "text-err")}>
-              {data.revenueExGst > 0 ? `${((grossProfit / data.revenueExGst) * 100).toFixed(1)}%` : ""}
-            </span>
-          </p>
         </div>
       </div>
     </div>
@@ -673,8 +651,13 @@ export default function ReportsPage() {
   const bullionSellGoldCost    = bullionSellGoldWt * goldWAC;
   const bullionSellSilvCost    = bullionSellSilvWt * silverWAC;
   const bullionTradingProfit   = (bullionSellGoldRevenue + bullionSellSilvRevenue) - (bullionSellGoldCost + bullionSellSilvCost);
-  const grossProfit   = totalRevenue - totalCogs;
-  const netProfit     = grossProfit - totalExpenses;
+
+  // Effective P&L: use WAC-based metal cost when reserve data exists, else fall back to period purchases
+  const hasWac = goldWAC > 0;
+  const effectivePurchaseCost  = hasWac ? totalMetalPurchaseCost : (supplierCogs + totalOldMetalCost);
+  const effectiveGrossProfit   = hasWac ? (metalGrossMargin + bullionTradingProfit) : (totalRevenue - supplierCogs - totalOldMetalCost);
+  const grossProfit   = totalRevenue - totalCogs; // kept for P&L summary fallback row
+  const netProfit     = effectiveGrossProfit - totalExpenses;
 
   return (
     <div className="max-w-5xl mx-auto space-y-5">
@@ -734,12 +717,12 @@ export default function ReportsPage() {
           {/* Summary strip */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             {[
-              { label: "Revenue (excl GST)",       value: inr(totalRevenue),       color: "text-ink" },
-              { label: "GST Collected",             value: inr(totalGst),           color: "text-warn" },
-              { label: "Supplier Purchases",        value: inr(supplierCogs),       color: "text-err" },
-              { label: "Old Metal Bought (cash)",   value: inr(totalOldMetalCost),  color: "text-err" },
-              { label: "Gross Profit",              value: inr(grossProfit),        color: grossProfit >= 0 ? "text-ok" : "text-err" },
-              { label: "Net Profit",                value: inr(netProfit),          color: netProfit >= 0 ? "text-ok" : "text-err" },
+              { label: "Revenue (excl GST)",                                       value: inr(totalRevenue),            color: "text-ink" },
+              { label: "GST Collected",                                            value: inr(totalGst),                color: "text-warn" },
+              { label: hasWac ? "Metal Purchase Cost (WAC)" : "Supplier Purchases", value: inr(effectivePurchaseCost),  color: "text-err" },
+              { label: hasWac ? "Bullion Trading Profit" : "Old Metal Bought",     value: hasWac ? inr(bullionTradingProfit) : inr(totalOldMetalCost), color: hasWac ? (bullionTradingProfit >= 0 ? "text-ok" : "text-err") : "text-err" },
+              { label: "Gross Profit",                                             value: inr(effectiveGrossProfit),    color: effectiveGrossProfit >= 0 ? "text-ok" : "text-err" },
+              { label: "Net Profit",                                               value: inr(netProfit),               color: netProfit >= 0 ? "text-ok" : "text-err" },
             ].map(s => (
               <div key={s.label} className="bg-white rounded-xl border border-line p-4 shadow-soft">
                 <p className="text-xs text-ink-dim">{s.label}</p>
@@ -749,15 +732,13 @@ export default function ReportsPage() {
           </div>
 
           {/* Gold section */}
-          {(gold.count > 0 || goldPurchases.count > 0) && (
-            <MetalCard title="Gold (22K + 18K + 24K)" color="text-gold bg-gold/5"
-              data={gold} purchases={goldPurchases} />
+          {gold.count > 0 && (
+            <MetalCard title="Gold (22K + 18K + 24K)" color="text-gold bg-gold/5" data={gold} />
           )}
 
           {/* Silver section */}
-          {(silver.count > 0 || silverPurchases.count > 0) && (
-            <MetalCard title="Silver (Standard + Pure)" color="text-ink-mid bg-canvas"
-              data={silver} purchases={silverPurchases} />
+          {silver.count > 0 && (
+            <MetalCard title="Silver (Standard + Pure)" color="text-ink-mid bg-canvas" data={silver} />
           )}
 
           {/* Silver MPR */}
@@ -999,16 +980,26 @@ export default function ReportsPage() {
           <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
             <div className="px-4 py-2.5 border-b border-line font-semibold text-sm">Profit & Loss Summary</div>
             <div className="divide-y divide-line text-sm">
-              {[
-                { label: "Total Revenue (incl GST)",             value: gold.revenueInclGst + silver.revenueInclGst + mprRevenue, indent: false, bold: false, color: "" },
-                { label: "  Less: GST Collected",                value: -totalGst,           indent: true,  bold: false, color: "text-warn" },
-                { label: "Net Revenue (excl GST)",               value: totalRevenue,         indent: false, bold: true,  color: "text-ink" },
-                { label: "  Less: Supplier Purchases",           value: -supplierCogs,        indent: true,  bold: false, color: "text-err" },
-                { label: "  Less: Old Metal Purchased (cash)",   value: -totalOldMetalCost,   indent: true,  bold: false, color: "text-err" },
-                { label: "Gross Profit",                         value: grossProfit,          indent: false, bold: true,  color: grossProfit >= 0 ? "text-ok" : "text-err" },
-                { label: "  Less: Operating Expenses",           value: -totalExpenses,       indent: true,  bold: false, color: "text-err" },
-                { label: "Net Profit",                           value: netProfit,            indent: false, bold: true,  color: netProfit >= 0 ? "text-ok" : "text-err" },
-              ].map((row, i) => (
+              {(hasWac ? [
+                { label: "Total Revenue (incl GST)",                          value: gold.revenueInclGst + silver.revenueInclGst + mprRevenue, indent: false, bold: false, color: "" },
+                { label: "  Less: GST Collected",                             value: -totalGst,                  indent: true,  bold: false, color: "text-warn" },
+                { label: "Net Revenue (excl GST)",                            value: totalRevenue,                indent: false, bold: true,  color: "text-ink" },
+                { label: "  Less: Metal Dispatched to Suppliers (at WAC)",    value: -(dispatchGoldCost + dispatchSilvCost), indent: true, bold: false, color: "text-err" },
+                { label: "  Less: Rate Cut Payments (cash)",                  value: -cutRatePaid,               indent: true,  bold: false, color: "text-err" },
+                { label: "  Add: Bullion Trading Profit",                     value: bullionTradingProfit,       indent: true,  bold: false, color: bullionTradingProfit >= 0 ? "text-ok" : "text-err" },
+                { label: "Gross Profit",                                      value: effectiveGrossProfit,       indent: false, bold: true,  color: effectiveGrossProfit >= 0 ? "text-ok" : "text-err" },
+                { label: "  Less: Operating Expenses",                        value: -totalExpenses,             indent: true,  bold: false, color: "text-err" },
+                { label: "Net Profit",                                        value: netProfit,                  indent: false, bold: true,  color: netProfit >= 0 ? "text-ok" : "text-err" },
+              ] : [
+                { label: "Total Revenue (incl GST)",                          value: gold.revenueInclGst + silver.revenueInclGst + mprRevenue, indent: false, bold: false, color: "" },
+                { label: "  Less: GST Collected",                             value: -totalGst,                  indent: true,  bold: false, color: "text-warn" },
+                { label: "Net Revenue (excl GST)",                            value: totalRevenue,                indent: false, bold: true,  color: "text-ink" },
+                { label: "  Less: Supplier Purchases",                        value: -supplierCogs,              indent: true,  bold: false, color: "text-err" },
+                { label: "  Less: Old Metal Purchased (cash)",                value: -totalOldMetalCost,         indent: true,  bold: false, color: "text-err" },
+                { label: "Gross Profit",                                      value: grossProfit,                indent: false, bold: true,  color: grossProfit >= 0 ? "text-ok" : "text-err" },
+                { label: "  Less: Operating Expenses",                        value: -totalExpenses,             indent: true,  bold: false, color: "text-err" },
+                { label: "Net Profit",                                        value: netProfit,                  indent: false, bold: true,  color: netProfit >= 0 ? "text-ok" : "text-err" },
+              ]).map((row, i) => (
                 <div key={i} className={clsx("flex items-center justify-between px-4 py-3", row.bold && "bg-canvas/50")}>
                   <span className={clsx(row.indent && "pl-4 text-ink-dim", row.bold && "font-semibold")}>{row.label}</span>
                   <span className={clsx("font-mono", row.bold && "text-base font-bold", row.color)}>
