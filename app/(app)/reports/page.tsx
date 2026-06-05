@@ -102,6 +102,24 @@ function useMergeProducts() {
   });
 }
 
+function useKolusuItems(from: string, to: string) {
+  return useQuery({
+    queryKey: ["kolusu-pnl", from, to],
+    enabled: !!from && !!to,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("sale_items")
+        .select("id, description, metal, gross_wt, net_wt, line_total, is_suspense, sales!inner(bill_date, status)")
+        .gte("sales.bill_date", from)
+        .lte("sales.bill_date", to)
+        .eq("sales.status", "confirmed")
+        .ilike("description", "%KOLUSU%");
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
 function useProductItems(from: string, to: string) {
   return useQuery({
     queryKey: ["product-items", from, to],
@@ -448,7 +466,11 @@ export default function ReportsPage() {
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [tab, setTab]     = useState<"pnl" | "detail" | "products" | "expenses" | "items">("pnl");
+  const [tab, setTab]     = useState<"pnl" | "detail" | "products" | "expenses" | "items" | "kolusu">("pnl");
+  const [kolusuPureRate,       setKolusuPureRate]       = useState(263);
+  const [kolusuBoardRate,      setKolusuBoardRate]      = useState(285);
+  const [kolusuSuspenseMargin, setKolusuSuspenseMargin] = useState(2);
+  const [kolusuActualTouch,    setKolusuActualTouch]    = useState(65);
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo]     = useState("");
   const [useCustom, setUseCustom]   = useState(false);
@@ -495,6 +517,7 @@ export default function ReportsPage() {
   const { data: oldMetalBuys = [] }                                 = useOldMetalPurchases(range.from, range.to);
   const { data: exchangePayments = [] }                             = useSaleExchangePayments(range.from, range.to);
   const { data: productItems = [] }                                 = useProductItems(range.from, range.to);
+  const { data: kolusuItems = [],  isLoading: loadingKolusu }      = useKolusuItems(range.from, range.to);
   const { data: itemResults = [], isFetching: itemSearching }      = useItemSearch(itemTerm, itemFrom, itemTo);
 
   const isLoading = loadingItems || loadingPurchases || loadingExpenses;
@@ -572,7 +595,7 @@ export default function ReportsPage() {
 
       {/* Tabs */}
       <div className="flex border-b border-line gap-1">
-        {([["pnl", "P&L Report"], ["detail", "Sales Detail"], ["products", "Product Mix"], ["expenses", "Expenses"], ["items", "Item Search"]] as const).map(([k, label]) => (
+        {([["pnl", "P&L Report"], ["detail", "Sales Detail"], ["products", "Product Mix"], ["expenses", "Expenses"], ["items", "Item Search"], ["kolusu", "Kolusu P&L"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={clsx("px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
               tab === k ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink")}>
@@ -1178,6 +1201,191 @@ export default function ReportsPage() {
           </table>
         </div>
       )}
+
+      {/* ── KOLUSU P&L TAB ──────────────────────────────────────── */}
+      {tab === "kolusu" && (() => {
+        const silverKolusu = (kolusuItems as any[]).filter(i =>
+          ["silver", "silver_pure"].includes(i.metal)
+        );
+        const ownStock  = silverKolusu.filter(i => !i.is_suspense);
+        const suspense  = silverKolusu.filter(i => !!i.is_suspense);
+
+        // Own stock: cost = gross_wt × (actualTouch/100) × pureRate
+        const ownStockCalc = ownStock.map(i => {
+          const gw       = Number(i.gross_wt || 0);
+          const revenue  = Number(i.line_total || 0);
+          const cost     = parseFloat((gw * (kolusuActualTouch / 100) * kolusuPureRate).toFixed(2));
+          const margin   = parseFloat((revenue - cost).toFixed(2));
+          return { ...i, gw, revenue, cost, margin };
+        });
+
+        // Suspense: supplier gets (boardRate - suspenseMargin)/g, shop keeps suspenseMargin/g
+        const suspenseCalc = suspense.map(i => {
+          const gw            = Number(i.gross_wt || 0);
+          const revenue       = Number(i.line_total || 0);
+          const supplierCost  = parseFloat((gw * (kolusuBoardRate - kolusuSuspenseMargin)).toFixed(2));
+          const margin        = parseFloat((gw * kolusuSuspenseMargin).toFixed(2));
+          return { ...i, gw, revenue, supplierCost, margin };
+        });
+
+        const ownTotalWt      = ownStockCalc.reduce((s, i) => s + i.gw, 0);
+        const ownTotalRev     = ownStockCalc.reduce((s, i) => s + i.revenue, 0);
+        const ownTotalCost    = ownStockCalc.reduce((s, i) => s + i.cost, 0);
+        const ownTotalMargin  = ownStockCalc.reduce((s, i) => s + i.margin, 0);
+        const suspTotalWt     = suspenseCalc.reduce((s, i) => s + i.gw, 0);
+        const suspTotalRev    = suspenseCalc.reduce((s, i) => s + i.revenue, 0);
+        const suspTotalCost   = suspenseCalc.reduce((s, i) => s + i.supplierCost, 0);
+        const suspTotalMargin = suspenseCalc.reduce((s, i) => s + i.margin, 0);
+        const grandMargin     = ownTotalMargin + suspTotalMargin;
+        const grandRevenue    = ownTotalRev + suspTotalRev;
+
+        const inp2 = "border border-line rounded px-2 py-1 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-gold text-right";
+
+        return (
+          <div className="space-y-5">
+            {loadingKolusu && <p className="text-ink-dim text-sm">Loading…</p>}
+
+            {/* Rate config */}
+            <div className="bg-white rounded-xl border border-line shadow-soft px-4 py-3">
+              <p className="text-xs font-medium text-ink-dim uppercase tracking-wide mb-3">Calculation Rates (editable)</p>
+              <div className="flex flex-wrap gap-5 text-sm">
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Pure Silver Rate (₹/g)</label>
+                  <input type="number" value={kolusuPureRate}
+                    onChange={e => setKolusuPureRate(Number(e.target.value))}
+                    className={inp2} />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Board Rate (₹/g)</label>
+                  <input type="number" value={kolusuBoardRate}
+                    onChange={e => setKolusuBoardRate(Number(e.target.value))}
+                    className={inp2} />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Actual Touch (%) — Own Stock</label>
+                  <input type="number" value={kolusuActualTouch}
+                    onChange={e => setKolusuActualTouch(Number(e.target.value))}
+                    className={inp2} />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Suspense Margin (₹/g)</label>
+                  <input type="number" value={kolusuSuspenseMargin}
+                    onChange={e => setKolusuSuspenseMargin(Number(e.target.value))}
+                    className={inp2} />
+                </div>
+              </div>
+              <p className="text-xs text-ink-dim mt-2">
+                Own stock cost = gross_wt × {kolusuActualTouch}% × ₹{kolusuPureRate} &nbsp;·&nbsp;
+                Suspense margin = gross_wt × ₹{kolusuSuspenseMargin}/g &nbsp;·&nbsp;
+                Sell at ₹{kolusuBoardRate}/g
+              </p>
+            </div>
+
+            {/* Summary strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: "Total Revenue",   value: inr(grandRevenue),  color: "text-ink" },
+                { label: "Own Stock Margin",value: inr(ownTotalMargin), color: ownTotalMargin >= 0 ? "text-ok" : "text-err" },
+                { label: "Suspense Margin", value: inr(suspTotalMargin), color: "text-ok" },
+                { label: "Total Margin",    value: inr(grandMargin),    color: grandMargin >= 0 ? "text-ok" : "text-err" },
+              ].map(s => (
+                <div key={s.label} className="bg-white rounded-xl border border-line p-4 shadow-soft">
+                  <p className="text-xs text-ink-dim">{s.label}</p>
+                  <p className={clsx("text-lg font-bold mt-0.5", s.color)}>{s.value}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Own stock table */}
+            {ownStockCalc.length > 0 && (
+              <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-line font-semibold text-sm flex justify-between bg-gold/5 text-gold">
+                  <span>Own Stock Kolusu <span className="text-xs font-normal text-ink-dim ml-1">{ownStockCalc.length} items</span></span>
+                  <span className="text-xs font-normal text-ink-dim">Cost = gross_wt × {kolusuActualTouch}% × ₹{kolusuPureRate}</span>
+                </div>
+                <table className="w-full text-sm">
+                  <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                    <th className="text-left px-4 py-2">Description</th>
+                    <th className="text-right px-3 py-2">Gross Wt</th>
+                    <th className="text-right px-3 py-2">Revenue</th>
+                    <th className="text-right px-3 py-2 text-err">Cost ({kolusuActualTouch}%×₹{kolusuPureRate})</th>
+                    <th className="text-right px-4 py-2 text-ok">Margin</th>
+                  </tr></thead>
+                  <tbody>
+                    {ownStockCalc.map((i: any, idx: number) => (
+                      <tr key={idx} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                        <td className="px-4 py-2.5 font-medium">{i.description || "—"}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(i.gw)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono">{inr(i.revenue)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-err">{inr(i.cost)}</td>
+                        <td className={clsx("px-4 py-2.5 text-right font-mono font-semibold", i.margin >= 0 ? "text-ok" : "text-err")}>{inr(i.margin)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot><tr className="bg-canvas border-t-2 border-line font-semibold text-sm">
+                    <td className="px-4 py-2.5 text-ink-dim">Total ({ownStockCalc.length})</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(ownTotalWt)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono">{inr(ownTotalRev)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-err">{inr(ownTotalCost)}</td>
+                    <td className={clsx("px-4 py-2.5 text-right font-mono font-bold", ownTotalMargin >= 0 ? "text-ok" : "text-err")}>{inr(ownTotalMargin)}</td>
+                  </tr></tfoot>
+                </table>
+              </div>
+            )}
+
+            {/* Suspense table */}
+            {suspenseCalc.length > 0 && (
+              <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-line font-semibold text-sm flex justify-between bg-info/5 text-info">
+                  <span>Suspense Kolusu <span className="text-xs font-normal text-ink-dim ml-1">{suspenseCalc.length} items</span></span>
+                  <span className="text-xs font-normal text-ink-dim">Margin = gross_wt × ₹{kolusuSuspenseMargin}/g</span>
+                </div>
+                <table className="w-full text-sm">
+                  <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                    <th className="text-left px-4 py-2">Description</th>
+                    <th className="text-right px-3 py-2">Gross Wt</th>
+                    <th className="text-right px-3 py-2">Revenue (to customer)</th>
+                    <th className="text-right px-3 py-2 text-err">Supplier Cost (₹{kolusuBoardRate - kolusuSuspenseMargin}/g)</th>
+                    <th className="text-right px-4 py-2 text-ok">Margin (₹{kolusuSuspenseMargin}/g)</th>
+                  </tr></thead>
+                  <tbody>
+                    {suspenseCalc.map((i: any, idx: number) => (
+                      <tr key={idx} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                        <td className="px-4 py-2.5 font-medium">{i.description || "—"}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(i.gw)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono">{inr(i.revenue)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-err">{inr(i.supplierCost)}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-semibold text-ok">{inr(i.margin)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot><tr className="bg-canvas border-t-2 border-line font-semibold text-sm">
+                    <td className="px-4 py-2.5 text-ink-dim">Total ({suspenseCalc.length})</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(suspTotalWt)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono">{inr(suspTotalRev)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-err">{inr(suspTotalCost)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono font-bold text-ok">{inr(suspTotalMargin)}</td>
+                  </tr></tfoot>
+                </table>
+              </div>
+            )}
+
+            {!loadingKolusu && silverKolusu.length === 0 && (
+              <p className="text-ink-dim text-sm text-center py-10">No silver kolusu sales in this period.</p>
+            )}
+
+            {/* Margin note */}
+            {silverKolusu.length > 0 && (
+              <div className="bg-canvas border border-line rounded-xl px-4 py-3 text-xs text-ink-dim space-y-1">
+                <p><strong>How margins are calculated:</strong></p>
+                <p>• <strong>Own Stock:</strong> Revenue − (gross_wt × {kolusuActualTouch}% × ₹{kolusuPureRate}) — item is sold at ₹{kolusuBoardRate}/g board rate but actual silver content is only {kolusuActualTouch} touch, costing ₹{kolusuPureRate}/g for pure silver.</p>
+                <p>• <strong>Suspense:</strong> Supplier settles at board rate − ₹{kolusuSuspenseMargin} = ₹{kolusuBoardRate - kolusuSuspenseMargin}/g. Your margin is ₹{kolusuSuspenseMargin}/g × gross weight.</p>
+                <p>• Update the rate fields above if board rate or pure rate has changed for the period.</p>
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
