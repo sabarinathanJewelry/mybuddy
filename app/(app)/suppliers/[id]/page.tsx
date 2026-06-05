@@ -24,7 +24,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const savePurchase   = useSaveSupplierPurchase();
   const updatePurchase = useUpdateSupplierPurchase();
 
-  const blankEditPurchase = () => ({ purchase_date: "", bill_no: "", description: "", metal: "gold_22k", gross_wt: 0, tag_wt: 0, stone_wt: 0, stone_rate: 0, stone_to_cash: false, purity_pct: 91.6, rate: 0, charges_g: 0, charges_per_piece: 0, piece_count: 0, charges_to_cash: false, amount: 0, notes: "" });
+  const blankEditPurchase = () => ({ purchase_date: "", bill_no: "", description: "", metal: "gold_22k", is_metal_balance: false, gross_wt: 0, tag_wt: 0, stone_wt: 0, stone_rate: 0, stone_to_cash: false, purity_pct: 91.6, rate: 0, charges_g: 0, charges_per_piece: 0, piece_count: 0, charges_to_cash: false, amount: 0, notes: "" });
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
   const [editPurchaseForm, setEditPurchaseForm] = useState(blankEditPurchase());
 
@@ -36,6 +36,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       description: p.description ?? "",
       metal: p.metal ?? "gold_22k",
       gross_wt: Number(p.gross_wt) || 0,
+      is_metal_balance: Boolean(p.is_metal_balance),
       tag_wt: Number(p.tag_wt) || 0,
       stone_wt: Number(p.stone_wt) || 0,
       stone_rate: Number(p.stone_rate) || 0,
@@ -62,7 +63,9 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       const base_pure      = net_wt * next.purity_pct / 100;
       const final_pure     = base_pure + stone_gold_g + charges_rs_g + next.charges_g;
       const cash_extras    = (next.stone_to_cash ? stone_val_rs : 0) + (next.charges_to_cash ? charges_val_rs : 0);
-      const amount         = next.rate > 0 ? parseFloat((final_pure * next.rate + cash_extras).toFixed(2)) : next.amount;
+      const amount = next.is_metal_balance
+        ? parseFloat(cash_extras.toFixed(2))
+        : (next.rate > 0 ? parseFloat((final_pure * next.rate + cash_extras).toFixed(2)) : next.amount);
       return { ...next, amount };
     });
   }
@@ -76,9 +79,11 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
     const charges_val_rs = ep.charges_per_piece > 0 && ep.piece_count > 0 ? ep.charges_per_piece * ep.piece_count : 0;
     const stone_gold_g   = !ep.stone_to_cash && ep.rate > 0 ? parseFloat((stone_val_rs / ep.rate).toFixed(4)) : 0;
     const charges_rs_g   = !ep.charges_to_cash && ep.rate > 0 ? parseFloat((charges_val_rs / ep.rate).toFixed(4)) : 0;
+    const cash_extras    = (ep.stone_to_cash ? stone_val_rs : 0) + (ep.charges_to_cash ? charges_val_rs : 0);
     const base_pure      = parseFloat((net_wt * ep.purity_pct / 100).toFixed(4));
     const pure_wt        = parseFloat((base_pure + stone_gold_g + charges_rs_g + ep.charges_g).toFixed(4));
-    await updatePurchase.mutateAsync({ id: editingPurchaseId, supplierId: id, data: { ...ep, pure_wt } });
+    const amount         = ep.is_metal_balance ? parseFloat(cash_extras.toFixed(2)) : ep.amount;
+    await updatePurchase.mutateAsync({ id: editingPurchaseId, supplierId: id, data: { ...ep, pure_wt, amount } });
     setEditingPurchaseId(null);
   }
   const savePayment = useSaveSupplierPayment();
@@ -90,7 +95,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const [showEditOpening, setShowEditOpening] = useState(false);
   const [editOpening, setEditOpening] = useState({ opening_balance: 0, gold_opening_g: 0, silver_opening_g: 0 });
 
-  const blankPurchaseItem = () => ({ description: "", gross_wt: 0, tag_wt: 0, stone_wt: 0, stone_rate: 0, stone_to_cash: false, purity_pct: 91.6, rate: 0, charges_g: 0, charges_per_piece: 0, piece_count: 0, charges_to_cash: false, amount: 0, notes: "" });
+  const blankPurchaseItem = () => ({ description: "", is_metal_balance: false, gross_wt: 0, tag_wt: 0, stone_wt: 0, stone_rate: 0, stone_to_cash: false, purity_pct: 91.6, rate: 0, charges_g: 0, charges_per_piece: 0, piece_count: 0, charges_to_cash: false, amount: 0, notes: "" });
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
   const [purchaseForm, setPurchaseForm] = useState({ purchase_date: globalDate, bill_no: "", metal: "gold_22k" });
   const [purchaseItems, setPurchaseItems] = useState([blankPurchaseItem()]);
@@ -118,7 +123,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   // Suspense VA% editing
   const [editingVa, setEditingVa] = useState<{ id: string; gross_wt: number; purity_pct: number; va_pct: number } | null>(null);
 
-  // Cash balance — opening + purchases + cut_rate conversions (metal→cash liability) − actual cash/bank paid
+  // Cash balance — opening + cash-mode purchases + cut_rate conversions − actual cash/bank paid
   const openingCash = Number(view?.supplier?.opening_balance) || 0;
   const totalPurchased = view?.purchases.reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
   const totalCashPaid = view?.payments.filter((p: any) => ["cash", "bank", "upi"].includes(p.mode)).reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
@@ -128,7 +133,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   // Metal balance — opening grams + confirmed suspense pure wt minus metal sent
   const goldOpeningG = Number(view?.supplier?.gold_opening_g) || 0;
   const silverOpeningG = Number(view?.supplier?.silver_opening_g) || 0;
-  const metalOwedG = goldOpeningG + silverOpeningG + (view?.suspense
+  const metalPurchasesG = view?.purchases?.filter((p: any) => p.is_metal_balance).reduce((acc: number, p: any) => acc + (Number(p.pure_wt) || 0), 0) ?? 0;
+  const metalOwedG = goldOpeningG + silverOpeningG + metalPurchasesG + (view?.suspense
     .filter((s: any) => s.supplier_confirmed)
     .reduce((acc: number, s: any) => acc + (Number(s.supplier_pure_wt) || 0), 0) ?? 0);
   const metalPhysicalG = view?.dispatches?.reduce((acc: number, d: any) => acc + (Number(d.weight_g) || 0), 0) ?? 0;
@@ -146,14 +152,19 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       const chg_val_rs    = item.charges_per_piece > 0 && item.piece_count > 0 ? item.charges_per_piece * item.piece_count : 0;
       const stone_gold_g  = !item.stone_to_cash && item.rate > 0 ? parseFloat((stone_val_rs / item.rate).toFixed(4)) : 0;
       const charges_rs_g  = !item.charges_to_cash && item.rate > 0 ? parseFloat((chg_val_rs / item.rate).toFixed(4)) : 0;
+      const cash_extras   = (item.stone_to_cash ? stone_val_rs : 0) + (item.charges_to_cash ? chg_val_rs : 0);
       const base_pure     = parseFloat((net_wt * item.purity_pct / 100).toFixed(4));
       const pure_wt       = parseFloat((base_pure + stone_gold_g + charges_rs_g + item.charges_g).toFixed(4));
+      const amount        = item.is_metal_balance
+        ? parseFloat(cash_extras.toFixed(2))
+        : item.amount;
       await savePurchase.mutateAsync({
         purchase_date: purchaseForm.purchase_date,
         bill_no: purchaseForm.bill_no,
         metal: purchaseForm.metal,
         supplier_id: id,
         description: item.description,
+        is_metal_balance: item.is_metal_balance,
         gross_wt: item.gross_wt,
         tag_wt: item.tag_wt,
         stone_wt: item.stone_wt,
@@ -165,7 +176,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
         charges_per_piece: item.charges_per_piece,
         piece_count: item.piece_count,
         charges_to_cash: item.charges_to_cash,
-        amount: item.amount,
+        amount,
         pure_wt,
         notes: item.notes,
       });
@@ -178,16 +189,18 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   function updatePurchaseItem(idx: number, patch: Record<string, unknown>) {
     setPurchaseItems(prev => prev.map((item, i) => {
       if (i !== idx) return item;
-      const next            = { ...item, ...patch };
-      if (next.rate > 0) {
-        const net           = next.gross_wt - (next.tag_wt || 0) - next.stone_wt;
-        const stone_val_rs  = next.stone_wt > 0 && next.stone_rate > 0 ? next.stone_wt * next.stone_rate : 0;
-        const chg_val_rs    = next.charges_per_piece > 0 && next.piece_count > 0 ? next.charges_per_piece * next.piece_count : 0;
-        const stone_gold_g  = !next.stone_to_cash ? stone_val_rs / next.rate : 0;
-        const charges_rs_g  = !next.charges_to_cash ? chg_val_rs / next.rate : 0;
-        const pure          = net * next.purity_pct / 100 + stone_gold_g + charges_rs_g + next.charges_g;
-        const cash_extras   = (next.stone_to_cash ? stone_val_rs : 0) + (next.charges_to_cash ? chg_val_rs : 0);
-        next.amount         = parseFloat((pure * next.rate + cash_extras).toFixed(2));
+      const next           = { ...item, ...patch };
+      const net            = next.gross_wt - (next.tag_wt || 0) - next.stone_wt;
+      const stone_val_rs   = next.stone_wt > 0 && next.stone_rate > 0 ? next.stone_wt * next.stone_rate : 0;
+      const chg_val_rs     = next.charges_per_piece > 0 && next.piece_count > 0 ? next.charges_per_piece * next.piece_count : 0;
+      const stone_gold_g   = !next.stone_to_cash && next.rate > 0 ? stone_val_rs / next.rate : 0;
+      const charges_rs_g   = !next.charges_to_cash && next.rate > 0 ? chg_val_rs / next.rate : 0;
+      const pure           = net * next.purity_pct / 100 + stone_gold_g + charges_rs_g + next.charges_g;
+      const cash_extras    = (next.stone_to_cash ? stone_val_rs : 0) + (next.charges_to_cash ? chg_val_rs : 0);
+      if (next.is_metal_balance) {
+        next.amount = parseFloat(cash_extras.toFixed(2));
+      } else if (next.rate > 0) {
+        next.amount = parseFloat((pure * next.rate + cash_extras).toFixed(2));
       }
       return next;
     }));
@@ -245,7 +258,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
             )}
             {metalOwedG > 0 && (
               <p className="text-xs text-ink-dim mt-0.5">
-                Owed {grams(metalOwedG)} · Sent {grams(metalSentG)}{metalCutG > 0 ? ` · Cut ${grams(metalCutG)}` : ""}
+                Owed {grams(metalOwedG)}{metalPurchasesG > 0 ? ` (incl. ${grams(metalPurchasesG)} purchases)` : ""} · Sent {grams(metalSentG)}{metalCutG > 0 ? ` · Cut ${grams(metalCutG)}` : ""}
               </p>
             )}
           </div>
@@ -355,9 +368,18 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                 const finalPure     = basePure + stoneGoldG + chargesRsG + item.charges_g;
                 const cashExtras    = (item.stone_to_cash ? stoneValRs : 0) + (item.charges_to_cash ? chgValRs : 0);
                 return (
-                  <div key={idx} className="border border-line rounded-lg2 p-3 space-y-2 relative">
+                  <div key={idx} className={`border rounded-lg2 p-3 space-y-2 relative ${item.is_metal_balance ? "border-info/40 bg-info/5" : "border-line"}`}>
                     <div className="flex justify-between items-center mb-1">
-                      <span className="text-xs font-semibold text-ink-dim">Item {idx + 1}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-ink-dim">Item {idx + 1}</span>
+                        <div className="flex rounded overflow-hidden border border-line text-xs">
+                          <button type="button" onClick={() => updatePurchaseItem(idx, { is_metal_balance: false })}
+                            className={`px-2 py-0.5 ${!item.is_metal_balance ? "bg-gold text-white" : "text-ink-dim hover:bg-canvas"}`}>Cash ₹</button>
+                          <button type="button" onClick={() => updatePurchaseItem(idx, { is_metal_balance: true })}
+                            className={`px-2 py-0.5 border-l border-line ${item.is_metal_balance ? "bg-info text-white" : "text-ink-dim hover:bg-canvas"}`}>Metal g</button>
+                        </div>
+                        {item.is_metal_balance && <span className="text-xs text-info">tracks as gold weight owed</span>}
+                      </div>
                       {purchaseItems.length > 1 && (
                         <button type="button" onClick={() => setPurchaseItems(p => p.filter((_, i) => i !== idx))}
                           className="text-xs text-err hover:underline">Remove</button>
@@ -382,11 +404,15 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                           onFocus={(e) => e.target.select()}
                           onChange={(e) => updatePurchaseItem(idx, { purity_pct: parseFloat(e.target.value) || 0 })}
                           className={inp} /></div>
-                      <div><label className="text-xs text-ink-dim">Rate / g (₹)</label>
+                      <div>
+                        <label className="text-xs text-ink-dim">
+                          Rate / g (₹){item.is_metal_balance && <span className="text-ink-dim/50"> for conversions</span>}
+                        </label>
                         <input type="number" step="0.01" placeholder="0" value={item.rate || ""}
                           onFocus={(e) => e.target.select()}
                           onChange={(e) => updatePurchaseItem(idx, { rate: parseFloat(e.target.value) || 0 })}
-                          className={inp} /></div>
+                          className={inp} />
+                      </div>
                     </div>
 
                     {/* Deductions + net weight */}
@@ -513,13 +539,24 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                           <span>Final Pure</span>
                           <span className="font-mono text-gold">{finalPure.toFixed(4)} g</span>
                         </div>
-                        {item.rate > 0 && (
+                        {item.is_metal_balance ? (
+                          <div className="flex justify-between text-info text-xs pt-0.5">
+                            <span>Metal owed to supplier</span>
+                            <span className="font-mono font-semibold">{finalPure.toFixed(4)} g</span>
+                          </div>
+                        ) : item.rate > 0 ? (
                           <div className="flex justify-between text-ok">
                             <span>
                               Amount ({finalPure.toFixed(4)} × ₹{item.rate}
                               {cashExtras > 0 ? ` + ₹${cashExtras.toFixed(0)} cash` : ""})
                             </span>
                             <span className="font-mono font-semibold">{inr(finalPure * item.rate + cashExtras)}</span>
+                          </div>
+                        ) : null}
+                        {item.is_metal_balance && cashExtras > 0 && (
+                          <div className="flex justify-between text-info text-xs">
+                            <span>+ Cash charges owed</span>
+                            <span className="font-mono">₹{cashExtras.toFixed(0)}</span>
                           </div>
                         )}
                       </div>
@@ -653,7 +690,10 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                   return (
                     <tr key={p.id} className="border-b border-line last:border-0 hover:bg-canvas/50 group">
                       <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.purchase_date)}</td>
-                      <td className="px-3 py-2.5 font-medium">{p.description || <span className="text-ink-dim">—</span>}</td>
+                      <td className="px-3 py-2.5 font-medium">
+                        {p.description || <span className="text-ink-dim">—</span>}
+                        {p.is_metal_balance && <span className="ml-1 text-xs text-info border border-info/30 rounded px-1">metal</span>}
+                      </td>
                       <td className="px-3 py-2.5 capitalize text-ink-dim">{p.metal?.replace("_", " ")}</td>
                       <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(p.gross_wt ?? 0)}</td>
                       <td className="px-3 py-2.5 text-right font-mono text-xs text-ink-dim">{p.stone_wt > 0 ? grams(p.stone_wt) : "—"}</td>
