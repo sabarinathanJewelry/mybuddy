@@ -189,6 +189,77 @@ function useSaleExchangePayments(from: string, to: string) {
   });
 }
 
+// Weighted average cost across ALL-TIME bullion buys + old metal intake (no date filter)
+function useMetalWAC() {
+  return useQuery({
+    queryKey: ["metal-wac"],
+    queryFn: async () => {
+      const client = supabase();
+      const [{ data: bullion, error: e1 }, { data: intake, error: e2 }] = await Promise.all([
+        client.from("bullion_trades").select("metal, pure_wt, total_amount").eq("trade_type", "buy"),
+        client.from("old_metal_intake").select("metal, pure_wt, payout_amount").gt("payout_amount", 0),
+      ]);
+      if (e1) throw e1;
+      if (e2) throw e2;
+
+      function calcWac(items: { pure_wt: any; cost: any }[]) {
+        const wt   = items.reduce((s, i) => s + Number(i.pure_wt || 0), 0);
+        const cost = items.reduce((s, i) => s + Number(i.cost    || 0), 0);
+        return { wt, cost, rate: wt > 0 ? cost / wt : 0 };
+      }
+
+      const goldItems = [
+        ...(bullion ?? []).filter(t => t.metal === "gold").map(t => ({ pure_wt: t.pure_wt, cost: t.total_amount })),
+        ...(intake  ?? []).filter(i => (i.metal as string).startsWith("gold")).map(i => ({ pure_wt: i.pure_wt, cost: i.payout_amount })),
+      ];
+      const silvItems = [
+        ...(bullion ?? []).filter(t => t.metal === "silver").map(t => ({ pure_wt: t.pure_wt, cost: t.total_amount })),
+        ...(intake  ?? []).filter(i => (i.metal as string).startsWith("silver")).map(i => ({ pure_wt: i.pure_wt, cost: i.payout_amount })),
+      ];
+
+      return { gold: calcWac(goldItems), silver: calcWac(silvItems) };
+    },
+  });
+}
+
+// Cut rate payments settled in the selected period
+function useCutRatePayments(from: string, to: string) {
+  return useQuery({
+    queryKey: ["cut-rate-payments", from, to],
+    enabled: !!from && !!to,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("supplier_payments")
+        .select("amount, metal_wt, cut_rate, pay_date, suppliers(name)")
+        .eq("mode", "cut_rate")
+        .gte("pay_date", from)
+        .lte("pay_date", to)
+        .order("pay_date");
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
+// Physical metal dispatches to suppliers/goldsmiths in the period
+function useMetalDispatches(from: string, to: string) {
+  return useQuery({
+    queryKey: ["metal-dispatches-period", from, to],
+    enabled: !!from && !!to,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("metal_dispatches")
+        .select("dispatch_date, metal, weight_g, purpose, party_name, suppliers(name)")
+        .gte("dispatch_date", from)
+        .lte("dispatch_date", to)
+        .in("purpose", ["supplier", "goldsmith"])
+        .order("dispatch_date");
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
 // ── metric helpers ────────────────────────────────────────────────────────────
 
 function metalSection(items: any[], metals: string[]) {
@@ -519,6 +590,9 @@ export default function ReportsPage() {
   const { data: productItems = [] }                                 = useProductItems(range.from, range.to);
   const { data: kolusuItems = [],  isLoading: loadingKolusu }      = useKolusuItems(range.from, range.to);
   const { data: itemResults = [], isFetching: itemSearching }      = useItemSearch(itemTerm, itemFrom, itemTo);
+  const { data: wacData }                                           = useMetalWAC();
+  const { data: cutRatePayments = [] }                              = useCutRatePayments(range.from, range.to);
+  const { data: metalDispatches = [] }                              = useMetalDispatches(range.from, range.to);
 
   const isLoading = loadingItems || loadingPurchases || loadingExpenses;
 
@@ -552,6 +626,24 @@ export default function ReportsPage() {
   const totalCogs     = supplierCogs + totalOldMetalCost;
   const totalService  = gold.makingAmt + gold.vaAmt + gold.stoneAmt +
                         silver.makingAmt + silver.vaAmt + silver.stoneAmt;
+
+  // WAC of reserve (all-time weighted average cost per gram)
+  const goldWAC   = wacData?.gold.rate   ?? 0;
+  const silverWAC = wacData?.silver.rate ?? 0;
+
+  // Physical metal dispatches → cost = grams × WAC (gold from reserve sent to suppliers)
+  const dispatchGoldWt   = (metalDispatches as any[]).filter((d: any) => d.metal === "gold").reduce((s: number, d: any) => s + Number(d.weight_g || 0), 0);
+  const dispatchSilvWt   = (metalDispatches as any[]).filter((d: any) => d.metal === "silver").reduce((s: number, d: any) => s + Number(d.weight_g || 0), 0);
+  const dispatchGoldCost = dispatchGoldWt * goldWAC;
+  const dispatchSilvCost = dispatchSilvWt * silverWAC;
+
+  // Rate cut payments → cost = amount paid (the cash IS the purchase price, not WAC)
+  const cutRatePaid   = (cutRatePayments as any[]).reduce((s: number, p: any) => s + Number(p.amount   || 0), 0);
+  const cutRateGrams  = (cutRatePayments as any[]).reduce((s: number, p: any) => s + Number(p.metal_wt || 0), 0);
+
+  // Total metal purchase cost in period
+  const totalMetalPurchaseCost = dispatchGoldCost + dispatchSilvCost + cutRatePaid;
+  const metalGrossMargin = totalRevenue - totalMetalPurchaseCost;
   const grossProfit   = totalRevenue - totalCogs;
   const netProfit     = grossProfit - totalExpenses;
 
@@ -898,13 +990,169 @@ export default function ReportsPage() {
             </div>
           </div>
 
+          {/* Metal Purchase Cost P&L (WAC-based) */}
+          {goldWAC > 0 && (
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+              <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-gold bg-gold/5">
+                Metal Purchase Cost P&L
+              </div>
+
+              {/* WAC info row */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-x divide-line text-sm border-b border-dashed border-line bg-canvas/30">
+                <div className="px-4 py-3">
+                  <p className="text-xs text-ink-dim">Gold Reserve WAC (all-time)</p>
+                  <p className="font-semibold text-gold">{inr(goldWAC)}<span className="text-xs font-normal text-ink-dim">/g</span></p>
+                  <p className="text-[10px] text-ink-dim mt-0.5">{grams(wacData?.gold.wt ?? 0)} total · {inr(wacData?.gold.cost ?? 0)} paid</p>
+                </div>
+                {silverWAC > 0 && (
+                  <div className="px-4 py-3">
+                    <p className="text-xs text-ink-dim">Silver Reserve WAC (all-time)</p>
+                    <p className="font-semibold text-ink-mid">{inr(silverWAC)}<span className="text-xs font-normal text-ink-dim">/g</span></p>
+                    <p className="text-[10px] text-ink-dim mt-0.5">{grams(wacData?.silver.wt ?? 0)} total · {inr(wacData?.silver.cost ?? 0)} paid</p>
+                  </div>
+                )}
+                <div className="px-4 py-3">
+                  <p className="text-xs text-ink-dim">Includes</p>
+                  <p className="text-xs text-ink-dim mt-1">Bullion purchases + old/exchange gold (payout amounts)</p>
+                </div>
+              </div>
+
+              {/* Purchase cost breakdown */}
+              <div className="divide-y divide-line text-sm">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-x divide-line">
+                  <div className="px-4 py-3">
+                    <p className="text-xs text-ink-dim">Gold Dispatched this period</p>
+                    <p className="font-semibold">{grams(dispatchGoldWt)}</p>
+                    <p className="text-[10px] text-ink-dim mt-0.5">{(metalDispatches as any[]).filter((d: any) => d.metal === "gold").length} dispatch(es)</p>
+                  </div>
+                  <div className="px-4 py-3">
+                    <p className="text-xs text-ink-dim">Dispatch Cost (gold × WAC)</p>
+                    <p className="font-semibold text-err">{goldWAC > 0 ? inr(dispatchGoldCost) : "—"}</p>
+                    <p className="text-[10px] text-ink-dim mt-0.5">{grams(dispatchGoldWt)} × {inr(goldWAC)}/g</p>
+                  </div>
+                  <div className="px-4 py-3">
+                    <p className="text-xs text-ink-dim">Rate Cuts (cash paid)</p>
+                    <p className="font-semibold text-err">{inr(cutRatePaid)}</p>
+                    <p className="text-[10px] text-ink-dim mt-0.5">{grams(cutRateGrams)} grams cut · {(cutRatePayments as any[]).length} settlement(s)</p>
+                  </div>
+                  <div className="px-4 py-3">
+                    <p className="text-xs text-ink-dim">Total Purchase Cost</p>
+                    <p className="font-bold text-err text-base">{inr(totalMetalPurchaseCost)}</p>
+                    <p className="text-[10px] text-ink-dim mt-0.5">dispatches + rate cuts</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-x divide-line bg-canvas/50">
+                  <div className="px-4 py-3">
+                    <p className="text-xs text-ink-dim">Sales Revenue (excl GST)</p>
+                    <p className="font-semibold">{inr(totalRevenue)}</p>
+                  </div>
+                  <div className="px-4 py-3">
+                    <p className="text-xs text-ink-dim">Total Purchase Cost</p>
+                    <p className="font-semibold text-err">{inr(totalMetalPurchaseCost)}</p>
+                  </div>
+                  <div className="px-4 py-3 sm:col-span-2">
+                    <p className="text-xs text-ink-dim">Gross Margin (Revenue − Purchase Cost)</p>
+                    <p className={clsx("text-lg font-bold", metalGrossMargin >= 0 ? "text-ok" : "text-err")}>
+                      {inr(metalGrossMargin)}
+                      <span className={clsx("ml-2 text-xs font-normal", metalGrossMargin >= 0 ? "text-ok" : "text-err")}>
+                        {totalRevenue > 0 ? `${((metalGrossMargin / totalRevenue) * 100).toFixed(1)}%` : ""}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Rate Cut detail table */}
+          {(cutRatePayments as any[]).length > 0 && (
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+              <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-info bg-info/5">
+                Rate Cut Settlements — {(cutRatePayments as any[]).length} in period
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                    <th className="text-left px-4 py-2">Date</th>
+                    <th className="text-left px-3 py-2">Supplier</th>
+                    <th className="text-right px-3 py-2">Grams Cut</th>
+                    <th className="text-right px-3 py-2">Rate/g</th>
+                    <th className="text-right px-4 py-2">Cash Paid (Purchase Cost)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(cutRatePayments as any[]).map((p: any, i: number) => (
+                    <tr key={i} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                      <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.pay_date)}</td>
+                      <td className="px-3 py-2.5">{p.suppliers?.name ?? "—"}</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(Number(p.metal_wt || 0))}</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-xs">{inr(Number(p.cut_rate || 0))}</td>
+                      <td className="px-4 py-2.5 text-right font-mono font-semibold text-err">{inr(Number(p.amount || 0))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-canvas/50 border-t border-line font-semibold text-sm">
+                    <td className="px-4 py-2.5" colSpan={2}>Total</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(cutRateGrams)}</td>
+                    <td className="px-3 py-2.5" />
+                    <td className="px-4 py-2.5 text-right font-mono font-bold text-err">{inr(cutRatePaid)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+
+          {/* Metal dispatch detail table */}
+          {(metalDispatches as any[]).length > 0 && (
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+              <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-warn bg-warn/5">
+                Metal Dispatched to Suppliers — {(metalDispatches as any[]).length} in period
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                    <th className="text-left px-4 py-2">Date</th>
+                    <th className="text-left px-3 py-2">Supplier / Party</th>
+                    <th className="text-left px-3 py-2">Metal</th>
+                    <th className="text-right px-3 py-2">Weight</th>
+                    <th className="text-right px-4 py-2">Cost at WAC</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(metalDispatches as any[]).map((d: any, i: number) => {
+                    const wac  = d.metal === "gold" ? goldWAC : silverWAC;
+                    const cost = Number(d.weight_g || 0) * wac;
+                    return (
+                      <tr key={i} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                        <td className="px-4 py-2.5 text-ink-dim">{shortDate(d.dispatch_date)}</td>
+                        <td className="px-3 py-2.5">{d.suppliers?.name ?? d.party_name ?? "—"}</td>
+                        <td className="px-3 py-2.5 text-ink-dim capitalize">{d.metal}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(Number(d.weight_g || 0))}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-semibold text-err">{wac > 0 ? inr(cost) : "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-canvas/50 border-t border-line font-semibold text-sm">
+                    <td className="px-4 py-2.5" colSpan={3}>Total</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(dispatchGoldWt + dispatchSilvWt)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono font-bold text-err">{inr(dispatchGoldCost + dispatchSilvCost)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+
           {/* Note about accuracy */}
           <div className="bg-canvas border border-line rounded-xl px-4 py-3 text-xs text-ink-dim space-y-1">
             <p><strong>Notes on accuracy:</strong></p>
-            <p>• <strong>COGS now includes:</strong> supplier purchases + cash paid for old gold/silver bought from public (via Metal Flow → Intake).</p>
-            <p>• <strong>Exchange gold is NOT a cost</strong> — when a customer exchanges old jewelry, you gave them credit (already embedded in the sale amount). The old gold you received is a raw material asset. Record it using Metal Flow → Intake so the stock is tracked.</p>
+            <p>• <strong>Metal Purchase Cost P&L</strong> uses two methods: (1) Rate cuts — the cash paid IS the purchase price. (2) Physical dispatches — cost = grams × WAC of reserve.</p>
+            <p>• <strong>Gold Reserve WAC</strong> is the weighted average cost per gram across all bullion purchases + old/exchange gold (payout amounts). Refining loss is not yet deducted — actual WAC per refined gram may be slightly higher.</p>
+            <p>• <strong>Exchange gold is NOT a cost</strong> — when a customer exchanges old jewelry, you gave them credit in the sale. The old gold you received is a raw material asset tracked via Metal Flow → Intake.</p>
             <p>• <strong>Making + VA income</strong> is the most reliable profitability metric — it reflects your service margin regardless of metal price movements.</p>
-            <p>• <strong>Metal rate profit/loss</strong> (buying old gold cheap, selling at higher rate) is not shown here — it appears when the metal is dispatched to a supplier and their payment is reconciled.</p>
           </div>
         </div>
       )}
