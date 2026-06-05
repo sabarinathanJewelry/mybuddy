@@ -2,7 +2,7 @@
 
 import { Fragment, use, useState } from "react";
 import Link from "next/link";
-import { useSupplier360, useSaveSupplierPurchase, useSaveSupplierPayment, useUpdateSupplierPayment, useDeleteSupplierPayment, useConfirmSuspenseVa, useUpsertSupplier } from "@/modules/suppliers/api";
+import { useSupplier360, useSaveSupplierPurchase, useUpdateSupplierPurchase, useSaveSupplierPayment, useUpdateSupplierPayment, useDeleteSupplierPayment, useConfirmSuspenseVa, useUpsertSupplier } from "@/modules/suppliers/api";
 import { useGlobalDate } from "@/stores/global-date";
 import { useT } from "@/i18n";
 import { inr, grams, shortDate } from "@/lib/format";
@@ -21,7 +21,47 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const globalDate = useGlobalDate((s) => s.date);
   const [tab, setTab] = useState<Tab>("purchases");
   const { data: view, isLoading } = useSupplier360(id);
-  const savePurchase = useSaveSupplierPurchase();
+  const savePurchase   = useSaveSupplierPurchase();
+  const updatePurchase = useUpdateSupplierPurchase();
+
+  const blankEditPurchase = () => ({ purchase_date: "", bill_no: "", description: "", metal: "gold_22k", gross_wt: 0, purity_pct: 91.6, rate: 0, charges_g: 0, amount: 0, notes: "" });
+  const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
+  const [editPurchaseForm, setEditPurchaseForm] = useState(blankEditPurchase());
+
+  function openEditPurchase(p: any) {
+    setEditingPurchaseId(p.id);
+    setEditPurchaseForm({
+      purchase_date: p.purchase_date ?? "",
+      bill_no: p.bill_no ?? "",
+      description: p.description ?? "",
+      metal: p.metal ?? "gold_22k",
+      gross_wt: Number(p.gross_wt) || 0,
+      purity_pct: Number(p.purity_pct) || 91.6,
+      rate: Number(p.rate) || 0,
+      charges_g: Number(p.charges_g) || 0,
+      amount: Number(p.amount) || 0,
+      notes: p.notes ?? "",
+    });
+  }
+
+  function updateEditPurchaseForm(patch: Partial<typeof editPurchaseForm>) {
+    setEditPurchaseForm(prev => {
+      const next = { ...prev, ...patch };
+      const base_pure  = next.gross_wt * next.purity_pct / 100;
+      const final_pure = base_pure + next.charges_g;
+      const amount     = next.rate > 0 ? parseFloat((final_pure * next.rate).toFixed(2)) : next.amount;
+      return { ...next, amount };
+    });
+  }
+
+  async function handleEditPurchaseSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingPurchaseId) return;
+    const base_pure = parseFloat((editPurchaseForm.gross_wt * editPurchaseForm.purity_pct / 100).toFixed(4));
+    const pure_wt   = parseFloat((base_pure + editPurchaseForm.charges_g).toFixed(4));
+    await updatePurchase.mutateAsync({ id: editingPurchaseId, supplierId: id, data: { ...editPurchaseForm, pure_wt } });
+    setEditingPurchaseId(null);
+  }
   const savePayment = useSaveSupplierPayment();
   const updatePayment = useUpdateSupplierPayment();
   const deletePayment = useDeleteSupplierPayment();
@@ -334,20 +374,88 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                 <th className="text-right px-3 py-2.5">Touch%</th>
                 <th className="text-right px-3 py-2.5 text-gold">Pure Wt</th>
                 <th className="text-right px-3 py-2.5">{t("amount")}</th>
+                <th className="px-3 py-2.5 w-12"></th>
               </tr></thead>
               <tbody>
-                {view?.purchases.map((p: any) => (
-                  <tr key={p.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                    <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.purchase_date)}</td>
-                    <td className="px-3 py-2.5 font-medium">{p.description || <span className="text-ink-dim">—</span>}</td>
-                    <td className="px-3 py-2.5 capitalize text-ink-dim">{p.metal?.replace("_", " ")}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(p.gross_wt ?? 0)}</td>
-                    <td className="px-3 py-2.5 text-right text-ink-dim">{p.purity_pct ? `${p.purity_pct}%` : "—"}</td>
-                    <td className="px-3 py-2.5 text-right font-mono font-semibold text-gold">{grams(p.pure_wt ?? 0)}</td>
-                    <td className="px-3 py-2.5 text-right font-mono">{inr(p.amount)}</td>
-                  </tr>
-                ))}
-                {!view?.purchases.length && <tr><td colSpan={7} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
+                {view?.purchases.map((p: any) => {
+                  const isEditing = editingPurchaseId === p.id;
+                  if (isEditing) {
+                    const ep = editPurchaseForm;
+                    const basePure  = parseFloat((ep.gross_wt * ep.purity_pct / 100).toFixed(4));
+                    const finalPure = parseFloat((basePure + ep.charges_g).toFixed(4));
+                    return (
+                      <tr key={p.id} className="border-b border-line bg-gold/5">
+                        <td colSpan={8} className="px-4 py-3">
+                          <form onSubmit={handleEditPurchaseSave} className="space-y-3">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              <div><label className="text-xs text-ink-dim">Date</label>
+                                <input type="date" value={ep.purchase_date} onChange={(e) => updateEditPurchaseForm({ purchase_date: e.target.value })} className={inp} /></div>
+                              <div><label className="text-xs text-ink-dim">Metal</label>
+                                <select value={ep.metal} onChange={(e) => updateEditPurchaseForm({ metal: e.target.value })} className={inp}>
+                                  {METALS.map((m) => <option key={m} value={m}>{m}</option>)}
+                                </select></div>
+                              <div className="sm:col-span-2"><label className="text-xs text-ink-dim">Item Name</label>
+                                <input type="text" value={ep.description} onChange={(e) => updateEditPurchaseForm({ description: e.target.value })} className={inp} /></div>
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                              {[
+                                { label: "Gross Wt (g)", key: "gross_wt", step: "0.001" },
+                                { label: "Cost Touch %", key: "purity_pct", step: "0.01" },
+                                { label: "Rate / g (₹)", key: "rate", step: "0.01" },
+                                { label: "Charges (g)", key: "charges_g", step: "0.001" },
+                                { label: "Amount (₹)", key: "amount", step: "0.01" },
+                              ].map((f) => (
+                                <div key={f.key}><label className="text-xs text-ink-dim">{f.label}</label>
+                                  <input type="number" step={f.step} value={(ep as any)[f.key] || ""}
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => {
+                                      const v = parseFloat(e.target.value) || 0;
+                                      if (f.key === "amount") setEditPurchaseForm(prev => ({ ...prev, amount: v }));
+                                      else updateEditPurchaseForm({ [f.key]: v });
+                                    }}
+                                    className={inp} />
+                                </div>
+                              ))}
+                            </div>
+                            {ep.gross_wt > 0 && (
+                              <p className="text-xs text-ink-dim">
+                                Pure: {basePure.toFixed(4)}g + {ep.charges_g.toFixed(4)}g charges
+                                = <strong className="text-gold">{finalPure.toFixed(4)}g</strong>
+                                {ep.rate > 0 && <> · Amount: <strong className="text-ok">{inr(finalPure * ep.rate)}</strong></>}
+                              </p>
+                            )}
+                            <div className="flex gap-2">
+                              <button type="submit" disabled={updatePurchase.isPending}
+                                className="bg-gold text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                                {updatePurchase.isPending ? "Saving…" : "Save"}
+                              </button>
+                              <button type="button" onClick={() => setEditingPurchaseId(null)}
+                                className="border border-line text-xs px-4 py-1.5 rounded-lg2">Cancel</button>
+                            </div>
+                          </form>
+                        </td>
+                      </tr>
+                    );
+                  }
+                  return (
+                    <tr key={p.id} className="border-b border-line last:border-0 hover:bg-canvas/50 group">
+                      <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.purchase_date)}</td>
+                      <td className="px-3 py-2.5 font-medium">{p.description || <span className="text-ink-dim">—</span>}</td>
+                      <td className="px-3 py-2.5 capitalize text-ink-dim">{p.metal?.replace("_", " ")}</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(p.gross_wt ?? 0)}</td>
+                      <td className="px-3 py-2.5 text-right text-ink-dim">{p.purity_pct ? `${p.purity_pct}%` : "—"}</td>
+                      <td className="px-3 py-2.5 text-right font-mono font-semibold text-gold">{grams(p.pure_wt ?? 0)}</td>
+                      <td className="px-3 py-2.5 text-right font-mono">{inr(p.amount)}</td>
+                      <td className="px-3 py-2.5 text-right">
+                        <button onClick={() => openEditPurchase(p)}
+                          className="text-xs text-ink-dim border border-line rounded px-2 py-0.5 opacity-0 group-hover:opacity-100 hover:border-gold hover:text-gold transition-opacity">
+                          Edit
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!view?.purchases.length && <tr><td colSpan={8} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
               </tbody>
             </table>
           </div>

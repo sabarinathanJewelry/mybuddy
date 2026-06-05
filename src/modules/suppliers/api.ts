@@ -95,6 +95,18 @@ export function useSaveSupplierPurchase() {
   });
 }
 
+export function useUpdateSupplierPurchase() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, supplierId, data }: { id: string; supplierId: string; data: Record<string, unknown> }) => {
+      const { error } = await supabase().from("supplier_purchases").update(data).eq("id", id);
+      if (error) throw error;
+      return supplierId;
+    },
+    onSuccess: (supplierId) => qc.invalidateQueries({ queryKey: ["supplier-360", supplierId] }),
+  });
+}
+
 export function useSaveSupplierPayment() {
   const qc = useQueryClient();
   return useMutation({
