@@ -97,11 +97,12 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   // Suspense VA% editing
   const [editingVa, setEditingVa] = useState<{ id: string; gross_wt: number; purity_pct: number; va_pct: number } | null>(null);
 
-  // Cash balance — opening + formal purchases vs pure cash payments (payments with metal_wt are metal settlements)
+  // Cash balance — opening + purchases + cut_rate conversions (metal→cash liability) − actual cash/bank paid
   const openingCash = Number(view?.supplier?.opening_balance) || 0;
   const totalPurchased = view?.purchases.reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
-  const totalPaid = view?.payments.filter((p: any) => !(p.metal_wt > 0)).reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
-  const cashBalance = openingCash + totalPurchased - totalPaid;
+  const totalCashPaid = view?.payments.filter((p: any) => ["cash", "bank", "upi"].includes(p.mode)).reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
+  const totalCutRateValue = view?.payments.filter((p: any) => p.mode === "cut_rate").reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
+  const cashBalance = openingCash + totalPurchased + totalCutRateValue - totalCashPaid;
 
   // Metal balance — opening grams + confirmed suspense pure wt minus metal sent
   const goldOpeningG = Number(view?.supplier?.gold_opening_g) || 0;
@@ -111,6 +112,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
     .reduce((acc: number, s: any) => acc + (Number(s.supplier_pure_wt) || 0), 0) ?? 0);
   const metalPhysicalG = view?.dispatches?.reduce((acc: number, d: any) => acc + (Number(d.weight_g) || 0), 0) ?? 0;
   const metalCashG = view?.payments?.filter((p: any) => (p.metal_wt ?? 0) > 0).reduce((acc: number, p: any) => acc + (Number(p.metal_wt) || 0), 0) ?? 0;
+  const metalCutG = view?.payments?.filter((p: any) => p.mode === "cut_rate").reduce((acc: number, p: any) => acc + (Number(p.metal_wt) || 0), 0) ?? 0;
   const metalSentG = metalPhysicalG + metalCashG;
   const metalBalanceG = metalOwedG - metalSentG;
 
@@ -136,7 +138,11 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
 
   async function handlePaymentSave(e: React.FormEvent) {
     e.preventDefault();
-    await savePayment.mutateAsync({ ...paymentForm, supplier_id: id });
+    let data: Record<string, unknown> = { ...paymentForm, supplier_id: id };
+    if (paymentForm.mode === "cut_rate" && paymentForm.cut_rate > 0 && paymentForm.amount > 0) {
+      data = { ...data, metal_wt: parseFloat((paymentForm.amount / paymentForm.cut_rate).toFixed(4)) };
+    }
+    await savePayment.mutateAsync(data);
     setPaymentForm({ pay_date: globalDate, mode: "cash", amount: 0, metal_wt: 0, metal_purity: 91.6, cut_rate: 0, notes: "" });
     setShowPaymentForm(false);
   }
@@ -163,7 +169,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
             <p className="text-xs text-ink-dim">{t("cash_balance")}</p>
             <p className={`text-xl font-bold ${cashBalance > 0 ? "text-err" : "text-ok"}`}>{inr(cashBalance)}</p>
             <p className="text-xs text-ink-dim/60">
-              Opening {inr(openingCash)} + Purchased {inr(totalPurchased)} − Paid {inr(totalPaid)}
+              Opening {inr(openingCash)} + Purchased {inr(totalPurchased)}{totalCutRateValue > 0 ? ` + Cut ${inr(totalCutRateValue)}` : ""} − Paid {inr(totalCashPaid)}
             </p>
           </div>
           <div>
@@ -182,7 +188,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
             )}
             {metalOwedG > 0 && (
               <p className="text-xs text-ink-dim mt-0.5">
-                Owed {grams(metalOwedG)} · Sent {grams(metalSentG)}
+                Owed {grams(metalOwedG)} · Sent {grams(metalSentG)}{metalCutG > 0 ? ` · Cut ${grams(metalCutG)}` : ""}
               </p>
             )}
           </div>
@@ -512,9 +518,16 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                 )}
                 {paymentForm.mode === "cut_rate" && (
                   <div><label className="text-xs text-ink-dim">Cut Rate/g</label>
-                    <input type="number" step="0.01" value={paymentForm.cut_rate}
+                    <input type="number" step="0.01" value={paymentForm.cut_rate || ""}
+                      onFocus={(e) => e.target.select()}
                       onChange={(e) => setPaymentForm({ ...paymentForm, cut_rate: parseFloat(e.target.value) || 0 })}
                       className={inp} /></div>
+                )}
+                {paymentForm.mode === "cut_rate" && paymentForm.amount > 0 && paymentForm.cut_rate > 0 && (
+                  <div className="sm:col-span-3 bg-gold/5 border border-gold/20 rounded-lg2 px-3 py-2 text-sm flex justify-between items-center">
+                    <span className="text-ink-dim">{inr(paymentForm.amount)} ÷ ₹{paymentForm.cut_rate}/g = grams settled</span>
+                    <span className="font-mono font-semibold text-gold">{(paymentForm.amount / paymentForm.cut_rate).toFixed(4)} g</span>
+                  </div>
                 )}
               </div>
               <div className="flex gap-2">
@@ -542,7 +555,9 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                     <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
                       <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.pay_date)}</td>
                       <td className="px-3 py-2.5 capitalize">{p.mode}</td>
-                      <td className="px-3 py-2.5 text-right hidden sm:table-cell text-ink-dim">{p.metal_wt ? grams(p.metal_wt) : "—"}</td>
+                      <td className="px-3 py-2.5 text-right hidden sm:table-cell text-ink-dim">
+                        {p.metal_wt ? <span className={p.mode === "cut_rate" ? "text-gold font-semibold" : ""}>{grams(p.metal_wt)}</span> : "—"}
+                      </td>
                       <td className="px-3 py-2.5 text-right hidden sm:table-cell text-ink-dim">{p.cut_rate ? inr(p.cut_rate) : "—"}</td>
                       <td className="px-3 py-2.5 text-right font-mono text-err">{inr(p.amount)}</td>
                       <td className="px-3 py-2.5 text-right whitespace-nowrap">
