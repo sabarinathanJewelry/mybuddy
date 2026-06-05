@@ -24,7 +24,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const savePurchase   = useSaveSupplierPurchase();
   const updatePurchase = useUpdateSupplierPurchase();
 
-  const blankEditPurchase = () => ({ purchase_date: "", bill_no: "", description: "", metal: "gold_22k", gross_wt: 0, purity_pct: 91.6, rate: 0, charges_g: 0, amount: 0, notes: "" });
+  const blankEditPurchase = () => ({ purchase_date: "", bill_no: "", description: "", metal: "gold_22k", gross_wt: 0, stone_wt: 0, purity_pct: 91.6, rate: 0, charges_g: 0, amount: 0, notes: "" });
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
   const [editPurchaseForm, setEditPurchaseForm] = useState(blankEditPurchase());
 
@@ -36,6 +36,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       description: p.description ?? "",
       metal: p.metal ?? "gold_22k",
       gross_wt: Number(p.gross_wt) || 0,
+      stone_wt: Number(p.stone_wt) || 0,
       purity_pct: Number(p.purity_pct) || 91.6,
       rate: Number(p.rate) || 0,
       charges_g: Number(p.charges_g) || 0,
@@ -47,7 +48,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   function updateEditPurchaseForm(patch: Partial<typeof editPurchaseForm>) {
     setEditPurchaseForm(prev => {
       const next = { ...prev, ...patch };
-      const base_pure  = next.gross_wt * next.purity_pct / 100;
+      const net_wt     = next.gross_wt - (next.stone_wt || 0);
+      const base_pure  = net_wt * next.purity_pct / 100;
       const final_pure = base_pure + next.charges_g;
       const amount     = next.rate > 0 ? parseFloat((final_pure * next.rate).toFixed(2)) : next.amount;
       return { ...next, amount };
@@ -57,7 +59,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   async function handleEditPurchaseSave(e: React.FormEvent) {
     e.preventDefault();
     if (!editingPurchaseId) return;
-    const base_pure = parseFloat((editPurchaseForm.gross_wt * editPurchaseForm.purity_pct / 100).toFixed(4));
+    const net_wt    = parseFloat((editPurchaseForm.gross_wt - (editPurchaseForm.stone_wt || 0)).toFixed(4));
+    const base_pure = parseFloat((net_wt * editPurchaseForm.purity_pct / 100).toFixed(4));
     const pure_wt   = parseFloat((base_pure + editPurchaseForm.charges_g).toFixed(4));
     await updatePurchase.mutateAsync({ id: editingPurchaseId, supplierId: id, data: { ...editPurchaseForm, pure_wt } });
     setEditingPurchaseId(null);
@@ -71,8 +74,10 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const [showEditOpening, setShowEditOpening] = useState(false);
   const [editOpening, setEditOpening] = useState({ opening_balance: 0, gold_opening_g: 0, silver_opening_g: 0 });
 
+  const blankPurchaseItem = () => ({ description: "", gross_wt: 0, stone_count: 0, stone_wt_each_mg: 0, stone_wt: 0, purity_pct: 91.6, rate: 0, charges_g: 0, amount: 0, notes: "" });
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
-  const [purchaseForm, setPurchaseForm] = useState({ purchase_date: globalDate, bill_no: "", description: "", metal: "gold_22k", gross_wt: 0, purity_pct: 91.6, rate: 0, charges_g: 0, amount: 0, notes: "" });
+  const [purchaseForm, setPurchaseForm] = useState({ purchase_date: globalDate, bill_no: "", metal: "gold_22k" });
+  const [purchaseItems, setPurchaseItems] = useState([blankPurchaseItem()]);
 
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ pay_date: globalDate, mode: "cash", amount: 0, metal_wt: 0, metal_purity: 91.6, cut_rate: 0, notes: "" });
@@ -118,22 +123,46 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
 
   async function handlePurchaseSave(e: React.FormEvent) {
     e.preventDefault();
-    const base_pure = parseFloat((purchaseForm.gross_wt * purchaseForm.purity_pct / 100).toFixed(4));
-    const pure_wt   = parseFloat((base_pure + purchaseForm.charges_g).toFixed(4));
-    await savePurchase.mutateAsync({ ...purchaseForm, supplier_id: id, pure_wt });
-    setPurchaseForm({ purchase_date: globalDate, bill_no: "", description: "", metal: "gold_22k", gross_wt: 0, purity_pct: 91.6, rate: 0, charges_g: 0, amount: 0, notes: "" });
+    for (const item of purchaseItems) {
+      if (!item.gross_wt) continue;
+      const net_wt    = parseFloat((item.gross_wt - item.stone_wt).toFixed(4));
+      const base_pure = parseFloat((net_wt * item.purity_pct / 100).toFixed(4));
+      const pure_wt   = parseFloat((base_pure + item.charges_g).toFixed(4));
+      await savePurchase.mutateAsync({
+        purchase_date: purchaseForm.purchase_date,
+        bill_no: purchaseForm.bill_no,
+        metal: purchaseForm.metal,
+        supplier_id: id,
+        description: item.description,
+        gross_wt: item.gross_wt,
+        stone_wt: item.stone_wt,
+        purity_pct: item.purity_pct,
+        rate: item.rate,
+        charges_g: item.charges_g,
+        amount: item.amount,
+        pure_wt,
+        notes: item.notes,
+      });
+    }
+    setPurchaseForm({ purchase_date: globalDate, bill_no: "", metal: "gold_22k" });
+    setPurchaseItems([blankPurchaseItem()]);
     setShowPurchaseForm(false);
   }
 
-  // Helper to update purchase form and auto-recalculate amount
-  function updatePurchaseForm(patch: Partial<typeof purchaseForm>) {
-    setPurchaseForm(prev => {
-      const next = { ...prev, ...patch };
-      const base_pure = next.gross_wt * next.purity_pct / 100;
-      const final_pure = base_pure + next.charges_g;
-      const amount = next.rate > 0 ? parseFloat((final_pure * next.rate).toFixed(2)) : next.amount;
-      return { ...next, amount };
-    });
+  function updatePurchaseItem(idx: number, patch: Record<string, unknown>) {
+    setPurchaseItems(prev => prev.map((item, i) => {
+      if (i !== idx) return item;
+      const next = { ...item, ...patch };
+      if ("stone_count" in patch || "stone_wt_each_mg" in patch) {
+        next.stone_wt = parseFloat(((next.stone_count * next.stone_wt_each_mg) / 1000).toFixed(4));
+      }
+      if (next.rate > 0) {
+        const net   = next.gross_wt - next.stone_wt;
+        const pure  = net * next.purity_pct / 100 + next.charges_g;
+        next.amount = parseFloat((pure * next.rate).toFixed(2));
+      }
+      return next;
+    }));
   }
 
   async function handlePaymentSave(e: React.FormEvent) {
@@ -269,95 +298,146 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       {tab === "purchases" && !isLoading && (
         <div className="space-y-3">
           <button onClick={() => setShowPurchaseForm(!showPurchaseForm)} className="text-xs text-gold hover:underline">+ Add Purchase</button>
-          {showPurchaseForm && (() => {
-            const basePure   = parseFloat((purchaseForm.gross_wt * purchaseForm.purity_pct / 100).toFixed(4));
-            const finalPure  = parseFloat((basePure + purchaseForm.charges_g).toFixed(4));
-            return (
-            <form onSubmit={handlePurchaseSave} className="bg-white border border-line rounded-xl p-4 shadow-soft space-y-3">
-              {/* Row 1: Date / Metal / Item name */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {showPurchaseForm && (
+            <form onSubmit={handlePurchaseSave} className="bg-white border border-line rounded-xl p-4 shadow-soft space-y-4">
+              {/* Bill header */}
+              <div className="grid grid-cols-3 gap-3">
                 <div><label className="text-xs text-ink-dim">Date</label>
                   <input type="date" value={purchaseForm.purchase_date}
-                    onChange={(e) => updatePurchaseForm({ purchase_date: e.target.value })} className={inp} /></div>
+                    onChange={(e) => setPurchaseForm(p => ({ ...p, purchase_date: e.target.value }))} className={inp} /></div>
+                <div><label className="text-xs text-ink-dim">Bill No</label>
+                  <input type="text" placeholder="optional"
+                    value={purchaseForm.bill_no}
+                    onChange={(e) => setPurchaseForm(p => ({ ...p, bill_no: e.target.value }))} className={inp} /></div>
                 <div><label className="text-xs text-ink-dim">Metal</label>
                   <select value={purchaseForm.metal}
-                    onChange={(e) => updatePurchaseForm({ metal: e.target.value })} className={inp}>
+                    onChange={(e) => setPurchaseForm(p => ({ ...p, metal: e.target.value }))} className={inp}>
                     {METALS.map((m) => <option key={m} value={m}>{m}</option>)}
                   </select></div>
-                <div className="sm:col-span-1">
-                  <label className="text-xs text-ink-dim">Item Name</label>
-                  <input type="text" placeholder="e.g. Bahubali Chain"
-                    value={purchaseForm.description}
-                    onChange={(e) => updatePurchaseForm({ description: e.target.value })}
-                    className={inp} />
-                </div>
               </div>
 
-              {/* Row 2: Gross Wt / Cost Touch% / Rate/g */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <div><label className="text-xs text-ink-dim">Gross Wt (g)</label>
-                  <input type="number" step="0.001" placeholder="0.000"
-                    value={purchaseForm.gross_wt || ""}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) => updatePurchaseForm({ gross_wt: parseFloat(e.target.value) || 0 })}
-                    className={inp} /></div>
-                <div><label className="text-xs text-ink-dim">Cost Touch %</label>
-                  <input type="number" step="0.01" placeholder="91.6"
-                    value={purchaseForm.purity_pct || ""}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) => updatePurchaseForm({ purity_pct: parseFloat(e.target.value) || 0 })}
-                    className={inp} /></div>
-                <div><label className="text-xs text-ink-dim">Rate / g (₹)</label>
-                  <input type="number" step="0.01" placeholder="0"
-                    value={purchaseForm.rate || ""}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) => updatePurchaseForm({ rate: parseFloat(e.target.value) || 0 })}
-                    className={inp} /></div>
-              </div>
-
-              {/* Row 3: Charges (g) / Amount */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="text-xs text-ink-dim">Charges in g <span className="text-ink-dim/50">(HM / cert / stone / postal)</span></label>
-                  <input type="number" step="0.001" placeholder="0.000"
-                    value={purchaseForm.charges_g || ""}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) => updatePurchaseForm({ charges_g: parseFloat(e.target.value) || 0 })}
-                    className={inp} />
-                </div>
-                <div>
-                  <label className="text-xs text-ink-dim">Amount (₹) <span className="text-ink-dim/50">auto</span></label>
-                  <input type="number" step="0.01"
-                    value={purchaseForm.amount || ""}
-                    onFocus={(e) => e.target.select()}
-                    onChange={(e) => setPurchaseForm(p => ({ ...p, amount: parseFloat(e.target.value) || 0 }))}
-                    className={inp} />
-                </div>
-              </div>
-
-              {/* Live pure weight calculation */}
-              {purchaseForm.gross_wt > 0 && (
-                <div className="bg-gold/5 border border-gold/20 rounded-lg2 px-4 py-3 text-sm space-y-1">
-                  <div className="flex justify-between">
-                    <span className="text-ink-dim">Base Pure ({purchaseForm.purity_pct}% of {purchaseForm.gross_wt}g)</span>
-                    <span className="font-mono">{basePure.toFixed(4)} g</span>
-                  </div>
-                  {purchaseForm.charges_g > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-ink-dim">+ Charges</span>
-                      <span className="font-mono">+ {purchaseForm.charges_g.toFixed(4)} g</span>
+              {/* Item rows */}
+              {purchaseItems.map((item, idx) => {
+                const netWt      = item.gross_wt - item.stone_wt;
+                const basePure   = netWt * item.purity_pct / 100;
+                const finalPure  = basePure + item.charges_g;
+                return (
+                  <div key={idx} className="border border-line rounded-lg2 p-3 space-y-2 relative">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs font-semibold text-ink-dim">Item {idx + 1}</span>
+                      {purchaseItems.length > 1 && (
+                        <button type="button" onClick={() => setPurchaseItems(p => p.filter((_, i) => i !== idx))}
+                          className="text-xs text-err hover:underline">Remove</button>
+                      )}
                     </div>
-                  )}
-                  <div className="flex justify-between font-semibold border-t border-gold/20 pt-1">
-                    <span>Final Pure Wt</span>
-                    <span className="font-mono text-gold">{finalPure.toFixed(4)} g</span>
-                  </div>
-                  {purchaseForm.rate > 0 && (
-                    <div className="flex justify-between text-ok">
-                      <span className="text-xs">Amount ({finalPure.toFixed(4)} × ₹{purchaseForm.rate})</span>
-                      <span className="font-mono font-semibold">{inr(finalPure * purchaseForm.rate)}</span>
+
+                    {/* Description */}
+                    <input type="text" placeholder="Description (e.g. Bahubali Chain)"
+                      value={item.description}
+                      onChange={(e) => updatePurchaseItem(idx, { description: e.target.value })}
+                      className={inp} />
+
+                    {/* Gross + Stone + Touch + Rate */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div><label className="text-xs text-ink-dim">Gross Wt (g)</label>
+                        <input type="number" step="0.001" placeholder="0.000" value={item.gross_wt || ""}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => updatePurchaseItem(idx, { gross_wt: parseFloat(e.target.value) || 0 })}
+                          className={inp} /></div>
+                      <div><label className="text-xs text-ink-dim">Cost Touch %</label>
+                        <input type="number" step="0.01" placeholder="91.6" value={item.purity_pct || ""}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => updatePurchaseItem(idx, { purity_pct: parseFloat(e.target.value) || 0 })}
+                          className={inp} /></div>
+                      <div><label className="text-xs text-ink-dim">Charges (g) <span className="text-ink-dim/50">HM/cert/postal</span></label>
+                        <input type="number" step="0.0001" placeholder="0.0000" value={item.charges_g || ""}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => updatePurchaseItem(idx, { charges_g: parseFloat(e.target.value) || 0 })}
+                          className={inp} /></div>
+                      <div><label className="text-xs text-ink-dim">Rate / g (₹)</label>
+                        <input type="number" step="0.01" placeholder="0" value={item.rate || ""}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => updatePurchaseItem(idx, { rate: parseFloat(e.target.value) || 0 })}
+                          className={inp} /></div>
                     </div>
-                  )}
+
+                    {/* Stone helper */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-canvas/60 rounded-lg2 p-2">
+                      <div><label className="text-xs text-ink-dim">Stone Count</label>
+                        <input type="number" step="1" placeholder="0" value={item.stone_count || ""}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => updatePurchaseItem(idx, { stone_count: parseFloat(e.target.value) || 0 })}
+                          className={inp} /></div>
+                      <div><label className="text-xs text-ink-dim">mg / stone</label>
+                        <input type="number" step="0.01" placeholder="0.00" value={item.stone_wt_each_mg || ""}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => updatePurchaseItem(idx, { stone_wt_each_mg: parseFloat(e.target.value) || 0 })}
+                          className={inp} /></div>
+                      <div><label className="text-xs text-ink-dim">Stone Wt (g) <span className="text-ink-dim/50">auto or manual</span></label>
+                        <input type="number" step="0.0001" placeholder="0.0000" value={item.stone_wt || ""}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => updatePurchaseItem(idx, { stone_wt: parseFloat(e.target.value) || 0, stone_count: 0, stone_wt_each_mg: 0 })}
+                          className={inp} /></div>
+                      <div><label className="text-xs text-ink-dim">Net Wt (g)</label>
+                        <p className="text-sm font-mono py-2 text-ink-dim">{netWt.toFixed(4)} g</p>
+                      </div>
+                    </div>
+
+                    {/* Pure wt preview */}
+                    {item.gross_wt > 0 && (
+                      <div className="bg-gold/5 border border-gold/20 rounded-lg2 px-3 py-2 text-xs space-y-0.5">
+                        {item.stone_wt > 0 && (
+                          <div className="flex justify-between text-ink-dim">
+                            <span>Gross {item.gross_wt}g − Stone {item.stone_wt}g = Net</span>
+                            <span className="font-mono">{netWt.toFixed(4)} g</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-ink-dim">
+                          <span>Base Pure ({item.purity_pct}% of {netWt.toFixed(4)}g)</span>
+                          <span className="font-mono">{basePure.toFixed(4)} g</span>
+                        </div>
+                        {item.charges_g > 0 && (
+                          <div className="flex justify-between text-ink-dim">
+                            <span>+ Charges</span>
+                            <span className="font-mono">+ {item.charges_g.toFixed(4)} g</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between font-semibold border-t border-gold/20 pt-1">
+                          <span>Final Pure</span>
+                          <span className="font-mono text-gold">{finalPure.toFixed(4)} g</span>
+                        </div>
+                        {item.rate > 0 && (
+                          <div className="flex justify-between text-ok">
+                            <span>Amount ({finalPure.toFixed(4)} × ₹{item.rate})</span>
+                            <span className="font-mono font-semibold">{inr(finalPure * item.rate)}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Amount override */}
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-ink-dim whitespace-nowrap">Amount (₹) <span className="text-ink-dim/50">auto</span></label>
+                      <input type="number" step="0.01" value={item.amount || ""}
+                        onFocus={(e) => e.target.select()}
+                        onChange={(e) => updatePurchaseItem(idx, { amount: parseFloat(e.target.value) || 0 })}
+                        className={`${inp} max-w-40`} />
+                    </div>
+                  </div>
+                );
+              })}
+
+              <button type="button"
+                onClick={() => setPurchaseItems(p => [...p, blankPurchaseItem()])}
+                className="text-xs text-gold hover:underline">+ Add Another Item</button>
+
+              {purchaseItems.length > 1 && (
+                <div className="flex justify-between text-sm text-ink-dim bg-canvas rounded-lg2 px-3 py-2">
+                  <span>Total Pure: <strong className="text-gold">{purchaseItems.reduce((s, item) => {
+                    const net = item.gross_wt - item.stone_wt;
+                    return s + net * item.purity_pct / 100 + item.charges_g;
+                  }, 0).toFixed(4)} g</strong></span>
+                  <span>Total: <strong>{inr(purchaseItems.reduce((s, item) => s + item.amount, 0))}</strong></span>
                 </div>
               )}
 
@@ -368,8 +448,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                 <button type="button" onClick={() => setShowPurchaseForm(false)} className="border border-line text-sm px-4 py-1.5 rounded-lg2">{t("cancel")}</button>
               </div>
             </form>
-            );
-          })()}
+          )}
           <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
             <table className="w-full text-sm">
               <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
@@ -377,7 +456,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                 <th className="text-left px-3 py-2.5">Item</th>
                 <th className="text-left px-3 py-2.5">Metal</th>
                 <th className="text-right px-3 py-2.5">Gross</th>
-                <th className="text-right px-3 py-2.5">Touch%</th>
+                <th className="text-right px-3 py-2.5">Stone</th>
                 <th className="text-right px-3 py-2.5 text-gold">Pure Wt</th>
                 <th className="text-right px-3 py-2.5">{t("amount")}</th>
                 <th className="px-3 py-2.5 w-12"></th>
@@ -387,7 +466,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                   const isEditing = editingPurchaseId === p.id;
                   if (isEditing) {
                     const ep = editPurchaseForm;
-                    const basePure  = parseFloat((ep.gross_wt * ep.purity_pct / 100).toFixed(4));
+                    const netWtEp   = parseFloat((ep.gross_wt - (ep.stone_wt || 0)).toFixed(4));
+                    const basePure  = parseFloat((netWtEp * ep.purity_pct / 100).toFixed(4));
                     const finalPure = parseFloat((basePure + ep.charges_g).toFixed(4));
                     return (
                       <tr key={p.id} className="border-b border-line bg-gold/5">
@@ -403,12 +483,13 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                               <div className="sm:col-span-2"><label className="text-xs text-ink-dim">Item Name</label>
                                 <input type="text" value={ep.description} onChange={(e) => updateEditPurchaseForm({ description: e.target.value })} className={inp} /></div>
                             </div>
-                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
                               {[
                                 { label: "Gross Wt (g)", key: "gross_wt", step: "0.001" },
+                                { label: "Stone Wt (g)", key: "stone_wt", step: "0.0001" },
                                 { label: "Cost Touch %", key: "purity_pct", step: "0.01" },
                                 { label: "Rate / g (₹)", key: "rate", step: "0.01" },
-                                { label: "Charges (g)", key: "charges_g", step: "0.001" },
+                                { label: "Charges (g)", key: "charges_g", step: "0.0001" },
                                 { label: "Amount (₹)", key: "amount", step: "0.01" },
                               ].map((f) => (
                                 <div key={f.key}><label className="text-xs text-ink-dim">{f.label}</label>
@@ -425,7 +506,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                             </div>
                             {ep.gross_wt > 0 && (
                               <p className="text-xs text-ink-dim">
-                                Pure: {basePure.toFixed(4)}g + {ep.charges_g.toFixed(4)}g charges
+                                {ep.stone_wt > 0 && <>Net: {netWtEp.toFixed(4)}g · </>}
+                                Pure: {basePure.toFixed(4)}g{ep.charges_g > 0 && ` + ${ep.charges_g.toFixed(4)}g charges`}
                                 = <strong className="text-gold">{finalPure.toFixed(4)}g</strong>
                                 {ep.rate > 0 && <> · Amount: <strong className="text-ok">{inr(finalPure * ep.rate)}</strong></>}
                               </p>
@@ -449,7 +531,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                       <td className="px-3 py-2.5 font-medium">{p.description || <span className="text-ink-dim">—</span>}</td>
                       <td className="px-3 py-2.5 capitalize text-ink-dim">{p.metal?.replace("_", " ")}</td>
                       <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(p.gross_wt ?? 0)}</td>
-                      <td className="px-3 py-2.5 text-right text-ink-dim">{p.purity_pct ? `${p.purity_pct}%` : "—"}</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-xs text-ink-dim">{p.stone_wt > 0 ? grams(p.stone_wt) : "—"}</td>
                       <td className="px-3 py-2.5 text-right font-mono font-semibold text-gold">{grams(p.pure_wt ?? 0)}</td>
                       <td className="px-3 py-2.5 text-right font-mono">{inr(p.amount)}</td>
                       <td className="px-3 py-2.5 text-right">
