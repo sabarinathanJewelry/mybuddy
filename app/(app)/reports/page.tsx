@@ -260,6 +260,25 @@ function useMetalDispatches(from: string, to: string) {
   });
 }
 
+// Bullion sell trades in the period (old gold/refined sold to dealer or supplier)
+function useBullionSells(from: string, to: string) {
+  return useQuery({
+    queryKey: ["bullion-sells", from, to],
+    enabled: !!from && !!to,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("bullion_trades")
+        .select("trade_date, metal, pure_wt, rate_per_g, total_amount, party_name, suppliers(name)")
+        .eq("trade_type", "sell")
+        .gte("trade_date", from)
+        .lte("trade_date", to)
+        .order("trade_date");
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
 // ── metric helpers ────────────────────────────────────────────────────────────
 
 function metalSection(items: any[], metals: string[]) {
@@ -593,6 +612,7 @@ export default function ReportsPage() {
   const { data: wacData }                                           = useMetalWAC();
   const { data: cutRatePayments = [] }                              = useCutRatePayments(range.from, range.to);
   const { data: metalDispatches = [] }                              = useMetalDispatches(range.from, range.to);
+  const { data: bullionSells = [] }                                 = useBullionSells(range.from, range.to);
 
   const isLoading = loadingItems || loadingPurchases || loadingExpenses;
 
@@ -644,6 +664,15 @@ export default function ReportsPage() {
   // Total metal purchase cost in period
   const totalMetalPurchaseCost = dispatchGoldCost + dispatchSilvCost + cutRatePaid;
   const metalGrossMargin = totalRevenue - totalMetalPurchaseCost;
+
+  // Bullion sell trading P&L (old gold/refined sold to dealer or supplier at a rate)
+  const bullionSellGoldRevenue = (bullionSells as any[]).filter((t: any) => t.metal === "gold").reduce((s: number, t: any) => s + Number(t.total_amount || 0), 0);
+  const bullionSellGoldWt      = (bullionSells as any[]).filter((t: any) => t.metal === "gold").reduce((s: number, t: any) => s + Number(t.pure_wt    || 0), 0);
+  const bullionSellSilvRevenue = (bullionSells as any[]).filter((t: any) => t.metal === "silver").reduce((s: number, t: any) => s + Number(t.total_amount || 0), 0);
+  const bullionSellSilvWt      = (bullionSells as any[]).filter((t: any) => t.metal === "silver").reduce((s: number, t: any) => s + Number(t.pure_wt    || 0), 0);
+  const bullionSellGoldCost    = bullionSellGoldWt * goldWAC;
+  const bullionSellSilvCost    = bullionSellSilvWt * silverWAC;
+  const bullionTradingProfit   = (bullionSellGoldRevenue + bullionSellSilvRevenue) - (bullionSellGoldCost + bullionSellSilvCost);
   const grossProfit   = totalRevenue - totalCogs;
   const netProfit     = grossProfit - totalExpenses;
 
@@ -1062,6 +1091,81 @@ export default function ReportsPage() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Bullion Trading P&L */}
+          {(bullionSells as any[]).length > 0 && (
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+              <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-ok bg-ok/5">
+                Bullion Trading P&L — {(bullionSells as any[]).length} sale(s) in period
+              </div>
+
+              {/* Summary */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-x divide-line text-sm border-b border-dashed border-line">
+                <div className="px-4 py-3">
+                  <p className="text-xs text-ink-dim">Gold Sold</p>
+                  <p className="font-semibold text-gold">{grams(bullionSellGoldWt)}</p>
+                </div>
+                <div className="px-4 py-3">
+                  <p className="text-xs text-ink-dim">Sale Revenue</p>
+                  <p className="font-semibold">{inr(bullionSellGoldRevenue + bullionSellSilvRevenue)}</p>
+                </div>
+                <div className="px-4 py-3">
+                  <p className="text-xs text-ink-dim">Cost at WAC</p>
+                  <p className="font-semibold text-err">{inr(bullionSellGoldCost + bullionSellSilvCost)}</p>
+                  {goldWAC > 0 && <p className="text-[10px] text-ink-dim mt-0.5">{grams(bullionSellGoldWt)} × {inr(goldWAC)}/g</p>}
+                </div>
+                <div className="px-4 py-3">
+                  <p className="text-xs text-ink-dim">Trading Profit</p>
+                  <p className={clsx("font-bold text-base", bullionTradingProfit >= 0 ? "text-ok" : "text-err")}>
+                    {inr(bullionTradingProfit)}
+                  </p>
+                  {bullionSellGoldWt > 0 && goldWAC > 0 && (
+                    <p className="text-[10px] text-ink-dim mt-0.5">
+                      avg {inr((bullionSellGoldRevenue / bullionSellGoldWt) - goldWAC)}/g spread
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Detail rows */}
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                    <th className="text-left px-4 py-2">Date</th>
+                    <th className="text-left px-3 py-2">Buyer (Dealer / Supplier)</th>
+                    <th className="text-left px-3 py-2">Metal</th>
+                    <th className="text-right px-3 py-2">Grams (pure)</th>
+                    <th className="text-right px-3 py-2">Sell Rate/g</th>
+                    <th className="text-right px-3 py-2">Sale Amount</th>
+                    <th className="text-right px-3 py-2">Cost at WAC</th>
+                    <th className="text-right px-4 py-2">Profit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(bullionSells as any[]).map((t: any, i: number) => {
+                    const wac    = t.metal === "gold" ? goldWAC : silverWAC;
+                    const cost   = Number(t.pure_wt || 0) * wac;
+                    const profit = Number(t.total_amount || 0) - cost;
+                    const buyer  = t.suppliers?.name ?? t.party_name ?? "—";
+                    return (
+                      <tr key={i} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                        <td className="px-4 py-2.5 text-ink-dim">{shortDate(t.trade_date)}</td>
+                        <td className="px-3 py-2.5">{buyer}</td>
+                        <td className="px-3 py-2.5 text-ink-dim capitalize">{t.metal}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(Number(t.pure_wt || 0))}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-xs">{inr(Number(t.rate_per_g || 0))}</td>
+                        <td className="px-3 py-2.5 text-right font-mono">{inr(Number(t.total_amount || 0))}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-err">{wac > 0 ? inr(cost) : "—"}</td>
+                        <td className={clsx("px-4 py-2.5 text-right font-mono font-semibold", profit >= 0 ? "text-ok" : "text-err")}>
+                          {wac > 0 ? inr(profit) : "—"}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
 
