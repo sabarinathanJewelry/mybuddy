@@ -24,7 +24,9 @@
       "PowerShell(winget --version)",
       "PowerShell(choco --version)",
       "PowerShell(node --version)",
-      "PowerShell(npm --version)"
+      "PowerShell(npm --version)",
+      "Bash(findstr supplier_purchase)",
+      "Bash(dir \"c:\\\\Users\\\\SABARI STAFF\\\\OneDrive\\\\Documents\\\\GitHub\\\\mybuddy\\\\db\\\\migrations\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\SABARI STAFF\\OneDrive\\Documents\\GitHub\\mybuddy\\app"
