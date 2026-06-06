@@ -26,7 +26,8 @@
       "PowerShell(node --version)",
       "PowerShell(npm --version)",
       "Bash(findstr supplier_purchase)",
-      "Bash(dir \"c:\\\\Users\\\\SABARI STAFF\\\\OneDrive\\\\Documents\\\\GitHub\\\\mybuddy\\\\db\\\\migrations\")"
+      "Bash(dir \"c:\\\\Users\\\\SABARI STAFF\\\\OneDrive\\\\Documents\\\\GitHub\\\\mybuddy\\\\db\\\\migrations\")",
+      "Bash(grep -v \"//\\\\|data\\\\.\\\\|d\\\\.\\\\|r\\\\.\\\\|item\\\\.\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\SABARI STAFF\\OneDrive\\Documents\\GitHub\\mybuddy\\app"
