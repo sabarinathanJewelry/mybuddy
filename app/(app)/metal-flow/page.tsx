@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useGlobalDate } from "@/stores/global-date";
@@ -198,6 +198,8 @@ export default function MetalFlowPage() {
   const { data: dispatchData, isLoading: dispatchLoading } = useDispatches();
   const [showDispatch, setShowDispatch] = useState(false);
   const [dispatchForm, setDispatchForm] = useState({ dispatch_date: globalDate, metal: "gold", weight_g: 0, purity_pct: 99.9, purpose: "supplier", supplier_id: "", party_name: "", notes: "" });
+  const [editDispatchId, setEditDispatchId] = useState<string | null>(null);
+  const [editDispatchForm, setEditDispatchForm] = useState({ dispatch_date: "", metal: "gold", weight_g: 0, purity_pct: 99.9, purpose: "supplier", supplier_id: "", party_name: "", notes: "" });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const intake = (intakeData as any[]) ?? [];
@@ -538,6 +540,25 @@ export default function MetalFlowPage() {
       if (vars.supplier_id) qc.invalidateQueries({ queryKey: ["supplier-360", vars.supplier_id] });
       setShowDispatch(false);
       setDispatchForm({ dispatch_date: globalDate, metal: "gold", weight_g: 0, purity_pct: 99.9, purpose: "supplier", supplier_id: "", party_name: "", notes: "" });
+    },
+  });
+
+  const updateDispatch = useMutation({
+    mutationFn: async ({ id, d }: { id: string; d: typeof editDispatchForm }) => {
+      const { error } = await supabase().from("metal_dispatches").update({
+        dispatch_date: d.dispatch_date, metal: d.metal, weight_g: d.weight_g,
+        purity_pct: d.purity_pct, purpose: d.purpose,
+        supplier_id: d.supplier_id || null,
+        party_name: d.party_name || null,
+        notes: d.notes || null,
+      }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: (_d, vars) => {
+      qc.invalidateQueries({ queryKey: ["metal_dispatches"] });
+      qc.invalidateQueries({ queryKey: ["metal_reserve"] });
+      qc.invalidateQueries({ queryKey: ["supplier-360", vars.d.supplier_id] });
+      setEditDispatchId(null);
     },
   });
 
@@ -1544,7 +1565,7 @@ export default function MetalFlowPage() {
               <div className="px-4 py-2.5 border-b border-line bg-canvas">
                 <h3 className="text-xs font-semibold text-ink-dim">Dispatch History</h3>
               </div>
-              <table className="w-full text-sm" style={{ minWidth: "580px" }}>
+              <table className="w-full text-sm" style={{ minWidth: "620px" }}>
                 <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                   <th className="text-left px-4 py-2.5">Date</th>
                   <th className="text-left px-3 py-2.5">Metal</th>
@@ -1553,24 +1574,148 @@ export default function MetalFlowPage() {
                   <th className="text-right px-3 py-2.5">Pure Wt</th>
                   <th className="text-left px-3 py-2.5">Purpose</th>
                   <th className="text-left px-3 py-2.5">Party</th>
+                  <th className="px-3 py-2.5 w-12"></th>
                 </tr></thead>
                 <tbody>
                   {dispatches.map((d: any) => {
                     const purity = Number(d.purity_pct) || 100;
                     const pureWt = Number(d.weight_g) * purity / 100;
+                    const isEditing = editDispatchId === d.id;
+                    const editPureWt = editDispatchForm.weight_g * editDispatchForm.purity_pct / 100;
                     return (
-                      <tr key={d.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                        <td className="px-4 py-2.5 text-ink-dim">{shortDate(d.dispatch_date)}</td>
-                        <td className="px-3 py-2.5 capitalize font-medium" style={{ color: d.metal === "gold" ? "var(--color-gold)" : "var(--color-ink-mid)" }}>{d.metal}</td>
-                        <td className="px-3 py-2.5 text-right font-mono">{grams(d.weight_g)}</td>
-                        <td className="px-3 py-2.5 text-right text-ink-dim">{purity.toFixed(1)}%</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-gold">{grams(pureWt)}</td>
-                        <td className="px-3 py-2.5 capitalize text-ink-dim">{d.purpose}</td>
-                        <td className="px-3 py-2.5">{d.party_name ?? "—"}</td>
-                      </tr>
+                      <Fragment key={d.id}>
+                        <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
+                          <td className="px-4 py-2.5 text-ink-dim">{shortDate(d.dispatch_date)}</td>
+                          <td className="px-3 py-2.5 capitalize font-medium" style={{ color: d.metal === "gold" ? "var(--color-gold)" : "var(--color-ink-mid)" }}>{d.metal}</td>
+                          <td className="px-3 py-2.5 text-right font-mono">{grams(d.weight_g)}</td>
+                          <td className="px-3 py-2.5 text-right text-ink-dim">{purity.toFixed(1)}%</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-gold">{grams(pureWt)}</td>
+                          <td className="px-3 py-2.5 capitalize text-ink-dim">{d.purpose}</td>
+                          <td className="px-3 py-2.5">{d.party_name ?? d.suppliers?.name ?? "—"}</td>
+                          <td className="px-3 py-2.5 text-right">
+                            <button
+                              onClick={() => {
+                                setEditDispatchId(d.id);
+                                setEditDispatchForm({
+                                  dispatch_date: d.dispatch_date,
+                                  metal: d.metal,
+                                  weight_g: Number(d.weight_g),
+                                  purity_pct: Number(d.purity_pct) || 100,
+                                  purpose: d.purpose,
+                                  supplier_id: d.supplier_id ?? "",
+                                  party_name: d.party_name ?? "",
+                                  notes: d.notes ?? "",
+                                });
+                              }}
+                              className="text-xs text-gold hover:underline">Edit</button>
+                          </td>
+                        </tr>
+                        {isEditing && (
+                          <tr className="border-b border-line bg-gold/5">
+                            <td colSpan={8} className="px-4 py-4">
+                              <div className="space-y-3">
+                                <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide">Edit Dispatch</p>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                  <div>
+                                    <label className="block text-xs text-ink-dim mb-1">Date</label>
+                                    <input type="date" value={editDispatchForm.dispatch_date}
+                                      onChange={(e) => setEditDispatchForm({ ...editDispatchForm, dispatch_date: e.target.value })}
+                                      className={inp} />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-ink-dim mb-1">Metal</label>
+                                    <select value={editDispatchForm.metal}
+                                      onChange={(e) => setEditDispatchForm({ ...editDispatchForm, metal: e.target.value })}
+                                      className={inp}>
+                                      <option value="gold">Gold 999</option>
+                                      <option value="silver">Silver 999</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-ink-dim mb-1">Weight (g)</label>
+                                    <input type="number" step="0.001" value={editDispatchForm.weight_g || ""}
+                                      onFocus={(e) => e.target.select()}
+                                      onChange={(e) => setEditDispatchForm({ ...editDispatchForm, weight_g: parseFloat(e.target.value) || 0 })}
+                                      className={inp} />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-ink-dim mb-1">Touch / Purity %</label>
+                                    <div className="flex gap-1 mb-1">
+                                      {[["999", 99.9], ["916", 91.6], ["750", 75.0]].map(([label, val]) => (
+                                        <button key={label as string} type="button"
+                                          onClick={() => setEditDispatchForm({ ...editDispatchForm, purity_pct: val as number })}
+                                          className={`text-xs px-2 py-0.5 rounded border transition-colors ${editDispatchForm.purity_pct === val ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:border-gold"}`}>
+                                          {label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                    <input type="number" step="0.001" value={editDispatchForm.purity_pct || ""}
+                                      onFocus={(e) => e.target.select()}
+                                      onChange={(e) => setEditDispatchForm({ ...editDispatchForm, purity_pct: parseFloat(e.target.value) || 0 })}
+                                      className={inp} />
+                                    {editDispatchForm.weight_g > 0 && (
+                                      <p className="text-xs text-ink-dim mt-0.5">Pure wt: <span className="text-gold font-mono font-semibold">{grams(editPureWt)}</span></p>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-ink-dim mb-1">Purpose</label>
+                                    <select value={editDispatchForm.purpose}
+                                      onChange={(e) => setEditDispatchForm({ ...editDispatchForm, purpose: e.target.value })}
+                                      className={inp}>
+                                      <option value="supplier">Supplier</option>
+                                      <option value="goldsmith">Goldsmith</option>
+                                      <option value="sale">Sale</option>
+                                      <option value="other">Other</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs text-ink-dim mb-1">
+                                      {editDispatchForm.purpose === "supplier" ? "Supplier" : "Party / Name"}
+                                    </label>
+                                    {editDispatchForm.purpose === "supplier" ? (
+                                      <select value={editDispatchForm.supplier_id}
+                                        onChange={(e) => {
+                                          const name = suppliers.find((s) => s.id === e.target.value)?.name ?? "";
+                                          setEditDispatchForm({ ...editDispatchForm, supplier_id: e.target.value, party_name: name });
+                                        }}
+                                        className={inp}>
+                                        <option value="">-- select supplier --</option>
+                                        {suppliers.map((s) => (
+                                          <option key={s.id} value={s.id}>{s.name}</option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      <input value={editDispatchForm.party_name}
+                                        onChange={(e) => setEditDispatchForm({ ...editDispatchForm, party_name: e.target.value })}
+                                        className={inp} placeholder="Goldsmith / party name" />
+                                    )}
+                                  </div>
+                                  <div className="sm:col-span-2">
+                                    <label className="block text-xs text-ink-dim mb-1">Notes</label>
+                                    <input value={editDispatchForm.notes}
+                                      onChange={(e) => setEditDispatchForm({ ...editDispatchForm, notes: e.target.value })}
+                                      className={inp} />
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <button
+                                    disabled={!editDispatchForm.weight_g || updateDispatch.isPending}
+                                    onClick={() => updateDispatch.mutate({ id: d.id, d: editDispatchForm })}
+                                    className="bg-gold text-white text-sm px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                                    {updateDispatch.isPending ? "Saving…" : "Save Changes"}
+                                  </button>
+                                  <button onClick={() => setEditDispatchId(null)}
+                                    className="border border-line text-sm px-4 py-1.5 rounded-lg2">Cancel</button>
+                                </div>
+                                {updateDispatch.isError && <p className="text-xs text-err">Save failed — please try again.</p>}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     );
                   })}
-                  {!dispatches.length && <tr><td colSpan={7} className="px-4 py-8 text-center text-ink-dim">{t("no_data")}</td></tr>}
+                  {!dispatches.length && <tr><td colSpan={8} className="px-4 py-8 text-center text-ink-dim">{t("no_data")}</td></tr>}
                 </tbody>
               </table>
             </div>
