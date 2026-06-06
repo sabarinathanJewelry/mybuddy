@@ -937,14 +937,15 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
             </table>
           </div>
 
-          {/* Metal dispatches sent to this supplier */}
-          {(view?.dispatches?.length ?? 0) > 0 && (
+          {/* Metal sent to this supplier — dispatches + cut_rate grams */}
+          {((view?.dispatches?.length ?? 0) > 0 || metalCutG > 0) && (
             <>
-              <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide mt-2">Metal Sent (from Metal Flow)</p>
+              <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide mt-2">Metal Sent</p>
               <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
                 <table className="w-full text-sm">
                   <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                     <th className="text-left px-4 py-2.5">{t("date")}</th>
+                    <th className="text-left px-3 py-2.5">Type</th>
                     <th className="text-left px-3 py-2.5">Metal</th>
                     <th className="text-right px-3 py-2.5">Weight</th>
                     <th className="text-right px-3 py-2.5">Touch%</th>
@@ -958,6 +959,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                       return (
                         <tr key={d.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
                           <td className="px-4 py-2.5 text-ink-dim">{shortDate(d.dispatch_date)}</td>
+                          <td className="px-3 py-2.5 text-xs text-info font-medium">Dispatch</td>
                           <td className="px-3 py-2.5 capitalize">{d.metal}</td>
                           <td className="px-3 py-2.5 text-right font-mono">{grams(d.weight_g)}</td>
                           <td className="px-3 py-2.5 text-right text-ink-dim">{purity.toFixed(1)}%</td>
@@ -966,11 +968,32 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                         </tr>
                       );
                     })}
+                    {view?.payments?.filter((p: any) => p.mode === "cut_rate" && (p.metal_wt ?? 0) > 0).map((p: any) => (
+                      <tr key={p.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                        <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.pay_date)}</td>
+                        <td className="px-3 py-2.5 text-xs text-warn font-medium">Cut Rate</td>
+                        <td className="px-3 py-2.5 capitalize text-ink-dim">gold</td>
+                        <td className="px-3 py-2.5 text-right font-mono">{grams(p.metal_wt)}</td>
+                        <td className="px-3 py-2.5 text-right text-ink-dim">—</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-ok">{grams(p.metal_wt)}</td>
+                        <td className="px-3 py-2.5 text-ink-dim text-xs">@ {p.cut_rate ? `₹${Number(p.cut_rate).toLocaleString()}/g` : "—"}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
-                <div className="px-4 py-2 bg-canvas border-t border-line flex justify-between text-xs font-semibold">
-                  <span>Total metal sent</span>
-                  <span className="font-mono text-ok">{grams(metalSentG)}</span>
+                <div className="px-4 py-2 bg-canvas border-t border-line text-xs font-semibold space-y-0.5">
+                  <div className="flex justify-between">
+                    <span className="text-ink-dim">Dispatched (physical)</span>
+                    <span className="font-mono">{grams(metalPhysicalG)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-ink-dim">Cut Rate (cash settlement)</span>
+                    <span className="font-mono">{grams(metalCutG)}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-line pt-1">
+                    <span>Total metal sent</span>
+                    <span className="font-mono text-ok">{grams(metalSentG)}</span>
+                  </div>
                 </div>
               </div>
             </>
