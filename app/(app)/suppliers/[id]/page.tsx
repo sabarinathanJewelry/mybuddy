@@ -143,6 +143,24 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const metalSentG = metalPhysicalG + metalCashG;
   const metalBalanceG = metalOwedG - metalSentG;
 
+  // Cash ledger — chronological statement with running balance
+  const cashLedger = (() => {
+    const rows: { id: string; date: string; type: string; description: string; delta: number }[] = [];
+    (view?.purchases ?? []).filter((p: any) => (p.amount ?? 0) > 0).forEach((p: any) => {
+      rows.push({ id: `p-${p.id}`, date: p.purchase_date ?? "", type: "Purchase", description: p.description || p.bill_no || "—", delta: Number(p.amount) });
+    });
+    (view?.payments ?? []).filter((p: any) => p.mode === "cut_rate").forEach((p: any) => {
+      rows.push({ id: `cr-${p.id}`, date: p.pay_date ?? "", type: "Cut Rate", description: p.cut_rate ? `${grams(p.metal_wt)} @ ₹${Number(p.cut_rate).toLocaleString()}/g` : "—", delta: Number(p.amount) });
+    });
+    (view?.payments ?? []).filter((p: any) => ["cash", "bank", "upi"].includes(p.mode)).forEach((p: any) => {
+      const modeLabel = p.mode === "upi" ? "UPI" : p.mode.charAt(0).toUpperCase() + p.mode.slice(1);
+      rows.push({ id: `pay-${p.id}`, date: p.pay_date ?? "", type: modeLabel, description: p.notes || "—", delta: -(Number(p.amount) || 0) });
+    });
+    rows.sort((a, b) => a.date.localeCompare(b.date));
+    let balance = openingCash;
+    return rows.map(row => { balance += row.delta; return { ...row, balance }; });
+  })();
+
   // Metal ledger — chronological statement with running balance
   const metalLedger = (() => {
     const rows: { id: string; date: string; type: string; description: string; delta: number }[] = [];
@@ -951,6 +969,60 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
               </tbody>
             </table>
           </div>
+
+          {/* Cash Statement — chronological ledger with running balance */}
+          {cashLedger.length > 0 && (
+            <>
+              <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide mt-2">Cash Statement</p>
+              <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+                <table className="w-full text-sm" style={{ minWidth: "480px" }}>
+                  <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                    <th className="text-left px-4 py-2.5">Date</th>
+                    <th className="text-left px-3 py-2.5">Type</th>
+                    <th className="text-left px-3 py-2.5">Description</th>
+                    <th className="text-right px-3 py-2.5">Amount</th>
+                    <th className="text-right px-4 py-2.5">Balance</th>
+                  </tr></thead>
+                  <tbody>
+                    {openingCash !== 0 && (
+                      <tr className="border-b border-line bg-canvas/60">
+                        <td className="px-4 py-2 text-ink-dim text-xs">—</td>
+                        <td className="px-3 py-2 text-xs font-medium text-ink-dim">Opening</td>
+                        <td className="px-3 py-2 text-xs text-ink-dim">Opening balance</td>
+                        <td className="px-3 py-2 text-right font-mono text-xs text-err">+{inr(openingCash)}</td>
+                        <td className="px-4 py-2 text-right font-mono text-xs font-semibold text-err">{inr(openingCash)}</td>
+                      </tr>
+                    )}
+                    {cashLedger.map((row) => (
+                      <tr key={row.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                        <td className="px-4 py-2.5 text-ink-dim text-xs">{shortDate(row.date)}</td>
+                        <td className="px-3 py-2.5">
+                          <span className={`text-xs font-medium ${
+                            row.type === "Purchase" ? "text-gold" :
+                            row.type === "Cut Rate" ? "text-warn" : "text-ok"
+                          }`}>{row.type}</span>
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-ink-dim">{row.description}</td>
+                        <td className={`px-3 py-2.5 text-right font-mono text-xs ${row.delta > 0 ? "text-err" : "text-ok"}`}>
+                          {row.delta > 0 ? "+" : ""}{inr(row.delta)}
+                        </td>
+                        <td className={`px-4 py-2.5 text-right font-mono text-sm font-semibold ${row.balance > 0 ? "text-err" : row.balance < 0 ? "text-ok" : "text-ink-dim"}`}>
+                          {inr(Math.abs(row.balance))}
+                          <span className="ml-1 text-xs font-normal">{row.balance > 0 ? "owed" : row.balance < 0 ? "over" : ""}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="px-4 py-2 bg-canvas border-t border-line flex justify-between text-xs font-semibold">
+                  <span>Current cash balance</span>
+                  <span className={`font-mono ${cashBalance > 0 ? "text-err" : cashBalance < 0 ? "text-ok" : "text-ink-dim"}`}>
+                    {inr(Math.abs(cashBalance))} {cashBalance > 0 ? "owed to supplier" : cashBalance < 0 ? "over-paid" : "settled"}
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Metal Statement — full chronological ledger with running balance */}
           {metalLedger.length > 0 && (
