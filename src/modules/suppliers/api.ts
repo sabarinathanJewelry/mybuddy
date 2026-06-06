@@ -7,6 +7,7 @@ export interface Supplier {
   id: string; name: string; phone: string | null;
   address: string | null; opening_balance: number;
   gold_opening_g: number; silver_opening_g: number;
+  roundoff_digits: number; roundoff_method: string;
   notes: string | null;
 }
 

@@ -84,7 +84,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
     const charges_rs_g   = !ep.charges_to_cash && ep.rate > 0 ? parseFloat((charges_val_rs / ep.rate).toFixed(4)) : 0;
     const cash_extras    = (ep.stone_to_cash ? stone_val_rs : 0) + (ep.charges_to_cash ? charges_val_rs : 0);
     const base_pure      = parseFloat((net_wt * ep.purity_pct / 100).toFixed(4));
-    const pure_wt        = parseFloat((base_pure + stone_gold_g + charges_rs_g + ep.charges_g).toFixed(4));
+    const pure_wt        = roundPure(base_pure + stone_gold_g + charges_rs_g + ep.charges_g);
     const amount         = ep.is_metal_balance ? parseFloat(cash_extras.toFixed(2)) : ep.amount;
     await updatePurchase.mutateAsync({ id: editingPurchaseId, supplierId: id, data: { ...ep, pure_wt, amount } });
     setEditingPurchaseId(null);
@@ -96,7 +96,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const upsertSupplier = useUpsertSupplier();
 
   const [showEditOpening, setShowEditOpening] = useState(false);
-  const [editOpening, setEditOpening] = useState({ opening_balance: 0, gold_opening_g: 0, silver_opening_g: 0 });
+  const [editOpening, setEditOpening] = useState({ opening_balance: 0, gold_opening_g: 0, silver_opening_g: 0, roundoff_digits: 3, roundoff_method: "round" });
 
   const blankPurchaseItem = () => ({ description: "", is_metal_balance: false, gross_wt: 0, tag_wt: 0, stone_wt: 0, stone_rate: 0, stone_to_cash: false, purity_pct: 91.6, rate: 0, charges_g: 0, charges_per_piece: 0, piece_count: 0, charges_to_cash: false, amount: 0, notes: "" });
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
@@ -155,6 +155,15 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const metalSentG = metalPhysicalG + metalCashG;
   const metalBalanceG = metalOwedG - metalSentG;
 
+  const roundDigits = Number(view?.supplier?.roundoff_digits) || 3;
+  const roundMethod = (view?.supplier?.roundoff_method as string) || "round";
+  function roundPure(v: number): number {
+    const f = Math.pow(10, roundDigits);
+    if (roundMethod === "floor") return Math.floor(v * f) / f;
+    if (roundMethod === "ceil") return Math.ceil(v * f) / f;
+    return Math.round(v * f) / f;
+  }
+
   // Cash ledger — chronological statement with running balance
   const cashLedger = (() => {
     const rows: { id: string; date: string; type: string; description: string; delta: number }[] = [];
@@ -204,7 +213,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       const charges_rs_g  = !item.charges_to_cash && item.rate > 0 ? parseFloat((chg_val_rs / item.rate).toFixed(4)) : 0;
       const cash_extras   = (item.stone_to_cash ? stone_val_rs : 0) + (item.charges_to_cash ? chg_val_rs : 0);
       const base_pure     = parseFloat((net_wt * item.purity_pct / 100).toFixed(4));
-      const pure_wt       = parseFloat((base_pure + stone_gold_g + charges_rs_g + item.charges_g).toFixed(4));
+      const pure_wt       = roundPure(base_pure + stone_gold_g + charges_rs_g + item.charges_g);
       const amount        = item.is_metal_balance
         ? parseFloat(cash_extras.toFixed(2))
         : item.amount;
@@ -260,7 +269,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
     e.preventDefault();
     let data: Record<string, unknown> = { ...paymentForm, supplier_id: id };
     if (paymentForm.mode === "cut_rate" && paymentForm.cut_rate > 0 && paymentForm.amount > 0) {
-      data = { ...data, metal_wt: parseFloat((paymentForm.amount / paymentForm.cut_rate).toFixed(4)) };
+      data = { ...data, metal_wt: parseFloat((paymentForm.amount / paymentForm.cut_rate).toFixed(3)) };
     }
     await savePayment.mutateAsync(data);
     setPaymentForm({ pay_date: globalDate, mode: "cash", amount: 0, metal_wt: 0, metal_purity: 91.6, cut_rate: 0, notes: "" });
@@ -323,7 +332,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
         {!showEditOpening ? (
           <button
             onClick={() => {
-              setEditOpening({ opening_balance: openingCash, gold_opening_g: goldOpeningG, silver_opening_g: silverOpeningG });
+              setEditOpening({ opening_balance: openingCash, gold_opening_g: goldOpeningG, silver_opening_g: silverOpeningG, roundoff_digits: roundDigits, roundoff_method: roundMethod });
               setShowEditOpening(true);
             }}
             className="text-xs text-gold hover:underline"
@@ -354,6 +363,32 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                   onFocus={(e) => e.target.select()} placeholder="0.000"
                   onChange={(e) => setEditOpening({ ...editOpening, silver_opening_g: parseFloat(e.target.value) || 0 })}
                   className={inp} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-ink-dim mb-1">Pure Wt Decimal Digits</label>
+                <div className="flex gap-1">
+                  {[1, 2, 3].map((d) => (
+                    <button key={d} type="button"
+                      onClick={() => setEditOpening({ ...editOpening, roundoff_digits: d })}
+                      className={`text-xs px-3 py-1 rounded border transition-colors ${editOpening.roundoff_digits === d ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:border-gold"}`}>
+                      {d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-ink-dim mb-1">Rounding Method</label>
+                <div className="flex gap-1">
+                  {[["round", "Round"], ["floor", "Floor ↓"], ["ceil", "Ceil ↑"]] .map(([val, label]) => (
+                    <button key={val} type="button"
+                      onClick={() => setEditOpening({ ...editOpening, roundoff_method: val })}
+                      className={`text-xs px-2 py-1 rounded border transition-colors ${editOpening.roundoff_method === val ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:border-gold"}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="flex gap-2">
@@ -794,17 +829,17 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                         )}
                         <div className="flex justify-between font-semibold border-t border-gold/20 pt-1">
                           <span>Final Pure</span>
-                          <span className="font-mono text-gold">{finalPure.toFixed(4)} g</span>
+                          <span className="font-mono text-gold">{finalPure.toFixed(roundDigits)} g</span>
                         </div>
                         {item.is_metal_balance ? (
                           <div className="flex justify-between text-info text-xs pt-0.5">
                             <span>Metal owed to supplier</span>
-                            <span className="font-mono font-semibold">{finalPure.toFixed(4)} g</span>
+                            <span className="font-mono font-semibold">{finalPure.toFixed(roundDigits)} g</span>
                           </div>
                         ) : item.rate > 0 ? (
                           <div className="flex justify-between text-ok">
                             <span>
-                              Amount ({finalPure.toFixed(4)} × ₹{item.rate}
+                              Amount ({finalPure.toFixed(roundDigits)} × ₹{item.rate}
                               {cashExtras > 0 ? ` + ₹${cashExtras.toFixed(0)} cash` : ""})
                             </span>
                             <span className="font-mono font-semibold">{inr(finalPure * item.rate + cashExtras)}</span>
@@ -844,7 +879,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                     const stoneG   = !item.stone_to_cash && item.rate > 0 ? sv / item.rate : 0;
                     const chgRsG   = !item.charges_to_cash && item.rate > 0 ? cv / item.rate : 0;
                     return s + net * item.purity_pct / 100 + stoneG + chgRsG + item.charges_g;
-                  }, 0).toFixed(4)} g</strong></span>
+                  }, 0).toFixed(roundDigits)} g</strong></span>
                   <span>Total: <strong>{inr(purchaseItems.reduce((s, item) => s + item.amount, 0))}</strong></span>
                 </div>
               )}
@@ -880,7 +915,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                     const chgRsGEp     = ep.rate > 0 && ep.charges_per_piece > 0 && ep.piece_count > 0
                       ? parseFloat(((ep.charges_per_piece * ep.piece_count) / ep.rate).toFixed(4)) : 0;
                     const basePure     = parseFloat((netWtEp * ep.purity_pct / 100).toFixed(4));
-                    const finalPure    = parseFloat((basePure + stoneGoldGEp + chgRsGEp + ep.charges_g).toFixed(4));
+                    const finalPure    = roundPure(basePure + stoneGoldGEp + chgRsGEp + ep.charges_g);
                     return (
                       <tr key={p.id} className="border-b border-line bg-gold/5">
                         <td colSpan={8} className="px-4 py-3">
@@ -927,7 +962,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                                 {stoneGoldGEp > 0 && <span className="text-info"> + stone {stoneGoldGEp.toFixed(4)}g</span>}
                                 {chgRsGEp > 0 && <span className="text-info"> + HM {chgRsGEp.toFixed(4)}g</span>}
                                 {ep.charges_g > 0 && ` + ${ep.charges_g.toFixed(4)}g`}
-                                = <strong className="text-gold">{finalPure.toFixed(4)}g</strong>
+                                = <strong className="text-gold">{finalPure.toFixed(roundDigits)}g</strong>
                                 {ep.rate > 0 && <> · Amount: <strong className="text-ok">{inr(finalPure * ep.rate)}</strong></>}
                               </p>
                             )}
@@ -1057,7 +1092,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                 {paymentForm.mode === "cut_rate" && paymentForm.amount > 0 && paymentForm.cut_rate > 0 && (
                   <div className="sm:col-span-3 bg-gold/5 border border-gold/20 rounded-lg2 px-3 py-2 text-sm flex justify-between items-center">
                     <span className="text-ink-dim">{inr(paymentForm.amount)} ÷ ₹{paymentForm.cut_rate}/g = grams settled</span>
-                    <span className="font-mono font-semibold text-gold">{(paymentForm.amount / paymentForm.cut_rate).toFixed(4)} g</span>
+                    <span className="font-mono font-semibold text-gold">{(paymentForm.amount / paymentForm.cut_rate).toFixed(3)} g</span>
                   </div>
                 )}
               </div>
