@@ -244,23 +244,27 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
           </div>
           <div>
             <p className="text-xs text-ink-dim">Total Purchased</p>
-            <p className="text-xl font-bold text-ink">{inr(totalPurchased)}</p>
+            {metalPurchasesG > 0 ? (
+              <>
+                <p className="text-xl font-bold font-mono text-gold">{grams(metalPurchasesG)}</p>
+                <p className="text-xs text-ink-dim/60">metal balance · {inr(totalPurchased)} cash</p>
+              </>
+            ) : (
+              <p className="text-xl font-bold text-ink">{inr(totalPurchased)}</p>
+            )}
           </div>
           <div>
             <p className="text-xs text-ink-dim">Metal Balance</p>
             <p className={`text-xl font-bold font-mono ${metalBalanceG > 0 ? "text-err" : metalBalanceG < 0 ? "text-ok" : "text-ink"}`}>
               {grams(Math.abs(metalBalanceG))}
+              <span className="ml-1 text-xs font-normal">{metalBalanceG > 0 ? "owed" : metalBalanceG < 0 ? "over-sent" : ""}</span>
             </p>
-            {(goldOpeningG > 0 || silverOpeningG > 0) && (
-              <p className="text-xs text-ink-dim/60">
-                Opening {goldOpeningG > 0 ? `Gold ${grams(goldOpeningG)}` : ""}{goldOpeningG > 0 && silverOpeningG > 0 ? " + " : ""}{silverOpeningG > 0 ? `Silver ${grams(silverOpeningG)}` : ""}
-              </p>
-            )}
-            {metalOwedG > 0 && (
-              <p className="text-xs text-ink-dim mt-0.5">
-                Owed {grams(metalOwedG)}{metalPurchasesG > 0 ? ` (incl. ${grams(metalPurchasesG)} purchases)` : ""} · Sent {grams(metalSentG)}{metalCutG > 0 ? ` · Cut ${grams(metalCutG)}` : ""}
-              </p>
-            )}
+            <p className="text-xs text-ink-dim/60 mt-0.5">
+              Opening {grams(goldOpeningG + silverOpeningG)} + Purchases {grams(metalPurchasesG)} = Owed {grams(metalOwedG)}
+            </p>
+            <p className="text-xs text-ink-dim/60">
+              Dispatched {grams(metalPhysicalG)} + Cut {grams(metalCutG)} = Sent {grams(metalSentG)}
+            </p>
           </div>
           <div>
             <p className="text-xs text-ink-dim">Suspense Items</p>
