@@ -80,7 +80,7 @@ function useReserve() {
       const client = supabase();
       const [batchRes, dispatchRes, bullionRes, openingRes] = await Promise.all([
         client.from("melt_batches").select("metal, output_wt").eq("status", "refined"),
-        client.from("metal_dispatches").select("metal, weight_g"),
+        client.from("metal_dispatches").select("metal, weight_g, purity_pct"),
         client.from("bullion_trades").select("trade_type, metal, pure_wt"),
         client.from("opening_balances").select("balance_type, amount")
           .in("balance_type", ["gold_g", "silver_g"])
@@ -99,12 +99,12 @@ function useReserve() {
 
       const goldRefined    = sum(batches,    (r) => r.metal?.startsWith("gold"),    "output_wt");
       const goldBullionIn  = sum(bullion,    (r) => r.trade_type === "buy"  && r.metal === "gold",  "pure_wt");
-      const goldDispatched = sum(dispatches, (r) => r.metal === "gold",   "weight_g");
+      const goldDispatched = (dispatches ?? []).filter((r: any) => r.metal === "gold").reduce((s: number, r: any) => s + (Number(r.weight_g) || 0) * (Number(r.purity_pct) || 100) / 100, 0);
       const goldBullionOut = sum(bullion,    (r) => r.trade_type === "sell" && r.metal === "gold",  "pure_wt");
 
       const silverRefined    = sum(batches,    (r) => r.metal?.startsWith("silver"),  "output_wt");
       const silverBullionIn  = sum(bullion,    (r) => r.trade_type === "buy"  && r.metal === "silver", "pure_wt");
-      const silverDispatched = sum(dispatches, (r) => r.metal === "silver", "weight_g");
+      const silverDispatched = (dispatches ?? []).filter((r: any) => r.metal === "silver").reduce((s: number, r: any) => s + (Number(r.weight_g) || 0) * (Number(r.purity_pct) || 100) / 100, 0);
       const silverBullionOut = sum(bullion,    (r) => r.trade_type === "sell" && r.metal === "silver", "pure_wt");
 
       return {
@@ -197,7 +197,7 @@ export default function MetalFlowPage() {
   const { data: suppliersData = [] } = useSuppliers();
   const { data: dispatchData, isLoading: dispatchLoading } = useDispatches();
   const [showDispatch, setShowDispatch] = useState(false);
-  const [dispatchForm, setDispatchForm] = useState({ dispatch_date: globalDate, metal: "gold", weight_g: 0, purpose: "supplier", supplier_id: "", party_name: "", notes: "" });
+  const [dispatchForm, setDispatchForm] = useState({ dispatch_date: globalDate, metal: "gold", weight_g: 0, purity_pct: 99.9, purpose: "supplier", supplier_id: "", party_name: "", notes: "" });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const intake = (intakeData as any[]) ?? [];
@@ -524,6 +524,7 @@ export default function MetalFlowPage() {
     mutationFn: async (d: typeof dispatchForm) => {
       const { error } = await supabase().from("metal_dispatches").insert({
         dispatch_date: d.dispatch_date, metal: d.metal, weight_g: d.weight_g,
+        purity_pct: d.purity_pct,
         purpose: d.purpose,
         supplier_id: d.supplier_id || null,
         party_name: d.party_name || null,
@@ -536,7 +537,7 @@ export default function MetalFlowPage() {
       qc.invalidateQueries({ queryKey: ["metal_reserve"] });
       if (vars.supplier_id) qc.invalidateQueries({ queryKey: ["supplier-360", vars.supplier_id] });
       setShowDispatch(false);
-      setDispatchForm({ dispatch_date: globalDate, metal: "gold", weight_g: 0, purpose: "supplier", supplier_id: "", party_name: "", notes: "" });
+      setDispatchForm({ dispatch_date: globalDate, metal: "gold", weight_g: 0, purity_pct: 99.9, purpose: "supplier", supplier_id: "", party_name: "", notes: "" });
     },
   });
 
@@ -1465,6 +1466,27 @@ export default function MetalFlowPage() {
                     className={inp} />
                 </div>
                 <div>
+                  <label className="block text-xs text-ink-dim mb-1">Touch / Purity %</label>
+                  <div className="flex gap-1 mb-1">
+                    {[["999", 99.9], ["916", 91.6], ["750", 75.0]].map(([label, val]) => (
+                      <button key={label as string} type="button"
+                        onClick={() => setDispatchForm({ ...dispatchForm, purity_pct: val as number })}
+                        className={`text-xs px-2 py-0.5 rounded border transition-colors ${dispatchForm.purity_pct === val ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:border-gold"}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <input type="number" step="0.001" value={dispatchForm.purity_pct || ""}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => setDispatchForm({ ...dispatchForm, purity_pct: parseFloat(e.target.value) || 0 })}
+                    className={inp} />
+                  {dispatchForm.weight_g > 0 && (
+                    <p className="text-xs text-ink-dim mt-0.5">
+                      Pure wt: <span className="text-gold font-mono font-semibold">{grams(dispatchForm.weight_g * dispatchForm.purity_pct / 100)}</span>
+                    </p>
+                  )}
+                </div>
+                <div>
                   <label className="block text-xs text-ink-dim mb-1">Purpose</label>
                   <select value={dispatchForm.purpose}
                     onChange={(e) => setDispatchForm({ ...dispatchForm, purpose: e.target.value })} className={inp}>
@@ -1522,25 +1544,33 @@ export default function MetalFlowPage() {
               <div className="px-4 py-2.5 border-b border-line bg-canvas">
                 <h3 className="text-xs font-semibold text-ink-dim">Dispatch History</h3>
               </div>
-              <table className="w-full text-sm" style={{ minWidth: "480px" }}>
+              <table className="w-full text-sm" style={{ minWidth: "580px" }}>
                 <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                   <th className="text-left px-4 py-2.5">Date</th>
                   <th className="text-left px-3 py-2.5">Metal</th>
                   <th className="text-right px-3 py-2.5">Weight</th>
+                  <th className="text-right px-3 py-2.5">Touch%</th>
+                  <th className="text-right px-3 py-2.5">Pure Wt</th>
                   <th className="text-left px-3 py-2.5">Purpose</th>
                   <th className="text-left px-3 py-2.5">Party</th>
                 </tr></thead>
                 <tbody>
-                  {dispatches.map((d: any) => (
-                    <tr key={d.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                      <td className="px-4 py-2.5 text-ink-dim">{shortDate(d.dispatch_date)}</td>
-                      <td className="px-3 py-2.5 capitalize font-medium" style={{ color: d.metal === "gold" ? "var(--color-gold)" : "var(--color-ink-mid)" }}>{d.metal} 999</td>
-                      <td className="px-3 py-2.5 text-right font-mono">{grams(d.weight_g)}</td>
-                      <td className="px-3 py-2.5 capitalize text-ink-dim">{d.purpose}</td>
-                      <td className="px-3 py-2.5">{d.party_name ?? "—"}</td>
-                    </tr>
-                  ))}
-                  {!dispatches.length && <tr><td colSpan={5} className="px-4 py-8 text-center text-ink-dim">{t("no_data")}</td></tr>}
+                  {dispatches.map((d: any) => {
+                    const purity = Number(d.purity_pct) || 100;
+                    const pureWt = Number(d.weight_g) * purity / 100;
+                    return (
+                      <tr key={d.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                        <td className="px-4 py-2.5 text-ink-dim">{shortDate(d.dispatch_date)}</td>
+                        <td className="px-3 py-2.5 capitalize font-medium" style={{ color: d.metal === "gold" ? "var(--color-gold)" : "var(--color-ink-mid)" }}>{d.metal}</td>
+                        <td className="px-3 py-2.5 text-right font-mono">{grams(d.weight_g)}</td>
+                        <td className="px-3 py-2.5 text-right text-ink-dim">{purity.toFixed(1)}%</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-gold">{grams(pureWt)}</td>
+                        <td className="px-3 py-2.5 capitalize text-ink-dim">{d.purpose}</td>
+                        <td className="px-3 py-2.5">{d.party_name ?? "—"}</td>
+                      </tr>
+                    );
+                  })}
+                  {!dispatches.length && <tr><td colSpan={7} className="px-4 py-8 text-center text-ink-dim">{t("no_data")}</td></tr>}
                 </tbody>
               </table>
             </div>

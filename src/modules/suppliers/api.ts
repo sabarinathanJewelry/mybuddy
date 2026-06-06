@@ -55,7 +55,7 @@ export function useSupplier360(id: string) {
         client.from("supplier_purchases").select("*").eq("supplier_id", id).order("purchase_date", { ascending: false }),
         client.from("supplier_payments").select("*").eq("supplier_id", id).order("pay_date", { ascending: false }),
         client.from("supplier_suspense").select("*").eq("supplier_id", id).order("bill_date", { ascending: false }).limit(50),
-        client.from("metal_dispatches").select("id, dispatch_date, metal, weight_g, notes").eq("supplier_id", id).order("dispatch_date", { ascending: false }),
+        client.from("metal_dispatches").select("id, dispatch_date, metal, weight_g, purity_pct, notes").eq("supplier_id", id).order("dispatch_date", { ascending: false }),
       ]);
       return {
         supplier: supplierRes.data,

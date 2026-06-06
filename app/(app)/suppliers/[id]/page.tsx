@@ -137,7 +137,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const metalOwedG = goldOpeningG + silverOpeningG + metalPurchasesG + (view?.suspense
     .filter((s: any) => s.supplier_confirmed)
     .reduce((acc: number, s: any) => acc + (Number(s.supplier_pure_wt) || 0), 0) ?? 0);
-  const metalPhysicalG = view?.dispatches?.reduce((acc: number, d: any) => acc + (Number(d.weight_g) || 0), 0) ?? 0;
+  const metalPhysicalG = view?.dispatches?.reduce((acc: number, d: any) => acc + (Number(d.weight_g) || 0) * (Number(d.purity_pct) || 100) / 100, 0) ?? 0;
   const metalCashG = view?.payments?.filter((p: any) => (p.metal_wt ?? 0) > 0).reduce((acc: number, p: any) => acc + (Number(p.metal_wt) || 0), 0) ?? 0;
   const metalCutG = view?.payments?.filter((p: any) => p.mode === "cut_rate").reduce((acc: number, p: any) => acc + (Number(p.metal_wt) || 0), 0) ?? 0;
   const metalSentG = metalPhysicalG + metalCashG;
@@ -923,17 +923,25 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                     <th className="text-left px-4 py-2.5">{t("date")}</th>
                     <th className="text-left px-3 py-2.5">Metal</th>
                     <th className="text-right px-3 py-2.5">Weight</th>
+                    <th className="text-right px-3 py-2.5">Touch%</th>
+                    <th className="text-right px-3 py-2.5">Pure Wt</th>
                     <th className="text-left px-3 py-2.5">Notes</th>
                   </tr></thead>
                   <tbody>
-                    {view?.dispatches?.map((d: any) => (
-                      <tr key={d.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                        <td className="px-4 py-2.5 text-ink-dim">{shortDate(d.dispatch_date)}</td>
-                        <td className="px-3 py-2.5 capitalize">{d.metal}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-ok">{grams(d.weight_g)}</td>
-                        <td className="px-3 py-2.5 text-ink-dim text-xs">{d.notes ?? "—"}</td>
-                      </tr>
-                    ))}
+                    {view?.dispatches?.map((d: any) => {
+                      const purity = Number(d.purity_pct) || 100;
+                      const pureWt = Number(d.weight_g) * purity / 100;
+                      return (
+                        <tr key={d.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                          <td className="px-4 py-2.5 text-ink-dim">{shortDate(d.dispatch_date)}</td>
+                          <td className="px-3 py-2.5 capitalize">{d.metal}</td>
+                          <td className="px-3 py-2.5 text-right font-mono">{grams(d.weight_g)}</td>
+                          <td className="px-3 py-2.5 text-right text-ink-dim">{purity.toFixed(1)}%</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-ok">{grams(pureWt)}</td>
+                          <td className="px-3 py-2.5 text-ink-dim text-xs">{d.notes ?? "—"}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
                 <div className="px-4 py-2 bg-canvas border-t border-line flex justify-between text-xs font-semibold">
