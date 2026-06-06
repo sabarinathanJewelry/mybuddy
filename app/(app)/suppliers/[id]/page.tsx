@@ -27,7 +27,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const saveReturn      = useSaveSupplierPurchase();
   const [deletingPurchaseId, setDeletingPurchaseId] = useState<string | null>(null);
 
-  const blankEditPurchase = () => ({ purchase_date: "", bill_no: "", description: "", metal: "gold_22k", is_metal_balance: false, gross_wt: 0, tag_wt: 0, stone_wt: 0, stone_rate: 0, stone_to_cash: false, purity_pct: 91.6, rate: 0, charges_g: 0, charges_per_piece: 0, piece_count: 0, charges_to_cash: false, amount: 0, notes: "" });
+  const blankEditPurchase = () => ({ purchase_date: "", bill_no: "", description: "", metal: "gold_22k", is_metal_balance: false, gross_wt: 0, tag_wt: 0, stone_wt: 0, stone_rate: 0, stone_to_cash: false, purity_pct: 91.6, rate: 0, charges_g: 0, charges_per_piece: 0, piece_count: 0, charges_to_cash: false, mc_rs: 0, amount: 0, notes: "" });
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
   const [editPurchaseForm, setEditPurchaseForm] = useState(blankEditPurchase());
 
@@ -50,6 +50,12 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       charges_per_piece: Number(p.charges_per_piece) || 0,
       piece_count: Number(p.piece_count) || 0,
       charges_to_cash: Boolean(p.charges_to_cash),
+      mc_rs: (() => {
+        if (!p.is_metal_balance) return 0;
+        const stoneRs = p.stone_to_cash && p.stone_wt > 0 && p.stone_rate > 0 ? p.stone_wt * p.stone_rate : 0;
+        const chgRs   = p.charges_to_cash && p.charges_per_piece > 0 && p.piece_count > 0 ? p.charges_per_piece * p.piece_count : 0;
+        return Math.max(0, (Number(p.amount) || 0) - stoneRs - chgRs);
+      })(),
       amount: Number(p.amount) || 0,
       notes: p.notes ?? "",
     });
@@ -67,7 +73,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       const final_pure     = base_pure + stone_gold_g + charges_rs_g + next.charges_g;
       const cash_extras    = (next.stone_to_cash ? stone_val_rs : 0) + (next.charges_to_cash ? charges_val_rs : 0);
       const amount = next.is_metal_balance
-        ? parseFloat(cash_extras.toFixed(2))
+        ? parseFloat((cash_extras + (next.mc_rs || 0)).toFixed(2))
         : (next.rate > 0 ? parseFloat((final_pure * next.rate + cash_extras).toFixed(2)) : next.amount);
       return { ...next, amount };
     });
@@ -85,7 +91,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
     const cash_extras    = (ep.stone_to_cash ? stone_val_rs : 0) + (ep.charges_to_cash ? charges_val_rs : 0);
     const base_pure      = parseFloat((net_wt * ep.purity_pct / 100).toFixed(4));
     const pure_wt        = roundPure(base_pure + stone_gold_g + charges_rs_g + ep.charges_g);
-    const amount         = ep.is_metal_balance ? parseFloat(cash_extras.toFixed(2)) : ep.amount;
+    const amount         = ep.is_metal_balance ? parseFloat((cash_extras + (ep.mc_rs || 0)).toFixed(2)) : ep.amount;
     await updatePurchase.mutateAsync({ id: editingPurchaseId, supplierId: id, data: { ...ep, pure_wt, amount } });
     setEditingPurchaseId(null);
   }
@@ -98,7 +104,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const [showEditOpening, setShowEditOpening] = useState(false);
   const [editOpening, setEditOpening] = useState({ opening_balance: 0, gold_opening_g: 0, silver_opening_g: 0, roundoff_digits: 3, roundoff_method: "round" });
 
-  const blankPurchaseItem = () => ({ description: "", is_metal_balance: false, gross_wt: 0, tag_wt: 0, stone_wt: 0, stone_rate: 0, stone_to_cash: false, purity_pct: 91.6, rate: 0, charges_g: 0, charges_per_piece: 0, piece_count: 0, charges_to_cash: false, amount: 0, notes: "" });
+  const blankPurchaseItem = () => ({ description: "", is_metal_balance: false, gross_wt: 0, tag_wt: 0, stone_wt: 0, stone_rate: 0, stone_to_cash: false, purity_pct: 91.6, rate: 0, charges_g: 0, charges_per_piece: 0, piece_count: 0, charges_to_cash: false, mc_rs: 0, amount: 0, notes: "" });
   const [showPurchaseForm, setShowPurchaseForm] = useState(false);
   const [purchaseForm, setPurchaseForm] = useState({ purchase_date: globalDate, bill_no: "", metal: "gold_22k" });
   const [purchaseItems, setPurchaseItems] = useState([blankPurchaseItem()]);
@@ -215,7 +221,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       const base_pure     = parseFloat((net_wt * item.purity_pct / 100).toFixed(4));
       const pure_wt       = roundPure(base_pure + stone_gold_g + charges_rs_g + item.charges_g);
       const amount        = item.is_metal_balance
-        ? parseFloat(cash_extras.toFixed(2))
+        ? parseFloat((cash_extras + (item.mc_rs || 0)).toFixed(2))
         : item.amount;
       await savePurchase.mutateAsync({
         purchase_date: purchaseForm.purchase_date,
@@ -257,7 +263,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       const pure           = net * next.purity_pct / 100 + stone_gold_g + charges_rs_g + next.charges_g;
       const cash_extras    = (next.stone_to_cash ? stone_val_rs : 0) + (next.charges_to_cash ? chg_val_rs : 0);
       if (next.is_metal_balance) {
-        next.amount = parseFloat(cash_extras.toFixed(2));
+        next.amount = parseFloat((cash_extras + (next.mc_rs || 0)).toFixed(2));
       } else if (next.rate > 0) {
         next.amount = parseFloat((pure * next.rate + cash_extras).toFixed(2));
       }
@@ -845,16 +851,29 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                             <span className="font-mono font-semibold">{inr(finalPure * item.rate + cashExtras)}</span>
                           </div>
                         ) : null}
-                        {item.is_metal_balance && cashExtras > 0 && (
-                          <div className="flex justify-between text-info text-xs">
-                            <span>+ Cash charges owed</span>
-                            <span className="font-mono">₹{cashExtras.toFixed(0)}</span>
+                        {item.is_metal_balance && (cashExtras > 0 || item.mc_rs > 0) && (
+                          <div className="flex justify-between text-ok text-xs font-semibold border-t border-gold/20 pt-1">
+                            <span>Cash owed to supplier</span>
+                            <span className="font-mono">{inr(cashExtras + item.mc_rs)}</span>
                           </div>
                         )}
                       </div>
                     )}
 
-                    {/* Amount override */}
+                    {/* MC / cash charges (metal balance mode) */}
+                    {item.is_metal_balance && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-ink-dim whitespace-nowrap">MC / Cash Charges (₹)</label>
+                        <input type="number" step="0.01" placeholder="0" value={item.mc_rs || ""}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => updatePurchaseItem(idx, { mc_rs: parseFloat(e.target.value) || 0 })}
+                          className={`${inp} max-w-40`} />
+                        {item.mc_rs > 0 && <span className="text-xs text-ok font-mono">Total cash: {inr(item.amount)}</span>}
+                      </div>
+                    )}
+
+                    {/* Amount override (cash mode only) */}
+                    {!item.is_metal_balance && (
                     <div className="flex items-center gap-2">
                       <label className="text-xs text-ink-dim whitespace-nowrap">Amount (₹) <span className="text-ink-dim/50">auto</span></label>
                       <input type="number" step="0.01" value={item.amount || ""}
@@ -862,6 +881,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                         onChange={(e) => updatePurchaseItem(idx, { amount: parseFloat(e.target.value) || 0 })}
                         className={`${inp} max-w-40`} />
                     </div>
+                    )}
                   </div>
                 );
               })}
@@ -941,19 +961,29 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                                 { label: "HM/cert ₹/pc", key: "charges_per_piece", step: "0.01" },
                                 { label: "Pieces", key: "piece_count", step: "1" },
                                 { label: "Other chg (g)", key: "charges_g", step: "0.0001" },
-                                { label: "Amount (₹)", key: "amount", step: "0.01" },
                               ].map((f) => (
                                 <div key={f.key}><label className="text-xs text-ink-dim">{f.label}</label>
                                   <input type="number" step={f.step} value={(ep as any)[f.key] || ""}
                                     onFocus={(e) => e.target.select()}
-                                    onChange={(e) => {
-                                      const v = parseFloat(e.target.value) || 0;
-                                      if (f.key === "amount") setEditPurchaseForm(prev => ({ ...prev, amount: v }));
-                                      else updateEditPurchaseForm({ [f.key]: v });
-                                    }}
+                                    onChange={(e) => updateEditPurchaseForm({ [f.key]: parseFloat(e.target.value) || 0 })}
                                     className={inp} />
                                 </div>
                               ))}
+                              {ep.is_metal_balance ? (
+                                <div><label className="text-xs text-ink-dim">MC / Cash (₹)</label>
+                                  <input type="number" step="0.01" placeholder="0" value={ep.mc_rs || ""}
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => updateEditPurchaseForm({ mc_rs: parseFloat(e.target.value) || 0 })}
+                                    className={inp} />
+                                </div>
+                              ) : (
+                                <div><label className="text-xs text-ink-dim">Amount (₹)</label>
+                                  <input type="number" step="0.01" value={ep.amount || ""}
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => setEditPurchaseForm(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
+                                    className={inp} />
+                                </div>
+                              )}
                             </div>
                             {ep.gross_wt > 0 && (
                               <p className="text-xs text-ink-dim">
