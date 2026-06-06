@@ -105,6 +105,9 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
 
   const [showReturnForm, setShowReturnForm] = useState(false);
   const [returnForm, setReturnForm] = useState({ return_date: globalDate, description: "", metal: "gold_22k", gross_wt: 0, purity_pct: 91.6, pure_wt: 0, notes: "" });
+  const [showAdjForm, setShowAdjForm] = useState(false);
+  const [adjForm, setAdjForm] = useState({ adj_date: globalDate, description: "", metal: "gold_22k", pure_wt: 0, notes: "" });
+  const saveAdjustment = useSaveSupplierPurchase();
 
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ pay_date: globalDate, mode: "cash", amount: 0, metal_wt: 0, metal_purity: 91.6, cut_rate: 0, notes: "" });
@@ -139,7 +142,10 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   // Metal balance — opening grams + confirmed suspense pure wt minus metal sent
   const goldOpeningG = Number(view?.supplier?.gold_opening_g) || 0;
   const silverOpeningG = Number(view?.supplier?.silver_opening_g) || 0;
-  const metalPurchasesG = view?.purchases?.filter((p: any) => p.is_metal_balance).reduce((acc: number, p: any) => acc + (p.is_return ? -(Number(p.pure_wt) || 0) : (Number(p.pure_wt) || 0)), 0) ?? 0;
+  const metalPurchasesG = view?.purchases?.filter((p: any) => p.is_metal_balance).reduce((acc: number, p: any) => {
+    if (p.is_return) return acc - (Number(p.pure_wt) || 0);
+    return acc + (Number(p.pure_wt) || 0); // adjustments store signed pure_wt directly
+  }, 0) ?? 0;
   const metalOwedG = goldOpeningG + silverOpeningG + metalPurchasesG + (view?.suspense
     .filter((s: any) => s.supplier_confirmed)
     .reduce((acc: number, s: any) => acc + (Number(s.supplier_pure_wt) || 0), 0) ?? 0);
@@ -172,7 +178,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
     const rows: { id: string; date: string; type: string; description: string; delta: number }[] = [];
     (view?.purchases ?? []).filter((p: any) => p.is_metal_balance).forEach((p: any) => {
       const delta = p.is_return ? -(Number(p.pure_wt) || 0) : (Number(p.pure_wt) || 0);
-      rows.push({ id: `p-${p.id}`, date: p.purchase_date ?? "", type: p.is_return ? "Return" : "Purchase", description: p.description || p.bill_no || "—", delta });
+      const type  = p.is_return ? "Return" : p.is_adjustment ? "Adjustment" : "Purchase";
+      rows.push({ id: `p-${p.id}`, date: p.purchase_date ?? "", type, description: p.description || p.bill_no || "—", delta });
     });
     (view?.dispatches ?? []).forEach((d: any) => {
       const pureWt = (Number(d.weight_g) || 0) * (Number(d.purity_pct) || 100) / 100;
@@ -383,8 +390,9 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       {tab === "purchases" && !isLoading && (
         <div className="space-y-3">
           <div className="flex gap-4">
-            <button onClick={() => { setShowPurchaseForm(!showPurchaseForm); setShowReturnForm(false); }} className="text-xs text-gold hover:underline">+ Add Purchase</button>
-            <button onClick={() => { setShowReturnForm(!showReturnForm); setShowPurchaseForm(false); }} className="text-xs text-ok hover:underline">↩ Return Item</button>
+            <button onClick={() => { setShowPurchaseForm(!showPurchaseForm); setShowReturnForm(false); setShowAdjForm(false); }} className="text-xs text-gold hover:underline">+ Add Purchase</button>
+            <button onClick={() => { setShowReturnForm(!showReturnForm); setShowPurchaseForm(false); setShowAdjForm(false); }} className="text-xs text-ok hover:underline">↩ Return Item</button>
+            <button onClick={() => { setShowAdjForm(!showAdjForm); setShowPurchaseForm(false); setShowReturnForm(false); }} className="text-xs text-info hover:underline">± Metal Adjustment</button>
           </div>
 
           {showReturnForm && (
@@ -493,6 +501,98 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                   className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
               </div>
               {saveReturn.isError && <p className="text-xs text-err">Save failed — run migration 065 in Supabase SQL Editor first.</p>}
+            </div>
+          )}
+
+          {showAdjForm && (
+            <div className="bg-info/5 border border-info/30 rounded-xl p-4 shadow-soft space-y-3">
+              <h3 className="text-sm font-semibold text-info">Metal Balance Adjustment</h3>
+              <p className="text-xs text-ink-dim">Use this to correct touch / weight errors. Positive = supplier adds grams to your balance. Negative = grams deducted.</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Date</label>
+                  <input type="date" value={adjForm.adj_date}
+                    onChange={(e) => setAdjForm({ ...adjForm, adj_date: e.target.value })}
+                    className={inp} />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Metal</label>
+                  <select value={adjForm.metal}
+                    onChange={(e) => setAdjForm({ ...adjForm, metal: e.target.value })}
+                    className={inp}>
+                    <option value="gold_22k">Gold 22K</option>
+                    <option value="gold_24k">Gold 24K</option>
+                    <option value="gold_18k">Gold 18K</option>
+                    <option value="silver">Silver</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Description</label>
+                  <input value={adjForm.description}
+                    onChange={(e) => setAdjForm({ ...adjForm, description: e.target.value })}
+                    className={inp} placeholder="e.g. Touch correction" />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Adjustment (g) — use − for deduction</label>
+                  <div className="flex gap-1 mb-1">
+                    <button type="button"
+                      onClick={() => setAdjForm({ ...adjForm, pure_wt: Math.abs(adjForm.pure_wt) })}
+                      className={`text-xs px-3 py-0.5 rounded border transition-colors ${adjForm.pure_wt >= 0 ? "bg-ok text-white border-ok" : "border-line text-ink-dim hover:border-ok"}`}>
+                      + Add
+                    </button>
+                    <button type="button"
+                      onClick={() => setAdjForm({ ...adjForm, pure_wt: -Math.abs(adjForm.pure_wt) })}
+                      className={`text-xs px-3 py-0.5 rounded border transition-colors ${adjForm.pure_wt < 0 ? "bg-err text-white border-err" : "border-line text-ink-dim hover:border-err"}`}>
+                      − Deduct
+                    </button>
+                  </div>
+                  <input type="number" step="0.001" value={Math.abs(adjForm.pure_wt) || ""}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      const abs = parseFloat(e.target.value) || 0;
+                      setAdjForm({ ...adjForm, pure_wt: adjForm.pure_wt < 0 ? -abs : abs });
+                    }}
+                    className={inp} placeholder="0.000" />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Notes</label>
+                  <input value={adjForm.notes}
+                    onChange={(e) => setAdjForm({ ...adjForm, notes: e.target.value })}
+                    className={inp} placeholder="Optional" />
+                </div>
+              </div>
+              {adjForm.pure_wt !== 0 && (
+                <p className={`text-xs font-medium ${adjForm.pure_wt > 0 ? "text-ok" : "text-err"}`}>
+                  Metal balance will {adjForm.pure_wt > 0 ? "increase" : "decrease"} by <span className="font-mono">{grams(Math.abs(adjForm.pure_wt))}</span>
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  disabled={adjForm.pure_wt === 0 || saveAdjustment.isPending}
+                  onClick={async () => {
+                    await saveAdjustment.mutateAsync({
+                      supplier_id: id,
+                      purchase_date: adjForm.adj_date,
+                      description: adjForm.description || "Metal adjustment",
+                      metal: adjForm.metal,
+                      is_metal_balance: true,
+                      is_adjustment: true,
+                      gross_wt: 0,
+                      purity_pct: 100,
+                      pure_wt: adjForm.pure_wt,
+                      amount: 0,
+                      notes: adjForm.notes || null,
+                    });
+                    setShowAdjForm(false);
+                    setAdjForm({ adj_date: globalDate, description: "", metal: "gold_22k", pure_wt: 0, notes: "" });
+                  }}
+                  className="bg-info text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
+                  {saveAdjustment.isPending ? "Saving…" : "Save Adjustment"}
+                </button>
+                <button onClick={() => setShowAdjForm(false)}
+                  className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
+              </div>
+              {saveAdjustment.isError && <p className="text-xs text-err">Save failed — run migration 066 in Supabase SQL Editor first.</p>}
             </div>
           )}
 
@@ -850,13 +950,16 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                       <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.purchase_date)}</td>
                       <td className="px-3 py-2.5 font-medium">
                         {p.description || <span className="text-ink-dim">—</span>}
-                        {p.is_return && <span className="ml-1 text-xs text-ok border border-ok/30 rounded px-1">return</span>}
-                        {p.is_metal_balance && !p.is_return && <span className="ml-1 text-xs text-info border border-info/30 rounded px-1">metal</span>}
+                        {p.is_return     && <span className="ml-1 text-xs text-ok   border border-ok/30   rounded px-1">return</span>}
+                        {p.is_adjustment && <span className="ml-1 text-xs text-info border border-info/30 rounded px-1">adj</span>}
+                        {p.is_metal_balance && !p.is_return && !p.is_adjustment && <span className="ml-1 text-xs text-info border border-info/30 rounded px-1">metal</span>}
                       </td>
                       <td className="px-3 py-2.5 capitalize text-ink-dim">{p.metal?.replace("_", " ")}</td>
                       <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(p.gross_wt ?? 0)}</td>
                       <td className="px-3 py-2.5 text-right font-mono text-xs text-ink-dim">{p.stone_wt > 0 ? grams(p.stone_wt) : "—"}</td>
-                      <td className={`px-3 py-2.5 text-right font-mono font-semibold ${p.is_return ? "text-ok" : "text-gold"}`}>{p.is_return ? "-" : ""}{grams(p.pure_wt ?? 0)}</td>
+                      <td className={`px-3 py-2.5 text-right font-mono font-semibold ${p.is_return ? "text-ok" : p.is_adjustment ? (Number(p.pure_wt) < 0 ? "text-ok" : "text-info") : "text-gold"}`}>
+                        {p.is_return ? "-" : p.is_adjustment && Number(p.pure_wt) > 0 ? "+" : ""}{grams(Math.abs(Number(p.pure_wt ?? 0)))}
+                      </td>
                       <td className="px-3 py-2.5 text-right font-mono">{inr(p.amount)}</td>
                       <td className="px-3 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1196,9 +1299,10 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                         <td className="px-4 py-2.5 text-ink-dim text-xs">{shortDate(row.date)}</td>
                         <td className="px-3 py-2.5">
                           <span className={`text-xs font-medium ${
-                            row.type === "Purchase" ? "text-gold" :
-                            row.type === "Return"   ? "text-ok"  :
-                            row.type === "Dispatch" ? "text-info" : "text-warn"
+                            row.type === "Purchase"   ? "text-gold" :
+                            row.type === "Return"     ? "text-ok"   :
+                            row.type === "Adjustment" ? "text-info" :
+                            row.type === "Dispatch"   ? "text-info" : "text-warn"
                           }`}>{row.type}</span>
                         </td>
                         <td className="px-3 py-2.5 text-xs text-ink-dim">{row.description}</td>
