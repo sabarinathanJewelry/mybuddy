@@ -143,6 +143,24 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const metalSentG = metalPhysicalG + metalCashG;
   const metalBalanceG = metalOwedG - metalSentG;
 
+  // Metal ledger — chronological statement with running balance
+  const metalLedger = (() => {
+    const rows: { id: string; date: string; type: string; description: string; delta: number }[] = [];
+    (view?.purchases ?? []).filter((p: any) => p.is_metal_balance).forEach((p: any) => {
+      rows.push({ id: `p-${p.id}`, date: p.purchase_date ?? "", type: "Purchase", description: p.description || p.bill_no || "—", delta: Number(p.pure_wt) || 0 });
+    });
+    (view?.dispatches ?? []).forEach((d: any) => {
+      const pureWt = (Number(d.weight_g) || 0) * (Number(d.purity_pct) || 100) / 100;
+      rows.push({ id: `d-${d.id}`, date: d.dispatch_date ?? "", type: "Dispatch", description: d.notes || `${d.metal} ${Number(d.purity_pct) || 100}%`, delta: -pureWt });
+    });
+    (view?.payments ?? []).filter((p: any) => p.mode === "cut_rate" && (p.metal_wt ?? 0) > 0).forEach((p: any) => {
+      rows.push({ id: `cr-${p.id}`, date: p.pay_date ?? "", type: "Cut Rate", description: p.cut_rate ? `@ ₹${Number(p.cut_rate).toLocaleString()}/g` : "—", delta: -(Number(p.metal_wt) || 0) });
+    });
+    rows.sort((a, b) => a.date.localeCompare(b.date));
+    let balance = goldOpeningG + silverOpeningG;
+    return rows.map(row => { balance += row.delta; return { ...row, balance }; });
+  })();
+
   async function handlePurchaseSave(e: React.FormEvent) {
     e.preventDefault();
     for (const item of purchaseItems) {
@@ -934,63 +952,55 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
             </table>
           </div>
 
-          {/* Metal sent to this supplier — dispatches + cut_rate grams */}
-          {((view?.dispatches?.length ?? 0) > 0 || metalCutG > 0) && (
+          {/* Metal Statement — full chronological ledger with running balance */}
+          {metalLedger.length > 0 && (
             <>
-              <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide mt-2">Metal Sent</p>
+              <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide mt-2">Metal Statement</p>
               <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm" style={{ minWidth: "560px" }}>
                   <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
-                    <th className="text-left px-4 py-2.5">{t("date")}</th>
+                    <th className="text-left px-4 py-2.5">Date</th>
                     <th className="text-left px-3 py-2.5">Type</th>
-                    <th className="text-left px-3 py-2.5">Metal</th>
-                    <th className="text-right px-3 py-2.5">Weight</th>
-                    <th className="text-right px-3 py-2.5">Touch%</th>
-                    <th className="text-right px-3 py-2.5">Pure Wt</th>
-                    <th className="text-left px-3 py-2.5">Notes</th>
+                    <th className="text-left px-3 py-2.5">Description</th>
+                    <th className="text-right px-3 py-2.5">Grams</th>
+                    <th className="text-right px-4 py-2.5">Balance</th>
                   </tr></thead>
                   <tbody>
-                    {view?.dispatches?.map((d: any) => {
-                      const purity = Number(d.purity_pct) || 100;
-                      const pureWt = Number(d.weight_g) * purity / 100;
-                      return (
-                        <tr key={d.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                          <td className="px-4 py-2.5 text-ink-dim">{shortDate(d.dispatch_date)}</td>
-                          <td className="px-3 py-2.5 text-xs text-info font-medium">Dispatch</td>
-                          <td className="px-3 py-2.5 capitalize">{d.metal}</td>
-                          <td className="px-3 py-2.5 text-right font-mono">{grams(d.weight_g)}</td>
-                          <td className="px-3 py-2.5 text-right text-ink-dim">{purity.toFixed(1)}%</td>
-                          <td className="px-3 py-2.5 text-right font-mono text-ok">{grams(pureWt)}</td>
-                          <td className="px-3 py-2.5 text-ink-dim text-xs">{d.notes ?? "—"}</td>
-                        </tr>
-                      );
-                    })}
-                    {view?.payments?.filter((p: any) => p.mode === "cut_rate" && (p.metal_wt ?? 0) > 0).map((p: any) => (
-                      <tr key={p.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                        <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.pay_date)}</td>
-                        <td className="px-3 py-2.5 text-xs text-warn font-medium">Cut Rate</td>
-                        <td className="px-3 py-2.5 capitalize text-ink-dim">gold</td>
-                        <td className="px-3 py-2.5 text-right font-mono">{grams(p.metal_wt)}</td>
-                        <td className="px-3 py-2.5 text-right text-ink-dim">—</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-ok">{grams(p.metal_wt)}</td>
-                        <td className="px-3 py-2.5 text-ink-dim text-xs">@ {p.cut_rate ? `₹${Number(p.cut_rate).toLocaleString()}/g` : "—"}</td>
+                    {(goldOpeningG + silverOpeningG) > 0 && (
+                      <tr className="border-b border-line bg-canvas/60">
+                        <td className="px-4 py-2 text-ink-dim text-xs">—</td>
+                        <td className="px-3 py-2 text-xs font-medium text-ink-dim">Opening</td>
+                        <td className="px-3 py-2 text-xs text-ink-dim">Opening balance</td>
+                        <td className="px-3 py-2 text-right font-mono text-xs text-gold">+{grams(goldOpeningG + silverOpeningG)}</td>
+                        <td className="px-4 py-2 text-right font-mono text-xs font-semibold text-err">{grams(goldOpeningG + silverOpeningG)}</td>
+                      </tr>
+                    )}
+                    {metalLedger.map((row) => (
+                      <tr key={row.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                        <td className="px-4 py-2.5 text-ink-dim text-xs">{shortDate(row.date)}</td>
+                        <td className="px-3 py-2.5">
+                          <span className={`text-xs font-medium ${
+                            row.type === "Purchase" ? "text-gold" :
+                            row.type === "Dispatch" ? "text-info" : "text-warn"
+                          }`}>{row.type}</span>
+                        </td>
+                        <td className="px-3 py-2.5 text-xs text-ink-dim">{row.description}</td>
+                        <td className={`px-3 py-2.5 text-right font-mono text-xs ${row.delta > 0 ? "text-err" : "text-ok"}`}>
+                          {row.delta > 0 ? "+" : ""}{grams(row.delta)}
+                        </td>
+                        <td className={`px-4 py-2.5 text-right font-mono text-sm font-semibold ${row.balance > 0 ? "text-err" : row.balance < 0 ? "text-ok" : "text-ink-dim"}`}>
+                          {grams(Math.abs(row.balance))}
+                          <span className="ml-1 text-xs font-normal">{row.balance > 0 ? "owed" : row.balance < 0 ? "over" : ""}</span>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                <div className="px-4 py-2 bg-canvas border-t border-line text-xs font-semibold space-y-0.5">
-                  <div className="flex justify-between">
-                    <span className="text-ink-dim">Dispatched (physical)</span>
-                    <span className="font-mono">{grams(metalPhysicalG)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-ink-dim">Cut Rate (cash settlement)</span>
-                    <span className="font-mono">{grams(metalCutG)}</span>
-                  </div>
-                  <div className="flex justify-between border-t border-line pt-1">
-                    <span>Total metal sent</span>
-                    <span className="font-mono text-ok">{grams(metalSentG)}</span>
-                  </div>
+                <div className="px-4 py-2 bg-canvas border-t border-line flex justify-between text-xs font-semibold">
+                  <span>Current metal balance</span>
+                  <span className={`font-mono ${metalBalanceG > 0 ? "text-err" : metalBalanceG < 0 ? "text-ok" : "text-ink-dim"}`}>
+                    {grams(Math.abs(metalBalanceG))} {metalBalanceG > 0 ? "owed to supplier" : metalBalanceG < 0 ? "over-sent" : "settled"}
+                  </span>
                 </div>
               </div>
             </>
