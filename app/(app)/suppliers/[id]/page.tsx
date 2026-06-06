@@ -887,7 +887,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                       </tr>
                     )}
                   </Fragment>
-                ))}
+                );
+              })}
                 {!view?.purchases.length && <tr><td colSpan={8} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
               </tbody>
             </table>
