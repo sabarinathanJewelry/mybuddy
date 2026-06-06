@@ -839,6 +839,26 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                                   onFocus={(e) => e.target.select()}
                                   onChange={(e) => setEditPayForm({ ...editPayForm, amount: parseFloat(e.target.value) || 0 })}
                                   className={inp} /></div>
+                              {editPayForm.mode === "cut_rate" && (
+                                <>
+                                  <div><label className="text-xs text-ink-dim">Metal Wt (g) *</label>
+                                    <input type="number" step="0.001" value={editPayForm.metal_wt || ""}
+                                      onFocus={(e) => e.target.select()}
+                                      onChange={(e) => {
+                                        const wt = parseFloat(e.target.value) || 0;
+                                        setEditPayForm((f) => ({ ...f, metal_wt: wt, amount: f.cut_rate > 0 && wt > 0 ? Math.round(wt * f.cut_rate * 100) / 100 : f.amount }));
+                                      }}
+                                      className={inp} /></div>
+                                  <div><label className="text-xs text-ink-dim">Rate/g *</label>
+                                    <input type="number" step="0.01" value={editPayForm.cut_rate || ""}
+                                      onFocus={(e) => e.target.select()}
+                                      onChange={(e) => {
+                                        const rate = parseFloat(e.target.value) || 0;
+                                        setEditPayForm((f) => ({ ...f, cut_rate: rate, amount: f.metal_wt > 0 && rate > 0 ? Math.round(f.metal_wt * rate * 100) / 100 : f.amount }));
+                                      }}
+                                      className={inp} /></div>
+                                </>
+                              )}
                               {(editPayForm.mode === "cash" || editPayForm.mode === "bank" || editPayForm.mode === "upi") && (
                                 <>
                                   <div><label className="text-xs text-ink-dim">Metal Wt g <span className="text-ink-dim/50">(opt)</span></label>
@@ -873,6 +893,10 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                                       className={inp} /></div>
                                 </>
                               )}
+                              <div className="sm:col-span-3"><label className="text-xs text-ink-dim">Notes</label>
+                                <input value={editPayForm.notes}
+                                  onChange={(e) => setEditPayForm({ ...editPayForm, notes: e.target.value })}
+                                  className={inp} placeholder="Optional" /></div>
                             </div>
                             <div className="flex gap-2">
                               <button type="submit" disabled={updatePayment.isPending}
