@@ -23,6 +23,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const { data: view, isLoading } = useSupplier360(id);
   const savePurchase   = useSaveSupplierPurchase();
   const updatePurchase = useUpdateSupplierPurchase();
+  const saveReturn     = useSaveSupplierPurchase();
 
   const blankEditPurchase = () => ({ purchase_date: "", bill_no: "", description: "", metal: "gold_22k", is_metal_balance: false, gross_wt: 0, tag_wt: 0, stone_wt: 0, stone_rate: 0, stone_to_cash: false, purity_pct: 91.6, rate: 0, charges_g: 0, charges_per_piece: 0, piece_count: 0, charges_to_cash: false, amount: 0, notes: "" });
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
@@ -100,6 +101,9 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const [purchaseForm, setPurchaseForm] = useState({ purchase_date: globalDate, bill_no: "", metal: "gold_22k" });
   const [purchaseItems, setPurchaseItems] = useState([blankPurchaseItem()]);
 
+  const [showReturnForm, setShowReturnForm] = useState(false);
+  const [returnForm, setReturnForm] = useState({ return_date: globalDate, description: "", metal: "gold_22k", gross_wt: 0, purity_pct: 91.6, pure_wt: 0, notes: "" });
+
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ pay_date: globalDate, mode: "cash", amount: 0, metal_wt: 0, metal_purity: 91.6, cut_rate: 0, notes: "" });
 
@@ -133,7 +137,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   // Metal balance — opening grams + confirmed suspense pure wt minus metal sent
   const goldOpeningG = Number(view?.supplier?.gold_opening_g) || 0;
   const silverOpeningG = Number(view?.supplier?.silver_opening_g) || 0;
-  const metalPurchasesG = view?.purchases?.filter((p: any) => p.is_metal_balance).reduce((acc: number, p: any) => acc + (Number(p.pure_wt) || 0), 0) ?? 0;
+  const metalPurchasesG = view?.purchases?.filter((p: any) => p.is_metal_balance).reduce((acc: number, p: any) => acc + (p.is_return ? -(Number(p.pure_wt) || 0) : (Number(p.pure_wt) || 0)), 0) ?? 0;
   const metalOwedG = goldOpeningG + silverOpeningG + metalPurchasesG + (view?.suspense
     .filter((s: any) => s.supplier_confirmed)
     .reduce((acc: number, s: any) => acc + (Number(s.supplier_pure_wt) || 0), 0) ?? 0);
@@ -165,7 +169,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const metalLedger = (() => {
     const rows: { id: string; date: string; type: string; description: string; delta: number }[] = [];
     (view?.purchases ?? []).filter((p: any) => p.is_metal_balance).forEach((p: any) => {
-      rows.push({ id: `p-${p.id}`, date: p.purchase_date ?? "", type: "Purchase", description: p.description || p.bill_no || "—", delta: Number(p.pure_wt) || 0 });
+      const delta = p.is_return ? -(Number(p.pure_wt) || 0) : (Number(p.pure_wt) || 0);
+      rows.push({ id: `p-${p.id}`, date: p.purchase_date ?? "", type: p.is_return ? "Return" : "Purchase", description: p.description || p.bill_no || "—", delta });
     });
     (view?.dispatches ?? []).forEach((d: any) => {
       const pureWt = (Number(d.weight_g) || 0) * (Number(d.purity_pct) || 100) / 100;
@@ -375,7 +380,120 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       {/* Purchases */}
       {tab === "purchases" && !isLoading && (
         <div className="space-y-3">
-          <button onClick={() => setShowPurchaseForm(!showPurchaseForm)} className="text-xs text-gold hover:underline">+ Add Purchase</button>
+          <div className="flex gap-4">
+            <button onClick={() => { setShowPurchaseForm(!showPurchaseForm); setShowReturnForm(false); }} className="text-xs text-gold hover:underline">+ Add Purchase</button>
+            <button onClick={() => { setShowReturnForm(!showReturnForm); setShowPurchaseForm(false); }} className="text-xs text-ok hover:underline">↩ Return Item</button>
+          </div>
+
+          {showReturnForm && (
+            <div className="bg-ok/5 border border-ok/30 rounded-xl p-4 shadow-soft space-y-3">
+              <h3 className="text-sm font-semibold text-ok">Return Item to Supplier</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Date</label>
+                  <input type="date" value={returnForm.return_date}
+                    onChange={(e) => setReturnForm({ ...returnForm, return_date: e.target.value })}
+                    className={inp} />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Metal</label>
+                  <select value={returnForm.metal}
+                    onChange={(e) => setReturnForm({ ...returnForm, metal: e.target.value })}
+                    className={inp}>
+                    <option value="gold_22k">Gold 22K</option>
+                    <option value="gold_24k">Gold 24K</option>
+                    <option value="gold_18k">Gold 18K</option>
+                    <option value="silver">Silver</option>
+                    <option value="silver_pure">Silver Pure</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Description</label>
+                  <input value={returnForm.description}
+                    onChange={(e) => setReturnForm({ ...returnForm, description: e.target.value })}
+                    className={inp} placeholder="Item description" />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Gross Wt (g) *</label>
+                  <input type="number" step="0.001" value={returnForm.gross_wt || ""}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      const gross = parseFloat(e.target.value) || 0;
+                      setReturnForm({ ...returnForm, gross_wt: gross, pure_wt: parseFloat((gross * returnForm.purity_pct / 100).toFixed(3)) });
+                    }}
+                    className={inp} />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Touch / Purity %</label>
+                  <div className="flex gap-1 mb-1">
+                    {[["22K", 91.6], ["18K", 75.0], ["24K", 99.9]].map(([label, val]) => (
+                      <button key={label as string} type="button"
+                        onClick={() => {
+                          const pct = val as number;
+                          setReturnForm({ ...returnForm, purity_pct: pct, pure_wt: parseFloat((returnForm.gross_wt * pct / 100).toFixed(3)) });
+                        }}
+                        className={`text-xs px-2 py-0.5 rounded border transition-colors ${returnForm.purity_pct === val ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:border-gold"}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <input type="number" step="0.01" value={returnForm.purity_pct || ""}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      const pct = parseFloat(e.target.value) || 0;
+                      setReturnForm({ ...returnForm, purity_pct: pct, pure_wt: parseFloat((returnForm.gross_wt * pct / 100).toFixed(3)) });
+                    }}
+                    className={inp} />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Pure Wt (g)</label>
+                  <input type="number" step="0.001" value={returnForm.pure_wt || ""}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => setReturnForm({ ...returnForm, pure_wt: parseFloat(e.target.value) || 0 })}
+                    className={`${inp} bg-canvas`} />
+                </div>
+                <div className="sm:col-span-3">
+                  <label className="block text-xs text-ink-dim mb-1">Notes</label>
+                  <input value={returnForm.notes}
+                    onChange={(e) => setReturnForm({ ...returnForm, notes: e.target.value })}
+                    className={inp} placeholder="Optional" />
+                </div>
+              </div>
+              {returnForm.pure_wt > 0 && (
+                <p className="text-xs text-ok font-medium">
+                  This will reduce metal balance by <span className="font-mono">{grams(returnForm.pure_wt)}</span> pure wt
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  disabled={!returnForm.gross_wt || saveReturn.isPending}
+                  onClick={async () => {
+                    await saveReturn.mutateAsync({
+                      supplier_id: id,
+                      purchase_date: returnForm.return_date,
+                      description: returnForm.description || "Item return",
+                      metal: returnForm.metal,
+                      is_metal_balance: true,
+                      is_return: true,
+                      gross_wt: returnForm.gross_wt,
+                      purity_pct: returnForm.purity_pct,
+                      pure_wt: returnForm.pure_wt,
+                      amount: 0,
+                      notes: returnForm.notes || null,
+                    });
+                    setShowReturnForm(false);
+                    setReturnForm({ return_date: globalDate, description: "", metal: "gold_22k", gross_wt: 0, purity_pct: 91.6, pure_wt: 0, notes: "" });
+                  }}
+                  className="bg-ok text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
+                  {saveReturn.isPending ? "Saving…" : "Save Return"}
+                </button>
+                <button onClick={() => setShowReturnForm(false)}
+                  className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
+              </div>
+              {saveReturn.isError && <p className="text-xs text-err">Save failed — run migration 065 in Supabase SQL Editor first.</p>}
+            </div>
+          )}
+
           {showPurchaseForm && (
             <form onSubmit={handlePurchaseSave} className="bg-white border border-line rounded-xl p-4 shadow-soft space-y-4">
               {/* Bill header */}
@@ -725,16 +843,17 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                     );
                   }
                   return (
-                    <tr key={p.id} className="border-b border-line last:border-0 hover:bg-canvas/50 group">
+                    <tr key={p.id} className={`border-b border-line last:border-0 hover:bg-canvas/50 group ${p.is_return ? "bg-ok/5" : ""}`}>
                       <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.purchase_date)}</td>
                       <td className="px-3 py-2.5 font-medium">
                         {p.description || <span className="text-ink-dim">—</span>}
-                        {p.is_metal_balance && <span className="ml-1 text-xs text-info border border-info/30 rounded px-1">metal</span>}
+                        {p.is_return && <span className="ml-1 text-xs text-ok border border-ok/30 rounded px-1">return</span>}
+                        {p.is_metal_balance && !p.is_return && <span className="ml-1 text-xs text-info border border-info/30 rounded px-1">metal</span>}
                       </td>
                       <td className="px-3 py-2.5 capitalize text-ink-dim">{p.metal?.replace("_", " ")}</td>
                       <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(p.gross_wt ?? 0)}</td>
                       <td className="px-3 py-2.5 text-right font-mono text-xs text-ink-dim">{p.stone_wt > 0 ? grams(p.stone_wt) : "—"}</td>
-                      <td className="px-3 py-2.5 text-right font-mono font-semibold text-gold">{grams(p.pure_wt ?? 0)}</td>
+                      <td className={`px-3 py-2.5 text-right font-mono font-semibold ${p.is_return ? "text-ok" : "text-gold"}`}>{p.is_return ? "-" : ""}{grams(p.pure_wt ?? 0)}</td>
                       <td className="px-3 py-2.5 text-right font-mono">{inr(p.amount)}</td>
                       <td className="px-3 py-2.5 text-right">
                         <button onClick={() => openEditPurchase(p)}
@@ -1053,6 +1172,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                         <td className="px-3 py-2.5">
                           <span className={`text-xs font-medium ${
                             row.type === "Purchase" ? "text-gold" :
+                            row.type === "Return"   ? "text-ok"  :
                             row.type === "Dispatch" ? "text-info" : "text-warn"
                           }`}>{row.type}</span>
                         </td>
