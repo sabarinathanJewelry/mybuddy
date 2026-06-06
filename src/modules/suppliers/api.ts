@@ -107,6 +107,18 @@ export function useUpdateSupplierPurchase() {
   });
 }
 
+export function useDeleteSupplierPurchase() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, supplierId }: { id: string; supplierId: string }) => {
+      const { error } = await supabase().from("supplier_purchases").delete().eq("id", id);
+      if (error) throw error;
+      return supplierId;
+    },
+    onSuccess: (supplierId) => qc.invalidateQueries({ queryKey: ["supplier-360", supplierId] }),
+  });
+}
+
 export function useSaveSupplierPayment() {
   const qc = useQueryClient();
   return useMutation({

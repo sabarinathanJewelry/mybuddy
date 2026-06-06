@@ -2,7 +2,7 @@
 
 import { Fragment, use, useState } from "react";
 import Link from "next/link";
-import { useSupplier360, useSaveSupplierPurchase, useUpdateSupplierPurchase, useSaveSupplierPayment, useUpdateSupplierPayment, useDeleteSupplierPayment, useConfirmSuspenseVa, useUpsertSupplier } from "@/modules/suppliers/api";
+import { useSupplier360, useSaveSupplierPurchase, useUpdateSupplierPurchase, useDeleteSupplierPurchase, useSaveSupplierPayment, useUpdateSupplierPayment, useDeleteSupplierPayment, useConfirmSuspenseVa, useUpsertSupplier } from "@/modules/suppliers/api";
 import { useGlobalDate } from "@/stores/global-date";
 import { useT } from "@/i18n";
 import { inr, grams, shortDate } from "@/lib/format";
@@ -21,9 +21,11 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const globalDate = useGlobalDate((s) => s.date);
   const [tab, setTab] = useState<Tab>("purchases");
   const { data: view, isLoading } = useSupplier360(id);
-  const savePurchase   = useSaveSupplierPurchase();
-  const updatePurchase = useUpdateSupplierPurchase();
-  const saveReturn     = useSaveSupplierPurchase();
+  const savePurchase    = useSaveSupplierPurchase();
+  const updatePurchase  = useUpdateSupplierPurchase();
+  const deletePurchase  = useDeleteSupplierPurchase();
+  const saveReturn      = useSaveSupplierPurchase();
+  const [deletingPurchaseId, setDeletingPurchaseId] = useState<string | null>(null);
 
   const blankEditPurchase = () => ({ purchase_date: "", bill_no: "", description: "", metal: "gold_22k", is_metal_balance: false, gross_wt: 0, tag_wt: 0, stone_wt: 0, stone_rate: 0, stone_to_cash: false, purity_pct: 91.6, rate: 0, charges_g: 0, charges_per_piece: 0, piece_count: 0, charges_to_cash: false, amount: 0, notes: "" });
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
@@ -843,7 +845,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                     );
                   }
                   return (
-                    <tr key={p.id} className={`border-b border-line last:border-0 hover:bg-canvas/50 group ${p.is_return ? "bg-ok/5" : ""}`}>
+                    <Fragment key={p.id}>
+                    <tr className={`border-b border-line last:border-0 hover:bg-canvas/50 group ${p.is_return ? "bg-ok/5" : ""}`}>
                       <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.purchase_date)}</td>
                       <td className="px-3 py-2.5 font-medium">
                         {p.description || <span className="text-ink-dim">—</span>}
@@ -856,14 +859,35 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                       <td className={`px-3 py-2.5 text-right font-mono font-semibold ${p.is_return ? "text-ok" : "text-gold"}`}>{p.is_return ? "-" : ""}{grams(p.pure_wt ?? 0)}</td>
                       <td className="px-3 py-2.5 text-right font-mono">{inr(p.amount)}</td>
                       <td className="px-3 py-2.5 text-right">
-                        <button onClick={() => openEditPurchase(p)}
-                          className="text-xs text-ink-dim border border-line rounded px-2 py-0.5 opacity-0 group-hover:opacity-100 hover:border-gold hover:text-gold transition-opacity">
-                          Edit
-                        </button>
+                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => { openEditPurchase(p); setDeletingPurchaseId(null); }}
+                            className="text-xs text-gold hover:underline">Edit</button>
+                          <button onClick={() => setDeletingPurchaseId(deletingPurchaseId === p.id ? null : p.id)}
+                            className="text-xs text-err hover:underline">Del</button>
+                        </div>
                       </td>
                     </tr>
-                  );
-                })}
+                    {deletingPurchaseId === p.id && (
+                      <tr className="border-b border-line bg-err/5">
+                        <td colSpan={8} className="px-4 py-3">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className="text-sm text-err">
+                              Delete {p.is_return ? "return" : "purchase"} — {p.description || shortDate(p.purchase_date)}, {grams(p.pure_wt)} pure wt?
+                            </span>
+                            <button
+                              disabled={deletePurchase.isPending}
+                              onClick={() => deletePurchase.mutate({ id: p.id, supplierId: id }, { onSuccess: () => setDeletingPurchaseId(null) })}
+                              className="text-xs bg-err text-white px-3 py-1.5 rounded-lg2 disabled:opacity-50">
+                              {deletePurchase.isPending ? "Deleting…" : "Yes, Delete"}
+                            </button>
+                            <button onClick={() => setDeletingPurchaseId(null)}
+                              className="text-xs border border-line px-3 py-1.5 rounded-lg2">Cancel</button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
                 {!view?.purchases.length && <tr><td colSpan={8} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
               </tbody>
             </table>
