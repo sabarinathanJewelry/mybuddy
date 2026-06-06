@@ -246,8 +246,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
             <p className="text-xs text-ink-dim">Total Purchased</p>
             {metalPurchasesG > 0 ? (
               <>
-                <p className="text-xl font-bold font-mono text-gold">{grams(metalPurchasesG)}</p>
-                <p className="text-xs text-ink-dim/60">metal balance · {inr(totalPurchased)} cash</p>
+                <p className="text-xl font-bold font-mono text-gold">{grams(metalSentG)}</p>
+                <p className="text-xs text-ink-dim/60">settled · {grams(metalPurchasesG)} received</p>
               </>
             ) : (
               <p className="text-xl font-bold text-ink">{inr(totalPurchased)}</p>
@@ -260,10 +260,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
               <span className="ml-1 text-xs font-normal">{metalBalanceG > 0 ? "owed" : metalBalanceG < 0 ? "over-sent" : ""}</span>
             </p>
             <p className="text-xs text-ink-dim/60 mt-0.5">
-              Opening {grams(goldOpeningG + silverOpeningG)} + Purchases {grams(metalPurchasesG)} = Owed {grams(metalOwedG)}
-            </p>
-            <p className="text-xs text-ink-dim/60">
-              Dispatched {grams(metalPhysicalG)} + Cut {grams(metalCutG)} = Sent {grams(metalSentG)}
+              Received {grams(metalOwedG)} − Settled {grams(metalSentG)}
             </p>
           </div>
           <div>
