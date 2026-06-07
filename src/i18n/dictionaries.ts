@@ -35,6 +35,7 @@ const en = {
   nav_announcements: "Announcements",
   nav_chat_mod: "Staff Chat",
   nav_my_incentive: "My Incentive",
+  nav_sop: "SOPs & Policies",
   nav_logout: "Logout",
   nav_info: "Info",
 

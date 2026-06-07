@@ -86,7 +86,7 @@ type DayRow = {
 
 type StaffInfo = { bio_user_id: string; name: string; shift: string };
 
-type PageTab = "today" | "monthly" | "requests" | "incentive" | "chat";
+type PageTab = "today" | "monthly" | "requests" | "incentive" | "chat" | "policies";
 
 // ── page ─────────────────────────────────────────────────────────────────────
 export default function MyAttendancePage() {
@@ -456,7 +456,8 @@ export default function MyAttendancePage() {
           { key: "monthly",   label: "Monthly" },
           { key: "requests",  label: "Requests" },
           ...(canSeeIncentive ? [{ key: "incentive", label: "Incentive" }] : []),
-          { key: "chat",      label: "Chat" },
+          { key: "chat",       label: "Chat" },
+          { key: "policies",   label: "Policies" },
         ] as { key: PageTab; label: string }[]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
@@ -1039,6 +1040,101 @@ export default function MyAttendancePage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── POLICIES TAB ──────────────────────────────────────────────────────── */}
+      {tab === "policies" && <PoliciesTab />}
+    </div>
+  );
+}
+
+// ── Policies tab (staff read-only view of SOP documents) ─────────────────────
+const CATEGORY_LABELS: Record<string, string> = {
+  shop_opening: "Shop Opening",
+  shop_closing: "Shop Closing",
+  sales:        "Sales",
+  exchange:     "Exchange",
+  return:       "Return",
+  general:      "General",
+};
+
+function PoliciesTab() {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [search, setSearch]         = useState("");
+
+  const { data: docs = [], isLoading } = useQuery({
+    queryKey: ["sop_docs_staff"],
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("sop_documents")
+        .select("id, title, category, content, sort_order, updated_at")
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as { id: string; title: string; category: string; content: string; sort_order: number; updated_at: string }[];
+    },
+  });
+
+  const filtered = docs.filter((d) =>
+    !search.trim() ||
+    d.title.toLowerCase().includes(search.toLowerCase()) ||
+    d.content.toLowerCase().includes(search.toLowerCase())
+  );
+
+  // Group by category
+  const categories = [...new Set(filtered.map((d) => d.category))];
+
+  return (
+    <div className="space-y-4">
+      <input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search policies…"
+        className="w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+      />
+
+      {isLoading ? (
+        <p className="text-ink-dim text-sm text-center py-8">Loading policies…</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-ink-dim text-sm text-center py-8">
+          {search ? "No matching policies." : "No policies published yet."}
+        </p>
+      ) : (
+        <div className="space-y-5">
+          {categories.map((cat) => {
+            const catDocs = filtered.filter((d) => d.category === cat);
+            return (
+              <div key={cat}>
+                <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide mb-2">
+                  {CATEGORY_LABELS[cat] ?? cat}
+                </p>
+                <div className="space-y-2">
+                  {catDocs.map((doc) => (
+                    <div key={doc.id} className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+                      <button
+                        onClick={() => setExpandedId(expandedId === doc.id ? null : doc.id)}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-canvas/40 transition-colors"
+                      >
+                        <span className="text-ink-dim text-xs shrink-0">{expandedId === doc.id ? "▼" : "▶"}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-sm">{doc.title}</p>
+                          <p className="text-[10px] text-ink-dim mt-0.5">
+                            Updated {new Date(doc.updated_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                          </p>
+                        </div>
+                      </button>
+                      {expandedId === doc.id && (
+                        <div className="border-t border-line bg-canvas px-5 py-4">
+                          <pre className="text-sm text-ink whitespace-pre-wrap font-sans leading-relaxed">{doc.content}</pre>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
