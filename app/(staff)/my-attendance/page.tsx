@@ -678,6 +678,38 @@ export default function MyAttendancePage() {
             ))}
           </div>
 
+          {/* Weekend absence alert */}
+          {(() => {
+            const approvedLeaveDates = new Set(
+              (myLeaves as LeaveRequest[])
+                .filter(l => l.status === "approved")
+                .map(l => l.leave_date)
+            );
+            const weekendAbsent = rows.filter(r => {
+              if (r.status !== "leave") return false;
+              const [y, mo, d] = r.date.split("-").map(Number);
+              const dow = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
+              return (dow === 0 || dow === 6) && !approvedLeaveDates.has(r.date);
+            });
+            if (!weekendAbsent.length) return null;
+            return (
+              <div className="bg-err/10 border border-err/20 rounded-xl px-4 py-3 space-y-1">
+                <p className="text-sm font-semibold text-err">Weekend Absence Alert</p>
+                <p className="text-xs text-ink">
+                  {weekendAbsent.length} weekend day(s) absent without approved leave this month:
+                </p>
+                <ul className="text-xs text-ink-dim space-y-0.5 ml-2">
+                  {weekendAbsent.map(r => (
+                    <li key={r.date}>• {dayLabel(r.date)}</li>
+                  ))}
+                </ul>
+                <p className="text-xs text-err font-medium mt-1">
+                  Unapproved weekend absence may result in 2× salary deduction (admin discretion applies).
+                </p>
+              </div>
+            );
+          })()}
+
           {/* Day-by-day table */}
           {loading ? (
             <div className="text-center py-12 text-ink-dim text-sm">Loading…</div>

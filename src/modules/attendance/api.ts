@@ -748,6 +748,76 @@ export function useDecideLeaveRequest() {
   });
 }
 
+export function useDeleteLeaveRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase().from("leave_requests").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leave-requests-all"] });
+      qc.invalidateQueries({ queryKey: ["leave-requests-mine"] });
+      qc.invalidateQueries({ queryKey: ["leave-pending-count"] });
+      qc.invalidateQueries({ queryKey: ["leaves-by-date"] });
+    },
+  });
+}
+
+export function useApprovedPermsByMonth(month: string) {
+  return useQuery({
+    queryKey: ["perms-approved-month", month],
+    enabled: !!month,
+    queryFn: async () => {
+      const [y, m] = month.split("-");
+      const start = `${month}-01`;
+      const end   = `${month}-${new Date(Number(y), Number(m), 0).getDate()}`;
+      const { data, error } = await supabase()
+        .from("permission_requests")
+        .select("bio_user_id, permission_date, late_minutes")
+        .gte("permission_date", start)
+        .lte("permission_date", end)
+        .eq("status", "approved");
+      if (error) throw error;
+      return (data ?? []) as { bio_user_id: string; permission_date: string; late_minutes: number }[];
+    },
+  });
+}
+
+export function useApprovedPermsByDate(date: string) {
+  return useQuery({
+    queryKey: ["perms-approved-date", date],
+    enabled: !!date,
+    queryFn: async () => {
+      const { data } = await supabase()
+        .from("permission_requests")
+        .select("bio_user_id, late_minutes")
+        .eq("permission_date", date)
+        .eq("status", "approved");
+      return (data ?? []) as { bio_user_id: string; late_minutes: number }[];
+    },
+  });
+}
+
+export function useApprovedLeavesByMonth(month: string) {
+  return useQuery({
+    queryKey: ["leaves-approved-month", month],
+    enabled: !!month,
+    queryFn: async () => {
+      const [y, m] = month.split("-");
+      const start = `${month}-01`;
+      const end   = `${month}-${new Date(Number(y), Number(m), 0).getDate()}`;
+      const { data } = await supabase()
+        .from("leave_requests")
+        .select("bio_user_id, leave_date")
+        .gte("leave_date", start)
+        .lte("leave_date", end)
+        .eq("status", "approved");
+      return (data ?? []) as { bio_user_id: string; leave_date: string }[];
+    },
+  });
+}
+
 // ── App notifications ─────────────────────────────────────────────────────────
 
 export type AppNotification = {

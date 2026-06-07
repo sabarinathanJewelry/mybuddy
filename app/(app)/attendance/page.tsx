@@ -8,9 +8,10 @@ import {
   useMonthlyAttendanceSummary, useAllPermissions, useDecidePermission,
   useKioskSequence, useSaveKioskSequence, useKioskSecret, useSaveKioskSecret, useLastSyncTime,
   useLeavesByDate, useAllLeaveRequests, useMyLeaveRequests, usePendingLeaveCount,
-  useMyStaffProfile, useSubmitLeaveRequest, useDecideLeaveRequest,
+  useMyStaffProfile, useSubmitLeaveRequest, useDecideLeaveRequest, useDeleteLeaveRequest,
   useAppNotifications, useMarkNotificationRead, useMarkAllNotificationsRead,
   useStaffAdvances, useSaveStaffAdvance, useDeleteStaffAdvance,
+  useApprovedPermsByDate, useApprovedPermsByMonth, useApprovedLeavesByMonth,
   type StaffMember, type MonthlyEmployeeSummary, type PermissionRequest, type KioskTap,
   type LeaveRequest, type AppNotification,
 } from "@/modules/attendance/api";
@@ -74,6 +75,8 @@ function MonthlyTab() {
   const [otRateMode, setOtRateMode]         = useState<"hour" | "minute">("hour");
 
   const { data = [], isLoading, refetch, isFetching } = useMonthlyAttendanceSummary(month);
+  const { data: monthPerms  = [] } = useApprovedPermsByMonth(month);
+  const { data: monthLeaves = [] } = useApprovedLeavesByMonth(month);
   const update = useUpdateStaff();
   const qc     = useQueryClient();
 
@@ -88,17 +91,39 @@ function MonthlyTab() {
     const [y, mo, d] = dateStr.split("-").map(Number);
     return [0, 6].includes(new Date(Date.UTC(y, mo - 1, d)).getUTCDay());
   }
+
+  // Dates where this staff has an approved permission (late forgiven)
+  function permDates(bio_user_id: string): Set<string> {
+    return new Set(monthPerms.filter(p => p.bio_user_id === bio_user_id).map(p => p.permission_date));
+  }
+  // Late days excluding permission-forgiven days
+  function effectiveLateDays(r: MonthlyEmployeeSummary): number {
+    const pd = permDates(r.bio_user_id);
+    return r.daily.filter(d => d.is_late && !pd.has(d.date)).length;
+  }
+  function effectiveLateMins(r: MonthlyEmployeeSummary): number {
+    const pd = permDates(r.bio_user_id);
+    return r.daily.filter(d => d.is_late && !pd.has(d.date)).reduce((s, d) => s + d.late_minutes, 0);
+  }
+  // Weekend absences without approved leave
+  function weekendAbsentDays(r: MonthlyEmployeeSummary): string[] {
+    const approvedLeaveDates = new Set(monthLeaves.filter(l => l.bio_user_id === r.bio_user_id).map(l => l.leave_date));
+    return r.daily.filter(d => isWeekend(d.date) && !d.first_in && !approvedLeaveDates.has(d.date)).map(d => d.date);
+  }
+
   function netLateMins(r: MonthlyEmployeeSummary): number {
-    return equalizeOt ? Math.max(0, r.total_late_minutes - r.total_ot_minutes) : r.total_late_minutes;
+    const lm = effectiveLateMins(r);
+    return equalizeOt ? Math.max(0, lm - r.total_ot_minutes) : lm;
   }
   function netOtMins(r: MonthlyEmployeeSummary): number {
-    return equalizeOt ? Math.max(0, r.total_ot_minutes - r.total_late_minutes) : r.total_ot_minutes;
+    return equalizeOt ? Math.max(0, r.total_ot_minutes - effectiveLateMins(r)) : r.total_ot_minutes;
   }
   function calcFine(r: MonthlyEmployeeSummary): number {
     if (!applyFine) return 0;
+    const eld = effectiveLateDays(r);
     const nlm = netLateMins(r);
-    if (nlm <= 0) return 0;
-    return fineMode === "day" ? lateFineAmt * r.late_days : lateFineAmt * nlm;
+    if (eld <= 0 && nlm <= 0) return 0;
+    return fineMode === "day" ? lateFineAmt * eld : lateFineAmt * nlm;
   }
   function calcOtPay(r: MonthlyEmployeeSummary): number {
     if (!applyOt) return 0;
@@ -242,6 +267,31 @@ function MonthlyTab() {
         </p>
       </div>
 
+      {/* Weekend absence alerts */}
+      {!isLoading && data.length > 0 && (() => {
+        const alerts = data.map(r => ({ r, days: weekendAbsentDays(r) })).filter(x => x.days.length > 0);
+        if (!alerts.length) return null;
+        return (
+          <div className="bg-warn/5 border border-warn/30 rounded-xl p-4 space-y-2">
+            <p className="text-xs font-semibold text-warn uppercase tracking-wide">
+              Weekend Absences — {alerts.length} staff (without approved leave)
+            </p>
+            <p className="text-xs text-ink-dim">These staff were absent on Saturday/Sunday without an approved leave. Per policy, weekend absences attract 2× salary deduction. You can choose to apply or waive this below.</p>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {alerts.map(({ r, days }) => (
+                <div key={r.bio_user_id} className="bg-white border border-warn/30 rounded-lg px-3 py-2 text-xs">
+                  <span className="font-semibold text-ink">{r.name}</span>
+                  <span className="text-warn ml-1.5">{days.length} day{days.length > 1 ? "s" : ""}</span>
+                  <span className="text-ink-dim ml-1">— potential −{inr(Math.round(days.length * r.per_day_salary * 2))}</span>
+                  <div className="text-[10px] text-ink-dim mt-0.5">{days.map(d => dayLabel(d)).join(", ")}</div>
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-ink-dim">Enable "Double deduction for Sat/Sun absent" in settings above to include this in Net Pay.</p>
+          </div>
+        );
+      })()}
+
       {/* Table */}
       {isLoading ? (
         <p className="text-ink-dim text-sm text-center py-8">Loading…</p>
@@ -308,11 +358,14 @@ function MonthlyTab() {
                       <td className={`px-3 py-2.5 text-right font-medium ${r.excess_leave_days > 0 ? "text-err" : "text-ink-dim"}`}>
                         {r.excess_leave_days > 0 ? r.excess_leave_days : "—"}
                       </td>
-                      <td className={`px-3 py-2.5 text-right font-medium ${r.late_days > 0 ? "text-warn" : "text-ink-dim"}`}>
-                        {r.late_days > 0 ? r.late_days : "—"}
+                      <td className={`px-3 py-2.5 text-right font-medium ${effectiveLateDays(r) > 0 ? "text-warn" : "text-ink-dim"}`}>
+                        {effectiveLateDays(r) > 0 ? effectiveLateDays(r) : "—"}
+                        {permDates(r.bio_user_id).size > 0 && (
+                          <span className="block text-[9px] text-ok font-normal">{permDates(r.bio_user_id).size} perm</span>
+                        )}
                       </td>
-                      <td className={`px-3 py-2.5 text-right text-xs ${r.total_late_minutes > 0 ? "text-warn" : "text-ink-dim"}`}>
-                        {formatMins(r.total_late_minutes)}
+                      <td className={`px-3 py-2.5 text-right text-xs ${effectiveLateMins(r) > 0 ? "text-warn" : "text-ink-dim"}`}>
+                        {formatMins(effectiveLateMins(r))}
                       </td>
                       <td className={`px-3 py-2.5 text-right text-xs ${r.total_ot_minutes > 0 ? "text-ok" : "text-ink-dim"}`}>
                         {formatMins(r.total_ot_minutes)}
@@ -505,8 +558,11 @@ function MonthlyTab() {
                                   ) : null;
                                 })()}
                                 <div className="flex justify-between">
-                                  <span className={r.late_days > 0 ? "text-warn" : "text-ink-dim"}>
-                                    Late ({r.late_days} day{r.late_days !== 1 ? "s" : ""}, {formatMins(r.total_late_minutes)})
+                                  <span className={effectiveLateDays(r) > 0 ? "text-warn" : "text-ink-dim"}>
+                                    Late ({effectiveLateDays(r)} day{effectiveLateDays(r) !== 1 ? "s" : ""}, {formatMins(effectiveLateMins(r))})
+                                    {permDates(r.bio_user_id).size > 0 && (
+                                      <span className="ml-1 text-ok text-[10px]">({permDates(r.bio_user_id).size} permission-forgiven)</span>
+                                    )}
                                   </span>
                                 </div>
                                 {equalizeOt && r.total_ot_minutes > 0 && (
@@ -1213,6 +1269,7 @@ function LeavesTab({ isAdmin, myBioUserId, myName }: {
   const { data: allRequests = [], isLoading, error: listError } = useAllLeaveRequests();
   const submitLeave   = useSubmitLeaveRequest();
   const decideLeave   = useDecideLeaveRequest();
+  const deleteLeave   = useDeleteLeaveRequest();
 
   const [filter, setFilter]   = useState<"all" | "pending" | "approved" | "rejected">("all");
   const [noteMap, setNoteMap] = useState<Record<string, string>>({});
@@ -1367,6 +1424,12 @@ function LeavesTab({ isAdmin, myBioUserId, myName }: {
                       {r.status !== "pending" && r.admin_note && (
                         <span className="text-xs text-ink-dim">{r.admin_note}</span>
                       )}
+                      <button
+                        onClick={() => { if (confirm("Delete this leave request permanently?")) deleteLeave.mutate(r.id); }}
+                        disabled={deleteLeave.isPending}
+                        className="mt-1 text-[11px] text-err hover:underline disabled:opacity-40">
+                        Delete
+                      </button>
                     </td>
                   )}
                 </tr>
@@ -1806,6 +1869,7 @@ export default function AttendancePage() {
   const qc = useQueryClient();
   const { data = [], isLoading, refetch } = useAttendanceByDate(date, activeOnly);
   const { data: leavesByDate = [] }       = useLeavesByDate(date);
+  const { data: dailyPerms = [] }         = useApprovedPermsByDate(date);
 
   const syncFromDevice = useCallback(async () => {
     setSyncing(true);
@@ -2060,7 +2124,12 @@ export default function AttendancePage() {
                                 : <span className="text-[10px] font-semibold bg-info/10 text-info px-2 py-0.5 rounded-full">In</span>
                               : <span className="text-[10px] font-semibold bg-err/10 text-err px-2 py-0.5 rounded-full">Absent</span>
                             }
-                            {r.is_late && <span className="text-[9px] font-semibold text-warn leading-none">Late</span>}
+                            {r.is_late && (() => {
+                              const hasPerm = dailyPerms.some(p => p.bio_user_id === r.bio_user_id);
+                              return hasPerm
+                                ? <span className="text-[9px] font-semibold text-ok leading-none">Permission</span>
+                                : <span className="text-[9px] font-semibold text-warn leading-none">Late</span>;
+                            })()}
                           </div>
                         </td>
                         <td className="px-3 py-2.5 text-right font-mono text-ok">{formatTime(r.first_in)}</td>
