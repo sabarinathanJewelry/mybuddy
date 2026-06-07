@@ -32,6 +32,7 @@ const en = {
   nav_incentive_calc: "Incentive Calc",
   nav_payroll: "Payroll",
   nav_announcements: "Announcements",
+  nav_chat_mod: "Staff Chat",
   nav_my_incentive: "My Incentive",
   nav_logout: "Logout",
   nav_info: "Info",

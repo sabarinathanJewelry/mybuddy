@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
@@ -58,6 +58,15 @@ function dayLabel(dateStr: string) {
   const dow = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
   return `${String(d).padStart(2, "0")} ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dow]}`;
 }
+// ── chat ─────────────────────────────────────────────────────────────────────
+interface ChatMessage {
+  id: string; sender_id: string; sender_name: string;
+  message: string; is_deleted: boolean; edited_at: string | null; created_at: string;
+}
+function chatTime(ts: string) {
+  return new Date(ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+}
+
 // ── incentive helpers ─────────────────────────────────────────────────────────
 interface MasterEntry { code: string; rate: number; minWastage: number }
 
@@ -77,7 +86,7 @@ type DayRow = {
 
 type StaffInfo = { bio_user_id: string; name: string; shift: string };
 
-type PageTab = "today" | "monthly" | "requests" | "incentive";
+type PageTab = "today" | "monthly" | "requests" | "incentive" | "chat";
 
 // ── page ─────────────────────────────────────────────────────────────────────
 export default function MyAttendancePage() {
@@ -94,6 +103,17 @@ export default function MyAttendancePage() {
   const [canSeeIncentive, setCanSeeIncentive] = useState(false);
   const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
   const [masterSearch, setMasterSearch]       = useState("");
+
+  // Chat state
+  const [senderId, setSenderId]         = useState<string | null>(null);
+  const [senderName, setSenderName]     = useState("");
+  const [senderRole, setSenderRole]     = useState<string>("");
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput]       = useState("");
+  const [chatSending, setChatSending]   = useState(false);
+  const [editingId, setEditingId]       = useState<string | null>(null);
+  const [editText, setEditText]         = useState("");
+  const chatBottomRef                   = useRef<HTMLDivElement>(null);
 
   const { data: lastSyncIso }   = useLastSyncTime();
 
@@ -163,10 +183,13 @@ export default function MyAttendancePage() {
     const client = supabase();
     client.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
+        setSenderId(user.id);
         const { data: profile } = await client
-          .from("profiles").select("repair_access, incentive_access").eq("id", user.id).single();
+          .from("profiles").select("repair_access, incentive_access, display_name, role").eq("id", user.id).single();
         if (profile?.repair_access === true) setCanSeeRepairs(true);
         if (profile?.incentive_access === true) setCanSeeIncentive(true);
+        if (profile?.display_name) setSenderName(profile.display_name);
+        if (profile?.role) setSenderRole(profile.role);
       }
     });
     client
@@ -300,6 +323,61 @@ export default function MyAttendancePage() {
     },
   });
 
+  // Chat — load history + subscribe to realtime
+  useEffect(() => {
+    const client = supabase();
+    client.from("chat_messages")
+      .select("*").order("created_at", { ascending: true }).limit(200)
+      .then(({ data }) => setChatMessages((data ?? []) as ChatMessage[]));
+
+    const channel = client.channel("staff_chat")
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, (payload) => {
+        if (payload.eventType === "INSERT")
+          setChatMessages((prev) => [...prev, payload.new as ChatMessage]);
+        else if (payload.eventType === "UPDATE")
+          setChatMessages((prev) => prev.map((m) => m.id === payload.new.id ? payload.new as ChatMessage : m));
+        else if (payload.eventType === "DELETE")
+          setChatMessages((prev) => prev.filter((m) => m.id !== (payload.old as any).id));
+      })
+      .subscribe();
+
+    return () => { client.removeChannel(channel); };
+  }, []);
+
+  // Auto-scroll chat to bottom when messages change
+  useEffect(() => {
+    if (tab === "chat") chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages, tab]);
+
+  async function sendChatMessage() {
+    if (!chatInput.trim() || !senderId || !senderName) return;
+    setChatSending(true);
+    await supabase().from("chat_messages").insert({
+      sender_id: senderId,
+      sender_name: senderName,
+      message: chatInput.trim(),
+    });
+    setChatInput("");
+    setChatSending(false);
+  }
+
+  async function softDeleteMessage(id: string) {
+    await supabase().from("chat_messages").update({ is_deleted: true }).eq("id", id);
+  }
+
+  async function hardDeleteMessage(id: string) {
+    if (!confirm("Permanently delete this message?")) return;
+    await supabase().from("chat_messages").delete().eq("id", id);
+  }
+
+  async function saveEditMessage(id: string) {
+    if (!editText.trim()) return;
+    await supabase().from("chat_messages")
+      .update({ message: editText.trim(), edited_at: new Date().toISOString() })
+      .eq("id", id);
+    setEditingId(null);
+  }
+
   function shiftMonth(dir: -1 | 1) {
     const [y, m] = month.split("-").map(Number);
     const next = m + dir;
@@ -378,6 +456,7 @@ export default function MyAttendancePage() {
           { key: "monthly",   label: "Monthly" },
           { key: "requests",  label: "Requests" },
           ...(canSeeIncentive ? [{ key: "incentive", label: "Incentive" }] : []),
+          { key: "chat",      label: "Chat" },
         ] as { key: PageTab; label: string }[]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
@@ -863,6 +942,103 @@ export default function MyAttendancePage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── CHAT TAB ──────────────────────────────────────────────────────────── */}
+      {tab === "chat" && (
+        <div className="flex flex-col gap-3" style={{ height: "65vh" }}>
+          {/* Messages area */}
+          <div className="flex-1 overflow-y-auto bg-white rounded-xl border border-line shadow-soft p-3 space-y-1 min-h-0">
+            {chatMessages.length === 0 && (
+              <p className="text-center text-ink-dim text-sm py-8">No messages yet. Say hi!</p>
+            )}
+            {chatMessages.map((m) => {
+              const isOwn = m.sender_id === senderId;
+              const isAdmin = senderRole === "admin";
+              const canEdit = (isOwn || isAdmin) && !m.is_deleted;
+              const canDelete = isOwn || isAdmin;
+              return (
+                <div key={m.id} className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-1`}>
+                  <div className={`max-w-[78%] flex flex-col ${isOwn ? "items-end" : "items-start"}`}>
+                    {!isOwn && !m.is_deleted && (
+                      <span className="text-[10px] font-semibold text-gold-dark px-1 mb-0.5">{m.sender_name}</span>
+                    )}
+                    <div className={`rounded-2xl px-3 py-2 text-sm ${
+                      m.is_deleted
+                        ? "bg-canvas border border-line text-ink-dim italic text-xs"
+                        : isOwn
+                        ? "bg-gold text-white"
+                        : "bg-canvas border border-line text-ink"
+                    }`}>
+                      {editingId === m.id ? (
+                        <div className="flex gap-2 items-center min-w-[180px]">
+                          <input
+                            value={editText}
+                            onChange={(e) => setEditText(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") saveEditMessage(m.id);
+                              if (e.key === "Escape") setEditingId(null);
+                            }}
+                            className="flex-1 bg-white border border-line rounded px-2 py-0.5 text-xs text-ink focus:outline-none"
+                            autoFocus
+                          />
+                          <button onClick={() => saveEditMessage(m.id)} className="text-xs text-ok font-semibold">Save</button>
+                          <button onClick={() => setEditingId(null)} className="text-xs text-ink-dim">✕</button>
+                        </div>
+                      ) : m.is_deleted ? (
+                        "This message was deleted"
+                      ) : (
+                        <span className="whitespace-pre-wrap break-words">{m.message}</span>
+                      )}
+                    </div>
+                    <div className={`flex items-center gap-2 mt-0.5 px-1 ${isOwn ? "flex-row-reverse" : "flex-row"}`}>
+                      <span className="text-[10px] text-ink-dim">{chatTime(m.created_at)}</span>
+                      {m.edited_at && !m.is_deleted && (
+                        <span className="text-[10px] text-ink-dim">(edited)</span>
+                      )}
+                      {canEdit && editingId !== m.id && (
+                        <button onClick={() => { setEditingId(m.id); setEditText(m.message); }}
+                          className="text-[10px] text-ink-dim hover:text-info">Edit</button>
+                      )}
+                      {canDelete && !m.is_deleted && (
+                        <button onClick={() => softDeleteMessage(m.id)}
+                          className="text-[10px] text-ink-dim hover:text-err">Delete</button>
+                      )}
+                      {isAdmin && m.is_deleted && (
+                        <button onClick={() => hardDeleteMessage(m.id)}
+                          className="text-[10px] text-err hover:underline">Remove</button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={chatBottomRef} />
+          </div>
+
+          {/* Input */}
+          <div className="shrink-0">
+            <div className="flex gap-2 bg-white border border-line rounded-xl px-3 py-2">
+              <input
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
+                }}
+                placeholder={senderName ? `Message as ${senderName}…` : "Loading…"}
+                disabled={!senderName}
+                className="flex-1 text-sm focus:outline-none bg-transparent"
+              />
+              <button
+                onClick={sendChatMessage}
+                disabled={chatSending || !chatInput.trim() || !senderName}
+                className="bg-gold text-white px-4 py-1.5 rounded-lg2 text-sm font-medium disabled:opacity-40"
+              >
+                Send
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
