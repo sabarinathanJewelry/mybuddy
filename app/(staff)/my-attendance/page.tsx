@@ -258,6 +258,20 @@ export default function MyAttendancePage() {
       });
   }, [staff, month]);
 
+  const { data: announcements = [] } = useQuery({
+    queryKey: ["announcements_staff"],
+    queryFn: async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data } = await supabase()
+        .from("announcements")
+        .select("id, title, body")
+        .eq("is_active", true)
+        .or(`expires_at.is.null,expires_at.gte.${today}`)
+        .order("created_at", { ascending: false });
+      return (data ?? []) as { id: string; title: string; body: string | null }[];
+    },
+  });
+
   const { data: incSheets = [], isLoading: incSheetsLoading } = useQuery({
     queryKey: ["incentive_sheets_list_staff"],
     enabled: canSeeIncentive,
@@ -343,6 +357,18 @@ export default function MyAttendancePage() {
         <p className="text-xs text-ink-dim text-center -mt-1">
           Last updated: <strong>{new Date(lastSyncIso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</strong>
         </p>
+      )}
+
+      {/* Announcements */}
+      {announcements.length > 0 && (
+        <div className="space-y-2">
+          {announcements.map((a) => (
+            <div key={a.id} className="bg-gold/10 border border-gold/30 rounded-xl px-4 py-3">
+              <p className="text-sm font-semibold text-gold-dark">📢 {a.title}</p>
+              {a.body && <p className="text-sm text-ink mt-1 whitespace-pre-wrap">{a.body}</p>}
+            </div>
+          ))}
+        </div>
       )}
 
       {/* Tabs */}

@@ -38,6 +38,7 @@ const ADMIN_NAV = [
   { href: "/admin/products",       icon: "📦", key: "nav_products" as const },
   { href: "/admin/incentive-calc", icon: "🧮", key: "nav_incentive_calc" as const },
   { href: "/admin/payroll",        icon: "💵", key: "nav_payroll" as const },
+  { href: "/admin/announcements",  icon: "📢", key: "nav_announcements" as const },
 ];
 
 function useRepairAlertCount(enabled: boolean) {
