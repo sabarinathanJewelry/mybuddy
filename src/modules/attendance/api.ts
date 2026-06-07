@@ -899,6 +899,141 @@ export function useMarkAllNotificationsRead() {
   });
 }
 
+// ── Outside Duties ────────────────────────────────────────────────────────────
+
+export type OutsideDuty = {
+  id: string;
+  bio_user_id: string;
+  duty_date: string;
+  description: string;
+  expected_arrival: string | null;
+  status: "pending" | "approved" | "rejected";
+  initiated_by: "admin" | "staff";
+  admin_note: string | null;
+  created_at: string;
+  staff?: { name: string; designation: string };
+};
+
+export function useOutsideDutiesByDate(date: string) {
+  return useQuery<OutsideDuty[]>({
+    queryKey: ["outside-duties-date", date],
+    enabled: !!date,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("outside_duties")
+        .select("*, staff(name, designation)")
+        .eq("duty_date", date);
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
+export function useOutsideDutiesByMonth(month: string) {
+  return useQuery<{ bio_user_id: string; duty_date: string }[]>({
+    queryKey: ["outside-duties-month", month],
+    enabled: !!month,
+    queryFn: async () => {
+      const [y, m] = month.split("-");
+      const start = `${month}-01`;
+      const end   = `${month}-${new Date(Number(y), Number(m), 0).getDate()}`;
+      const { data } = await supabase()
+        .from("outside_duties")
+        .select("bio_user_id, duty_date")
+        .gte("duty_date", start)
+        .lte("duty_date", end)
+        .eq("status", "approved");
+      return (data ?? []) as any[];
+    },
+  });
+}
+
+export function useAllOutsideDuties() {
+  return useQuery<OutsideDuty[]>({
+    queryKey: ["outside-duties-all"],
+    refetchOnMount: "always",
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("outside_duties")
+        .select("*, staff(name, designation)")
+        .order("duty_date", { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
+export function useMyOutsideDuties(bioUserId: string | null) {
+  return useQuery<OutsideDuty[]>({
+    queryKey: ["outside-duties-mine", bioUserId],
+    enabled: !!bioUserId,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("outside_duties")
+        .select("*")
+        .eq("bio_user_id", bioUserId!)
+        .order("duty_date", { ascending: false })
+        .limit(30);
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
+export function useCreateOutsideDuty() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      bio_user_id: string;
+      duty_date: string;
+      description: string;
+      expected_arrival?: string;
+      initiated_by: "admin" | "staff";
+      status?: "pending" | "approved";
+    }) => {
+      const { error } = await supabase().from("outside_duties").insert({
+        bio_user_id:      payload.bio_user_id,
+        duty_date:        payload.duty_date,
+        description:      payload.description,
+        expected_arrival: payload.expected_arrival || null,
+        initiated_by:     payload.initiated_by,
+        status:           payload.status ?? "pending",
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["outside-duties-all"] });
+      qc.invalidateQueries({ queryKey: ["outside-duties-date"] });
+      qc.invalidateQueries({ queryKey: ["outside-duties-month"] });
+      qc.invalidateQueries({ queryKey: ["outside-duties-mine"] });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["monthly-attendance"] });
+    },
+  });
+}
+
+export function useDecideOutsideDuty() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status, admin_note }: { id: string; status: "approved" | "rejected"; admin_note?: string }) => {
+      const { error } = await supabase()
+        .from("outside_duties")
+        .update({ status, admin_note: admin_note || null })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["outside-duties-all"] });
+      qc.invalidateQueries({ queryKey: ["outside-duties-date"] });
+      qc.invalidateQueries({ queryKey: ["outside-duties-month"] });
+      qc.invalidateQueries({ queryKey: ["outside-duties-mine"] });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["monthly-attendance"] });
+    },
+  });
+}
+
 // ── Staff advances ────────────────────────────────────────────────────────────
 
 export type StaffAdvance = {

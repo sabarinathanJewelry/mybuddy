@@ -12,14 +12,16 @@ import {
   useAppNotifications, useMarkNotificationRead, useMarkAllNotificationsRead,
   useStaffAdvances, useSaveStaffAdvance, useDeleteStaffAdvance,
   useApprovedPermsByDate, useApprovedPermsByMonth, useApprovedLeavesByMonth,
+  useOutsideDutiesByDate, useOutsideDutiesByMonth, useAllOutsideDuties,
+  useCreateOutsideDuty, useDecideOutsideDuty,
   type StaffMember, type MonthlyEmployeeSummary, type PermissionRequest, type KioskTap,
-  type LeaveRequest, type AppNotification,
+  type LeaveRequest, type AppNotification, type OutsideDuty,
 } from "@/modules/attendance/api";
 import { useKiosk } from "@/stores/kiosk";
 import { useAuth } from "@/stores/auth";
 import { shortDate, inr } from "@/lib/format";
 
-type PageTab = "attendance" | "staff" | "monthly" | "requests" | "leaves" | "chat" | "announcements";
+type PageTab = "attendance" | "staff" | "monthly" | "requests" | "leaves" | "duties" | "chat" | "announcements";
 
 interface ChatMsg { id: string; sender_id: string; sender_name: string; message: string; is_deleted: boolean; edited_at: string | null; created_at: string }
 
@@ -77,6 +79,7 @@ function MonthlyTab() {
   const { data = [], isLoading, refetch, isFetching } = useMonthlyAttendanceSummary(month);
   const { data: monthPerms  = [] } = useApprovedPermsByMonth(month);
   const { data: monthLeaves = [] } = useApprovedLeavesByMonth(month);
+  const { data: monthDuties = [] } = useOutsideDutiesByMonth(month);
   const update = useUpdateStaff();
   const qc     = useQueryClient();
 
@@ -96,14 +99,20 @@ function MonthlyTab() {
   function permDates(bio_user_id: string): Set<string> {
     return new Set(monthPerms.filter(p => p.bio_user_id === bio_user_id).map(p => p.permission_date));
   }
-  // Late days excluding permission-forgiven days
+  // Dates where this staff has an approved outside duty
+  function dutyDates(bio_user_id: string): Set<string> {
+    return new Set(monthDuties.filter(d => d.bio_user_id === bio_user_id).map(d => d.duty_date));
+  }
+  // Late days excluding permission-forgiven and outside-duty days
   function effectiveLateDays(r: MonthlyEmployeeSummary): number {
     const pd = permDates(r.bio_user_id);
-    return r.daily.filter(d => d.is_late && !pd.has(d.date)).length;
+    const dd = dutyDates(r.bio_user_id);
+    return r.daily.filter(d => d.is_late && !pd.has(d.date) && !dd.has(d.date)).length;
   }
   function effectiveLateMins(r: MonthlyEmployeeSummary): number {
     const pd = permDates(r.bio_user_id);
-    return r.daily.filter(d => d.is_late && !pd.has(d.date)).reduce((s, d) => s + d.late_minutes, 0);
+    const dd = dutyDates(r.bio_user_id);
+    return r.daily.filter(d => d.is_late && !pd.has(d.date) && !dd.has(d.date)).reduce((s, d) => s + d.late_minutes, 0);
   }
   // Weekend absences without approved leave
   function weekendAbsentDays(r: MonthlyEmployeeSummary): string[] {
@@ -1252,6 +1261,98 @@ function NotificationBell({ notifications, bioUserId }: {
   );
 }
 
+// ── Outside Duties tab ───────────────────────────────────────────────────────
+const DUTY_STATUS_STYLE: Record<string, string> = {
+  pending:  "bg-warn/10 text-warn",
+  approved: "bg-ok/10 text-ok",
+  rejected: "bg-err/10 text-err",
+};
+
+function DutiesTab() {
+  const { data: duties = [], isLoading } = useAllOutsideDuties();
+  const decide = useDecideOutsideDuty();
+  const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
+  const [noteMap, setNoteMap] = useState<Record<string, string>>({});
+
+  const filtered = duties.filter(d => filter === "all" || d.status === filter);
+  const pendingCount = duties.filter(d => d.status === "pending").length;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex rounded-lg overflow-hidden border border-line text-xs w-fit">
+        {(["pending","approved","rejected","all"] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`px-3 py-1.5 font-medium capitalize transition-colors ${filter === f ? "bg-gold text-white" : "bg-white text-ink-dim hover:bg-canvas"}`}>
+            {f === "pending" ? `Pending (${pendingCount})` : f === "all" ? `All (${duties.length})` : f.charAt(0).toUpperCase() + f.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {isLoading ? <p className="text-ink-dim text-sm">Loading…</p> : (
+        <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+          <table className="w-full text-sm" style={{ minWidth: "700px" }}>
+            <thead>
+              <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                <th className="text-left px-4 py-2.5">Staff</th>
+                <th className="text-left px-3 py-2.5">Date</th>
+                <th className="text-left px-3 py-2.5">Description</th>
+                <th className="text-left px-3 py-2.5">Arrive by</th>
+                <th className="text-center px-3 py-2.5">By</th>
+                <th className="text-center px-3 py-2.5">Status</th>
+                <th className="px-3 py-2.5" />
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((d: OutsideDuty) => (
+                <tr key={d.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                  <td className="px-4 py-2.5 font-medium">{(d as any).staff?.name ?? d.bio_user_id}</td>
+                  <td className="px-3 py-2.5 text-ink-dim">{shortDate(d.duty_date)}</td>
+                  <td className="px-3 py-2.5 max-w-[200px] truncate">{d.description}</td>
+                  <td className="px-3 py-2.5 text-ink-dim font-mono text-xs">
+                    {d.expected_arrival ? d.expected_arrival.slice(0, 5) : "—"}
+                  </td>
+                  <td className="px-3 py-2.5 text-center">
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${d.initiated_by === "admin" ? "bg-info/10 text-info" : "bg-canvas text-ink-dim"}`}>
+                      {d.initiated_by}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-center">
+                    <div>
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${DUTY_STATUS_STYLE[d.status]}`}>
+                        {d.status}
+                      </span>
+                      {d.admin_note && <p className="text-[10px] text-ink-dim mt-0.5">{d.admin_note}</p>}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-right">
+                    {d.status === "pending" && (
+                      <div className="flex items-center gap-1 justify-end">
+                        <input type="text" placeholder="note (opt.)"
+                          value={noteMap[d.id] ?? ""}
+                          onChange={e => setNoteMap(m => ({ ...m, [d.id]: e.target.value }))}
+                          className="border border-line rounded px-2 py-0.5 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-gold" />
+                        <button onClick={() => decide.mutate({ id: d.id, status: "approved", admin_note: noteMap[d.id] })}
+                          disabled={decide.isPending}
+                          className="text-xs bg-ok text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">Approve</button>
+                        <button onClick={() => decide.mutate({ id: d.id, status: "rejected", admin_note: noteMap[d.id] })}
+                          disabled={decide.isPending}
+                          className="text-xs bg-err text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">Reject</button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {!filtered.length && (
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-ink-dim">No outside duty records</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Leaves tab ───────────────────────────────────────────────────────────────
 const LEAVE_TYPE_LABELS: Record<string, string> = { casual: "Casual", sick: "Sick", half_day: "Half Day" };
 const LEAVE_STATUS_STYLE: Record<string, string> = {
@@ -1870,6 +1971,15 @@ export default function AttendancePage() {
   const { data = [], isLoading, refetch } = useAttendanceByDate(date, activeOnly);
   const { data: leavesByDate = [] }       = useLeavesByDate(date);
   const { data: dailyPerms = [] }         = useApprovedPermsByDate(date);
+  const { data: dailyDuties = [] }        = useOutsideDutiesByDate(date);
+  const createOutsideDuty                 = useCreateOutsideDuty();
+
+  const [assignDutyFor, setAssignDutyFor] = useState<string | null>(null);
+  const [dutyForm, setDutyForm]           = useState({ description: "", expected_arrival: "" });
+
+  const approvedDutySet = new Set(
+    dailyDuties.filter(d => d.status === "approved").map(d => d.bio_user_id)
+  );
 
   const syncFromDevice = useCallback(async () => {
     setSyncing(true);
@@ -1908,8 +2018,10 @@ export default function AttendancePage() {
   const shortCount      = present.filter(r => r.short_interval).length;
   const doubleCount     = present.filter(r => r.double_punch_detected).length;
 
-  const { data: allReqs = [] } = useAllPermissions();
-  const pendingReqCount = allReqs.filter((r: any) => r.status === "pending").length;
+  const { data: allReqs = [] }    = useAllPermissions();
+  const { data: allDuties = [] }  = useAllOutsideDuties();
+  const pendingReqCount  = allReqs.filter((r: any) => r.status === "pending").length;
+  const duties_pending   = allDuties.filter((d: any) => d.status === "pending").length;
 
   // ── Chat unread count ──────────────────────────────────────────────────────
   const authUserId = profile?.id ?? null;
@@ -1943,6 +2055,7 @@ export default function AttendancePage() {
     monthly:       "Monthly Report",
     requests:      "Requests",
     leaves:        "Leaves",
+    duties:        "Outside Duty",
     chat:          "Staff Chat",
     announcements: "Announcements",
   };
@@ -1981,7 +2094,7 @@ export default function AttendancePage() {
       {/* Tabs — hidden in kiosk mode (always visible for admin) */}
       {(!isLocked || isAdmin) && (
         <div className="flex border-b border-line gap-1 flex-wrap">
-          {(["attendance", "staff", "monthly", "requests", "leaves", "chat", ...(isAdmin ? ["announcements"] : [])] as PageTab[]).map((t) => (
+          {(["attendance", "staff", "monthly", "requests", "leaves", "duties", "chat", ...(isAdmin ? ["announcements"] : [])] as PageTab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
                 tab === t ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"
@@ -1992,6 +2105,9 @@ export default function AttendancePage() {
               )}
               {t === "leaves" && pendingLeaveCount > 0 && (
                 <span className="bg-warn text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{pendingLeaveCount}</span>
+              )}
+              {t === "duties" && duties_pending > 0 && (
+                <span className="bg-info text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{duties_pending}</span>
               )}
               {t === "chat" && chatUnread > 0 && (
                 <span className="bg-err text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{chatUnread > 9 ? "9+" : chatUnread}</span>
@@ -2126,10 +2242,20 @@ export default function AttendancePage() {
                             }
                             {r.is_late && (() => {
                               const hasPerm = dailyPerms.some(p => p.bio_user_id === r.bio_user_id);
+                              const hasDuty = approvedDutySet.has(r.bio_user_id);
                               return hasPerm
                                 ? <span className="text-[9px] font-semibold text-ok leading-none">Permission</span>
-                                : <span className="text-[9px] font-semibold text-warn leading-none">Late</span>;
+                                : hasDuty
+                                  ? <span className="text-[9px] font-semibold text-info leading-none">Outside Duty</span>
+                                  : <span className="text-[9px] font-semibold text-warn leading-none">Late</span>;
                             })()}
+                            {isAdmin && r.is_late && !approvedDutySet.has(r.bio_user_id) && !dailyPerms.some(p => p.bio_user_id === r.bio_user_id) && (
+                              <button
+                                onClick={() => { setAssignDutyFor(r.bio_user_id); setDutyForm({ description: "", expected_arrival: "" }); }}
+                                className="text-[9px] text-info hover:underline leading-none mt-0.5">
+                                + assign duty
+                              </button>
+                            )}
                           </div>
                         </td>
                         <td className="px-3 py-2.5 text-right font-mono text-ok">{formatTime(r.first_in)}</td>
@@ -2169,6 +2295,52 @@ export default function AttendancePage() {
                           )}
                         </td>
                       </tr>
+
+                      {isAdmin && assignDutyFor === r.bio_user_id && (
+                        <tr className="border-b border-line bg-info/5">
+                          <td colSpan={9} className="px-6 py-3">
+                            <div className="flex flex-wrap items-end gap-3">
+                              <div className="flex-1 min-w-[220px]">
+                                <label className="text-xs text-ink-dim block mb-1">What was the outside duty? *</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Bank deposit, Supplier pickup…"
+                                  value={dutyForm.description}
+                                  onChange={e => setDutyForm(f => ({ ...f, description: e.target.value }))}
+                                  className={inp + " w-full"} />
+                              </div>
+                              <div>
+                                <label className="text-xs text-ink-dim block mb-1">Expected arrival (opt.)</label>
+                                <input
+                                  type="time"
+                                  value={dutyForm.expected_arrival}
+                                  onChange={e => setDutyForm(f => ({ ...f, expected_arrival: e.target.value }))}
+                                  className={inp} />
+                              </div>
+                              <div className="flex gap-2 pb-0.5">
+                                <button
+                                  disabled={!dutyForm.description.trim() || createOutsideDuty.isPending}
+                                  onClick={async () => {
+                                    await createOutsideDuty.mutateAsync({
+                                      bio_user_id: r.bio_user_id,
+                                      duty_date: date,
+                                      description: dutyForm.description.trim(),
+                                      expected_arrival: dutyForm.expected_arrival || undefined,
+                                      initiated_by: "admin",
+                                      status: "approved",
+                                    });
+                                    setAssignDutyFor(null);
+                                  }}
+                                  className="text-xs bg-info text-white px-3 py-1.5 rounded-lg2 disabled:opacity-40">
+                                  {createOutsideDuty.isPending ? "Saving…" : "Assign & Approve"}
+                                </button>
+                                <button onClick={() => setAssignDutyFor(null)}
+                                  className="text-xs border border-line px-3 py-1.5 rounded-lg2 text-ink-dim">Cancel</button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
 
                       {expanded === r.bio_user_id && (
                         <tr className="border-b border-line bg-canvas/30">
@@ -2255,6 +2427,9 @@ export default function AttendancePage() {
       {tab === "chat" && (
         <ChatTab isAdmin={isAdmin} adminName={profile?.display_name ?? ""} />
       )}
+
+      {/* ── Outside Duties tab ── */}
+      {tab === "duties" && <DutiesTab />}
 
       {/* ── Announcements tab (admin only) ── */}
       {tab === "announcements" && isAdmin && <AnnouncementsTab />}

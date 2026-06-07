@@ -7,8 +7,9 @@ import { supabase } from "@/lib/supabase/client";
 import {
   useMyPermissions, useCreatePermission,
   useMyLeaveRequests, useSubmitLeaveRequest,
+  useMyOutsideDuties, useCreateOutsideDuty,
   useLastSyncTime,
-  type PermissionRequest, type LeaveRequest,
+  type PermissionRequest, type LeaveRequest, type OutsideDuty,
 } from "@/modules/attendance/api";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -136,6 +137,13 @@ export default function MyAttendancePage() {
   const [showLeaveForm, setShowLeaveForm] = useState(false);
   const [leaveForm, setLeaveForm] = useState({ leave_date: todayStr, leave_type: "casual", reason: "" });
   const [leaveError, setLeaveError] = useState<string | null>(null);
+
+  // Outside duty requests
+  const { data: myDuties = [], refetch: refetchDuties } = useMyOutsideDuties(staff?.bio_user_id ?? null);
+  const createDuty = useCreateOutsideDuty();
+  const [showDutyForm, setShowDutyForm] = useState(false);
+  const [dutyForm, setDutyForm] = useState({ duty_date: todayStr, description: "", expected_arrival: "" });
+  const [dutyError, setDutyError] = useState<string | null>(null);
 
   async function handleLeaveSubmit() {
     setLeaveError(null);
@@ -942,6 +950,101 @@ export default function MyAttendancePage() {
               </div>
             ) : !showLeaveForm ? (
               <p className="text-xs text-ink-dim">No leave requests yet.</p>
+            ) : null}
+          </div>
+
+          {/* Outside Duty Requests */}
+          <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-semibold text-ink">Outside Duty</p>
+                <p className="text-xs text-ink-dim mt-0.5">Came late due to shop work? Apply here.</p>
+              </div>
+              {!showDutyForm && (
+                <button onClick={() => setShowDutyForm(true)}
+                  className="text-xs bg-info text-white px-3 py-1.5 rounded-lg2 hover:opacity-90">
+                  + Apply
+                </button>
+              )}
+            </div>
+
+            {showDutyForm && (
+              <div className="bg-canvas rounded-lg2 p-3 space-y-2 border border-line">
+                <p className="text-xs font-medium text-ink-dim">Outside Duty Application</p>
+                <div className="flex flex-wrap gap-2 items-end">
+                  <div>
+                    <label className="text-xs text-ink-dim block mb-1">Date</label>
+                    <input type="date" value={dutyForm.duty_date}
+                      onChange={e => setDutyForm(f => ({ ...f, duty_date: e.target.value }))}
+                      className={inpCls} />
+                  </div>
+                  <div>
+                    <label className="text-xs text-ink-dim block mb-1">Expected arrival (opt.)</label>
+                    <input type="time" value={dutyForm.expected_arrival}
+                      onChange={e => setDutyForm(f => ({ ...f, expected_arrival: e.target.value }))}
+                      className={inpCls} />
+                  </div>
+                  <div className="flex-1 min-w-[180px]">
+                    <label className="text-xs text-ink-dim block mb-1">What work did you do? *</label>
+                    <input type="text" value={dutyForm.description}
+                      placeholder="e.g. Bank deposit, Supplier pickup…"
+                      onChange={e => setDutyForm(f => ({ ...f, description: e.target.value }))}
+                      className={`${inpCls} w-full`} />
+                  </div>
+                </div>
+                {dutyError && <p className="text-xs text-err">{dutyError}</p>}
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      setDutyError(null);
+                      if (!staff || !dutyForm.description.trim()) {
+                        setDutyError("Please describe the work done.");
+                        return;
+                      }
+                      try {
+                        await createDuty.mutateAsync({
+                          bio_user_id: staff.bio_user_id,
+                          duty_date: dutyForm.duty_date,
+                          description: dutyForm.description.trim(),
+                          expected_arrival: dutyForm.expected_arrival || undefined,
+                          initiated_by: "staff",
+                        });
+                        setShowDutyForm(false);
+                        setDutyForm({ duty_date: todayStr, description: "", expected_arrival: "" });
+                        refetchDuties();
+                      } catch (e: any) {
+                        setDutyError(e?.message ?? "Failed to submit. Please try again.");
+                      }
+                    }}
+                    disabled={createDuty.isPending || !dutyForm.description.trim()}
+                    className="text-xs bg-info text-white px-3 py-1.5 rounded-lg2 disabled:opacity-40">
+                    {createDuty.isPending ? "Submitting…" : "Submit"}
+                  </button>
+                  <button onClick={() => { setShowDutyForm(false); setDutyError(null); }}
+                    className="text-xs border border-line px-3 py-1.5 rounded-lg2">Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {myDuties.length > 0 ? (
+              <div className="space-y-1">
+                {(myDuties as OutsideDuty[]).map(d => (
+                  <div key={d.id} className="flex items-center gap-3 text-xs py-1 border-b border-line last:border-0">
+                    <span className="text-ink-dim w-20">{d.duty_date}</span>
+                    <span className="flex-1 text-ink truncate">{d.description}</span>
+                    {d.expected_arrival && (
+                      <span className="text-ink-dim font-mono">{d.expected_arrival.slice(0, 5)}</span>
+                    )}
+                    <span className={`font-semibold px-1.5 py-0.5 rounded text-[10px] ${
+                      d.status === "approved" ? "bg-ok/10 text-ok" :
+                      d.status === "rejected" ? "bg-err/10 text-err" : "bg-warn/10 text-warn"
+                    }`}>{d.status}</span>
+                    {d.admin_note && <span className="text-ink-dim italic max-w-[80px] truncate">{d.admin_note}</span>}
+                  </div>
+                ))}
+              </div>
+            ) : !showDutyForm ? (
+              <p className="text-xs text-ink-dim">No outside duty records yet.</p>
             ) : null}
           </div>
         </div>
