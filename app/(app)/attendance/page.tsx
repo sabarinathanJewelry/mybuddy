@@ -1782,8 +1782,8 @@ export default function AttendancePage() {
   const isLocked = rawLocked && !!kioskSeq?.length;
   const [tapBuffer, setTapBuffer] = useState<KioskTap[]>([]);
 
-  // Force attendance tab when locked
-  useEffect(() => { if (isLocked) setTab("attendance"); }, [isLocked]);
+  // Force attendance tab when locked — but not for admin (they see all tabs)
+  useEffect(() => { if (isLocked && !isAdmin) setTab("attendance"); }, [isLocked, isAdmin]);
 
   function handleKioskTap(bio_user_id: string, e: React.MouseEvent<HTMLTableRowElement>) {
     if (!isLocked || !kioskSeq?.length) return;
@@ -1890,8 +1890,8 @@ export default function AttendancePage() {
         )}
       </div>
 
-      {/* Tabs — hidden in locked/kiosk mode */}
-      {!isLocked && (
+      {/* Tabs — hidden in kiosk mode (always visible for admin) */}
+      {(!isLocked || isAdmin) && (
         <div className="flex border-b border-line gap-1 flex-wrap">
           {(["attendance", "staff", "monthly", "requests", "leaves", "chat", ...(isAdmin ? ["announcements"] : [])] as PageTab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
