@@ -40,7 +40,7 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-5">
+    <div className="max-w-4xl mx-auto space-y-5">
       <h1 className="text-xl font-bold">{t("admin")} — {t("users")}</h1>
 
       <div className="bg-gold/5 border border-gold/20 rounded-xl p-4 text-sm space-y-2">
@@ -57,7 +57,7 @@ where id = '<user-uuid>';`}
       </div>
 
       {isLoading ? <p className="text-ink-dim text-sm">{t("loading")}</p> : (
-        <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+        <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
               <th className="text-left px-4 py-2.5">Name</th>
