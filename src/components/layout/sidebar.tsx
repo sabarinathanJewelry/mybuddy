@@ -152,6 +152,16 @@ export default function Sidebar() {
           />
         ))}
 
+        {isAdmin && (
+          <NavItem
+            href="/staff-management"
+            icon="👥"
+            label={t("nav_staff_mgmt")}
+            collapsed={collapsed}
+            active={pathname.startsWith("/staff-management")}
+          />
+        )}
+
         {canSeeRepairs && (
           <NavItem
             href="/repairs"
