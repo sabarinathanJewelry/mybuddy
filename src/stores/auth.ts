@@ -8,6 +8,7 @@ export interface Profile {
   role: "admin" | "staff";
   language: string;
   repair_access?: boolean;
+  incentive_access?: boolean;
 }
 
 interface AuthStore {
