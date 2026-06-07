@@ -349,6 +349,33 @@ export default function MyAttendancePage() {
     if (tab === "chat") chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages, tab]);
 
+  // ── Unread chat count ──────────────────────────────────────────────────────
+  const { data: chatUnread = 0, refetch: refetchUnread } = useQuery({
+    queryKey: ["chat_unread_kiosk", senderId],
+    enabled: !!senderId,
+    refetchInterval: 30_000,
+    queryFn: async () => {
+      if (!senderId) return 0;
+      const client = supabase();
+      const { data: receipt } = await client
+        .from("chat_read_receipts").select("last_read_at").eq("user_id", senderId).maybeSingle();
+      const lastRead = receipt?.last_read_at ?? "1970-01-01T00:00:00Z";
+      const { count } = await client
+        .from("chat_messages").select("id", { count: "exact", head: true })
+        .gt("created_at", lastRead).neq("sender_id", senderId).eq("is_deleted", false);
+      return count ?? 0;
+    },
+  });
+
+  // Mark chat as read when switching to chat tab
+  useEffect(() => {
+    if (tab === "chat" && senderId) {
+      supabase().from("chat_read_receipts")
+        .upsert({ user_id: senderId, last_read_at: new Date().toISOString() }, { onConflict: "user_id" })
+        .then(() => refetchUnread());
+    }
+  }, [tab, senderId]);
+
   async function sendChatMessage() {
     if (!chatInput.trim() || !senderId || !senderName) return;
     setChatSending(true);
@@ -460,10 +487,15 @@ export default function MyAttendancePage() {
           { key: "policies",   label: "Policies" },
         ] as { key: PageTab; label: string }[]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
               tab === t.key ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"
             }`}>
             {t.label}
+            {t.key === "chat" && chatUnread > 0 && (
+              <span className="bg-err text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                {chatUnread > 9 ? "9+" : chatUnread}
+              </span>
+            )}
           </button>
         ))}
       </div>

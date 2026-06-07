@@ -1848,6 +1848,32 @@ export default function AttendancePage() {
   const { data: allReqs = [] } = useAllPermissions();
   const pendingReqCount = allReqs.filter((r: any) => r.status === "pending").length;
 
+  // ── Chat unread count ──────────────────────────────────────────────────────
+  const authUserId = profile?.id ?? null;
+  const { data: chatUnread = 0, refetch: refetchChatUnread } = useQuery({
+    queryKey: ["chat_unread_erp", authUserId],
+    enabled: !!authUserId,
+    refetchInterval: 30_000,
+    queryFn: async () => {
+      if (!authUserId) return 0;
+      const client = supabase();
+      const { data: receipt } = await client
+        .from("chat_read_receipts").select("last_read_at").eq("user_id", authUserId).maybeSingle();
+      const lastRead = receipt?.last_read_at ?? "1970-01-01T00:00:00Z";
+      const { count } = await client
+        .from("chat_messages").select("id", { count: "exact", head: true })
+        .gt("created_at", lastRead).neq("sender_id", authUserId).eq("is_deleted", false);
+      return count ?? 0;
+    },
+  });
+  useEffect(() => {
+    if (tab === "chat" && authUserId) {
+      supabase().from("chat_read_receipts")
+        .upsert({ user_id: authUserId, last_read_at: new Date().toISOString() }, { onConflict: "user_id" })
+        .then(() => refetchChatUnread());
+    }
+  }, [tab, authUserId]);
+
   const tabLabels: Record<PageTab, string> = {
     attendance:    "Attendance",
     staff:         "Manage Staff",
@@ -1904,6 +1930,9 @@ export default function AttendancePage() {
               )}
               {t === "leaves" && pendingLeaveCount > 0 && (
                 <span className="bg-warn text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{pendingLeaveCount}</span>
+              )}
+              {t === "chat" && chatUnread > 0 && (
+                <span className="bg-err text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{chatUnread > 9 ? "9+" : chatUnread}</span>
               )}
             </button>
           ))}
