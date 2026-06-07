@@ -5,8 +5,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/stores/auth";
 import {
+  useAttendanceByDate, useMonthlyAttendanceSummary,
   useAllPermissions, useDecidePermission,
   useAllLeaveRequests, useDecideLeaveRequest,
+  type AttendanceEntry, type MonthlyEmployeeSummary,
   type PermissionRequest, type LeaveRequest,
 } from "@/modules/attendance/api";
 
@@ -53,6 +55,26 @@ function staffEarned(rows: IncRow[], name: string, master: MasterEntry[], overri
   return { earned, eligible, total };
 }
 
+// ── attendance helpers ────────────────────────────────────────────────────────
+function fmtIST(ts: string | null) {
+  if (!ts) return "—";
+  return new Date(ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+}
+function fmtHrs(h: number | null) {
+  if (h === null) return "—";
+  const hrs = Math.floor(h), mins = Math.round((h - hrs) * 60);
+  return `${hrs}h ${mins}m`;
+}
+function fmtMins(m: number) { if (!m) return "—"; const h = Math.floor(m / 60); return h ? `${h}h ${Math.round(m % 60)}m` : `${Math.round(m)}m`; }
+function todayStr() { return new Date().toLocaleDateString("en-CA"); }
+function currentMonth() { return new Date().toISOString().slice(0, 7); }
+function monthLabel(m: string) { const [y, mo] = m.split("-"); return new Date(Number(y), Number(mo) - 1, 1).toLocaleString("en-IN", { month: "long", year: "numeric" }); }
+function shiftMonthStr(m: string, dir: -1 | 1) {
+  const [y, mo] = m.split("-").map(Number);
+  const next = mo + dir;
+  return next < 1 ? `${y - 1}-12` : next > 12 ? `${y + 1}-01` : `${y}-${String(next).padStart(2, "0")}`;
+}
+
 // ── chat types ────────────────────────────────────────────────────────────────
 interface ChatMsg { id: string; sender_id: string; sender_name: string; message: string; is_deleted: boolean; edited_at: string | null; created_at: string }
 
@@ -60,7 +82,8 @@ function fmtTime(ts: string) {
   return new Date(ts).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true });
 }
 
-type Tab = "requests" | "incentive" | "chat" | "announcements";
+type Tab = "attendance" | "requests" | "incentive" | "chat" | "announcements";
+type AttView = "day" | "month";
 type ReqType = "leave" | "permission";
 type ReqFilter = "pending" | "approved" | "rejected" | "all";
 
@@ -69,7 +92,10 @@ const inp = "w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outli
 export default function StaffManagementPage() {
   const profile  = useAuth((s) => s.profile);
   const qc       = useQueryClient();
-  const [tab, setTab]           = useState<Tab>("requests");
+  const [tab, setTab]           = useState<Tab>("attendance");
+  const [attView, setAttView]   = useState<AttView>("day");
+  const [attDate, setAttDate]   = useState(todayStr());
+  const [attMonth, setAttMonth] = useState(currentMonth());
   const [reqType, setReqType]   = useState<ReqType>("leave");
   const [reqFilter, setReqFilter] = useState<ReqFilter>("pending");
   const [notes, setNotes]       = useState<Record<string, string>>({});
@@ -90,6 +116,9 @@ export default function StaffManagementPage() {
   const chatBottom = useRef<HTMLDivElement>(null);
 
   // ── data hooks ──────────────────────────────────────────────────────────────
+  const { data: attendance = [], isLoading: attLoading, refetch: refetchAtt } = useAttendanceByDate(attDate);
+  const { data: monthlySummary = [], isLoading: monthlyLoading } = useMonthlyAttendanceSummary(attMonth);
+
   const { data: leaves = []      } = useAllLeaveRequests();
   const { data: permissions = [] } = useAllPermissions();
   const decideLeave = useDecideLeaveRequest();
@@ -209,12 +238,197 @@ export default function StaffManagementPage() {
       </div>
 
       {/* Top tabs */}
-      <div className="flex border-b border-line gap-0.5">
+      <div className="flex border-b border-line gap-0.5 flex-wrap">
+        {tabBtn("attendance",    "Attendance")}
         {tabBtn("requests",      "Requests",      pendingLeave + pendingPerm)}
         {tabBtn("incentive",     "Incentive")}
         {tabBtn("chat",          "Chat")}
         {tabBtn("announcements", "Announcements")}
       </div>
+
+      {/* ── ATTENDANCE ── */}
+      {tab === "attendance" && (
+        <div className="space-y-4">
+          {/* Day / Month toggle */}
+          <div className="flex items-center gap-2">
+            {(["day", "month"] as AttView[]).map((v) => (
+              <button key={v} onClick={() => setAttView(v)}
+                className={`text-sm px-4 py-1.5 rounded-lg2 border transition-colors ${attView === v ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:border-gold hover:text-gold"}`}>
+                {v === "day" ? "Daily View" : "Monthly View"}
+              </button>
+            ))}
+          </div>
+
+          {attView === "day" && (
+            <div className="space-y-4">
+              {/* Date + refresh */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <input type="date" value={attDate} onChange={(e) => setAttDate(e.target.value)}
+                  className="border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                <button onClick={() => refetchAtt()}
+                  className="border border-line text-ink-dim px-3 py-2 rounded-lg2 text-sm hover:border-gold hover:text-gold transition-colors">
+                  Refresh
+                </button>
+                <button onClick={() => setAttDate(todayStr())}
+                  className="border border-line text-ink-dim px-3 py-2 rounded-lg2 text-sm hover:border-gold hover:text-gold transition-colors">
+                  Today
+                </button>
+              </div>
+
+              {attLoading ? (
+                <p className="text-ink-dim text-sm">Loading attendance…</p>
+              ) : (
+                <>
+                  {/* Summary cards */}
+                  {(() => {
+                    const present = attendance.filter((a) => a.present).length;
+                    const late    = attendance.filter((a) => a.is_late).length;
+                    const absent  = attendance.filter((a) => !a.present).length;
+                    return (
+                      <div className="grid grid-cols-4 gap-3">
+                        {[
+                          { label: "Total Staff", value: attendance.length, color: "text-ink" },
+                          { label: "Present",     value: present,           color: "text-ok" },
+                          { label: "Late",        value: late,              color: "text-warn" },
+                          { label: "Absent",      value: absent,            color: "text-err" },
+                        ].map((c) => (
+                          <div key={c.label} className="bg-white rounded-xl border border-line shadow-soft p-4 text-center">
+                            <p className={`text-2xl font-bold ${c.color}`}>{c.value}</p>
+                            <p className="text-xs text-ink-dim mt-1">{c.label}</p>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Staff table */}
+                  <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+                    {attendance.length === 0 ? (
+                      <p className="text-ink-dim text-sm p-5 text-center">No attendance data for this date.</p>
+                    ) : (
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                            <th className="text-left px-4 py-2.5">Name</th>
+                            <th className="text-left px-3 py-2.5">Shift</th>
+                            <th className="text-center px-3 py-2.5">Status</th>
+                            <th className="text-center px-3 py-2.5">In</th>
+                            <th className="text-center px-3 py-2.5">Out</th>
+                            <th className="text-center px-3 py-2.5">Hours</th>
+                            <th className="text-center px-3 py-2.5">Lunch OT</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {attendance.map((a) => (
+                            <tr key={a.bio_user_id} className="border-b border-line last:border-0 hover:bg-canvas/40">
+                              <td className="px-4 py-2.5 font-medium">
+                                {a.name}
+                                {a.double_punch_detected && <span className="ml-1 text-[10px] text-warn">(DP)</span>}
+                              </td>
+                              <td className="px-3 py-2.5 text-xs text-ink-dim capitalize">{a.shift}</td>
+                              <td className="px-3 py-2.5 text-center">
+                                {!a.present ? (
+                                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-err/10 text-err">Absent</span>
+                                ) : a.is_late ? (
+                                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-warn/10 text-warn">Late</span>
+                                ) : (
+                                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-ok/10 text-ok">Present</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2.5 text-center font-mono text-xs">{fmtIST(a.first_in)}</td>
+                              <td className="px-3 py-2.5 text-center font-mono text-xs">{fmtIST(a.last_out)}</td>
+                              <td className="px-3 py-2.5 text-center text-xs">{fmtHrs(a.effective_hours)}</td>
+                              <td className="px-3 py-2.5 text-center text-xs">
+                                {a.lunch_overrun_minutes > 0 ? (
+                                  <span className="text-warn">{fmtMins(a.lunch_overrun_minutes)}</span>
+                                ) : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {attView === "month" && (
+            <div className="space-y-4">
+              {/* Month navigation */}
+              <div className="flex items-center gap-3">
+                <button onClick={() => setAttMonth((m) => shiftMonthStr(m, -1))}
+                  className="border border-line px-3 py-2 rounded-lg2 text-sm text-ink-dim hover:border-gold hover:text-gold transition-colors">‹ Prev</button>
+                <span className="text-sm font-semibold text-ink">{monthLabel(attMonth)}</span>
+                <button onClick={() => setAttMonth((m) => shiftMonthStr(m, 1))}
+                  className="border border-line px-3 py-2 rounded-lg2 text-sm text-ink-dim hover:border-gold hover:text-gold transition-colors">Next ›</button>
+                <button onClick={() => setAttMonth(currentMonth())}
+                  className="ml-2 border border-line text-ink-dim px-3 py-2 rounded-lg2 text-sm hover:border-gold hover:text-gold transition-colors">This Month</button>
+              </div>
+
+              {monthlyLoading ? (
+                <p className="text-ink-dim text-sm">Loading monthly summary…</p>
+              ) : (
+                <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+                  {monthlySummary.length === 0 ? (
+                    <p className="text-ink-dim text-sm p-5 text-center">No data for {monthLabel(attMonth)}.</p>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                          <th className="text-left px-4 py-2.5">Name</th>
+                          <th className="text-left px-3 py-2.5">Shift</th>
+                          <th className="text-center px-3 py-2.5">Present</th>
+                          <th className="text-center px-3 py-2.5">Absent</th>
+                          <th className="text-center px-3 py-2.5">Late</th>
+                          <th className="text-center px-3 py-2.5">OT</th>
+                          <th className="text-right px-3 py-2.5">Salary</th>
+                          <th className="text-right px-3 py-2.5">Deduction</th>
+                          <th className="text-right px-3 py-2.5">Net</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {monthlySummary.map((s) => (
+                          <tr key={s.bio_user_id} className="border-b border-line last:border-0 hover:bg-canvas/40">
+                            <td className="px-4 py-2.5 font-medium">{s.name}</td>
+                            <td className="px-3 py-2.5 text-xs text-ink-dim capitalize">{s.shift}</td>
+                            <td className="px-3 py-2.5 text-center text-ok font-medium">{s.present_days}</td>
+                            <td className="px-3 py-2.5 text-center text-err">{s.absent_days}</td>
+                            <td className="px-3 py-2.5 text-center text-warn">{s.late_days}</td>
+                            <td className="px-3 py-2.5 text-center text-xs">{fmtMins(s.total_ot_minutes)}</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-xs">₹{s.monthly_salary.toLocaleString("en-IN")}</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-xs text-err">
+                              {s.leave_deduction > 0 ? `−₹${s.leave_deduction.toLocaleString("en-IN")}` : "—"}
+                            </td>
+                            <td className="px-3 py-2.5 text-right font-mono font-bold text-gold">
+                              ₹{(s.monthly_salary - s.leave_deduction).toLocaleString("en-IN")}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-gold/5 border-t border-gold/20">
+                          <td colSpan={6} className="px-4 py-2 text-xs font-semibold text-ink-dim">Total ({monthlySummary.length} staff)</td>
+                          <td className="px-3 py-2 text-right font-mono text-xs font-semibold">
+                            ₹{monthlySummary.reduce((s, r) => s + r.monthly_salary, 0).toLocaleString("en-IN")}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono text-xs text-err font-semibold">
+                            −₹{monthlySummary.reduce((s, r) => s + r.leave_deduction, 0).toLocaleString("en-IN")}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono font-bold text-gold text-sm">
+                            ₹{monthlySummary.reduce((s, r) => s + r.monthly_salary - r.leave_deduction, 0).toLocaleString("en-IN")}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── REQUESTS ── */}
       {tab === "requests" && (
