@@ -119,7 +119,8 @@ export default function Sidebar() {
   const { sidebarCollapsed, mobileSidebarOpen, toggleSidebar, setMobileSidebar } = useUI();
   const profile = useAuth((s) => s.profile);
   const isAdmin = profile?.role === "admin";
-  const canSeeRepairs = isAdmin || profile?.repair_access === true;
+  const canSeeRepairs   = isAdmin || profile?.repair_access    === true;
+  const canSeeIncentive = isAdmin || profile?.incentive_access === true;
   const { data: repairAlerts = 0 } = useRepairAlertCount(canSeeRepairs);
 
   async function handleLogout() {
@@ -157,6 +158,16 @@ export default function Sidebar() {
             collapsed={collapsed}
             active={pathname.startsWith("/repairs")}
             badge={repairAlerts}
+          />
+        )}
+
+        {canSeeIncentive && (
+          <NavItem
+            href="/my-incentive"
+            icon="🎯"
+            label={t("nav_my_incentive")}
+            collapsed={collapsed}
+            active={pathname.startsWith("/my-incentive")}
           />
         )}
 

@@ -27,6 +27,14 @@ export default function AdminUsersPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["profiles"] }),
   });
 
+  const toggleIncentiveAccess = useMutation({
+    mutationFn: async ({ id, value }: { id: string; value: boolean }) => {
+      const { error } = await supabase().from("profiles").update({ incentive_access: value }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["profiles"] }),
+  });
+
   if (profile?.role !== "admin") {
     return <div className="p-8 text-center text-ink-dim">Admin access required.</div>;
   }
@@ -57,6 +65,7 @@ where id = '<user-uuid>';`}
               <th className="text-left px-3 py-2.5">Language</th>
               <th className="text-left px-3 py-2.5">Game Login</th>
               <th className="text-center px-3 py-2.5">Repairs</th>
+              <th className="text-center px-3 py-2.5">Incentive</th>
             </tr></thead>
             <tbody>
               {(profiles as any[])?.map((p) => (
@@ -88,6 +97,22 @@ where id = '<user-uuid>';`}
                         }`}
                       >
                         {p.repair_access ? "Enabled" : "Disabled"}
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 text-center">
+                    {p.role === "admin" ? (
+                      <span className="text-xs text-gold">Always</span>
+                    ) : (
+                      <button
+                        onClick={() => toggleIncentiveAccess.mutate({ id: p.id, value: !p.incentive_access })}
+                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                          p.incentive_access
+                            ? "bg-ok/10 border-ok/30 text-ok"
+                            : "border-line text-ink-dim hover:border-gold hover:text-gold"
+                        }`}
+                      >
+                        {p.incentive_access ? "Enabled" : "Disabled"}
                       </button>
                     )}
                   </td>
