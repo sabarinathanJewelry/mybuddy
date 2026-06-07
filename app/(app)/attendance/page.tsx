@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useCallback, useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase/client";
 import {
   useAttendanceByDate, useStaff, useUpdateStaff, useDeleteStaff,
   useMonthlyAttendanceSummary, useAllPermissions, useDecidePermission,
@@ -18,7 +19,9 @@ import { useKiosk } from "@/stores/kiosk";
 import { useAuth } from "@/stores/auth";
 import { shortDate, inr } from "@/lib/format";
 
-type PageTab = "attendance" | "staff" | "monthly" | "requests" | "leaves";
+type PageTab = "attendance" | "staff" | "monthly" | "requests" | "leaves" | "chat" | "announcements";
+
+interface ChatMsg { id: string; sender_id: string; sender_name: string; message: string; is_deleted: boolean; edited_at: string | null; created_at: string }
 
 const inp = "border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
 
@@ -1384,6 +1387,206 @@ function LeavesTab({ isAdmin, myBioUserId, myName }: {
   );
 }
 
+// ── Chat tab ─────────────────────────────────────────────────────────────────
+function fmtChatTime(ts: string) {
+  return new Date(ts).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true });
+}
+
+function ChatTab({ isAdmin, adminName }: { isAdmin: boolean; adminName: string }) {
+  const profile     = useAuth((s) => s.profile);
+  const [msgs, setMsgs]       = useState<ChatMsg[]>([]);
+  const [input, setInput]     = useState("");
+  const [sending, setSending] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText]   = useState("");
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const client = supabase();
+    client.from("chat_messages").select("*").order("created_at", { ascending: true }).limit(200)
+      .then(({ data }) => setMsgs((data ?? []) as ChatMsg[]));
+    const ch = client.channel("attendance_chat")
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, (p) => {
+        if (p.eventType === "INSERT")      setMsgs((prev) => [...prev, p.new as ChatMsg]);
+        else if (p.eventType === "UPDATE") setMsgs((prev) => prev.map((m) => m.id === p.new.id ? p.new as ChatMsg : m));
+        else if (p.eventType === "DELETE") setMsgs((prev) => prev.filter((m) => m.id !== (p.old as any).id));
+      }).subscribe();
+    return () => { client.removeChannel(ch); };
+  }, []);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
+
+  async function send() {
+    if (!input.trim() || !profile) return;
+    setSending(true);
+    const { data: { user } } = await supabase().auth.getUser();
+    if (user) await supabase().from("chat_messages").insert({ sender_id: user.id, sender_name: profile.display_name, message: input.trim() });
+    setInput("");
+    setSending(false);
+  }
+  async function toggleHide(id: string, cur: boolean) { await supabase().from("chat_messages").update({ is_deleted: !cur }).eq("id", id); }
+  async function hardDelete(id: string) { if (!confirm("Permanently delete?")) return; await supabase().from("chat_messages").delete().eq("id", id); }
+  async function saveEdit(id: string) {
+    if (!editText.trim()) return;
+    await supabase().from("chat_messages").update({ message: editText.trim(), edited_at: new Date().toISOString() }).eq("id", id);
+    setEditingId(null);
+  }
+
+  return (
+    <div className="flex flex-col gap-3" style={{ height: "65vh" }}>
+      <div className="flex-1 overflow-y-auto bg-white rounded-xl border border-line shadow-soft p-3 space-y-1 min-h-0">
+        {msgs.length === 0 && <p className="text-center text-ink-dim text-sm py-8">No messages yet. Say hi!</p>}
+        {msgs.map((m) => {
+          const isOwn = m.sender_name === (profile?.display_name ?? "");
+          return (
+            <div key={m.id} className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-1`}>
+              <div className={`max-w-[75%] flex flex-col ${isOwn ? "items-end" : "items-start"}`}>
+                {!isOwn && <span className="text-[10px] font-semibold text-gold px-1 mb-0.5">{m.sender_name}</span>}
+                <div className={`rounded-2xl px-3 py-2 text-sm ${
+                  m.is_deleted ? "bg-canvas border border-line text-ink-dim italic text-xs"
+                  : isOwn ? "bg-gold text-white"
+                  : "bg-canvas border border-line text-ink"
+                }`}>
+                  {editingId === m.id ? (
+                    <div className="flex gap-2 items-center min-w-[200px]">
+                      <input value={editText} onChange={(e) => setEditText(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") saveEdit(m.id); if (e.key === "Escape") setEditingId(null); }}
+                        className="flex-1 bg-white border border-line rounded px-2 py-0.5 text-xs text-ink focus:outline-none" autoFocus />
+                      <button onClick={() => saveEdit(m.id)} className="text-xs text-ok font-semibold">Save</button>
+                      <button onClick={() => setEditingId(null)} className="text-xs text-ink-dim">✕</button>
+                    </div>
+                  ) : m.is_deleted ? "This message was deleted" : (
+                    <span className="whitespace-pre-wrap">{m.message}</span>
+                  )}
+                </div>
+                <div className={`flex items-center gap-2 mt-0.5 px-1 ${isOwn ? "flex-row-reverse" : "flex-row"}`}>
+                  <span className="text-[10px] text-ink-dim">{fmtChatTime(m.created_at)}</span>
+                  {m.edited_at && !m.is_deleted && <span className="text-[10px] text-ink-dim">(edited)</span>}
+                  {isAdmin && !m.is_deleted && (
+                    <button onClick={() => { setEditingId(m.id); setEditText(m.message); }} className="text-[10px] text-info hover:underline">Edit</button>
+                  )}
+                  {isAdmin && (
+                    <button onClick={() => toggleHide(m.id, m.is_deleted)} className="text-[10px] text-warn hover:underline">
+                      {m.is_deleted ? "Restore" : "Hide"}
+                    </button>
+                  )}
+                  {isAdmin && (
+                    <button onClick={() => hardDelete(m.id)} className="text-[10px] text-err hover:underline">Remove</button>
+                  )}
+                  {!isAdmin && isOwn && !m.is_deleted && (
+                    <button onClick={() => { setEditingId(m.id); setEditText(m.message); }} className="text-[10px] text-info hover:underline">Edit</button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        <div ref={bottomRef} />
+      </div>
+      <div className="shrink-0">
+        <div className="flex gap-2 bg-white border border-line rounded-xl px-3 py-2">
+          <input value={input} onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+            placeholder="Type a message…"
+            className="flex-1 text-sm focus:outline-none" />
+          <button onClick={send} disabled={sending || !input.trim()}
+            className="bg-gold text-white px-4 py-1.5 rounded-lg2 text-sm font-medium disabled:opacity-40">Send</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Announcements tab (admin) ─────────────────────────────────────────────────
+const ann_inp = "w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
+
+function AnnouncementsTab() {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({ title: "", body: "", expires_at: "" });
+  const [err, setErr]   = useState("");
+
+  const { data: list = [], isLoading } = useQuery({
+    queryKey: ["announcements_att"],
+    queryFn: async () => {
+      const { data, error } = await supabase().from("announcements").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+
+  const create = useMutation({
+    mutationFn: async () => {
+      if (!form.title.trim()) throw new Error("Title is required.");
+      const { error } = await supabase().from("announcements").insert({ title: form.title.trim(), body: form.body.trim() || null, expires_at: form.expires_at || null });
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["announcements_att"] }); qc.invalidateQueries({ queryKey: ["announcements_staff"] }); setForm({ title: "", body: "", expires_at: "" }); setErr(""); },
+    onError: (e: any) => setErr(e?.message ?? "Failed."),
+  });
+  const toggle = useMutation({
+    mutationFn: async ({ id, value }: { id: string; value: boolean }) => { const { error } = await supabase().from("announcements").update({ is_active: value }).eq("id", id); if (error) throw error; },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["announcements_att"] }); qc.invalidateQueries({ queryKey: ["announcements_staff"] }); },
+  });
+  const del = useMutation({
+    mutationFn: async (id: string) => { const { error } = await supabase().from("announcements").delete().eq("id", id); if (error) throw error; },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["announcements_att"] }); qc.invalidateQueries({ queryKey: ["announcements_staff"] }); },
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-xl border border-line shadow-soft p-5 space-y-3">
+        <p className="text-sm font-semibold">New Announcement</p>
+        <input value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+          placeholder="Title — Tamil, English, or both" className={ann_inp} />
+        <textarea value={form.body} onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
+          placeholder="Full message (optional)…" rows={3} className={`${ann_inp} resize-none`} />
+        <div className="flex flex-wrap gap-4 items-end">
+          <div>
+            <label className="text-xs text-ink-dim block mb-1">Expires on (optional)</label>
+            <input type="date" value={form.expires_at} onChange={(e) => setForm((f) => ({ ...f, expires_at: e.target.value }))}
+              className="border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+          </div>
+          <button onClick={() => create.mutate()} disabled={create.isPending || !form.title.trim()}
+            className="bg-gold text-white px-5 py-2 rounded-lg2 text-sm font-medium disabled:opacity-40">
+            {create.isPending ? "Posting…" : "Post"}
+          </button>
+        </div>
+        {err && <p className="text-xs text-err">{err}</p>}
+      </div>
+
+      {isLoading ? <p className="text-ink-dim text-sm">Loading…</p> : list.length === 0 ? (
+        <p className="text-ink-dim text-sm text-center py-4">No announcements yet.</p>
+      ) : (
+        <div className="space-y-2">
+          {list.map((a: any) => {
+            const expired = a.expires_at ? a.expires_at < new Date().toISOString().slice(0, 10) : false;
+            return (
+              <div key={a.id} className={`bg-white rounded-xl border border-line shadow-soft p-4 flex items-start gap-3 ${(!a.is_active || expired) ? "opacity-60" : ""}`}>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm">{a.title}</p>
+                  {a.body && <p className="text-xs text-ink-dim mt-1 whitespace-pre-wrap">{a.body}</p>}
+                  <p className="text-[10px] text-ink-dim mt-1">
+                    {new Date(a.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                    {a.expires_at && ` · Expires ${a.expires_at}`}
+                  </p>
+                </div>
+                <div className="flex gap-2 shrink-0 items-center">
+                  <button onClick={() => toggle.mutate({ id: a.id, value: !a.is_active })}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${a.is_active && !expired ? "bg-ok/10 border-ok/30 text-ok" : "border-line text-ink-dim hover:border-gold hover:text-gold"}`}>
+                    {a.is_active && !expired ? "Active" : expired ? "Expired" : "Inactive"}
+                  </button>
+                  <button onClick={() => { if (confirm("Delete?")) del.mutate(a.id); }}
+                    className="text-xs text-err hover:underline">Delete</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Kiosk sequence configuration (admin only, unlocked) ─────────────────────
 function KioskConfig() {
   const { data: currentSeq = [], isLoading } = useKioskSequence();
@@ -1646,11 +1849,13 @@ export default function AttendancePage() {
   const pendingReqCount = allReqs.filter((r: any) => r.status === "pending").length;
 
   const tabLabels: Record<PageTab, string> = {
-    attendance: "Attendance",
-    staff:      "Manage Staff",
-    monthly:    "Monthly Report",
-    requests:   "Requests",
-    leaves:     "Leaves",
+    attendance:    "Attendance",
+    staff:         "Manage Staff",
+    monthly:       "Monthly Report",
+    requests:      "Requests",
+    leaves:        "Leaves",
+    chat:          "Staff Chat",
+    announcements: "Announcements",
   };
 
   return (
@@ -1687,8 +1892,8 @@ export default function AttendancePage() {
 
       {/* Tabs — hidden in locked/kiosk mode */}
       {!isLocked && (
-        <div className="flex border-b border-line gap-1">
-          {(["attendance", "staff", "monthly", "requests", "leaves"] as PageTab[]).map((t) => (
+        <div className="flex border-b border-line gap-1 flex-wrap">
+          {(["attendance", "staff", "monthly", "requests", "leaves", "chat", ...(isAdmin ? ["announcements"] : [])] as PageTab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
                 tab === t ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"
@@ -1949,6 +2154,14 @@ export default function AttendancePage() {
           myName={myStaffProfile?.name ?? "Staff"}
         />
       )}
+
+      {/* ── Chat tab ── */}
+      {tab === "chat" && (
+        <ChatTab isAdmin={isAdmin} adminName={profile?.display_name ?? ""} />
+      )}
+
+      {/* ── Announcements tab (admin only) ── */}
+      {tab === "announcements" && isAdmin && <AnnouncementsTab />}
     </div>
   );
 }
