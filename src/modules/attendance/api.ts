@@ -921,7 +921,7 @@ export function useOutsideDutiesByDate(date: string) {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("outside_duties")
-        .select("*, staff(name, designation)")
+        .select("*")
         .eq("duty_date", date);
       if (error) throw error;
       return (data ?? []) as any[];
@@ -955,7 +955,7 @@ export function useAllOutsideDuties() {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("outside_duties")
-        .select("*, staff(name, designation)")
+        .select("*")
         .order("duty_date", { ascending: false })
         .limit(200);
       if (error) throw error;

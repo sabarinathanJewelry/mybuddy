@@ -1270,9 +1270,12 @@ const DUTY_STATUS_STYLE: Record<string, string> = {
 
 function DutiesTab() {
   const { data: duties = [], isLoading } = useAllOutsideDuties();
+  const { data: staffList = [] } = useStaff();
   const decide = useDecideOutsideDuty();
   const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
   const [noteMap, setNoteMap] = useState<Record<string, string>>({});
+
+  const staffNameMap = new Map(staffList.map(s => [s.bio_user_id, s.name]));
 
   const filtered = duties.filter(d => filter === "all" || d.status === filter);
   const pendingCount = duties.filter(d => d.status === "pending").length;
@@ -1305,7 +1308,7 @@ function DutiesTab() {
             <tbody>
               {filtered.map((d: OutsideDuty) => (
                 <tr key={d.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                  <td className="px-4 py-2.5 font-medium">{(d as any).staff?.name ?? d.bio_user_id}</td>
+                  <td className="px-4 py-2.5 font-medium">{staffNameMap.get(d.bio_user_id) ?? d.bio_user_id}</td>
                   <td className="px-3 py-2.5 text-ink-dim">{shortDate(d.duty_date)}</td>
                   <td className="px-3 py-2.5 max-w-[200px] truncate">{d.description}</td>
                   <td className="px-3 py-2.5 text-ink-dim font-mono text-xs">
