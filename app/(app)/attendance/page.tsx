@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import {
@@ -1931,9 +1931,6 @@ export default function AttendancePage() {
   const [date, setDate]         = useState(today);
   const [activeOnly, setActiveOnly] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [syncing, setSyncing]   = useState(false);
-  const [isVercel, setIsVercel] = useState(false);
-  const [syncMsg, setSyncMsg]   = useState<{ ok: boolean; text: string } | null>(null);
   const { data: lastSyncIso }   = useLastSyncTime();
 
   const { isLocked: rawLocked, unlock } = useKiosk();
@@ -1984,33 +1981,6 @@ export default function AttendancePage() {
     dailyDuties.filter(d => d.status === "approved").map(d => d.bio_user_id)
   );
 
-  const syncFromDevice = useCallback(async () => {
-    setSyncing(true);
-    setSyncMsg(null);
-    try {
-      const res  = await fetch("/api/sync-attendance", { method: "POST" });
-      const json = await res.json();
-      if (json.ok) {
-        setSyncMsg({ ok: true, text: `Synced — ${json.staff} staff, ${json.records} records` });
-        qc.invalidateQueries({ queryKey: ["attendance"] });
-        qc.invalidateQueries({ queryKey: ["staff"] });
-        qc.invalidateQueries({ queryKey: ["last-sync-time"] });
-      } else if (json.vercel) {
-        setIsVercel(true);
-        setSyncMsg(null);
-        qc.invalidateQueries({ queryKey: ["attendance"] });
-        qc.invalidateQueries({ queryKey: ["staff"] });
-      } else {
-        setSyncMsg({ ok: false, text: json.error ?? "Sync failed" });
-      }
-    } catch {
-      setSyncMsg({ ok: false, text: "Could not reach the sync API." });
-    } finally {
-      setSyncing(false);
-    }
-  }, [qc]);
-
-  useEffect(() => { syncFromDevice(); }, [syncFromDevice]);
 
   const present    = data.filter((r) => r.present);
   const absent     = data.filter((r) => !r.present);
@@ -2080,18 +2050,6 @@ export default function AttendancePage() {
             className="border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
         )}
         <NotificationBell notifications={notifications} bioUserId={isAdmin ? null : myBioUserId} />
-        {isVercel ? (
-          <button onClick={() => refetch()} disabled={isLoading}
-            className="bg-gold hover:bg-gold-dark text-white text-sm font-medium px-4 py-2 rounded-lg2 disabled:opacity-50">
-            Refresh
-          </button>
-        ) : (
-          <button onClick={syncFromDevice} disabled={syncing}
-            className="bg-gold hover:bg-gold-dark text-white text-sm font-medium px-4 py-2 rounded-lg2 disabled:opacity-50 flex items-center gap-2">
-            {syncing && <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-            {syncing ? "Syncing…" : "Sync from Device"}
-          </button>
-        )}
       </div>
 
       {/* Tabs — hidden in kiosk mode (always visible for admin) */}
@@ -2117,12 +2075,6 @@ export default function AttendancePage() {
               )}
             </button>
           ))}
-        </div>
-      )}
-
-      {syncMsg && (
-        <div className={`text-xs px-4 py-2 rounded-lg2 ${syncMsg.ok ? "bg-ok/10 text-ok" : "bg-err/10 text-err"}`}>
-          {syncMsg.text}
         </div>
       )}
 
@@ -2205,8 +2157,8 @@ export default function AttendancePage() {
             <p className="text-ink-dim text-sm">Loading…</p>
           ) : data.length === 0 ? (
             <div className="bg-white rounded-xl border border-line p-10 text-center text-ink-dim shadow-soft">
-              <p className="font-medium">{syncing ? "Syncing…" : "No staff records found"}</p>
-              {!syncing && <p className="text-xs mt-1">Run migrations 025–029 in Supabase, then sync the device.</p>}
+              <p className="font-medium">No staff records found</p>
+              <p className="text-xs mt-1">Run migrations 025–029 in Supabase, then sync the device.</p>
             </div>
           ) : (
             <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
