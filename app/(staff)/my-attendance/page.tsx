@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
+import { inr } from "@/lib/format";
 import {
   useMyPermissions, useCreatePermission,
   useMyLeaveRequests, useSubmitLeaveRequest,
@@ -57,6 +59,73 @@ function dayLabel(dateStr: string) {
   const dow = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
   return `${String(d).padStart(2, "0")} ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dow]}`;
 }
+// ── incentive helpers ─────────────────────────────────────────────────────────
+interface MasterEntry { code: string; rate: number; minWastage: number }
+interface MapperEntry  { erpName: string; incentiveCode: string; notes: string }
+interface IncCalcRow {
+  idx: number; date: string; product: string; wastage: number;
+  netWt: number; balance: number; sp1: string; sp2: string;
+}
+interface RowOverride { balanceZero?: boolean; minWastage?: number; sp1Share?: number; wastage?: number }
+
+function parseNum(s: string): number {
+  const m = (s ?? "").match(/[-\d.]+/);
+  return m ? parseFloat(m[0]) : 0;
+}
+function parseErp(raw: string): IncCalcRow[] {
+  const lines = raw.split("\n").map((l: string) => l.trimEnd());
+  const hi = lines.findIndex((l: string) => /date/i.test(l) && /product/i.test(l) && /net.?wt/i.test(l));
+  if (hi < 0) return [];
+  const rows: IncCalcRow[] = [];
+  lines.slice(hi + 1).forEach((line: string, i: number) => {
+    if (!line.trim()) return;
+    const c = line.split("\t");
+    const product = (c[1] ?? "").trim().toUpperCase();
+    const netWt   = parseNum(c[8] ?? "");
+    if (!product || netWt <= 0) return;
+    rows.push({
+      idx: i, date: (c[0] ?? "").trim(), product,
+      wastage: parseNum(c[3] ?? ""),
+      netWt,
+      balance: Math.max(0, parseNum(c[7] ?? "")),
+      sp1: (c[5] ?? "").trim().toUpperCase(),
+      sp2: (c[6] ?? "").trim().toUpperCase(),
+    });
+  });
+  return rows;
+}
+function lookupProduct(erpProduct: string, netWt: number, mapper: MapperEntry[], master: MasterEntry[]) {
+  const mapEntry = mapper.find((m: MapperEntry) => m.erpName.toUpperCase() === erpProduct);
+  let incentiveCode = (mapEntry?.incentiveCode ?? erpProduct).toUpperCase();
+  if (incentiveCode === "92.5-S" && netWt >= 20) incentiveCode = "92.5-L";
+  const masterEntry = master.find((m: MasterEntry) => m.code.toUpperCase() === incentiveCode) ?? null;
+  return { masterEntry, incentiveCode, mapped: !!mapEntry };
+}
+function calcIncRow(
+  row: IncCalcRow, ov: RowOverride | undefined, defaultSplit: number,
+  myName: string, mapper: MapperEntry[], master: MasterEntry[]
+) {
+  const { masterEntry, incentiveCode, mapped } = lookupProduct(row.product, row.netWt, mapper, master);
+  const rate       = masterEntry?.rate ?? 0;
+  const minWastage = ov?.minWastage ?? masterEntry?.minWastage ?? 0;
+  const balance    = ov?.balanceZero ? 0 : row.balance;
+  const sp1Share   = ov?.sp1Share   ?? defaultSplit;
+  const wastage    = ov?.wastage    ?? row.wastage;
+  const eligible   = !!masterEntry && rate > 0 && wastage >= minWastage && balance <= 0;
+  const totalInc   = eligible ? parseFloat((rate * row.netWt).toFixed(2)) : 0;
+  const isSp1      = row.sp1 === myName;
+  const myShare    = !row.sp2 ? totalInc
+    : isSp1 ? parseFloat((totalInc * sp1Share / 100).toFixed(2))
+    : parseFloat((totalInc * (100 - sp1Share) / 100).toFixed(2));
+  const myPct      = !row.sp2 ? 100 : isSp1 ? sp1Share : 100 - sp1Share;
+  let reason = "";
+  if (!masterEntry) reason = mapped ? "Unknown code" : "Unmapped product";
+  else if (rate === 0) reason = "No incentive";
+  else if (wastage < minWastage) reason = `Wastage ${wastage.toFixed(1)}% < ${minWastage}%`;
+  else if (balance > 0) reason = `Balance ₹${balance.toFixed(0)} pending`;
+  return { rate, minWastage, balance, wastage, eligible, totalInc, myShare, myPct, incentiveCode, reason };
+}
+
 // ── types ─────────────────────────────────────────────────────────────────────
 type DayRow = {
   date: string;
@@ -73,7 +142,7 @@ type DayRow = {
 
 type StaffInfo = { bio_user_id: string; name: string; shift: string };
 
-type PageTab = "today" | "monthly" | "requests";
+type PageTab = "today" | "monthly" | "requests" | "incentive";
 
 // ── page ─────────────────────────────────────────────────────────────────────
 export default function MyAttendancePage() {
@@ -86,7 +155,12 @@ export default function MyAttendancePage() {
   const [rows, setRows]         = useState<DayRow[]>([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
-  const [canSeeRepairs, setCanSeeRepairs] = useState(false);
+  const [canSeeRepairs, setCanSeeRepairs]       = useState(false);
+  const [canSeeIncentive, setCanSeeIncentive]   = useState(false);
+  const [staffDisplayName, setStaffDisplayName] = useState("");
+  const [selectedSheetId, setSelectedSheetId]   = useState<string | null>(null);
+  const [showIneligible, setShowIneligible]     = useState(false);
+  const [masterSearch, setMasterSearch]         = useState("");
 
   const { data: lastSyncIso }   = useLastSyncTime();
 
@@ -157,8 +231,10 @@ export default function MyAttendancePage() {
     client.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
         const { data: profile } = await client
-          .from("profiles").select("repair_access").eq("id", user.id).single();
+          .from("profiles").select("repair_access, incentive_access, display_name").eq("id", user.id).single();
         if (profile?.repair_access === true) setCanSeeRepairs(true);
+        if (profile?.incentive_access === true) setCanSeeIncentive(true);
+        if (profile?.display_name) setStaffDisplayName(profile.display_name);
       }
     });
     client
@@ -250,6 +326,54 @@ export default function MyAttendancePage() {
       });
   }, [staff, month]);
 
+  const myName = staffDisplayName.trim().toUpperCase();
+
+  const { data: incSheets = [], isLoading: incSheetsLoading } = useQuery({
+    queryKey: ["incentive_sheets_list_staff"],
+    enabled: canSeeIncentive,
+    queryFn: async () => {
+      const { data } = await supabase()
+        .from("incentive_sheets")
+        .select("id, period, updated_at")
+        .order("updated_at", { ascending: false });
+      return (data ?? []) as { id: string; period: string; updated_at: string }[];
+    },
+  });
+
+  const activeSheetId = selectedSheetId ?? (incSheets[0]?.id ?? null);
+
+  const { data: incSheet, isLoading: incSheetLoading } = useQuery({
+    queryKey: ["incentive_sheet_staff", activeSheetId],
+    enabled: canSeeIncentive && !!activeSheetId,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("incentive_sheets")
+        .select("*")
+        .eq("id", activeSheetId!)
+        .single();
+      if (error) throw error;
+      return data as any;
+    },
+  });
+
+  const { incRows, incMyRows, incSummary } = useMemo(() => {
+    if (!incSheet || !myName) return { incRows: [], incMyRows: [], incSummary: null };
+    const mapper: MapperEntry[]  = incSheet.mapper_entries ?? [];
+    const master: MasterEntry[]  = incSheet.master_entries ?? [];
+    const overrides: Record<number, RowOverride> = incSheet.overrides ?? {};
+    const defaultSplit: number   = incSheet.default_split ?? 70;
+    const incRows = parseErp(incSheet.raw_data ?? "");
+    const myRaw = incRows.filter((r: IncCalcRow) => r.sp1 === myName || r.sp2 === myName);
+    const incMyRows = myRaw.map((r: IncCalcRow) => ({
+      row: r,
+      calc: calcIncRow(r, overrides[r.idx], defaultSplit, myName, mapper, master),
+    }));
+    const eligibleCount = incMyRows.filter((x: any) => x.calc.eligible).length;
+    const totalEarned   = incMyRows.reduce((s: number, x: any) => s + x.calc.myShare, 0);
+    const totalNetWt    = incMyRows.reduce((s: number, x: any) => s + x.row.netWt, 0);
+    return { incRows, incMyRows, incSummary: { total: myRaw.length, eligibleCount, totalEarned, totalNetWt } };
+  }, [incSheet, myName]);
+
   function shiftMonth(dir: -1 | 1) {
     const [y, m] = month.split("-").map(Number);
     const next = m + dir;
@@ -312,9 +436,10 @@ export default function MyAttendancePage() {
       {/* Tabs */}
       <div className="flex border-b border-line gap-1">
         {([
-          { key: "today",    label: "Today" },
-          { key: "monthly",  label: "Monthly" },
-          { key: "requests", label: "Requests" },
+          { key: "today",     label: "Today" },
+          { key: "monthly",   label: "Monthly" },
+          { key: "requests",  label: "Requests" },
+          ...(canSeeIncentive ? [{ key: "incentive", label: "Incentive" }] : []),
         ] as { key: PageTab; label: string }[]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
@@ -737,6 +862,178 @@ export default function MyAttendancePage() {
               <p className="text-xs text-ink-dim">No leave requests yet.</p>
             ) : null}
           </div>
+        </div>
+      )}
+
+      {/* ── INCENTIVE TAB ─────────────────────────────────────────────────────── */}
+      {tab === "incentive" && (
+        <div className="space-y-4">
+          {/* Period selector */}
+          {!incSheetsLoading && incSheets.length > 0 && (
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="text-sm font-semibold text-ink">My Incentive</p>
+              <select
+                value={activeSheetId ?? ""}
+                onChange={(e) => setSelectedSheetId(e.target.value || null)}
+                className="border border-line rounded-lg2 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold bg-white"
+              >
+                {incSheets.map((s: { id: string; period: string }) => (
+                  <option key={s.id} value={s.id}>{s.period}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {(incSheetsLoading || incSheetLoading) && (
+            <p className="text-ink-dim text-sm">Loading…</p>
+          )}
+
+          {!incSheetsLoading && incSheets.length === 0 && (
+            <div className="bg-canvas rounded-xl border border-line p-6 text-center text-ink-dim text-sm">
+              No incentive sheets saved yet.
+            </div>
+          )}
+
+          {incSheet && myName && incMyRows.length === 0 && incRows.length > 0 && (
+            <div className="bg-warn/10 border border-warn/30 rounded-xl p-4 text-sm text-warn">
+              No rows found for <strong>{myName}</strong> in this sheet.
+              Your display name must match the SP1/SP2 name in the ERP export exactly.
+            </div>
+          )}
+
+          {incSummary && incMyRows.length > 0 && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-white rounded-xl border border-line p-4 shadow-soft">
+                <p className="text-xs text-ink-dim">Eligible Items</p>
+                <p className="text-2xl font-bold text-ok">{incSummary.eligibleCount}</p>
+                <p className="text-xs text-ink-dim/60">{incSummary.total - incSummary.eligibleCount} not eligible</p>
+              </div>
+              <div className="bg-white rounded-xl border border-line p-4 shadow-soft">
+                <p className="text-xs text-ink-dim">Total Earned</p>
+                <p className="text-2xl font-bold text-gold">{inr(incSummary.totalEarned)}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-line p-4 shadow-soft">
+                <p className="text-xs text-ink-dim">Total Items</p>
+                <p className="text-2xl font-bold">{incSummary.total}</p>
+              </div>
+              <div className="bg-white rounded-xl border border-line p-4 shadow-soft">
+                <p className="text-xs text-ink-dim">Net Weight</p>
+                <p className="text-2xl font-bold font-mono">{incSummary.totalNetWt.toFixed(3)}g</p>
+              </div>
+            </div>
+          )}
+
+          {incMyRows.length > 0 && (
+            <>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowIneligible(!showIneligible)}
+                  className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+                    showIneligible
+                      ? "bg-gold/10 border-gold/30 text-gold"
+                      : "border-line text-ink-dim hover:border-gold hover:text-gold"
+                  }`}
+                >
+                  {showIneligible ? "Showing all rows" : "Show ineligible too"}
+                </button>
+              </div>
+
+              <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+                <table className="w-full text-sm" style={{ minWidth: "580px" }}>
+                  <thead>
+                    <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                      <th className="text-left px-3 py-2.5">Date</th>
+                      <th className="text-left px-3 py-2.5">Product</th>
+                      <th className="text-right px-3 py-2.5">Net Wt</th>
+                      <th className="text-right px-3 py-2.5">Wastage%</th>
+                      <th className="text-right px-3 py-2.5">Min%</th>
+                      <th className="text-right px-3 py-2.5">Earned</th>
+                      <th className="text-left px-3 py-2.5">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(showIneligible ? incMyRows : incMyRows.filter((x: any) => x.calc.eligible)).map((x: any, i: number) => (
+                      <tr key={i} className={`border-b border-line last:border-0 ${x.calc.eligible ? "" : "opacity-50"}`}>
+                        <td className="px-3 py-2 text-ink-dim text-xs whitespace-nowrap">{x.row.date}</td>
+                        <td className="px-3 py-2 text-xs font-medium">{x.row.product}</td>
+                        <td className="px-3 py-2 text-right font-mono text-xs">{x.row.netWt.toFixed(3)}g</td>
+                        <td className={`px-3 py-2 text-right font-mono text-xs ${!x.calc.eligible && x.calc.reason.startsWith("Wastage") ? "text-err font-semibold" : ""}`}>
+                          {x.calc.wastage.toFixed(1)}%
+                        </td>
+                        <td className="px-3 py-2 text-right font-mono text-xs text-ink-dim">{x.calc.minWastage}%</td>
+                        <td className={`px-3 py-2 text-right font-mono font-semibold text-xs ${x.calc.eligible ? "text-gold" : "text-ink-dim"}`}>
+                          {x.calc.eligible ? inr(x.calc.myShare) : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-xs">
+                          {x.calc.eligible ? (
+                            <span className="text-ok font-medium">Eligible</span>
+                          ) : (
+                            <span className="text-ink-dim">{x.calc.reason}</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  {incSummary && incSummary.eligibleCount > 0 && (
+                    <tfoot>
+                      <tr className="bg-gold/5 border-t border-gold/20">
+                        <td colSpan={5} className="px-3 py-2.5 text-xs font-semibold text-ink-dim text-right">Total earned</td>
+                        <td className="px-3 py-2.5 text-right font-mono font-bold text-gold">{inr(incSummary.totalEarned)}</td>
+                        <td />
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+              <p className="text-xs text-ink-dim text-center">Read-only view. Contact admin for corrections.</p>
+            </>
+          )}
+
+          {/* Rate Master reference table */}
+          {incSheet && (incSheet.master_entries ?? []).length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <p className="text-sm font-semibold text-ink">Incentive Rate Guide</p>
+                <input
+                  type="text"
+                  placeholder="Search code…"
+                  value={masterSearch}
+                  onChange={(e) => setMasterSearch(e.target.value)}
+                  className="border border-line rounded-lg2 px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold w-44 bg-white"
+                />
+              </div>
+              <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-canvas text-ink-dim border-b border-line">
+                      <th className="text-left px-3 py-2.5">Incentive Code</th>
+                      <th className="text-right px-3 py-2.5">Rate (₹/g)</th>
+                      <th className="text-right px-3 py-2.5">Min Wastage %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(incSheet.master_entries as MasterEntry[])
+                      .filter((m: MasterEntry) =>
+                        !masterSearch || m.code.toUpperCase().includes(masterSearch.toUpperCase())
+                      )
+                      .map((m: MasterEntry, i: number) => (
+                        <tr key={i} className="border-b border-line last:border-0 hover:bg-canvas/30">
+                          <td className="px-3 py-2 font-mono font-medium">{m.code}</td>
+                          <td className="px-3 py-2 text-right text-ok font-semibold">{m.rate}</td>
+                          <td className="px-3 py-2 text-right text-ink-dim">{m.minWastage}%</td>
+                        </tr>
+                      ))
+                    }
+                    {(incSheet.master_entries as MasterEntry[]).filter((m: MasterEntry) =>
+                      !masterSearch || m.code.toUpperCase().includes(masterSearch.toUpperCase())
+                    ).length === 0 && (
+                      <tr><td colSpan={3} className="px-3 py-4 text-center text-ink-dim">No matching codes.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
