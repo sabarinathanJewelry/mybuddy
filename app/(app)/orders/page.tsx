@@ -426,7 +426,7 @@ export default function OrdersPage() {
 
   // ── Filters
   const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "ready" | "delivered" | "cancelled">("all");
-  const [filterMonth, setFilterMonth] = useState("");
+  const [filterMonth, setFilterMonth] = useState(globalDate.slice(0, 7));
 
   const filteredOrders = (orders as any[]).filter((o) => {
     if (filterStatus !== "all" && o.status !== filterStatus) return false;
