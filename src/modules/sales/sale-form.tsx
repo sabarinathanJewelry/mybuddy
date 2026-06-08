@@ -1066,16 +1066,10 @@ export default function SaleForm({ saleId }: Props) {
         </div>
       )}
 
-      {/* Mixed metal warning */}
+      {/* Mixed metal note */}
       {isMixed && (
-        <div className="bg-err/5 border border-err/40 rounded-xl px-4 py-3 flex items-start gap-3">
-          <span className="text-err text-lg shrink-0">⚠</span>
-          <div>
-            <p className="text-sm font-semibold text-err">Cannot mix Gold and Silver in one bill</p>
-            <p className="text-xs text-ink-dim mt-0.5">
-              This bill has both gold and silver items. Use separate bills — one for gold (G22/G18/G24) and one for silver (S).
-            </p>
-          </div>
+        <div className="bg-info/5 border border-info/20 rounded-xl px-4 py-2 text-xs text-info">
+          Mixed bill — gold and silver items on the same bill. Bill counter uses the selected series ({series}). Reports will separate gold and silver totals automatically.
         </div>
       )}
 
@@ -1099,7 +1093,6 @@ export default function SaleForm({ saleId }: Props) {
             <button type="submit"
               disabled={
                 isPending ||
-                isMixed ||
                 (balance > 0.01 && !customer) ||
                 (changeDue > 0.01 && !changeDueMode) ||
                 (changeDue > 0.01 && changeDueMode === "advance" && !customer)
