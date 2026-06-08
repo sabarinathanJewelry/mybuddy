@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useUI } from "@/stores/ui";
@@ -125,12 +126,26 @@ export default function Sidebar() {
   const canSeeRepairs   = isAdmin || profile?.repair_access    === true;
   const canSeeIncentive = isAdmin || profile?.incentive_access === true;
   const { data: repairAlerts = 0 } = useRepairAlertCount(canSeeRepairs);
+  const [search, setSearch] = useState("");
 
   async function handleLogout() {
     await supabase().auth.signOut();
   }
 
-  const sidebarContent = (collapsed: boolean) => (
+  const sidebarContent = (collapsed: boolean) => {
+    // Build full flat list of all visible nav items
+    const allItems: { href: string; icon: string; label: string; badge?: number; isAdmin?: boolean }[] = [
+      ...NAV.map(item => ({ href: item.href, icon: item.icon, label: t(item.key) })),
+      ...(isAdmin ? [{ href: "/staff-management", icon: "👥", label: t("nav_staff_mgmt") }] : []),
+      ...(canSeeRepairs ? [{ href: "/repairs", icon: "🔧", label: t("nav_repairs"), badge: repairAlerts }] : []),
+      ...(canSeeIncentive ? [{ href: "/my-incentive", icon: "🎯", label: t("nav_my_incentive") }] : []),
+      ...(isAdmin ? ADMIN_NAV.map(item => ({ href: item.href, icon: item.icon, label: t(item.key), isAdmin: true })) : []),
+    ];
+
+    const q = search.trim().toLowerCase();
+    const filtered = q ? allItems.filter(item => item.label.toLowerCase().includes(q)) : null;
+
+    return (
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div className={clsx("flex items-center gap-2 px-3 py-4 border-b border-white/10", collapsed ? "justify-center" : "")}>
@@ -140,54 +155,40 @@ export default function Sidebar() {
         )}
       </div>
 
+      {/* Search — only when expanded */}
+      {!collapsed && (
+        <div className="px-3 pt-2.5 pb-1">
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search menu…"
+            className="w-full bg-white/10 text-white placeholder-white/30 text-xs rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-gold/50"
+          />
+        </div>
+      )}
+
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
-        {NAV.map((item) => (
-          <NavItem
-            key={item.href}
-            href={item.href}
-            icon={item.icon}
-            label={t(item.key)}
-            collapsed={collapsed}
-            active={pathname.startsWith(item.href)}
-          />
-        ))}
-
-        {isAdmin && (
-          <NavItem
-            href="/staff-management"
-            icon="👥"
-            label={t("nav_staff_mgmt")}
-            collapsed={collapsed}
-            active={pathname.startsWith("/staff-management")}
-          />
-        )}
-
-        {canSeeRepairs && (
-          <NavItem
-            href="/repairs"
-            icon="🔧"
-            label={t("nav_repairs")}
-            collapsed={collapsed}
-            active={pathname.startsWith("/repairs")}
-            badge={repairAlerts}
-          />
-        )}
-
-        {canSeeIncentive && (
-          <NavItem
-            href="/my-incentive"
-            icon="🎯"
-            label={t("nav_my_incentive")}
-            collapsed={collapsed}
-            active={pathname.startsWith("/my-incentive")}
-          />
-        )}
-
-        {isAdmin && (
+      <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
+        {filtered ? (
+          // Search results — flat list, no dividers
+          filtered.length > 0 ? filtered.map(item => (
+            <NavItem
+              key={item.href}
+              href={item.href}
+              icon={item.icon}
+              label={item.label}
+              collapsed={collapsed}
+              active={pathname.startsWith(item.href)}
+              badge={item.badge}
+            />
+          )) : (
+            <p className="text-white/30 text-xs px-3 py-4 text-center">No results</p>
+          )
+        ) : (
+          // Normal nav — sections with divider
           <>
-            <div className="my-2 border-t border-white/10" />
-            {ADMIN_NAV.map((item) => (
+            {NAV.map((item) => (
               <NavItem
                 key={item.href}
                 href={item.href}
@@ -197,6 +198,53 @@ export default function Sidebar() {
                 active={pathname.startsWith(item.href)}
               />
             ))}
+
+            {isAdmin && (
+              <NavItem
+                href="/staff-management"
+                icon="👥"
+                label={t("nav_staff_mgmt")}
+                collapsed={collapsed}
+                active={pathname.startsWith("/staff-management")}
+              />
+            )}
+
+            {canSeeRepairs && (
+              <NavItem
+                href="/repairs"
+                icon="🔧"
+                label={t("nav_repairs")}
+                collapsed={collapsed}
+                active={pathname.startsWith("/repairs")}
+                badge={repairAlerts}
+              />
+            )}
+
+            {canSeeIncentive && (
+              <NavItem
+                href="/my-incentive"
+                icon="🎯"
+                label={t("nav_my_incentive")}
+                collapsed={collapsed}
+                active={pathname.startsWith("/my-incentive")}
+              />
+            )}
+
+            {isAdmin && (
+              <>
+                <div className="my-2 border-t border-white/10" />
+                {ADMIN_NAV.map((item) => (
+                  <NavItem
+                    key={item.href}
+                    href={item.href}
+                    icon={item.icon}
+                    label={t(item.key)}
+                    collapsed={collapsed}
+                    active={pathname.startsWith(item.href)}
+                  />
+                ))}
+              </>
+            )}
           </>
         )}
       </nav>
@@ -222,7 +270,8 @@ export default function Sidebar() {
         </button>
       </div>
     </div>
-  );
+    );
+  };
 
   return (
     <>
