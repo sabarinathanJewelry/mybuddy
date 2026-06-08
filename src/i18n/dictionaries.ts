@@ -26,6 +26,7 @@ const en = {
   nav_walkins: "Walk-ins",
   nav_reports: "Reports",
   nav_attendance: "Attendance",
+  nav_goldsmith: "Goldsmith Jobs",
   nav_repairs: "Repairs",
   nav_admin: "Admin",
   nav_products: "Products",

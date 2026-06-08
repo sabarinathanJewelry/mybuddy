@@ -32,6 +32,7 @@ const NAV = [
   { href: "/walkins",      icon: "🚶", key: "nav_walkins" as const },
   { href: "/reports",      icon: "📈", key: "nav_reports" as const },
   { href: "/attendance",   icon: "🕐", key: "nav_attendance" as const },
+  { href: "/goldsmith",    icon: "⚒️",  key: "nav_goldsmith" as const },
 ];
 
 const ADMIN_NAV = [
