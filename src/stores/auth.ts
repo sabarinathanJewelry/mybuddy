@@ -5,10 +5,11 @@ import { create } from "zustand";
 export interface Profile {
   id: string;
   display_name: string;
-  role: "admin" | "staff";
+  role: "admin" | "staff" | "subadmin";
   language: string;
   repair_access?: boolean;
   incentive_access?: boolean;
+  allowed_modules?: string[];
 }
 
 interface AuthStore {
@@ -22,6 +23,6 @@ export const useAuth = create<AuthStore>()((set, get) => ({
   setProfile: (profile) => set({ profile }),
   canEdit: () => {
     const p = get().profile;
-    return p?.role === "admin" || p?.role === "staff";
+    return p?.role === "admin" || p?.role === "staff" || p?.role === "subadmin";
   },
 }));

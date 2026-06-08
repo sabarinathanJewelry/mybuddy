@@ -123,8 +123,17 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { sidebarCollapsed, mobileSidebarOpen, toggleSidebar, setMobileSidebar } = useUI();
   const profile = useAuth((s) => s.profile);
-  const isAdmin = profile?.role === "admin";
-  const canSeeRepairs   = isAdmin || profile?.repair_access    === true;
+  const isAdmin    = profile?.role === "admin";
+  const isSubadmin = profile?.role === "subadmin";
+  const allowedModules: string[] = profile?.allowed_modules ?? [];
+
+  function canAccess(slug: string) {
+    if (isAdmin) return true;
+    if (isSubadmin) return slug === "dashboard" || allowedModules.includes(slug);
+    return false;
+  }
+
+  const canSeeRepairs   = isAdmin || profile?.repair_access === true || canAccess("repairs");
   const canSeeIncentive = isAdmin || profile?.incentive_access === true;
   const { data: repairAlerts = 0 } = useRepairAlertCount(canSeeRepairs);
   const [search, setSearch] = useState("");
@@ -136,8 +145,8 @@ export default function Sidebar() {
   const sidebarContent = (collapsed: boolean) => {
     // Build full flat list of all visible nav items
     const allItems: { href: string; icon: string; label: string; badge?: number; isAdmin?: boolean }[] = [
-      ...NAV.map(item => ({ href: item.href, icon: item.icon, label: t(item.key) })),
-      ...(isAdmin ? [{ href: "/staff-management", icon: "👥", label: t("nav_staff_mgmt") }] : []),
+      ...NAV.filter(item => canAccess(item.href.slice(1))).map(item => ({ href: item.href, icon: item.icon, label: t(item.key) })),
+      ...((isAdmin || canAccess("staff-management")) ? [{ href: "/staff-management", icon: "👥", label: t("nav_staff_mgmt") }] : []),
       ...(canSeeRepairs ? [{ href: "/repairs", icon: "🔧", label: t("nav_repairs"), badge: repairAlerts }] : []),
       ...(canSeeIncentive ? [{ href: "/my-incentive", icon: "🎯", label: t("nav_my_incentive") }] : []),
       ...(isAdmin ? ADMIN_NAV.map(item => ({ href: item.href, icon: item.icon, label: t(item.key), isAdmin: true })) : []),
@@ -189,7 +198,7 @@ export default function Sidebar() {
         ) : (
           // Normal nav — sections with divider
           <>
-            {NAV.map((item) => (
+            {NAV.filter(item => canAccess(item.href.slice(1))).map((item) => (
               <NavItem
                 key={item.href}
                 href={item.href}
@@ -200,7 +209,7 @@ export default function Sidebar() {
               />
             ))}
 
-            {isAdmin && (
+            {(isAdmin || canAccess("staff-management")) && (
               <NavItem
                 href="/staff-management"
                 icon="👥"
