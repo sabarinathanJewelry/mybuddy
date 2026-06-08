@@ -112,6 +112,7 @@ export default function BullionPage() {
   const [activeField, setActiveField] = useState<"rate" | "total">("total");
   const [firstPayAmt, setFirstPayAmt] = useState(0);
   const [firstPayMode, setFirstPayMode] = useState("cash");
+  const [firstPayDate, setFirstPayDate] = useState(globalDate);
   const [formNotes, setFormNotes] = useState("");
 
   function effectivePurity(): number {
@@ -176,7 +177,7 @@ export default function BullionPage() {
   function resetForm() {
     setSupplier(null); setPartyName(""); setGrossWt(0); setPureWt(0); setRatePerG(0); setTotalAmt(0);
     setPurityPreset("999"); setCustomPurity(91.6);
-    setActiveField("total"); setFirstPayAmt(0); setFirstPayMode("cash"); setFormNotes("");
+    setActiveField("total"); setFirstPayAmt(0); setFirstPayMode("cash"); setFirstPayDate(globalDate); setFormNotes("");
     setFirstOffsetWt(0); setFirstOffsetRate(0);
     setTradeDate(globalDate); setShowForm(false); setEditingId(null);
   }
@@ -204,7 +205,7 @@ export default function BullionPage() {
 
   const saveTrade = useMutation({
     mutationFn: async () => {
-      if ((!supplier && !partyName) || pureWt <= 0 || totalAmt <= 0 || ratePerG <= 0) throw new Error("Invalid input");
+      if (!supplier && !partyName) throw new Error("Select a supplier or enter a party name");
       const client = supabase();
 
       const effectiveName = supplier?.name || partyName;
@@ -233,17 +234,17 @@ export default function BullionPage() {
 
       if (firstPayAmt > 0) {
         await client.from("bullion_payments").insert({
-          trade_id: row.id, pay_date: tradeDate,
+          trade_id: row.id, pay_date: firstPayDate,
           amount: firstPayAmt, mode: firstPayMode,
         });
         if (firstPayMode === "cash") {
           await client.from("cash_ledger").insert({
-            tx_date: tradeDate, direction, amount: firstPayAmt,
+            tx_date: firstPayDate, direction, amount: firstPayAmt,
             description: desc, ref_type: "bullion", ref_id: row.id,
           });
         } else if (firstPayMode !== "balance_offset") {
           await client.from("bank_ledger").insert({
-            tx_date: tradeDate, direction, amount: firstPayAmt,
+            tx_date: firstPayDate, direction, amount: firstPayAmt,
             description: desc, ref_type: "bullion", ref_id: row.id,
           });
         }
@@ -532,7 +533,7 @@ export default function BullionPage() {
             <p className="text-xs font-medium text-ink-dim">
               {tradeType === "buy" ? "Pay now (optional — add more later)" : "Receive now (optional — add more later)"}
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs text-ink-dim mb-1">
                   {tradeType === "buy" ? "Amount Paid (cash/bank)" : "Cash / Bank Received"}
@@ -541,6 +542,10 @@ export default function BullionPage() {
                   placeholder="0" onFocus={(e) => e.target.select()}
                   onChange={(e) => setFirstPayAmt(parseFloat(e.target.value) || 0)}
                   className={inp} />
+              </div>
+              <div>
+                <label className="block text-xs text-ink-dim mb-1">Payment Date</label>
+                <input type="date" value={firstPayDate} onChange={(e) => setFirstPayDate(e.target.value)} className={inp} />
               </div>
               <div>
                 <label className="block text-xs text-ink-dim mb-1">Mode</label>
@@ -582,7 +587,7 @@ export default function BullionPage() {
               </div>
             )}
 
-            {(firstPayAmt > 0 || (firstOffsetWt > 0 && firstOffsetRate > 0)) && totalAmt > 0 && (() => {
+            {(firstPayAmt > 0 || (firstOffsetWt > 0 && firstOffsetRate > 0)) && (() => {
               const offsetAmt = parseFloat((firstOffsetWt * firstOffsetRate).toFixed(2));
               const totalPaid = firstPayAmt + offsetAmt;
               const pending   = totalAmt - totalPaid;
@@ -590,7 +595,8 @@ export default function BullionPage() {
                 <div className="text-xs text-ink-dim space-y-0.5">
                   {firstPayAmt > 0 && <p>Cash/Bank: <strong className="text-ok">{inr(firstPayAmt)}</strong></p>}
                   {offsetAmt > 0 && <p>Offset: <strong className="text-info">{inr(offsetAmt)}</strong></p>}
-                  <p>Pending after this: <strong className={pending > 0.01 ? "text-err" : "text-ok"}>{pending > 0.01 ? inr(pending) : "Fully settled ✓"}</strong></p>
+                  {totalAmt > 0 && <p>Pending after this: <strong className={pending > 0.01 ? "text-err" : "text-ok"}>{pending > 0.01 ? inr(pending) : "Fully settled ✓"}</strong></p>}
+                  {totalAmt === 0 && <p className="text-warn">Total amount TBD — update the entry once you have the final amount.</p>}
                 </div>
               );
             })()}
@@ -604,7 +610,7 @@ export default function BullionPage() {
 
           <div className="flex gap-2">
             <button
-              disabled={saveTrade.isPending || (!supplier && !partyName) || pureWt <= 0 || totalAmt <= 0 || ratePerG <= 0}
+              disabled={saveTrade.isPending || (!supplier && !partyName)}
               onClick={() => saveTrade.mutate()}
               className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
               {saveTrade.isPending ? "Saving…" : editingId ? "Save Changes" : `Record ${tradeType === "buy" ? "Purchase" : "Sale"}`}
@@ -774,13 +780,25 @@ export default function BullionPage() {
                       </div>
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono">
-                      <div>{grams(Number(r.pure_wt))}</div>
-                      {r.gross_wt && Number(r.gross_wt) !== Number(r.pure_wt) && (
-                        <div className="text-[10px] text-ink-dim">gross: {grams(Number(r.gross_wt))}</div>
+                      {Number(r.pure_wt) > 0 ? (
+                        <>
+                          <div>{grams(Number(r.pure_wt))}</div>
+                          {r.gross_wt && Number(r.gross_wt) !== Number(r.pure_wt) && (
+                            <div className="text-[10px] text-ink-dim">gross: {grams(Number(r.gross_wt))}</div>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-xs bg-warn/10 text-warn px-1.5 py-0.5 rounded">TBD</span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{inr(Number(r.rate_per_g))}</td>
-                    <td className="px-3 py-2.5 text-right font-mono font-semibold">{inr(Number(r.total_amount))}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-ink-dim">
+                      {Number(r.rate_per_g) > 0 ? inr(Number(r.rate_per_g)) : "—"}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono font-semibold">
+                      {Number(r.total_amount) > 0 ? inr(Number(r.total_amount)) : (
+                        <span className="text-xs bg-warn/10 text-warn px-1.5 py-0.5 rounded">TBD</span>
+                      )}
+                    </td>
                     <td className="px-3 py-2.5 text-right font-mono text-ok">
                       {cash > 0 ? inr(cash) : "—"}
                     </td>
@@ -792,11 +810,14 @@ export default function BullionPage() {
                       ) : "—"}
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono">
-                      <span className={pend > 0.01 ? "text-err font-semibold" : "text-ink-dim"}>{pend > 0.01 ? inr(pend) : "✓"}</span>
+                      {Number(r.total_amount) === 0
+                        ? <span className="text-warn text-xs">TBD</span>
+                        : <span className={pend > 0.01 ? "text-err font-semibold" : "text-ink-dim"}>{pend > 0.01 ? inr(pend) : "✓"}</span>
+                      }
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2">
-                        {pend > 0.01 && (
+                        {(pend > 0.01 || Number(r.total_amount) === 0) && (
                           <button
                             onClick={() => { setPayingTradeId(r.id); setPayAmount(0); setOffsetWt(0); setOffsetRate(0); setPayDate(globalDate); setPayMode("cash"); }}
                             className="text-xs text-gold hover:underline whitespace-nowrap">
