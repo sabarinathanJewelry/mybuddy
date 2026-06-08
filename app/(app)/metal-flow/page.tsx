@@ -190,6 +190,8 @@ export default function MetalFlowPage() {
   const [expandedBatch, setExpandedBatch] = useState<string | null>(null);
   const [showNewBatch, setShowNewBatch] = useState(false);
   const [newBatch, setNewBatch] = useState({ batch_no: "", batch_date: globalDate, metal: "gold_22k", notes: "" });
+  const [showDirectReserve, setShowDirectReserve] = useState(false);
+  const [directReserveForm, setDirectReserveForm] = useState({ batch_no: "", batch_date: globalDate, metal: "gold_22k", output_wt: 0, notes: "" });
   const [refineryForm, setRefineryForm] = useState<{ batchId: string; total_output_wt: number; debris_wt: number; output_wt: number; loss_wt: number; output_purity_pct: number } | null>(null);
 
   // Reserve & dispatches
@@ -291,6 +293,25 @@ export default function MetalFlowPage() {
       if (error) throw error;
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["melt_batches"] }); setShowNewBatch(false); setNewBatch({ batch_no: "", batch_date: globalDate, metal: "gold_22k", notes: "" }); },
+  });
+
+  const createDirectReserve = useMutation({
+    mutationFn: async (d: typeof directReserveForm) => {
+      if (!d.batch_no || d.output_wt <= 0) throw new Error("Batch number and output weight are required");
+      const { error } = await supabase().from("melt_batches").insert({
+        batch_no: d.batch_no, batch_date: d.batch_date, metal: d.metal,
+        input_wt: 0, output_wt: d.output_wt, melt_wt: d.output_wt,
+        output_purity_pct: 99.9, status: "refined",
+        notes: d.notes || "Placeholder — intake items to be mapped later",
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["melt_batches"] });
+      qc.invalidateQueries({ queryKey: ["metal_reserve"] });
+      setShowDirectReserve(false);
+      setDirectReserveForm({ batch_no: "", batch_date: globalDate, metal: "gold_22k", output_wt: 0, notes: "" });
+    },
   });
 
   const saveIntake = useMutation({
@@ -765,8 +786,8 @@ export default function MetalFlowPage() {
                   onChange={(e) => e.target.value && addToBatch.mutate({ batchId: e.target.value })}
                   className="border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none">
                   <option value="">— select batch —</option>
-                  {batches.filter((b: any) => b.status === "open").map((b: any) => (
-                    <option key={b.id} value={b.id}>{b.batch_no} ({b.metal?.replace("_", " ")})</option>
+                  {batches.filter((b: any) => b.status === "open" || (b.status === "refined" && Number(b.input_wt) === 0)).map((b: any) => (
+                    <option key={b.id} value={b.id}>{b.batch_no} ({b.metal?.replace("_", " ")}){b.status === "refined" ? " — map items" : ""}</option>
                   ))}
                 </select>
                 <button onClick={() => setSelectedIntake(new Set())} className="text-xs text-err hover:underline">Clear</button>
@@ -1059,12 +1080,64 @@ export default function MetalFlowPage() {
       {/* ── BATCHES TAB ────────────────────────────────────────── */}
       {tab === "batches" && (
         <div className="space-y-3">
-          <div className="flex justify-end">
-            <button onClick={() => setShowNewBatch(true)}
+          <div className="flex justify-end gap-2">
+            <button onClick={() => { setShowDirectReserve(true); setShowNewBatch(false); }}
+              className="bg-info/10 text-info border border-info/30 text-sm px-4 py-2 rounded-lg2 hover:bg-info/20">
+              + Direct Reserve Entry
+            </button>
+            <button onClick={() => { setShowNewBatch(true); setShowDirectReserve(false); }}
               className="bg-gold text-white text-sm px-4 py-2 rounded-lg2">
               + New Batch
             </button>
           </div>
+
+          {showDirectReserve && (
+            <div className="bg-white border border-info/30 rounded-xl p-4 shadow-soft space-y-3">
+              <div>
+                <h3 className="text-sm font-semibold text-info">Direct Reserve Entry</h3>
+                <p className="text-xs text-ink-dim mt-0.5">Use when you know the pure weight already in reserve but don't have full batch details yet. You can map intake items to this batch later.</p>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Batch No *</label>
+                  <input value={directReserveForm.batch_no} onChange={(e) => setDirectReserveForm({ ...directReserveForm, batch_no: e.target.value })} className={inp} placeholder="DR-001" />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Date</label>
+                  <input type="date" value={directReserveForm.batch_date} onChange={(e) => setDirectReserveForm({ ...directReserveForm, batch_date: e.target.value })} className={inp} />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Metal</label>
+                  <select value={directReserveForm.metal} onChange={(e) => setDirectReserveForm({ ...directReserveForm, metal: e.target.value })} className={inp}>
+                    <option value="gold_22k">Gold 22K</option>
+                    <option value="gold_24k">Gold 24K</option>
+                    <option value="gold_18k">Gold 18K</option>
+                    <option value="silver">Silver</option>
+                    <option value="silver_pure">Silver Pure</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Pure Weight (g) *</label>
+                  <input type="number" step="0.001" value={directReserveForm.output_wt || ""} placeholder="143.550"
+                    onFocus={e => e.target.select()}
+                    onChange={(e) => setDirectReserveForm({ ...directReserveForm, output_wt: parseFloat(e.target.value) || 0 })}
+                    className={`${inp} font-mono`} />
+                </div>
+                <div className="col-span-2 sm:col-span-4">
+                  <label className="block text-xs text-ink-dim mb-1">Notes</label>
+                  <input value={directReserveForm.notes} onChange={(e) => setDirectReserveForm({ ...directReserveForm, notes: e.target.value })} className={inp} placeholder="Placeholder — details to be filled later" />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button disabled={!directReserveForm.batch_no || directReserveForm.output_wt <= 0 || createDirectReserve.isPending}
+                  onClick={() => createDirectReserve.mutate(directReserveForm)}
+                  className="bg-info text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
+                  {createDirectReserve.isPending ? "Saving…" : "Add to Reserve"}
+                </button>
+                <button onClick={() => setShowDirectReserve(false)} className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
+              </div>
+            </div>
+          )}
 
           {showNewBatch && (
             <div className="bg-white border border-line rounded-xl p-4 shadow-soft space-y-3">
@@ -1120,12 +1193,21 @@ export default function MetalFlowPage() {
                         b.status === "open" ? "bg-info/10 text-info" :
                         b.status === "melted" ? "bg-warn/10 text-warn" : "bg-ok/10 text-ok"
                       }`}>{b.status}</span>
+                      {b.status === "refined" && Number(b.input_wt) === 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-warn/10 text-warn">Items Pending</span>
+                      )}
                       <span className="text-ink-dim text-sm">{expandedBatch === b.id ? "▲" : "▼"}</span>
                     </div>
                   </div>
 
                   {expandedBatch === b.id && (
                     <div className="border-t border-line px-5 py-4 space-y-4">
+                      {/* Placeholder hint */}
+                      {b.status === "refined" && Number(b.input_wt) === 0 && (
+                        <div className="bg-warn/5 border border-warn/20 rounded-lg2 px-3 py-2 text-xs text-warn">
+                          Placeholder entry — {grams(b.output_wt)} added to reserve. Go to the Intake tab, select the actual old-metal items, and assign them to this batch once you have the data.
+                        </div>
+                      )}
                       {/* Items */}
                       {(b.melt_batch_items ?? []).length > 0 && (
                         <table className="w-full text-sm">
@@ -1133,7 +1215,7 @@ export default function MetalFlowPage() {
                             <th className="text-right pb-2">Gross</th>
                             <th className="text-right pb-2">Purity%</th>
                             <th className="text-right pb-2">Pure Wt</th>
-                            {b.status !== "refined" && <th className="pb-2 w-16"></th>}
+                            <th className="pb-2 w-16"></th>
                           </tr></thead>
                           <tbody>
                             {(b.melt_batch_items ?? []).map((item: any) => (
@@ -1141,16 +1223,14 @@ export default function MetalFlowPage() {
                                 <td className="py-1.5 text-right">{grams(item.gross_wt)}</td>
                                 <td className="py-1.5 text-right text-ink-dim">{item.purity_pct}%</td>
                                 <td className="py-1.5 text-right text-gold">{grams(item.pure_wt)}</td>
-                                {b.status !== "refined" && (
-                                  <td className="py-1.5 text-right">
-                                    <button
-                                      onClick={() => {
-                                        if (window.confirm("Remove this item from the batch? It will return to pending intake."))
-                                          removeBatchItem.mutate({ batchId: b.id, itemId: item.id, intakeId: item.intake_id, pureWt: item.pure_wt });
-                                      }}
-                                      className="text-xs text-err hover:underline">Remove</button>
-                                  </td>
-                                )}
+                                <td className="py-1.5 text-right">
+                                  <button
+                                    onClick={() => {
+                                      if (window.confirm("Remove this item from the batch? It will return to pending intake."))
+                                        removeBatchItem.mutate({ batchId: b.id, itemId: item.id, intakeId: item.intake_id, pureWt: item.pure_wt });
+                                    }}
+                                    className="text-xs text-err hover:underline">Remove</button>
+                                </td>
                               </tr>
                             ))}
                           </tbody>
