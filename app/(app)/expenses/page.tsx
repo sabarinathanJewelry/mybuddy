@@ -240,8 +240,7 @@ function ExpenseTable({
 export default function ExpensesPage() {
   const t = useT();
   const globalDate = useGlobalDate((s) => s.date);
-  const todayStr   = new Date().toLocaleDateString("en-CA");
-  const monthStart = todayStr.slice(0, 7) + "-01";
+  const monthStart = globalDate.slice(0, 7) + "-01";
 
   const { data: categories = [] } = useCategories();
   const qc = useQueryClient();
@@ -261,13 +260,13 @@ export default function ExpensesPage() {
 
   // All-expenses filters
   const [filterFrom, setFilterFrom]   = useState(monthStart);
-  const [filterTo, setFilterTo]       = useState(todayStr);
+  const [filterTo, setFilterTo]       = useState(globalDate);
   const [filterCat, setFilterCat]     = useState("");
   const [filterMode, setFilterMode]   = useState("");
 
   // Data
   const { data: todayExpenses = [], isLoading: todayLoading } =
-    useTodayExpenses(todayStr);
+    useTodayExpenses(globalDate);
   const { data: allExpenses = [], isLoading: allLoading } =
     useFilteredExpenses(filterFrom, filterTo, filterCat, filterMode);
 
@@ -491,9 +490,9 @@ export default function ExpensesPage() {
                   <option value="bank">Bank</option>
                 </select>
               </div>
-              {(filterCat || filterMode || filterFrom !== monthStart || filterTo !== todayStr) && (
+              {(filterCat || filterMode || filterFrom !== monthStart || filterTo !== globalDate) && (
                 <button
-                  onClick={() => { setFilterFrom(monthStart); setFilterTo(todayStr); setFilterCat(""); setFilterMode(""); }}
+                  onClick={() => { setFilterFrom(monthStart); setFilterTo(globalDate); setFilterCat(""); setFilterMode(""); }}
                   className="text-xs text-err hover:underline pb-1">
                   Clear filters
                 </button>
