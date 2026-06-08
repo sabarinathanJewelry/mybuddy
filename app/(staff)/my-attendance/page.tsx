@@ -9,6 +9,7 @@ import {
   useMyLeaveRequests, useSubmitLeaveRequest,
   useMyOutsideDuties, useCreateOutsideDuty,
   useLastSyncTime,
+  useMyKyc, useUpsertKyc, KYC_DOCS,
   type PermissionRequest, type LeaveRequest, type OutsideDuty,
 } from "@/modules/attendance/api";
 
@@ -87,7 +88,7 @@ type DayRow = {
 
 type StaffInfo = { bio_user_id: string; name: string; shift: string };
 
-type PageTab = "today" | "monthly" | "requests" | "incentive" | "chat" | "policies";
+type PageTab = "today" | "monthly" | "requests" | "incentive" | "chat" | "policies" | "kyc";
 
 // ── page ─────────────────────────────────────────────────────────────────────
 export default function MyAttendancePage() {
@@ -144,6 +145,64 @@ export default function MyAttendancePage() {
   const [showDutyForm, setShowDutyForm] = useState(false);
   const [dutyForm, setDutyForm] = useState({ duty_date: todayStr, description: "", expected_arrival: "" });
   const [dutyError, setDutyError] = useState<string | null>(null);
+
+  // KYC
+  const { data: myKyc, refetch: refetchKyc } = useMyKyc(staff?.bio_user_id ?? null);
+  const upsertKyc = useUpsertKyc();
+  const [kycForm, setKycForm] = useState({ aadhaar_last4: "", digilocker_confirmed: false, documents_given: [] as string[] });
+  const [kycSelfie, setKycSelfie] = useState<string | null>(null);
+  const [kycCameraOn, setKycCameraOn] = useState(false);
+  const [kycStream, setKycStream] = useState<MediaStream | null>(null);
+  const kycVideoRef = useRef<HTMLVideoElement>(null);
+  const [kycError, setKycError] = useState<string | null>(null);
+  const [kycSaving, setKycSaving] = useState(false);
+
+  async function startKycCamera() {
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      setKycStream(s);
+      setKycCameraOn(true);
+      setTimeout(() => { if (kycVideoRef.current) kycVideoRef.current.srcObject = s; }, 100);
+    } catch { setKycError("Camera access denied. Please allow camera permission."); }
+  }
+
+  function captureKycSelfie() {
+    if (!kycVideoRef.current) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = 480; canvas.height = 360;
+    canvas.getContext("2d")!.drawImage(kycVideoRef.current, 0, 0, 480, 360);
+    setKycSelfie(canvas.toDataURL("image/jpeg", 0.75));
+    kycStream?.getTracks().forEach(t => t.stop());
+    setKycStream(null); setKycCameraOn(false);
+  }
+
+  function retakeKycSelfie() {
+    setKycSelfie(null);
+    startKycCamera();
+  }
+
+  async function submitKyc() {
+    setKycError(null);
+    if (!staff) return;
+    if (kycForm.aadhaar_last4.length !== 4 || !/^\d{4}$/.test(kycForm.aadhaar_last4)) {
+      setKycError("Enter the last 4 digits of your Aadhaar number."); return;
+    }
+    if (!kycSelfie && !myKyc?.selfie_data) {
+      setKycError("Please take a selfie photo."); return;
+    }
+    setKycSaving(true);
+    try {
+      await upsertKyc.mutateAsync({
+        bio_user_id: staff.bio_user_id,
+        aadhaar_last4: kycForm.aadhaar_last4,
+        selfie_data: kycSelfie ?? myKyc?.selfie_data ?? null,
+        digilocker_confirmed: kycForm.digilocker_confirmed,
+        documents_given: kycForm.documents_given,
+      });
+      refetchKyc();
+    } catch { setKycError("Failed to save. Please try again."); }
+    finally { setKycSaving(false); }
+  }
 
   async function handleLeaveSubmit() {
     setLeaveError(null);
@@ -493,6 +552,7 @@ export default function MyAttendancePage() {
           ...(canSeeIncentive ? [{ key: "incentive", label: "Incentive" }] : []),
           { key: "chat",       label: "Chat" },
           { key: "policies",   label: "Policies" },
+          { key: "kyc",        label: "KYC" },
         ] as { key: PageTab; label: string }[]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
@@ -1212,6 +1272,127 @@ export default function MyAttendancePage() {
 
       {/* ── POLICIES TAB ──────────────────────────────────────────────────────── */}
       {tab === "policies" && <PoliciesTab />}
+
+      {/* ── KYC TAB ───────────────────────────────────────────────────────────── */}
+      {tab === "kyc" && (
+        <div className="space-y-4">
+          {/* Status banner */}
+          {myKyc && (
+            <div className={`rounded-xl px-4 py-3 text-sm font-medium ${
+              myKyc.status === "verified"  ? "bg-ok/10 text-ok border border-ok/20" :
+              myKyc.status === "rejected" ? "bg-err/10 text-err border border-err/20" :
+              "bg-warn/10 text-warn border border-warn/20"
+            }`}>
+              KYC {myKyc.status === "verified" ? "Verified" : myKyc.status === "rejected" ? "Rejected" : "Pending review"}
+              {myKyc.admin_note && <span className="ml-2 font-normal opacity-80">— {myKyc.admin_note}</span>}
+            </div>
+          )}
+
+          {/* DigiLocker shortcut */}
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
+            <p className="text-sm font-semibold text-blue-800">Step 1 — Verify via DigiLocker (Optional but Recommended)</p>
+            <p className="text-xs text-blue-700">DigiLocker is the Government of India's digital document wallet. Log in with your Aadhaar-linked mobile to access your documents.</p>
+            <div className="flex items-center gap-3 flex-wrap">
+              <a href="https://www.digilocker.gov.in" target="_blank" rel="noopener noreferrer"
+                className="text-xs bg-blue-700 text-white px-3 py-1.5 rounded-lg2 hover:bg-blue-800">
+                Open DigiLocker →
+              </a>
+              <label className="flex items-center gap-1.5 text-xs text-blue-800 cursor-pointer">
+                <input type="checkbox"
+                  checked={kycForm.digilocker_confirmed || (myKyc?.digilocker_confirmed ?? false)}
+                  onChange={e => setKycForm(f => ({ ...f, digilocker_confirmed: e.target.checked }))}
+                  className="accent-blue-700" />
+                I have verified my documents on DigiLocker
+              </label>
+            </div>
+          </div>
+
+          {/* Aadhaar last 4 + Selfie */}
+          <div className="bg-white rounded-xl border border-line p-4 space-y-4">
+            <p className="text-sm font-semibold text-ink">Step 2 — Identity Details</p>
+
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Last 4 digits of Aadhaar number</label>
+              <input type="text" inputMode="numeric" maxLength={4} placeholder="e.g. 5678"
+                defaultValue={myKyc?.aadhaar_last4 ?? ""}
+                onChange={e => setKycForm(f => ({ ...f, aadhaar_last4: e.target.value.replace(/\D/g,"") }))}
+                className={`${inpCls} w-28 tracking-widest font-mono`} />
+              <p className="text-[11px] text-ink-dim mt-0.5">Only the last 4 digits are stored — your full Aadhaar is not saved.</p>
+            </div>
+
+            {/* Selfie */}
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Selfie Photo</label>
+              {(kycSelfie || myKyc?.selfie_data) && !kycCameraOn ? (
+                <div className="flex items-start gap-3">
+                  <img src={kycSelfie ?? myKyc!.selfie_data!} alt="selfie"
+                    className="w-28 h-20 object-cover rounded-lg border border-line" />
+                  <button type="button" onClick={retakeKycSelfie}
+                    className="text-xs border border-line px-2 py-1 rounded-lg2 hover:bg-canvas">Retake</button>
+                </div>
+              ) : kycCameraOn ? (
+                <div className="space-y-2">
+                  <video ref={kycVideoRef} autoPlay playsInline muted
+                    className="w-64 h-48 rounded-lg bg-black object-cover" />
+                  <div className="flex gap-2">
+                    <button type="button" onClick={captureKycSelfie}
+                      className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2">Capture</button>
+                    <button type="button" onClick={() => { kycStream?.getTracks().forEach(t => t.stop()); setKycCameraOn(false); }}
+                      className="text-xs border border-line px-3 py-1.5 rounded-lg2">Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <button type="button" onClick={startKycCamera}
+                  className="text-xs bg-canvas border border-line px-3 py-1.5 rounded-lg2 hover:bg-gold/10">
+                  Open Camera &amp; Take Selfie
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Physical documents checklist */}
+          <div className="bg-white rounded-xl border border-line p-4 space-y-3">
+            <p className="text-sm font-semibold text-ink">Step 3 — Documents Given to Owner</p>
+            <p className="text-xs text-ink-dim">Tick each document you have physically submitted to the shop owner.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {KYC_DOCS.map(doc => {
+                const checked = (kycForm.documents_given.includes(doc.key)) ||
+                  (!kycForm.documents_given.length && (myKyc?.documents_given ?? []).includes(doc.key));
+                return (
+                  <label key={doc.key} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="checkbox"
+                      checked={kycForm.documents_given.length > 0
+                        ? kycForm.documents_given.includes(doc.key)
+                        : (myKyc?.documents_given ?? []).includes(doc.key)}
+                      onChange={e => {
+                        const base = kycForm.documents_given.length > 0
+                          ? kycForm.documents_given
+                          : (myKyc?.documents_given ?? []);
+                        setKycForm(f => ({
+                          ...f,
+                          documents_given: e.target.checked
+                            ? [...base, doc.key]
+                            : base.filter(k => k !== doc.key),
+                        }));
+                      }}
+                      className="accent-gold" />
+                    {doc.label}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {kycError && <p className="text-xs text-err">{kycError}</p>}
+
+          {myKyc?.status !== "verified" && (
+            <button type="button" onClick={submitKyc} disabled={kycSaving}
+              className="text-sm bg-gold text-white px-4 py-2 rounded-lg2 disabled:opacity-40">
+              {kycSaving ? "Saving…" : myKyc ? "Update KYC" : "Submit KYC"}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

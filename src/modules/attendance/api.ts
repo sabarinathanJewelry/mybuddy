@@ -1102,3 +1102,100 @@ export function useDeleteStaffAdvance() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["staff-advances"] }),
   });
 }
+
+// ── Staff KYC ─────────────────────────────────────────────────────────────────
+
+export type StaffKyc = {
+  id: string;
+  bio_user_id: string;
+  aadhaar_last4: string;
+  selfie_data: string | null;
+  digilocker_confirmed: boolean;
+  documents_given: string[];
+  status: "pending" | "verified" | "rejected";
+  admin_note: string | null;
+  verified_at: string | null;
+  created_at: string;
+  updated_at: string;
+  staff?: { name: string };
+};
+
+export const KYC_DOCS: { key: string; label: string }[] = [
+  { key: "aadhaar_original",  label: "Original Aadhaar Card" },
+  { key: "aadhaar_copy",      label: "Aadhaar Xerox / Photocopy" },
+  { key: "pan_card",          label: "PAN Card" },
+  { key: "pan_copy",          label: "PAN Xerox" },
+  { key: "passport_photo",    label: "Passport Size Photo" },
+  { key: "address_proof",     label: "Address Proof (Passbook / Utility Bill)" },
+  { key: "bank_details",      label: "Bank Passbook / Cancelled Cheque" },
+  { key: "exp_certificate",   label: "Experience Certificate" },
+];
+
+export function useMyKyc(bioUserId: string | null) {
+  return useQuery<StaffKyc | null>({
+    queryKey: ["staff_kyc", "my", bioUserId],
+    enabled: !!bioUserId,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("staff_kyc")
+        .select("*")
+        .eq("bio_user_id", bioUserId!)
+        .maybeSingle();
+      if (error) throw error;
+      return data ?? null;
+    },
+  });
+}
+
+export function useUpsertKyc() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      bio_user_id: string;
+      aadhaar_last4: string;
+      selfie_data: string | null;
+      digilocker_confirmed: boolean;
+      documents_given: string[];
+    }) => {
+      const { error } = await supabase()
+        .from("staff_kyc")
+        .upsert({ ...payload, updated_at: new Date().toISOString() }, { onConflict: "bio_user_id" });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["staff_kyc"] }),
+  });
+}
+
+export function useAllKyc() {
+  return useQuery<StaffKyc[]>({
+    queryKey: ["staff_kyc", "all"],
+    refetchOnMount: "always",
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("staff_kyc")
+        .select("*, staff(name)")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
+export function useVerifyKyc() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status, admin_note }: { id: string; status: "verified" | "rejected"; admin_note?: string }) => {
+      const { error } = await supabase()
+        .from("staff_kyc")
+        .update({
+          status,
+          admin_note: admin_note || null,
+          verified_at: status === "verified" ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["staff_kyc"] }),
+  });
+}

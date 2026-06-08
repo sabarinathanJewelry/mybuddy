@@ -14,14 +14,15 @@ import {
   useApprovedPermsByDate, useApprovedPermsByMonth, useApprovedLeavesByMonth,
   useOutsideDutiesByDate, useOutsideDutiesByMonth, useAllOutsideDuties,
   useCreateOutsideDuty, useDecideOutsideDuty,
+  useAllKyc, useVerifyKyc, KYC_DOCS,
   type StaffMember, type MonthlyEmployeeSummary, type PermissionRequest, type KioskTap,
-  type LeaveRequest, type AppNotification, type OutsideDuty,
+  type LeaveRequest, type AppNotification, type OutsideDuty, type StaffKyc,
 } from "@/modules/attendance/api";
 import { useKiosk } from "@/stores/kiosk";
 import { useAuth } from "@/stores/auth";
 import { shortDate, inr } from "@/lib/format";
 
-type PageTab = "attendance" | "staff" | "monthly" | "requests" | "leaves" | "duties" | "chat" | "announcements";
+type PageTab = "attendance" | "staff" | "monthly" | "requests" | "leaves" | "duties" | "chat" | "announcements" | "kyc";
 
 interface ChatMsg { id: string; sender_id: string; sender_name: string; message: string; is_deleted: boolean; edited_at: string | null; created_at: string }
 
@@ -2031,6 +2032,7 @@ export default function AttendancePage() {
     duties:        "Outside Duty",
     chat:          "Staff Chat",
     announcements: "Announcements",
+    kyc:           "KYC",
   };
 
   return (
@@ -2055,7 +2057,7 @@ export default function AttendancePage() {
       {/* Tabs — hidden in kiosk mode (always visible for admin) */}
       {(!isLocked || isAdmin) && (
         <div className="flex border-b border-line gap-1 flex-wrap">
-          {(["attendance", "staff", "monthly", "requests", "leaves", "duties", "chat", ...(isAdmin ? ["announcements"] : [])] as PageTab[]).map((t) => (
+          {(["attendance", "staff", "monthly", "requests", "leaves", "duties", "chat", ...(isAdmin ? ["announcements", "kyc"] : [])] as PageTab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
                 tab === t ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"
@@ -2388,6 +2390,108 @@ export default function AttendancePage() {
 
       {/* ── Announcements tab (admin only) ── */}
       {tab === "announcements" && isAdmin && <AnnouncementsTab />}
+
+      {/* ── KYC tab (admin only) ── */}
+      {tab === "kyc" && isAdmin && <KycTab />}
+    </div>
+  );
+}
+
+// ── KYC Review Tab ───────────────────────────────────────────────────────────
+function KycTab() {
+  const { data: records = [], isLoading } = useAllKyc();
+  const verify = useVerifyKyc();
+  const [noteMap, setNoteMap] = useState<Record<string, string>>({});
+  const [preview, setPreview] = useState<string | null>(null);
+  const [filter, setFilter] = useState<"all" | "pending" | "verified" | "rejected">("pending");
+
+  const filtered = records.filter(r => filter === "all" || r.status === filter);
+  const pendingCount = records.filter(r => r.status === "pending").length;
+
+  const STATUS_STYLE: Record<string, string> = {
+    pending:  "bg-warn/10 text-warn",
+    verified: "bg-ok/10 text-ok",
+    rejected: "bg-err/10 text-err",
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Filter */}
+      <div className="flex rounded-lg overflow-hidden border border-line text-xs w-fit">
+        {(["pending", "verified", "rejected", "all"] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`px-3 py-1.5 font-medium capitalize transition-colors ${filter === f ? "bg-gold text-white" : "bg-white text-ink-dim hover:bg-canvas"}`}>
+            {f === "pending" ? `Pending (${pendingCount})` : f === "all" ? `All (${records.length})` : f.charAt(0).toUpperCase() + f.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {/* Selfie preview modal */}
+      {preview && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center" onClick={() => setPreview(null)}>
+          <img src={preview} alt="selfie" className="max-w-xs max-h-80 rounded-xl border-4 border-white" />
+        </div>
+      )}
+
+      {isLoading ? <p className="text-sm text-ink-dim">Loading…</p> : filtered.length === 0 ? (
+        <p className="text-sm text-ink-dim">No {filter === "all" ? "" : filter} KYC submissions.</p>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((r: StaffKyc) => (
+            <div key={r.id} className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
+              <div className="flex items-start gap-4 flex-wrap">
+                {/* Selfie thumbnail */}
+                {r.selfie_data ? (
+                  <img src={r.selfie_data} alt="selfie"
+                    onClick={() => setPreview(r.selfie_data!)}
+                    className="w-20 h-16 object-cover rounded-lg border border-line cursor-pointer hover:opacity-80 flex-shrink-0" />
+                ) : (
+                  <div className="w-20 h-16 rounded-lg border border-line bg-canvas flex items-center justify-center flex-shrink-0">
+                    <span className="text-xs text-ink-dim">No photo</span>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-sm">{(r as any).staff?.name ?? r.bio_user_id}</span>
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${STATUS_STYLE[r.status]}`}>{r.status}</span>
+                    {r.digilocker_confirmed && (
+                      <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded">DigiLocker ✓</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-ink-dim">Aadhaar: xxxx-xxxx-{r.aadhaar_last4}</p>
+                  {r.documents_given.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {r.documents_given.map(k => {
+                        const doc = KYC_DOCS.find(d => d.key === k);
+                        return doc ? (
+                          <span key={k} className="text-[10px] bg-canvas border border-line px-1.5 py-0.5 rounded">{doc.label}</span>
+                        ) : null;
+                      })}
+                    </div>
+                  )}
+                  {r.admin_note && r.status !== "pending" && (
+                    <p className="text-xs text-ink-dim italic">{r.admin_note}</p>
+                  )}
+                </div>
+              </div>
+              {r.status === "pending" && (
+                <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-line">
+                  <input type="text" placeholder="Note (optional)"
+                    value={noteMap[r.id] ?? ""}
+                    onChange={e => setNoteMap(m => ({ ...m, [r.id]: e.target.value }))}
+                    className="border border-line rounded px-2 py-1 text-xs w-40 focus:outline-none focus:ring-1 focus:ring-gold" />
+                  <button onClick={() => verify.mutate({ id: r.id, status: "verified", admin_note: noteMap[r.id] })}
+                    disabled={verify.isPending}
+                    className="text-xs bg-ok text-white px-3 py-1 rounded hover:opacity-90 disabled:opacity-40">Verify</button>
+                  <button onClick={() => verify.mutate({ id: r.id, status: "rejected", admin_note: noteMap[r.id] })}
+                    disabled={verify.isPending}
+                    className="text-xs bg-err text-white px-3 py-1 rounded hover:opacity-90 disabled:opacity-40">Reject</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
