@@ -20,7 +20,17 @@ export async function POST(request: NextRequest) {
   const admin = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 
   const { data: { user: caller } } = await admin.auth.getUser(token);
-  if (!caller || caller.app_metadata?.role !== "admin") {
+  if (!caller) {
+    return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+  }
+
+  // app_metadata.role may be unset for legacy admins — check profiles table instead
+  const { data: callerProfile } = await admin
+    .from("profiles")
+    .select("role")
+    .eq("id", caller.id)
+    .single();
+  if (!callerProfile || callerProfile.role !== "admin") {
     return NextResponse.json({ error: "Forbidden — admin only" }, { status: 403 });
   }
 
