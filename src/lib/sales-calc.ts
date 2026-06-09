@@ -1,4 +1,4 @@
-export type Metal = "gold_22k" | "gold_24k" | "gold_18k" | "silver" | "silver_pure" | "silver_mpr";
+export type Metal = "gold_22k" | "gold_24k" | "gold_18k" | "silver" | "silver_pure" | "silver_mpr" | "misc";
 
 export interface BoardRate {
   gold_22k: number;
@@ -39,6 +39,7 @@ export interface LineComputed {
 export function rateForMetal(board: BoardRate, metal: Metal | null): number {
   if (!metal) return 0;
   if (metal === "silver_mpr") return board.silver ?? 0;
+  if (metal === "misc") return 0;
   return board[metal as keyof BoardRate] ?? 0;
 }
 

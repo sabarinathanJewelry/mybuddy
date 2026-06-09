@@ -54,6 +54,7 @@ const METALS: { value: Metal; label: string }[] = [
   { value: "silver",      label: "Silver" },
   { value: "silver_pure", label: "Silver Pure" },
   { value: "silver_mpr",  label: "Silver MPR" },
+  { value: "misc",        label: "Misc / Stone / Service" },
 ];
 
 const PAY_MODES: { value: PaymentMode; label: string }[] = [
@@ -101,7 +102,7 @@ function newItem(series: SaleSeries = "G22", boardRate: import("@/lib/sales-calc
     show_stone: false, stone_amt: 0,
     show_diamond: false, diamond_amt: 0, diamond_carat_rate: 0, diamond_cents: 0,
     gst_enabled: true, gst_pct: 3,
-    is_value_entry: metal === "silver_mpr",
+    is_value_entry: metal === "silver_mpr" || metal === "misc",
     is_suspense: false, supplier_id: null, supplier_name: null,
     net_wt: 0, pure_wt: 0, line_total: 0,
   };
@@ -207,7 +208,7 @@ export default function SaleForm({ saleId }: Props) {
       diamond_cents: 0,
       gst_enabled: item.gst_pct > 0,
       gst_pct: item.gst_pct || 3,
-      is_value_entry: item.metal === "silver_mpr",
+      is_value_entry: item.metal === "silver_mpr" || item.metal === "misc",
       is_suspense: item.is_suspense,
       supplier_id: item.supplier_id,
       supplier_name: null,
@@ -229,8 +230,8 @@ export default function SaleForm({ saleId }: Props) {
   }, [existingSale?.sale?.id]);
 
   function updateItem(idx: number, patch: Partial<SaleItemDraft>) {
-    // Auto-update series when the first item's metal changes
-    if (patch.metal !== undefined) {
+    // Auto-update series when the first item's metal changes (misc items don't drive series)
+    if (patch.metal !== undefined && patch.metal !== "misc") {
       setSeries(seriesForMetal(patch.metal as Metal));
     }
     setItems((prev) => prev.map((item, i) => {
@@ -239,7 +240,7 @@ export default function SaleForm({ saleId }: Props) {
 
       if (patch.metal !== undefined && boardRate) {
         merged.rate = rateForMetal(boardRate, patch.metal);
-        merged.is_value_entry = patch.metal === "silver_mpr";
+        merged.is_value_entry = patch.metal === "silver_mpr" || patch.metal === "misc";
         merged.purity_pct = defaultPurityForMetal(patch.metal as Metal);
       }
 
