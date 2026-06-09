@@ -81,6 +81,11 @@ export default function SalesPage() {
                   .map((i: any) => i.description?.trim())
                   .filter(Boolean)
                   .filter((d: string, idx: number, arr: string[]) => arr.indexOf(d) === idx);
+                const suspenseSuppliers = [...new Set(
+                  items
+                    .filter((i: any) => i.is_suspense && i.suppliers?.name)
+                    .map((i: any) => i.suppliers.name as string)
+                )];
                 return (
                 <tr key={s.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
                   <td className="px-4 py-2.5">
@@ -93,10 +98,21 @@ export default function SalesPage() {
                   </td>
                   <td className="px-3 py-2.5 text-ink-dim">{shortDate(s.bill_date)}</td>
                   <td className="px-3 py-2.5 hidden sm:table-cell text-ink-mid">{s.customers?.name ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-ink-dim text-xs max-w-[180px]">
-                    {descriptions.length > 0
-                      ? descriptions.slice(0, 3).join(", ") + (descriptions.length > 3 ? ` +${descriptions.length - 3}` : "")
-                      : "—"}
+                  <td className="px-3 py-2.5 text-ink-dim text-xs max-w-[200px]">
+                    <div>
+                      {descriptions.length > 0
+                        ? descriptions.slice(0, 3).join(", ") + (descriptions.length > 3 ? ` +${descriptions.length - 3}` : "")
+                        : "—"}
+                    </div>
+                    {suspenseSuppliers.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-0.5">
+                        {suspenseSuppliers.map((sup) => (
+                          <span key={sup} className="text-[10px] px-1.5 py-0.5 rounded bg-warn/15 text-warn font-semibold">
+                            {sup}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-right text-xs text-ink-dim tabular-nums">
                     {totalGrossWt > 0 ? grams(totalGrossWt) : "—"}

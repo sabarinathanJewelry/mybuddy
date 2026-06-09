@@ -19,7 +19,7 @@ function useDaily(date: string) {
       const [cashRes, bankRes, salesRes, metalRes, walkinRes, chitRes, gsdRes, cbRes, expRes] = await Promise.all([
         client.from("cash_ledger").select("direction, amount").eq("tx_date", date),
         client.from("bank_ledger").select("direction, amount").eq("tx_date", date),
-        client.from("sales").select("id, total, gst_amount, status, sale_items(metal, net_wt, line_total)").eq("bill_date", date).eq("status", "confirmed"),
+        client.from("sales").select("id, total, gst_amount, status, sale_items(metal, net_wt, line_total, is_suspense, suppliers(name))").eq("bill_date", date).eq("status", "confirmed"),
         client.from("old_metal_intake").select("metal, pure_wt").eq("intake_date", date),
         client.from("walk_in_summaries").select("gold_walkin,silver_walkin,other_walkin,gold_walkout,silver_walkout,other_walkout").eq("summary_date", date),
         client.from("chit_payments").select("amount, metal_grams, metal_type").eq("pay_date", date),
@@ -41,6 +41,20 @@ function useDaily(date: string) {
       const goldSoldG   = allItems.filter((i: any) => (i.metal ?? "").startsWith("gold")).reduce((s: number, i: any) => s + (Number(i.net_wt) || 0), 0);
       const silverSoldG = allItems.filter((i: any) => i.metal === "silver" || i.metal === "silver_pure").reduce((s: number, i: any) => s + (Number(i.net_wt) || 0), 0);
       const mrpTotal    = allItems.filter((i: any) => i.metal === "silver_mpr").reduce((s: number, i: any) => s + (Number(i.line_total) || 0), 0);
+
+      // Suspense (outside shop) items breakdown by supplier
+      const suspenseItems = allItems.filter((i: any) => i.is_suspense);
+      const suspenseCount = suspenseItems.length;
+      const suspenseTotalAmt = suspenseItems.reduce((s: number, i: any) => s + (Number(i.line_total) || 0), 0);
+      const suspenseBySupplier: { name: string; count: number; total: number }[] = Object.values(
+        suspenseItems.reduce((map: Record<string, { name: string; count: number; total: number }>, i: any) => {
+          const nm: string = i.suppliers?.name ?? "Unknown";
+          if (!map[nm]) map[nm] = { name: nm, count: 0, total: 0 };
+          map[nm].count++;
+          map[nm].total += Number(i.line_total) || 0;
+          return map;
+        }, {})
+      );
 
       const expenseTotal = (expRes.data ?? []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
       const oldGoldG   = (metalRes.data ?? []).filter((r) => r.metal?.startsWith("gold")).reduce((s, r) => s + (Number(r.pure_wt) || 0), 0);
@@ -74,6 +88,7 @@ function useDaily(date: string) {
         smartGoldG, smartSilverG, smartCount,
         cashBonusAmt, cashBonusCount,
         goldSoldG, silverSoldG, mrpTotal, expenseTotal,
+        suspenseCount, suspenseTotalAmt, suspenseBySupplier,
       };
     },
   });
@@ -159,7 +174,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
       const client = supabase();
       const [salesRes, orderRes, newOrdersRes, miscCashRes, miscBankRes, advanceRes, bullionPayRes, bullionTradeRes, oldGoldAdvRes, standalonePayRes, orderCashOutRes] = await Promise.all([
         client.from("sales")
-          .select("id, bill_no, bill_date, total, change_due, change_mode, customers(name), sale_items(description, metal, net_wt), sale_payments(mode, amount, metal_wt)")
+          .select("id, bill_no, bill_date, total, change_due, change_mode, customers(name), sale_items(description, metal, net_wt, is_suspense, suppliers(name)), sale_payments(mode, amount, metal_wt)")
           .gte("bill_date", fromDate).lte("bill_date", toDate)
           .eq("status", "confirmed").order("bill_date").order("created_at"),
         // Order payments grouped by order+date (handles old gold, UPI, cash, advance per order)
@@ -277,7 +292,9 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
           ? (s.bill_no ?? "Sale")
           : items.map((i: any) => {
               const wt = Number(i.net_wt) > 0 ? `${Number(i.net_wt).toFixed(3)}g ` : "";
-              return `${wt}${i.description || (i.metal ?? "item").replace(/_/g, " ")}`;
+              const desc = i.description || (i.metal ?? "item").replace(/_/g, " ");
+              const tag = i.is_suspense && i.suppliers?.name ? ` [${i.suppliers.name}]` : "";
+              return `${wt}${desc}${tag}`;
             }).join(", ");
 
         // Non-cash payment modes + any unpaid balance go in the Debit column.
@@ -2138,6 +2155,25 @@ export default function DailySheetPage() {
             <StatCard label="MRP Items" value={inr(data.mrpTotal)} color="text-info" sub="Silver MPR line total" />
             <StatCard label="Total Expenses" value={inr(data.expenseTotal)} color="text-err" sub="All expenses today" />
           </div>
+
+          {/* Outside / Suspense breakdown */}
+          {data.suspenseCount > 0 && (
+            <div className="bg-warn/5 border border-warn/20 rounded-xl px-4 py-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-warn">
+                  Outside Shop (Suspense) — {data.suspenseCount} item{data.suspenseCount !== 1 ? "s" : ""}
+                </p>
+                <span className="text-xs font-semibold text-warn">{inr(data.suspenseTotalAmt)}</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {data.suspenseBySupplier.map((sup) => (
+                  <span key={sup.name} className="text-xs px-2.5 py-1 rounded-full bg-warn/10 text-warn border border-warn/20">
+                    {sup.name} — {sup.count} item{sup.count !== 1 ? "s" : ""} · {inr(sup.total)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Cash & Bank today */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
