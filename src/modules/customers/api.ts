@@ -13,7 +13,7 @@ export function useCustomers(search = "", limit = 50) {
         .select("*")
         .order("name")
         .limit(limit);
-      if (search) q = q.ilike("name", `%${search}%`);
+      if (search) q = q.or(`name.ilike.%${search}%,phone.ilike.%${search}%`);
       const { data, error } = await q;
       if (error) throw error;
       return data ?? [];
