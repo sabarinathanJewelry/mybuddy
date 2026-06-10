@@ -15,6 +15,7 @@ import {
   useOutsideDutiesByDate, useOutsideDutiesByMonth, useAllOutsideDuties,
   useCreateOutsideDuty, useDecideOutsideDuty,
   useAllKyc, useVerifyKyc, KYC_DOCS,
+  useShopExceptionForDate, useUpsertShopException, useDeleteShopException,
   type StaffMember, type MonthlyEmployeeSummary, type PermissionRequest, type KioskTap,
   type LeaveRequest, type AppNotification, type OutsideDuty, type StaffKyc,
 } from "@/modules/attendance/api";
@@ -1974,6 +1975,12 @@ export default function AttendancePage() {
   const { data: dailyPerms = [] }         = useApprovedPermsByDate(date);
   const { data: dailyDuties = [] }        = useOutsideDutiesByDate(date);
   const createOutsideDuty                 = useCreateOutsideDuty();
+  const { data: shopException }            = useShopExceptionForDate(date);
+  const upsertException                    = useUpsertShopException();
+  const deleteException                    = useDeleteShopException();
+  const [showExcForm, setShowExcForm]     = useState(false);
+  const [excTime, setExcTime]             = useState("");
+  const [excReason, setExcReason]         = useState("");
 
   const [assignDutyFor, setAssignDutyFor] = useState<string | null>(null);
   const [dutyForm, setDutyForm]           = useState({ description: "", expected_arrival: "" });
@@ -2083,6 +2090,72 @@ export default function AttendancePage() {
       {/* ── Attendance tab ── */}
       {tab === "attendance" && (
         <>
+          {/* Shop late-opening exception — admin only */}
+          {isAdmin && (
+            <div className="rounded-xl border border-line bg-white shadow-soft px-4 py-3 space-y-2">
+              {shopException ? (
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="text-sm font-medium text-warn">
+                    Shop opened late at {shopException.shop_opens_at.slice(0, 5)} on {shortDate(date)}
+                    {shopException.reason ? ` — ${shopException.reason}` : ""}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setExcTime(shopException.shop_opens_at.slice(0, 5));
+                      setExcReason(shopException.reason ?? "");
+                      setShowExcForm(true);
+                    }}
+                    className="text-xs text-gold hover:underline">Edit</button>
+                  <button
+                    onClick={() => {
+                      if (window.confirm("Remove this late-opening exception?")) {
+                        deleteException.mutate(shopException.id);
+                      }
+                    }}
+                    disabled={deleteException.isPending}
+                    className="text-xs text-err hover:underline disabled:opacity-40">Remove</button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-ink-dim">No late-opening exception for {shortDate(date)}</span>
+                  {!showExcForm && (
+                    <button
+                      onClick={() => { setExcTime(""); setExcReason(""); setShowExcForm(true); }}
+                      className="text-xs text-gold border border-gold/40 px-2.5 py-1 rounded-lg2 hover:bg-gold/5">
+                      Set Late Opening
+                    </button>
+                  )}
+                </div>
+              )}
+              {showExcForm && (
+                <div className="flex items-end gap-2 flex-wrap pt-1">
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Shop opened at</label>
+                    <input type="time" value={excTime} onChange={e => setExcTime(e.target.value)}
+                      className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
+                  <div className="flex-1 min-w-[160px]">
+                    <label className="block text-xs text-ink-dim mb-1">Reason (optional)</label>
+                    <input type="text" value={excReason} onChange={e => setExcReason(e.target.value)}
+                      placeholder="e.g. Power cut, Festival"
+                      className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
+                  <button
+                    disabled={!excTime || upsertException.isPending}
+                    onClick={async () => {
+                      await upsertException.mutateAsync({ exception_date: date, shop_opens_at: excTime, reason: excReason || undefined });
+                      setShowExcForm(false);
+                    }}
+                    className="bg-gold text-white text-sm px-3 py-1.5 rounded-lg2 hover:bg-gold-dark disabled:opacity-40">
+                    Save
+                  </button>
+                  <button onClick={() => setShowExcForm(false)}
+                    className="text-xs text-ink-dim hover:text-ink px-2 py-1.5">Cancel</button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Kiosk setup card — admin only, unlocked */}
           {!isLocked && profile?.role === "admin" && <KioskConfig />}
 

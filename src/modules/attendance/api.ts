@@ -9,6 +9,10 @@ function istMinutes(ts: string): number {
   const ist = new Date(new Date(ts).getTime() + IST_MS);
   return ist.getUTCHours() * 60 + ist.getUTCMinutes();
 }
+function parseTimeToMins(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
 
 // Collapse consecutive punches within thresholdMs (default 30s) — biometric double-reads.
 // Returns deduplicated list and a flag so the UI can warn the user.
@@ -116,7 +120,7 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
         .order("name");
       if (activeOnly) staffQ = staffQ.eq("active", true);
 
-      const [logsRes, staffRes, permsRes] = await Promise.all([
+      const [logsRes, staffRes, permsRes, exceptionsRes] = await Promise.all([
         client
           .from("attendance_logs")
           .select("bio_user_id, punch_time, punch_status")
@@ -129,6 +133,11 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
           .select("bio_user_id")
           .eq("status", "approved")
           .eq("permission_date", date),
+        client
+          .from("shop_exceptions")
+          .select("shop_opens_at")
+          .eq("exception_date", date)
+          .maybeSingle(),
       ]);
 
       if (logsRes.error) throw logsRes.error;
@@ -136,6 +145,11 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
       const logs = logsRes.data ?? [];
       const staff: StaffMember[] = (staffRes.data ?? []) as any;
       const approvedPerms = new Set((permsRes.data ?? []).map((p: any) => p.bio_user_id));
+      // Shop exception: if shop opened late, extend the late threshold accordingly
+      const shopExc = exceptionsRes.data as { shop_opens_at: string } | null;
+      const lateThresholdMins = shopExc
+        ? parseTimeToMins(shopExc.shop_opens_at) + 20
+        : 9 * 60 + 50;
 
       const byUser = new Map<string, string[]>();
       for (const log of logs) {
@@ -155,8 +169,9 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
             ? (new Date(lastOut).getTime() - new Date(firstIn).getTime()) / 3_600_000
             : null;
 
-        // Late = first punch after 9:50 AM IST (9:30 + 20 min grace); approved permission overrides
-        const is_late = firstIn && !approvedPerms.has(s.bio_user_id) ? istMinutes(firstIn) > 9 * 60 + 50 : false;
+        // Late = first punch after threshold IST; approved permission overrides
+        // Threshold defaults to 9:50 (9:30 + 20 min grace), overridden by shop_exceptions for this date
+        const is_late = firstIn && !approvedPerms.has(s.bio_user_id) ? istMinutes(firstIn) > lateThresholdMins : false;
 
         // Lunch = time between second punch and second-to-last punch (middle window)
         // Spare: 60–70 min (buffer zone), Over: > 70 min (red flag)
@@ -320,6 +335,16 @@ export function useMonthlyAttendanceSummary(month: string) {
         (permsRes.data ?? []).map((p: any) => `${p.bio_user_id}:${p.permission_date}`)
       );
 
+      // Fetch shop late-opening exceptions for the month
+      const excRes = await client
+        .from("shop_exceptions")
+        .select("exception_date, shop_opens_at")
+        .gte("exception_date", `${month}-01`)
+        .lte("exception_date", monthEnd);
+      const exceptionMap = new Map<string, number>(
+        (excRes.data ?? []).map((e: any) => [e.exception_date, parseTimeToMins(e.shop_opens_at)])
+      );
+
       // Group logs by employee and IST calendar date
       const byUserByDate = new Map<string, Map<string, string[]>>();
       for (const log of logs) {
@@ -359,8 +384,10 @@ export function useMonthlyAttendanceSummary(month: string) {
 
           const firstInMins = firstIn ? istMinutes(firstIn) : 0;
           const hasPermission = approvedPermSet.has(`${s.bio_user_id}:${date}`);
-          const is_late     = firstIn && !hasPermission ? firstInMins > 9 * 60 + 50 : false;
-          const late_minutes = is_late ? firstInMins - (9 * 60 + 30) : 0;
+          const shopOpenMins = exceptionMap.get(date) ?? (9 * 60 + 30);
+          const threshold = shopOpenMins + 20;
+          const is_late     = firstIn && !hasPermission ? firstInMins > threshold : false;
+          const late_minutes = is_late ? firstInMins - shopOpenMins : 0;
 
           const lastOutMins = lastOut ? istMinutes(lastOut) : 0;
           const ot_minutes  = lastOut ? Math.max(0, lastOutMins - shiftEndMin) : 0;
@@ -1177,6 +1204,79 @@ export function useAllKyc() {
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as any[];
+    },
+  });
+}
+
+// ── Shop Exceptions ──────────────────────────────────────────────────────────
+
+export type ShopException = {
+  id: string;
+  exception_date: string;
+  shop_opens_at: string;
+  reason: string | null;
+  created_at: string;
+};
+
+export function useShopExceptionForDate(date: string) {
+  return useQuery<ShopException | null>({
+    queryKey: ["shop_exception", date],
+    queryFn: async () => {
+      const { data } = await supabase()
+        .from("shop_exceptions")
+        .select("*")
+        .eq("exception_date", date)
+        .maybeSingle();
+      return (data as ShopException | null) ?? null;
+    },
+    enabled: !!date,
+  });
+}
+
+export function useShopExceptions() {
+  return useQuery<ShopException[]>({
+    queryKey: ["shop_exceptions"],
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("shop_exceptions")
+        .select("*")
+        .order("exception_date", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as ShopException[];
+    },
+  });
+}
+
+export function useUpsertShopException() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { exception_date: string; shop_opens_at: string; reason?: string }) => {
+      const { error } = await supabase()
+        .from("shop_exceptions")
+        .upsert({ ...payload, reason: payload.reason || null }, { onConflict: "exception_date" });
+      if (error) throw error;
+    },
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ["shop_exception", v.exception_date] });
+      qc.invalidateQueries({ queryKey: ["shop_exceptions"] });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["monthly-attendance"] });
+    },
+  });
+}
+
+export function useDeleteShopException() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase().from("shop_exceptions").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["shop_exception"] });
+      qc.invalidateQueries({ queryKey: ["shop_exceptions"] });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["monthly-attendance"] });
     },
   });
 }
