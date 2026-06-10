@@ -17,6 +17,13 @@ export default function SalesPage() {
 
   const totalAmt = sales?.reduce((s: number, x: any) => s + (x.total ?? 0), 0) ?? 0;
 
+  const GOLD_METALS = new Set(["gold_22k", "gold_18k", "gold_24k"]);
+  const SILVER_METALS = new Set(["silver", "silver_pure"]);
+  const totalGoldWt = sales?.reduce((sum: number, s: any) =>
+    sum + (s.sale_items ?? []).filter((i: any) => GOLD_METALS.has(i.metal)).reduce((w: number, i: any) => w + (i.net_wt || 0), 0), 0) ?? 0;
+  const totalSilverWt = sales?.reduce((sum: number, s: any) =>
+    sum + (s.sale_items ?? []).filter((i: any) => SILVER_METALS.has(i.metal)).reduce((w: number, i: any) => w + (i.net_wt || 0), 0), 0) ?? 0;
+
   return (
     <div className="max-w-4xl mx-auto space-y-5">
       <div className="flex items-center justify-between">
@@ -51,8 +58,18 @@ export default function SalesPage() {
           </button>
         )}
         {sales && sales.length > 0 && (
-          <span className="text-xs text-ink-dim ml-auto">
-            {sales.length} bill{sales.length !== 1 ? "s" : ""} · {inr(totalAmt)}
+          <span className="text-xs text-ink-dim ml-auto flex items-center gap-2 flex-wrap justify-end">
+            <span>{sales.length} bill{sales.length !== 1 ? "s" : ""} · {inr(totalAmt)}</span>
+            {totalGoldWt > 0 && (
+              <span className="bg-gold/10 text-gold font-medium px-2 py-0.5 rounded-full">
+                Gold {grams(totalGoldWt)}
+              </span>
+            )}
+            {totalSilverWt > 0 && (
+              <span className="bg-info/10 text-info font-medium px-2 py-0.5 rounded-full">
+                Silver {grams(totalSilverWt)}
+              </span>
+            )}
           </span>
         )}
       </div>
