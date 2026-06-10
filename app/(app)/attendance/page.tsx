@@ -1391,6 +1391,16 @@ function NotificationBell({ notifications, bioUserId }: {
   const markOne = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
 
+  useEffect(() => {
+    if ("setAppBadge" in navigator) {
+      if (notifications.length > 0) {
+        navigator.setAppBadge(notifications.length);
+      } else {
+        navigator.clearAppBadge();
+      }
+    }
+  }, [notifications.length]);
+
   return (
     <div className="relative">
       <button
