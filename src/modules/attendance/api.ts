@@ -1281,6 +1281,96 @@ export function useDeleteShopException() {
   });
 }
 
+// ── Special Requests (dress, makeup, etc.) ───────────────────────────────────
+
+export type SpecialRequest = {
+  id: string;
+  bio_user_id: string;
+  request_date: string;
+  category: string;
+  reason: string | null;
+  status: "pending" | "approved" | "rejected";
+  admin_note: string | null;
+  decided_at: string | null;
+  created_at: string;
+  staff?: { name: string };
+};
+
+export const SPECIAL_REQUEST_CATEGORIES = [
+  "Colored Dress",
+  "Makeup",
+  "Hair Style",
+  "Other",
+] as const;
+
+export function useMySpecialRequests() {
+  return useQuery<SpecialRequest[]>({
+    queryKey: ["special_requests", "my"],
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("special_requests")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as SpecialRequest[];
+    },
+  });
+}
+
+export function useAllSpecialRequests() {
+  return useQuery<SpecialRequest[]>({
+    queryKey: ["special_requests", "all"],
+    refetchOnMount: "always",
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("special_requests")
+        .select("*, staff(name)")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as SpecialRequest[];
+    },
+  });
+}
+
+export function useCreateSpecialRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (req: { bio_user_id: string; request_date: string; category: string; reason?: string }) => {
+      const { error } = await supabase().from("special_requests").insert({
+        ...req,
+        reason: req.reason || null,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["special_requests"] }),
+  });
+}
+
+export function useDecideSpecialRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status, admin_note }: { id: string; status: "approved" | "rejected"; admin_note?: string }) => {
+      const { error } = await supabase()
+        .from("special_requests")
+        .update({ status, admin_note: admin_note || null, decided_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["special_requests"] }),
+  });
+}
+
+export function useDeleteSpecialRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase().from("special_requests").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["special_requests"] }),
+  });
+}
+
 export function useVerifyKyc() {
   const qc = useQueryClient();
   return useMutation({

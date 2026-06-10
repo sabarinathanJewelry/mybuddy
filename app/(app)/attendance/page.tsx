@@ -16,8 +16,10 @@ import {
   useCreateOutsideDuty, useDecideOutsideDuty,
   useAllKyc, useVerifyKyc, KYC_DOCS,
   useShopExceptionForDate, useUpsertShopException, useDeleteShopException,
+  useMySpecialRequests, useAllSpecialRequests, useCreateSpecialRequest, useDecideSpecialRequest, useDeleteSpecialRequest,
+  SPECIAL_REQUEST_CATEGORIES,
   type StaffMember, type MonthlyEmployeeSummary, type PermissionRequest, type KioskTap,
-  type LeaveRequest, type AppNotification, type OutsideDuty, type StaffKyc,
+  type LeaveRequest, type AppNotification, type OutsideDuty, type StaffKyc, type SpecialRequest,
 } from "@/modules/attendance/api";
 import { useKiosk } from "@/stores/kiosk";
 import { useAuth } from "@/stores/auth";
@@ -693,14 +695,33 @@ function MonthlyTab() {
 }
 
 // ── Permission Requests tab ──────────────────────────────────────────────────
-function RequestsTab() {
+function RequestsTab({ isAdmin, myBioUserId }: { isAdmin: boolean; myBioUserId: string | null }) {
+  const [reqTab, setReqTab] = useState<"permission" | "dress">("permission");
+
+  // Permission sub-tab state
   const { data: requests = [], isLoading } = useAllPermissions();
   const decide = useDecidePermission();
   const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
   const [noteMap, setNoteMap] = useState<Record<string, string>>({});
 
   const filtered = requests.filter(r => filter === "all" || r.status === filter);
-  const pendingCount = requests.filter(r => r.status === "pending").length;
+  const permPending = requests.filter(r => r.status === "pending").length;
+
+  // Dress/appearance sub-tab state
+  const { data: allSpecial = [], isLoading: specialLoading } = useAllSpecialRequests();
+  const { data: mySpecial = [] } = useMySpecialRequests();
+  const createSpecial = useCreateSpecialRequest();
+  const decideSpecial = useDecideSpecialRequest();
+  const deleteSpecial = useDeleteSpecialRequest();
+  const [spFilter, setSpFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
+  const [spNoteMap, setSpNoteMap] = useState<Record<string, string>>({});
+  const today = new Date().toISOString().slice(0, 10);
+  const [spForm, setSpForm] = useState({ request_date: today, category: "Colored Dress", reason: "" });
+  const [showSpForm, setShowSpForm] = useState(false);
+
+  const specialList = isAdmin ? allSpecial : mySpecial;
+  const spFiltered = specialList.filter(r => spFilter === "all" || r.status === spFilter);
+  const spPending = (isAdmin ? allSpecial : mySpecial).filter(r => r.status === "pending").length;
 
   const STATUS_STYLE: Record<string, string> = {
     pending:  "bg-warn/10 text-warn",
@@ -710,75 +731,240 @@ function RequestsTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex rounded-lg overflow-hidden border border-line text-xs">
-          {(["pending","approved","rejected","all"] as const).map(f => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 font-medium capitalize transition-colors ${filter === f ? "bg-gold text-white" : "bg-white text-ink-dim hover:bg-canvas"}`}>
-              {f === "pending" ? `Pending (${pendingCount})` : f === "all" ? `All (${requests.length})` : f.charAt(0).toUpperCase() + f.slice(1)}
-            </button>
-          ))}
-        </div>
+      {/* Sub-tabs */}
+      <div className="flex gap-1 border-b border-line">
+        {([
+          { key: "permission", label: "Late Permission", pending: permPending },
+          { key: "dress",      label: "Dress & Appearance", pending: spPending },
+        ] as const).map(t => (
+          <button key={t.key} onClick={() => setReqTab(t.key)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
+              reqTab === t.key ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"
+            }`}>
+            {t.label}
+            {t.pending > 0 && (
+              <span className="bg-warn text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{t.pending}</span>
+            )}
+          </button>
+        ))}
       </div>
 
-      {isLoading ? <p className="text-ink-dim text-sm">Loading…</p> : (
-        <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
-          <table className="w-full text-sm" style={{ minWidth: "680px" }}>
-            <thead>
-              <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
-                <th className="text-left px-4 py-2.5">Staff</th>
-                <th className="text-left px-3 py-2.5">Date</th>
-                <th className="text-left px-3 py-2.5">Time</th>
-                <th className="text-left px-3 py-2.5">Reason</th>
-                <th className="text-center px-3 py-2.5">Status</th>
-                <th className="px-3 py-2.5" />
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((r: PermissionRequest) => (
-                <Fragment key={r.id}>
-                  <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
-                    <td className="px-4 py-2.5 font-medium">{(r as any).staff?.name ?? r.bio_user_id}</td>
-                    <td className="px-3 py-2.5 text-ink-dim">{shortDate(r.permission_date)}</td>
-                    <td className="px-3 py-2.5 text-ink-dim">
-                      {r.from_time && r.to_time
-                        ? `${r.from_time.slice(0, 5)} – ${r.to_time.slice(0, 5)} (${r.late_minutes}m)`
-                        : `${r.late_minutes}m`}
-                    </td>
-                    <td className="px-3 py-2.5 text-ink-dim max-w-[200px] truncate">{r.reason || "—"}</td>
-                    <td className="px-3 py-2.5 text-center">
-                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${STATUS_STYLE[r.status]}`}>
-                        {r.status}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      {r.status === "pending" && (
-                        <div className="flex items-center gap-1 justify-end">
-                          <input type="text" placeholder="note (optional)"
-                            value={noteMap[r.id] ?? ""}
-                            onChange={e => setNoteMap(m => ({ ...m, [r.id]: e.target.value }))}
-                            className="border border-line rounded px-2 py-0.5 text-xs w-32 focus:outline-none focus:ring-1 focus:ring-gold" />
-                          <button onClick={() => decide.mutate({ id: r.id, status: "approved", admin_note: noteMap[r.id] })}
-                            disabled={decide.isPending}
-                            className="text-xs bg-ok text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">Approve</button>
-                          <button onClick={() => decide.mutate({ id: r.id, status: "rejected", admin_note: noteMap[r.id] })}
-                            disabled={decide.isPending}
-                            className="text-xs bg-err text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">Reject</button>
-                        </div>
-                      )}
-                      {r.admin_note && r.status !== "pending" && (
-                        <span className="text-xs text-ink-dim">{r.admin_note}</span>
-                      )}
-                    </td>
+      {/* ── Late Permission sub-tab ── */}
+      {reqTab === "permission" && (
+        <>
+          <div className="flex rounded-lg overflow-hidden border border-line text-xs w-fit">
+            {(["pending","approved","rejected","all"] as const).map(f => (
+              <button key={f} onClick={() => setFilter(f)}
+                className={`px-3 py-1.5 font-medium capitalize transition-colors ${filter === f ? "bg-gold text-white" : "bg-white text-ink-dim hover:bg-canvas"}`}>
+                {f === "pending" ? `Pending (${permPending})` : f === "all" ? `All (${requests.length})` : f.charAt(0).toUpperCase() + f.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          {isLoading ? <p className="text-ink-dim text-sm">Loading…</p> : (
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+              <table className="w-full text-sm" style={{ minWidth: "680px" }}>
+                <thead>
+                  <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                    <th className="text-left px-4 py-2.5">Staff</th>
+                    <th className="text-left px-3 py-2.5">Date</th>
+                    <th className="text-left px-3 py-2.5">Time</th>
+                    <th className="text-left px-3 py-2.5">Reason</th>
+                    <th className="text-center px-3 py-2.5">Status</th>
+                    <th className="px-3 py-2.5" />
                   </tr>
-                </Fragment>
-              ))}
-              {!filtered.length && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-ink-dim">No requests</td></tr>
+                </thead>
+                <tbody>
+                  {filtered.map((r: PermissionRequest) => (
+                    <Fragment key={r.id}>
+                      <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
+                        <td className="px-4 py-2.5 font-medium">{(r as any).staff?.name ?? r.bio_user_id}</td>
+                        <td className="px-3 py-2.5 text-ink-dim">{shortDate(r.permission_date)}</td>
+                        <td className="px-3 py-2.5 text-ink-dim">
+                          {r.from_time && r.to_time
+                            ? `${r.from_time.slice(0, 5)} – ${r.to_time.slice(0, 5)} (${r.late_minutes}m)`
+                            : `${r.late_minutes}m`}
+                        </td>
+                        <td className="px-3 py-2.5 text-ink-dim max-w-[200px] truncate">{r.reason || "—"}</td>
+                        <td className="px-3 py-2.5 text-center">
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${STATUS_STYLE[r.status]}`}>
+                            {r.status}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-right">
+                          {r.status === "pending" && (
+                            <div className="flex items-center gap-1 justify-end">
+                              <input type="text" placeholder="note (optional)"
+                                value={noteMap[r.id] ?? ""}
+                                onChange={e => setNoteMap(m => ({ ...m, [r.id]: e.target.value }))}
+                                className="border border-line rounded px-2 py-0.5 text-xs w-32 focus:outline-none focus:ring-1 focus:ring-gold" />
+                              <button onClick={() => decide.mutate({ id: r.id, status: "approved", admin_note: noteMap[r.id] })}
+                                disabled={decide.isPending}
+                                className="text-xs bg-ok text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">Approve</button>
+                              <button onClick={() => decide.mutate({ id: r.id, status: "rejected", admin_note: noteMap[r.id] })}
+                                disabled={decide.isPending}
+                                className="text-xs bg-err text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">Reject</button>
+                            </div>
+                          )}
+                          {r.admin_note && r.status !== "pending" && (
+                            <span className="text-xs text-ink-dim">{r.admin_note}</span>
+                          )}
+                        </td>
+                      </tr>
+                    </Fragment>
+                  ))}
+                  {!filtered.length && (
+                    <tr><td colSpan={6} className="px-4 py-8 text-center text-ink-dim">No requests</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── Dress & Appearance sub-tab ── */}
+      {reqTab === "dress" && (
+        <>
+          {/* Submit form — staff only (or admin testing) */}
+          {!isAdmin && myBioUserId && (
+            <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-ink">New Request</span>
+                {!showSpForm && (
+                  <button onClick={() => setShowSpForm(true)}
+                    className="text-xs text-gold border border-gold/40 px-3 py-1 rounded-lg2 hover:bg-gold/5">
+                    + Request Permission
+                  </button>
+                )}
+              </div>
+              {showSpForm && (
+                <div className="space-y-3">
+                  <div className="flex gap-3 flex-wrap">
+                    <div>
+                      <label className="block text-xs text-ink-dim mb-1">Date</label>
+                      <input type="date" value={spForm.request_date}
+                        onChange={e => setSpForm(f => ({ ...f, request_date: e.target.value }))}
+                        className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-ink-dim mb-1">Category</label>
+                      <select value={spForm.category}
+                        onChange={e => setSpForm(f => ({ ...f, category: e.target.value }))}
+                        className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold bg-white">
+                        {SPECIAL_REQUEST_CATEGORIES.map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex-1 min-w-[160px]">
+                      <label className="block text-xs text-ink-dim mb-1">Reason (optional)</label>
+                      <input type="text" value={spForm.reason}
+                        onChange={e => setSpForm(f => ({ ...f, reason: e.target.value }))}
+                        placeholder="e.g. Wedding function"
+                        className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      disabled={createSpecial.isPending}
+                      onClick={async () => {
+                        await createSpecial.mutateAsync({
+                          bio_user_id: myBioUserId,
+                          request_date: spForm.request_date,
+                          category: spForm.category,
+                          reason: spForm.reason || undefined,
+                        });
+                        setShowSpForm(false);
+                        setSpForm({ request_date: today, category: "Colored Dress", reason: "" });
+                      }}
+                      className="bg-gold text-white text-sm px-4 py-1.5 rounded-lg2 hover:bg-gold-dark disabled:opacity-40">
+                      Submit
+                    </button>
+                    <button onClick={() => setShowSpForm(false)}
+                      className="text-xs text-ink-dim hover:text-ink px-2">Cancel</button>
+                  </div>
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          )}
+
+          {/* Filter bar */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex rounded-lg overflow-hidden border border-line text-xs w-fit">
+              {(["pending","approved","rejected","all"] as const).map(f => (
+                <button key={f} onClick={() => setSpFilter(f)}
+                  className={`px-3 py-1.5 font-medium capitalize transition-colors ${spFilter === f ? "bg-gold text-white" : "bg-white text-ink-dim hover:bg-canvas"}`}>
+                  {f === "pending" ? `Pending (${spPending})` : f === "all" ? `All (${specialList.length})` : f.charAt(0).toUpperCase() + f.slice(1)}
+                </button>
+              ))}
+            </div>
+            {isAdmin && (
+              <span className="text-xs text-ink-dim">All staff requests</span>
+            )}
+          </div>
+
+          {specialLoading ? <p className="text-ink-dim text-sm">Loading…</p> : (
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+              <table className="w-full text-sm" style={{ minWidth: "600px" }}>
+                <thead>
+                  <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                    {isAdmin && <th className="text-left px-4 py-2.5">Staff</th>}
+                    <th className="text-left px-4 py-2.5">Date</th>
+                    <th className="text-left px-3 py-2.5">Category</th>
+                    <th className="text-left px-3 py-2.5">Reason</th>
+                    <th className="text-center px-3 py-2.5">Status</th>
+                    <th className="px-3 py-2.5" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {spFiltered.map((r: SpecialRequest) => (
+                    <tr key={r.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                      {isAdmin && <td className="px-4 py-2.5 font-medium">{r.staff?.name ?? r.bio_user_id}</td>}
+                      <td className="px-4 py-2.5 text-ink-dim">{shortDate(r.request_date)}</td>
+                      <td className="px-3 py-2.5">
+                        <span className="text-xs font-medium bg-info/10 text-info px-2 py-0.5 rounded-full">{r.category}</span>
+                      </td>
+                      <td className="px-3 py-2.5 text-ink-dim max-w-[180px] truncate">{r.reason || "—"}</td>
+                      <td className="px-3 py-2.5 text-center">
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${STATUS_STYLE[r.status]}`}>
+                          {r.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        {isAdmin && r.status === "pending" && (
+                          <div className="flex items-center gap-1 justify-end">
+                            <input type="text" placeholder="note (optional)"
+                              value={spNoteMap[r.id] ?? ""}
+                              onChange={e => setSpNoteMap(m => ({ ...m, [r.id]: e.target.value }))}
+                              className="border border-line rounded px-2 py-0.5 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-gold" />
+                            <button onClick={() => decideSpecial.mutate({ id: r.id, status: "approved", admin_note: spNoteMap[r.id] })}
+                              disabled={decideSpecial.isPending}
+                              className="text-xs bg-ok text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">Approve</button>
+                            <button onClick={() => decideSpecial.mutate({ id: r.id, status: "rejected", admin_note: spNoteMap[r.id] })}
+                              disabled={decideSpecial.isPending}
+                              className="text-xs bg-err text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">Reject</button>
+                          </div>
+                        )}
+                        {r.admin_note && r.status !== "pending" && (
+                          <span className="text-xs text-ink-dim">{r.admin_note}</span>
+                        )}
+                        {isAdmin && (
+                          <button onClick={() => deleteSpecial.mutate(r.id)}
+                            disabled={deleteSpecial.isPending}
+                            className="ml-2 text-xs text-err hover:underline disabled:opacity-40">Del</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {!spFiltered.length && (
+                    <tr><td colSpan={isAdmin ? 6 : 5} className="px-4 py-8 text-center text-ink-dim">No requests</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -2442,7 +2628,7 @@ export default function AttendancePage() {
       {tab === "monthly" && <MonthlyTab />}
 
       {/* ── Requests tab ── */}
-      {tab === "requests" && <RequestsTab />}
+      {tab === "requests" && <RequestsTab isAdmin={isAdmin} myBioUserId={myBioUserId} />}
 
       {/* ── Leaves tab ── */}
       {tab === "leaves" && (
