@@ -19,9 +19,13 @@ export default function SalesPage() {
 
   const GOLD_METALS = new Set(["gold_22k", "gold_18k", "gold_24k"]);
   const SILVER_METALS = new Set(["silver", "silver_pure"]);
-  const totalGoldWt = sales?.reduce((sum: number, s: any) =>
+  const totalGoldGross = sales?.reduce((sum: number, s: any) =>
+    sum + (s.sale_items ?? []).filter((i: any) => GOLD_METALS.has(i.metal)).reduce((w: number, i: any) => w + (i.gross_wt || 0), 0), 0) ?? 0;
+  const totalGoldNet = sales?.reduce((sum: number, s: any) =>
     sum + (s.sale_items ?? []).filter((i: any) => GOLD_METALS.has(i.metal)).reduce((w: number, i: any) => w + (i.net_wt || 0), 0), 0) ?? 0;
-  const totalSilverWt = sales?.reduce((sum: number, s: any) =>
+  const totalSilverGross = sales?.reduce((sum: number, s: any) =>
+    sum + (s.sale_items ?? []).filter((i: any) => SILVER_METALS.has(i.metal)).reduce((w: number, i: any) => w + (i.gross_wt || 0), 0), 0) ?? 0;
+  const totalSilverNet = sales?.reduce((sum: number, s: any) =>
     sum + (s.sale_items ?? []).filter((i: any) => SILVER_METALS.has(i.metal)).reduce((w: number, i: any) => w + (i.net_wt || 0), 0), 0) ?? 0;
 
   return (
@@ -58,19 +62,21 @@ export default function SalesPage() {
           </button>
         )}
         {sales && sales.length > 0 && (
-          <span className="text-xs text-ink-dim ml-auto flex items-center gap-2 flex-wrap justify-end">
-            <span>{sales.length} bill{sales.length !== 1 ? "s" : ""} · {inr(totalAmt)}</span>
-            {totalGoldWt > 0 && (
-              <span className="bg-gold/10 text-gold font-medium px-2 py-0.5 rounded-full">
-                Gold {grams(totalGoldWt)}
+          <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
+            <span className="text-xs text-ink-dim">
+              {sales.length} bill{sales.length !== 1 ? "s" : ""} · {inr(totalAmt)}
+            </span>
+            {totalGoldGross > 0 && (
+              <span className="bg-gold/10 text-gold text-xs font-medium px-2 py-0.5 rounded-full">
+                Gold — gross {grams(totalGoldGross)} / net {grams(totalGoldNet)}
               </span>
             )}
-            {totalSilverWt > 0 && (
-              <span className="bg-info/10 text-info font-medium px-2 py-0.5 rounded-full">
-                Silver {grams(totalSilverWt)}
+            {totalSilverGross > 0 && (
+              <span className="bg-info/10 text-info text-xs font-medium px-2 py-0.5 rounded-full">
+                Silver — gross {grams(totalSilverGross)} / net {grams(totalSilverNet)}
               </span>
             )}
-          </span>
+          </div>
         )}
       </div>
 
