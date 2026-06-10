@@ -140,9 +140,9 @@ function useOrders() {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("orders")
-        .select("*, customers(name, phone)")
+        .select("*, customers(name, phone), order_items(description)")
         .order("order_date", { ascending: false })
-        .limit(100);
+        .limit(200);
       if (error) throw error;
       return (data ?? []) as any[];
     },
@@ -427,10 +427,27 @@ export default function OrdersPage() {
   // ── Filters
   const [filterStatus, setFilterStatus] = useState<"all" | "pending" | "ready" | "delivered" | "cancelled">("all");
   const [filterMonth, setFilterMonth] = useState(globalDate.slice(0, 7));
+  const [filterDate, setFilterDate] = useState("");
+  const [filterSearch, setFilterSearch] = useState("");
+  const [filterBalance, setFilterBalance] = useState<"all" | "due" | "paid">("all");
 
   const filteredOrders = (orders as any[]).filter((o) => {
     if (filterStatus !== "all" && o.status !== filterStatus) return false;
-    if (filterMonth && !o.order_date?.startsWith(filterMonth)) return false;
+    if (filterDate && o.order_date !== filterDate) return false;
+    if (!filterDate && filterMonth && !o.order_date?.startsWith(filterMonth)) return false;
+    if (filterSearch) {
+      const q = filterSearch.toLowerCase();
+      const nameMatch = o.customers?.name?.toLowerCase().includes(q);
+      const descMatch = o.description?.toLowerCase().includes(q);
+      const itemMatch = (o.order_items ?? []).some((i: any) => i.description?.toLowerCase().includes(q));
+      if (!nameMatch && !descMatch && !itemMatch) return false;
+    }
+    if (filterBalance !== "all") {
+      const effectiveTotal = Number(o.final_total) || Number(o.total) || 0;
+      const bal = effectiveTotal - (Number(o.advance_paid) || 0);
+      if (filterBalance === "due" && bal <= 0.01) return false;
+      if (filterBalance === "paid" && bal > 0.01) return false;
+    }
     return true;
   });
 
@@ -1007,26 +1024,65 @@ export default function OrdersPage() {
 
       {/* Filters */}
       {!isLoading && (orders as any[]).length > 0 && (
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Status tabs */}
-          <div className="flex rounded-lg overflow-hidden border border-line text-xs">
-            {(["all", "pending", "ready", "delivered", "cancelled"] as const).map((s) => (
-              <button key={s} type="button"
-                onClick={() => setFilterStatus(s)}
-                className={clsx("px-3 py-1.5 font-medium capitalize transition-colors",
-                  filterStatus === s ? "bg-gold text-white" : "bg-white text-ink-dim hover:bg-canvas")}>
-                {s === "all" ? `All (${(orders as any[]).length})` : `${s} (${statusCounts[s] || 0})`}
-              </button>
-            ))}
-          </div>
-          {/* Month picker */}
-          <div className="flex items-center gap-1.5">
-            <input type="month" value={filterMonth}
-              onChange={(e) => setFilterMonth(e.target.value)}
-              className="border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
-            {filterMonth && (
-              <button onClick={() => setFilterMonth("")} className="text-xs text-ink-dim hover:text-err">×</button>
+        <div className="space-y-2">
+          {/* Row 1: status tabs + month/date */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex rounded-lg overflow-hidden border border-line text-xs">
+              {(["all", "pending", "ready", "delivered", "cancelled"] as const).map((s) => (
+                <button key={s} type="button"
+                  onClick={() => setFilterStatus(s)}
+                  className={clsx("px-3 py-1.5 font-medium capitalize transition-colors",
+                    filterStatus === s ? "bg-gold text-white" : "bg-white text-ink-dim hover:bg-canvas")}>
+                  {s === "all" ? `All (${(orders as any[]).length})` : `${s.charAt(0).toUpperCase() + s.slice(1)} (${statusCounts[s] || 0})`}
+                </button>
+              ))}
+            </div>
+            {/* Specific date — clears month filter */}
+            <div className="flex items-center gap-1.5">
+              <input type="date" value={filterDate}
+                onChange={(e) => { setFilterDate(e.target.value); if (e.target.value) setFilterMonth(""); }}
+                className="border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+              {filterDate && (
+                <button onClick={() => setFilterDate("")} className="text-xs text-ink-dim hover:text-err">×</button>
+              )}
+            </div>
+            {/* Month — only when no specific date */}
+            {!filterDate && (
+              <div className="flex items-center gap-1.5">
+                <input type="month" value={filterMonth}
+                  onChange={(e) => setFilterMonth(e.target.value)}
+                  className="border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                {filterMonth && (
+                  <button onClick={() => setFilterMonth("")} className="text-xs text-ink-dim hover:text-err">×</button>
+                )}
+              </div>
             )}
+            {/* Balance filter */}
+            <div className="flex rounded-lg overflow-hidden border border-line text-xs">
+              {(["all", "due", "paid"] as const).map((b) => (
+                <button key={b} type="button" onClick={() => setFilterBalance(b)}
+                  className={clsx("px-3 py-1.5 font-medium capitalize transition-colors",
+                    filterBalance === b ? "bg-gold text-white" : "bg-white text-ink-dim hover:bg-canvas")}>
+                  {b === "all" ? "All amounts" : b === "due" ? "Balance due" : "Fully paid"}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Row 2: search */}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={filterSearch}
+              onChange={(e) => setFilterSearch(e.target.value)}
+              placeholder="Search by customer, item, or description…"
+              className="w-full max-w-sm border border-line rounded-lg2 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+            />
+            {filterSearch && (
+              <button onClick={() => setFilterSearch("")} className="text-xs text-ink-dim hover:text-err">×</button>
+            )}
+            <span className="text-xs text-ink-dim ml-auto">
+              {filteredOrders.length} of {(orders as any[]).length} orders
+            </span>
           </div>
         </div>
       )}
