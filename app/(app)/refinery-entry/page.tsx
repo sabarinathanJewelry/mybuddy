@@ -306,12 +306,12 @@ export default function RefineryEntryPage() {
                       <span className="text-xs text-ink-dim">{METAL_LABELS[e.metal] ?? e.metal}</span>
                     </div>
                     <div className="text-xs text-ink-dim">
-                      Gross {grams(e.melt_wt)} · Dust {grams(e.loss_wt)} · Debris {grams(e.debris_wt)} · {e.output_purity_pct}%
+                      Gross {grams(Number(e.melt_wt) || 0)} · Dust {grams(Number(e.loss_wt) || 0)} · Debris {grams(Number(e.debris_wt) || 0)} · {e.output_purity_pct ?? "—"}%
                     </div>
                     {e.notes && <div className="text-xs text-ink-dim truncate">{e.notes}</div>}
                   </div>
                   <div className="text-right shrink-0">
-                    <div className="text-ok font-semibold text-sm">+{grams(e.output_wt)}</div>
+                    <div className="text-ok font-semibold text-sm">+{grams(Number(e.output_wt) || 0)}</div>
                     {isAdmin && !hasItems && (
                       <span className="text-xs text-warn">No items linked</span>
                     )}
