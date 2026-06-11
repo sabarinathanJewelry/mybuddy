@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useGlobalDate } from "@/stores/global-date";
+import { useAuth } from "@/stores/auth";
 import { useT } from "@/i18n";
 import { grams, shortDate } from "@/lib/format";
 
@@ -158,6 +159,8 @@ function ReserveBreakdown({ refined, bullionIn, dispatched, cls }: {
 export default function MetalFlowPage() {
   const t = useT();
   const globalDate = useGlobalDate((s) => s.date);
+  const profile = useAuth((s) => s.profile);
+  const isAdmin = profile?.role === "admin";
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("intake");
 
@@ -238,6 +241,11 @@ export default function MetalFlowPage() {
 
   // Debris → intake form
   const [debrisIntakeForm, setDebrisIntakeForm] = useState<{ metal: "gold" | "silver"; gross_wt: number; purity_pct: number; pure_wt: number; notes: string } | null>(null);
+
+  // Link old-metal intake items to a refined batch
+  const [linkBatchId, setLinkBatchId] = useState<string | null>(null);
+  const [linkSearch, setLinkSearch] = useState("");
+  const [linkSelected, setLinkSelected] = useState<Set<string>>(new Set());
 
   // ── Mutations ──
 
@@ -517,6 +525,29 @@ export default function MetalFlowPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["melt_batches"] });
       qc.invalidateQueries({ queryKey: ["metal_intake"] });
+    },
+  });
+
+  const linkIntakeItems = useMutation({
+    mutationFn: async ({ batchId }: { batchId: string }) => {
+      const client = supabase();
+      const items = intake.filter((i: any) => linkSelected.has(i.id));
+      if (!items.length) throw new Error("No items selected");
+      const { data: batch } = await client.from("melt_batches").select("input_wt").eq("id", batchId).single();
+      const addedPureWt = items.reduce((s: number, i: any) => s + (Number(i.pure_wt) || 0), 0);
+      await client.from("melt_batch_items").insert(
+        items.map((i: any) => ({ batch_id: batchId, intake_id: i.id, gross_wt: i.gross_wt, purity_pct: i.purity_pct, pure_wt: i.pure_wt }))
+      );
+      await client.from("melt_batches").update({ input_wt: ((batch as any)?.input_wt ?? 0) + addedPureWt }).eq("id", batchId);
+      await client.from("old_metal_intake").update({ status: "used" }).in("id", items.map((i: any) => i.id));
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["melt_batches"] });
+      qc.invalidateQueries({ queryKey: ["metal_intake"] });
+      qc.invalidateQueries({ queryKey: ["refinery_entries"] });
+      setLinkBatchId(null);
+      setLinkSearch("");
+      setLinkSelected(new Set());
     },
   });
 
@@ -1202,10 +1233,83 @@ export default function MetalFlowPage() {
 
                   {expandedBatch === b.id && (
                     <div className="border-t border-line px-5 py-4 space-y-4">
-                      {/* Placeholder hint */}
+                      {/* Placeholder hint + admin link */}
                       {b.status === "refined" && Number(b.input_wt) === 0 && (
-                        <div className="bg-warn/5 border border-warn/20 rounded-lg2 px-3 py-2 text-xs text-warn">
-                          Placeholder entry — {grams(b.output_wt)} added to reserve. Go to the Intake tab, select the actual old-metal items, and assign them to this batch once you have the data.
+                        <div className="bg-warn/5 border border-warn/20 rounded-lg2 px-3 py-2 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs text-warn">
+                              {grams(b.output_wt)} added to reserve — old-metal items not linked yet.
+                            </span>
+                            {isAdmin && linkBatchId !== b.id && (
+                              <button
+                                onClick={() => { setLinkBatchId(b.id); setLinkSearch(""); setLinkSelected(new Set()); }}
+                                className="text-xs bg-warn/10 text-warn border border-warn/30 px-3 py-1 rounded-lg2 hover:bg-warn/20 shrink-0">
+                                Link Old Metal
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Link panel — admin only */}
+                          {isAdmin && linkBatchId === b.id && (() => {
+                            const batchMetal = b.metal as string;
+                            const metalGroup = batchMetal.startsWith("silver") ? "silver" : "gold";
+                            const linkable = intake.filter((i: any) =>
+                              i.status === "pending" &&
+                              (metalGroup === "gold" ? i.metal?.startsWith("gold") : i.metal?.startsWith("silver")) &&
+                              (linkSearch === "" || (i.customers?.name ?? "").toLowerCase().includes(linkSearch.toLowerCase()) || (i.notes ?? "").toLowerCase().includes(linkSearch.toLowerCase()))
+                            );
+                            const selItems = linkable.filter((i: any) => linkSelected.has(i.id));
+                            const selPure  = selItems.reduce((s: number, i: any) => s + (Number(i.pure_wt) || 0), 0);
+                            return (
+                              <div className="space-y-2 pt-1">
+                                <div className="text-xs font-medium text-ink">Link pending intake items to this batch</div>
+                                <input
+                                  value={linkSearch}
+                                  onChange={e => setLinkSearch(e.target.value)}
+                                  placeholder="Search by customer or notes…"
+                                  className={`${inp} text-xs py-1.5`} />
+                                {linkable.length === 0 ? (
+                                  <p className="text-xs text-ink-dim">No pending {metalGroup} intake items.</p>
+                                ) : (
+                                  <div className="max-h-48 overflow-y-auto divide-y divide-line border border-line rounded-lg2 bg-white">
+                                    {linkable.map((i: any) => (
+                                      <label key={i.id} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-canvas/50">
+                                        <input type="checkbox" checked={linkSelected.has(i.id)}
+                                          onChange={e => {
+                                            const s = new Set(linkSelected);
+                                            e.target.checked ? s.add(i.id) : s.delete(i.id);
+                                            setLinkSelected(s);
+                                          }} />
+                                        <span className="text-xs flex-1">
+                                          <span className="text-ink">{i.customers?.name ?? "Walk-in"}</span>
+                                          <span className="text-ink-dim ml-2">{shortDate(i.intake_date)}</span>
+                                          <span className="text-ink-dim ml-2">{i.metal?.replace(/_/g, " ")}</span>
+                                        </span>
+                                        <span className="text-xs font-mono text-ink-dim">{grams(i.gross_wt)} / {grams(i.pure_wt)} pure</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                )}
+                                {linkSelected.size > 0 && (
+                                  <div className="text-xs text-ink-dim">
+                                    {linkSelected.size} item(s) · Pure wt: <span className="text-gold font-medium">{grams(selPure)}</span>
+                                  </div>
+                                )}
+                                <div className="flex gap-2">
+                                  <button
+                                    disabled={linkSelected.size === 0 || linkIntakeItems.isPending}
+                                    onClick={() => linkIntakeItems.mutate({ batchId: b.id })}
+                                    className="text-xs bg-ok text-white px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                                    {linkIntakeItems.isPending ? "Linking…" : `Link ${linkSelected.size} item(s)`}
+                                  </button>
+                                  <button onClick={() => { setLinkBatchId(null); setLinkSelected(new Set()); }}
+                                    className="text-xs border border-line px-4 py-1.5 rounded-lg2 text-ink-dim">
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
                       {/* Items */}
