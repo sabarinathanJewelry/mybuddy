@@ -118,12 +118,49 @@ function useRecordSale() {
   });
 }
 
+function useRestock() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (d: { box_id: string; tx_date: string; qty: number; gross_wt_g: number; bill_no?: string; notes?: string }) => {
+      const client = supabase();
+      const { error: txErr } = await client.from("kolusu_transactions").insert({
+        tx_date: d.tx_date,
+        box_id: d.box_id,
+        qty_change: d.qty,
+        raw_wt_g: d.gross_wt_g,
+        cover_wt_g: 0,
+        total_wt_g: d.gross_wt_g,
+        bill_no: d.bill_no || null,
+        notes: d.notes ? `RESTOCK: ${d.notes}` : "RESTOCK",
+      });
+      if (txErr) throw txErr;
+      const { data: box, error: fetchErr } = await client
+        .from("kolusu_boxes")
+        .select("current_gross_wt_g, current_qty")
+        .eq("id", d.box_id)
+        .single();
+      if (fetchErr) throw fetchErr;
+      const { error: updErr } = await client.from("kolusu_boxes").update({
+        current_gross_wt_g: parseFloat((box.current_gross_wt_g + d.gross_wt_g).toFixed(3)),
+        current_qty: box.current_qty + d.qty,
+        updated_at: new Date().toISOString(),
+      }).eq("id", d.box_id);
+      if (updErr) throw updErr;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["kolusu_boxes"] });
+      qc.invalidateQueries({ queryKey: ["kolusu_transactions"] });
+    },
+  });
+}
+
 export default function KolusuPage() {
   const globalDate = useGlobalDate((s) => s.date);
   const { data: boxes, isLoading } = useKolusuBoxes();
   const { data: transactions } = useKolusuTransactions();
   const addBox = useAddBox();
   const recordSale = useRecordSale();
+  const restock = useRestock();
 
   const [tab, setTab] = useState<"boxes" | "history" | "add_box">("boxes");
 
@@ -131,11 +168,27 @@ export default function KolusuPage() {
   const [saleBoxId, setSaleBoxId] = useState<string | null>(null);
   const [saleForm, setSaleForm] = useState({ tx_date: globalDate, qty: 1, raw_wt_g: 0, cover_per_piece: 1.3, bill_no: "", notes: "" });
 
+  // Restock form state
+  const [restockBoxId, setRestockBoxId] = useState<string | null>(null);
+  const [restockForm, setRestockForm] = useState({ tx_date: globalDate, qty: 0, gross_wt_g: 0, bill_no: "", notes: "" });
+
+  // Box search
+  const [boxSearch, setBoxSearch] = useState("");
+
   // Add box form
   const [boxForm, setBoxForm] = useState({ box_no: "", color: "", size: "", box_tare_g: 0, initial_gross_wt_g: 0, initial_qty: 0, notes: "" });
 
   const coverTotal = parseFloat((saleForm.qty * saleForm.cover_per_piece).toFixed(3));
   const totalWt = parseFloat((saleForm.raw_wt_g + coverTotal).toFixed(3));
+
+  const q = boxSearch.trim().toLowerCase();
+  const filteredBoxes = q
+    ? (boxes ?? []).filter(b =>
+        b.box_no.toLowerCase().includes(q) ||
+        b.color.toLowerCase().includes(q) ||
+        b.size.toLowerCase().includes(q)
+      )
+    : (boxes ?? []);
 
   // Summary
   const totalGross = boxes?.reduce((s, b) => s + b.current_gross_wt_g, 0) ?? 0;
@@ -157,6 +210,21 @@ export default function KolusuPage() {
     });
     setSaleBoxId(null);
     setSaleForm({ tx_date: globalDate, qty: 1, raw_wt_g: 0, cover_per_piece: 1.3, bill_no: "", notes: "" });
+  }
+
+  async function handleRestock(e: React.FormEvent) {
+    e.preventDefault();
+    if (!restockBoxId || restockForm.qty <= 0 || restockForm.gross_wt_g <= 0) return;
+    await restock.mutateAsync({
+      box_id: restockBoxId,
+      tx_date: restockForm.tx_date,
+      qty: restockForm.qty,
+      gross_wt_g: restockForm.gross_wt_g,
+      bill_no: restockForm.bill_no,
+      notes: restockForm.notes,
+    });
+    setRestockBoxId(null);
+    setRestockForm({ tx_date: globalDate, qty: 0, gross_wt_g: 0, bill_no: "", notes: "" });
   }
 
   async function handleAddBox(e: React.FormEvent) {
@@ -252,8 +320,20 @@ export default function KolusuPage() {
 
       {/* Boxes tab */}
       {tab === "boxes" && !isLoading && (
+        <>
+          <div className="flex items-center gap-2">
+            <input
+              value={boxSearch}
+              onChange={e => setBoxSearch(e.target.value)}
+              placeholder="Search by size, color or box no… e.g. 9.5 M"
+              className="flex-1 border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+            {boxSearch && (
+              <button onClick={() => setBoxSearch("")} className="text-xs text-err hover:underline">Clear</button>
+            )}
+          </div>
+          {q && <p className="text-xs text-ink-dim">{filteredBoxes.length} box(es) match &quot;{boxSearch}&quot;</p>}
         <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
-          <table className="w-full text-sm" style={{ minWidth: "480px" }}>
+          <table className="w-full text-sm" style={{ minWidth: "540px" }}>
             <thead>
               <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                 <th className="text-left px-4 py-2.5">Box No</th>
@@ -262,11 +342,11 @@ export default function KolusuPage() {
                 <th className="text-right px-3 py-2.5">Gross (g)</th>
                 <th className="text-right px-3 py-2.5">Net Kolusu (g)</th>
                 <th className="text-right px-3 py-2.5">Qty</th>
-                <th className="px-3 py-2.5 w-24"></th>
+                <th className="px-3 py-2.5 w-36"></th>
               </tr>
             </thead>
             <tbody>
-              {boxes?.map((box) => {
+              {filteredBoxes.map((box) => {
                 const netWt = box.current_gross_wt_g - box.box_tare_g;
                 const sold = box.initial_qty - box.current_qty;
                 return (
@@ -282,12 +362,78 @@ export default function KolusuPage() {
                         {sold > 0 && <span className="text-ink-dim text-xs ml-1">(-{sold})</span>}
                       </td>
                       <td className="px-3 py-2.5 text-right">
-                        <button onClick={() => { setSaleBoxId(saleBoxId === box.id ? null : box.id); setSaleForm({ tx_date: globalDate, qty: 1, raw_wt_g: 0, cover_per_piece: 1.3, bill_no: "", notes: "" }); }}
-                          className="text-xs bg-gold text-white px-2 py-1 rounded-lg2 hover:opacity-80">
-                          Record Sale
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button onClick={() => {
+                            setRestockBoxId(null);
+                            setSaleBoxId(saleBoxId === box.id ? null : box.id);
+                            setSaleForm({ tx_date: globalDate, qty: 1, raw_wt_g: 0, cover_per_piece: 1.3, bill_no: "", notes: "" });
+                          }}
+                            className="text-xs bg-gold text-white px-2 py-1 rounded-lg2 hover:opacity-80">
+                            Record Sale
+                          </button>
+                          <button onClick={() => {
+                            setSaleBoxId(null);
+                            setRestockBoxId(restockBoxId === box.id ? null : box.id);
+                            setRestockForm({ tx_date: globalDate, qty: 0, gross_wt_g: 0, bill_no: "", notes: "" });
+                          }}
+                            className="text-xs bg-ok/80 text-white px-2 py-1 rounded-lg2 hover:opacity-80">
+                            + Stock
+                          </button>
+                        </div>
                       </td>
                     </tr>
+                    {restockBoxId === box.id && (
+                      <tr className="border-b border-line bg-ok/5">
+                        <td colSpan={7} className="px-4 py-4">
+                          <form onSubmit={handleRestock} className="space-y-3">
+                            <p className="text-xs font-semibold text-ok uppercase tracking-wide">Add Stock to {box.box_no} — {[box.color, box.size].filter(Boolean).join(" / ")}</p>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                              <div>
+                                <label className="text-xs text-ink-dim block mb-1">Date</label>
+                                <input type="date" value={restockForm.tx_date}
+                                  onChange={e => setRestockForm({ ...restockForm, tx_date: e.target.value })}
+                                  className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold w-full" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-ink-dim block mb-1">Qty Added *</label>
+                                <input type="number" step="1" min="1" value={restockForm.qty || ""}
+                                  onChange={e => setRestockForm({ ...restockForm, qty: parseInt(e.target.value) || 0 })}
+                                  className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold w-full"
+                                  autoFocus />
+                              </div>
+                              <div>
+                                <label className="text-xs text-ink-dim block mb-1">Gross Weight Added (g) *</label>
+                                <input type="number" step="0.001" min="0" value={restockForm.gross_wt_g || ""}
+                                  onChange={e => setRestockForm({ ...restockForm, gross_wt_g: parseFloat(e.target.value) || 0 })}
+                                  className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold w-full" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-ink-dim block mb-1">Bill / Ref No</label>
+                                <input type="text" value={restockForm.bill_no}
+                                  onChange={e => setRestockForm({ ...restockForm, bill_no: e.target.value })}
+                                  className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold w-full"
+                                  placeholder="Optional" />
+                              </div>
+                            </div>
+                            {restockForm.qty > 0 && restockForm.gross_wt_g > 0 && (
+                              <div className="text-xs text-ink-dim bg-white rounded-lg px-3 py-2 border border-line">
+                                New gross: <strong className="text-ok">{grams(box.current_gross_wt_g + restockForm.gross_wt_g)}</strong>
+                                {" · "}New qty: <strong className="text-ok">{box.current_qty + restockForm.qty}</strong>
+                                {restockForm.qty > 0 && <> · Avg/piece added: <strong>{grams(restockForm.gross_wt_g / restockForm.qty)}</strong></>}
+                              </div>
+                            )}
+                            <div className="flex gap-2">
+                              <button type="submit" disabled={restock.isPending || restockForm.qty <= 0 || restockForm.gross_wt_g <= 0}
+                                className="bg-ok text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                                {restock.isPending ? "Saving…" : "Add Stock"}
+                              </button>
+                              <button type="button" onClick={() => setRestockBoxId(null)}
+                                className="border border-line text-xs px-4 py-1.5 rounded-lg2">Cancel</button>
+                            </div>
+                          </form>
+                        </td>
+                      </tr>
+                    )}
                     {saleBoxId === box.id && (
                       <tr className="border-b border-line bg-canvas/60">
                         <td colSpan={7} className="px-4 py-4">
@@ -355,12 +501,15 @@ export default function KolusuPage() {
                   </Fragment>
                 );
               })}
-              {!boxes?.length && (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-ink-dim">No boxes yet. Add your first box.</td></tr>
+              {filteredBoxes.length === 0 && (
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-ink-dim">
+                  {q ? `No boxes match "${boxSearch}".` : "No boxes yet. Add your first box."}
+                </td></tr>
               )}
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {/* History tab */}
@@ -379,19 +528,30 @@ export default function KolusuPage() {
               </tr>
             </thead>
             <tbody>
-              {transactions?.map((tx) => (
-                <tr key={tx.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                  <td className="px-4 py-2.5 text-ink-dim">{shortDate(tx.tx_date)}</td>
-                  <td className="px-3 py-2.5 font-mono text-info">{tx.kolusu_boxes?.box_no ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-right text-err">{tx.qty_change}</td>
-                  <td className="px-3 py-2.5 text-right font-mono">{grams(tx.raw_wt_g)}</td>
-                  <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{grams(tx.cover_wt_g)}</td>
-                  <td className="px-3 py-2.5 text-right font-mono font-semibold text-err">{grams(tx.total_wt_g)}</td>
-                  <td className="px-3 py-2.5 text-ink-dim">{tx.bill_no ?? "—"}</td>
-                </tr>
-              ))}
+              {transactions?.map((tx) => {
+                const isRestock = tx.qty_change > 0;
+                return (
+                  <tr key={tx.id} className={clsx("border-b border-line last:border-0 hover:bg-canvas/50", isRestock && "bg-ok/5")}>
+                    <td className="px-4 py-2.5 text-ink-dim">{shortDate(tx.tx_date)}</td>
+                    <td className="px-3 py-2.5 font-mono text-info">{tx.kolusu_boxes?.box_no ?? "—"}</td>
+                    <td className={clsx("px-3 py-2.5 text-right font-semibold", isRestock ? "text-ok" : "text-err")}>
+                      {isRestock ? `+${tx.qty_change}` : tx.qty_change}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono">{grams(tx.raw_wt_g)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{isRestock ? "—" : grams(tx.cover_wt_g)}</td>
+                    <td className={clsx("px-3 py-2.5 text-right font-mono font-semibold", isRestock ? "text-ok" : "text-err")}>
+                      {isRestock ? `+${grams(tx.total_wt_g)}` : grams(tx.total_wt_g)}
+                    </td>
+                    <td className="px-3 py-2.5 text-ink-dim text-xs">
+                      {tx.bill_no && <span className="mr-1">{tx.bill_no}</span>}
+                      {isRestock && <span className="text-ok font-medium">Restock</span>}
+                      {tx.notes && !isRestock && <span className="text-ink-dim">{tx.notes}</span>}
+                    </td>
+                  </tr>
+                );
+              })}
               {!transactions?.length && (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-ink-dim">No sales recorded yet.</td></tr>
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-ink-dim">No transactions recorded yet.</td></tr>
               )}
             </tbody>
           </table>
