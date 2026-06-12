@@ -24,6 +24,7 @@ import {
 import { useKiosk } from "@/stores/kiosk";
 import { useAuth } from "@/stores/auth";
 import { shortDate, inr } from "@/lib/format";
+import { parseKolusuChat } from "@/lib/kolusu-parse";
 
 type PageTab = "attendance" | "staff" | "monthly" | "requests" | "leaves" | "duties" | "chat" | "announcements" | "kyc";
 
@@ -1783,8 +1784,33 @@ function ChatTab({ isAdmin, adminName }: { isAdmin: boolean; adminName: string }
   async function send() {
     if (!input.trim() || !profile) return;
     setSending(true);
-    const { data: { user } } = await supabase().auth.getUser();
-    if (user) await supabase().from("chat_messages").insert({ sender_id: user.id, sender_name: profile.display_name, message: input.trim() });
+    const client = supabase();
+    const { data: { user } } = await client.auth.getUser();
+    const msg = input.trim();
+    if (user) {
+      await client.from("chat_messages").insert({ sender_id: user.id, sender_name: profile.display_name, message: msg });
+      // Auto-detect kolusu sale format and create pending entry
+      const parsed = parseKolusuChat(msg);
+      if (parsed) {
+        const today = new Date().toISOString().slice(0, 10);
+        await client.from("kolusu_pending_sales").insert({
+          tx_date:     today,
+          raw_wt_g:    parsed.raw_wt_g,
+          cover_wt_g:  parsed.cover_wt_g,
+          qty:         parsed.qty,
+          description: parsed.description || null,
+          bill_no:     parsed.bill_no || null,
+          staff_name:  profile.display_name,
+          staff_id:    user.id,
+          source:      "chat",
+        });
+        await client.from("chat_messages").insert({
+          sender_id:   user.id,
+          sender_name: "MyBuddy",
+          message:     `✓ Kolusu sale logged: ${parsed.raw_wt_g}g + ${parsed.cover_wt_g}g cover${parsed.description ? ` (${parsed.description})` : ""}. Admin will assign to box.`,
+        });
+      }
+    }
     setInput("");
     setSending(false);
   }

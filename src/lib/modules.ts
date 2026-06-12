@@ -5,7 +5,7 @@ export type ModuleSlug =
   | "payments" | "daily-sheet" | "ledger" | "metal-flow" | "bullion"
   | "loans" | "expenses" | "writeoff" | "chits" | "gold-chit"
   | "cash-bonus" | "kolusu" | "walkins" | "reports" | "attendance"
-  | "goldsmith" | "repairs" | "staff-management" | "refinery-entry";
+  | "goldsmith" | "repairs" | "staff-management" | "refinery-entry" | "kolusu-sale";
 
 export const MODULE_GROUPS: { group: string; items: { slug: ModuleSlug; label: string }[] }[] = [
   {
@@ -38,6 +38,7 @@ export const MODULE_GROUPS: { group: string; items: { slug: ModuleSlug; label: s
       { slug: "gold-chit",   label: "Gold Chit" },
       { slug: "cash-bonus",  label: "Cash Bonus" },
       { slug: "kolusu",      label: "Kolusu" },
+      { slug: "kolusu-sale", label: "Kolusu Sale Entry" },
     ],
   },
   {

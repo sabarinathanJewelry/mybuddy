@@ -154,6 +154,38 @@ function useRestock() {
   });
 }
 
+interface KolusuPendingSale {
+  id: string;
+  created_at: string;
+  tx_date: string;
+  raw_wt_g: number;
+  cover_wt_g: number;
+  qty: number;
+  description: string | null;
+  bill_no: string | null;
+  notes: string | null;
+  staff_name: string | null;
+  box_id: string | null;
+  assigned_at: string | null;
+  source: string;
+}
+
+function usePendingSales() {
+  return useQuery<KolusuPendingSale[]>({
+    queryKey: ["kolusu_pending_sales"],
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("kolusu_pending_sales")
+        .select("*")
+        .is("assigned_at", null)
+        .order("tx_date", { ascending: false })
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
+
 export default function KolusuPage() {
   const globalDate = useGlobalDate((s) => s.date);
   const { data: boxes, isLoading } = useKolusuBoxes();
@@ -161,8 +193,63 @@ export default function KolusuPage() {
   const addBox = useAddBox();
   const recordSale = useRecordSale();
   const restock = useRestock();
+  const { data: pendingSales = [], isLoading: pendingLoading } = usePendingSales();
 
-  const [tab, setTab] = useState<"boxes" | "history" | "add_box">("boxes");
+  const [tab, setTab] = useState<"boxes" | "history" | "pending" | "add_box">("boxes");
+
+  // Assign pending sale to a box
+  const [assignId, setAssignId] = useState<string | null>(null);
+  const [assignBoxId, setAssignBoxId] = useState("");
+
+  const qc = useQueryClient();
+  const assignPending = useMutation({
+    mutationFn: async ({ pendingId, boxId }: { pendingId: string; boxId: string }) => {
+      const client = supabase();
+      const pending = pendingSales.find(p => p.id === pendingId);
+      if (!pending) throw new Error("Entry not found");
+      const total_wt_g = parseFloat((pending.raw_wt_g + pending.cover_wt_g).toFixed(3));
+      // Create actual transaction
+      const { error: txErr } = await client.from("kolusu_transactions").insert({
+        tx_date:    pending.tx_date,
+        box_id:     boxId,
+        qty_change: -pending.qty,
+        raw_wt_g:   pending.raw_wt_g,
+        cover_wt_g: pending.cover_wt_g,
+        total_wt_g,
+        bill_no:    pending.bill_no || null,
+        notes:      pending.description ? `${pending.description}${pending.notes ? ` · ${pending.notes}` : ""}` : (pending.notes || null),
+      });
+      if (txErr) throw txErr;
+      // Deduct from box
+      const { data: box, error: boxErr } = await client.from("kolusu_boxes").select("current_gross_wt_g, current_qty").eq("id", boxId).single();
+      if (boxErr) throw boxErr;
+      const { error: updErr } = await client.from("kolusu_boxes").update({
+        current_gross_wt_g: parseFloat((box.current_gross_wt_g - total_wt_g).toFixed(3)),
+        current_qty: box.current_qty - pending.qty,
+        updated_at: new Date().toISOString(),
+      }).eq("id", boxId);
+      if (updErr) throw updErr;
+      // Mark pending as assigned
+      await client.from("kolusu_pending_sales").update({ box_id: boxId, assigned_at: new Date().toISOString() }).eq("id", pendingId);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["kolusu_pending_sales"] });
+      qc.invalidateQueries({ queryKey: ["kolusu_boxes"] });
+      qc.invalidateQueries({ queryKey: ["kolusu_transactions"] });
+      setAssignId(null);
+      setAssignBoxId("");
+    },
+  });
+
+  const dismissPending = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase().from("kolusu_pending_sales")
+        .update({ assigned_at: new Date().toISOString(), notes: "dismissed" })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["kolusu_pending_sales"] }),
+  });
 
   // Sale form state (per box inline)
   const [saleBoxId, setSaleBoxId] = useState<string | null>(null);
@@ -309,10 +396,13 @@ export default function KolusuPage() {
       {/* Tabs */}
       {tab !== "add_box" && (
         <div className="flex border-b border-line gap-1">
-          {(["boxes", "history"] as const).map((t_) => (
+          {(["boxes", "pending", "history"] as const).map((t_) => (
             <button key={t_} onClick={() => setTab(t_)}
-              className={clsx("px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px", tab === t_ ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink")}>
-              {t_ === "boxes" ? "Boxes" : "Sale History"}
+              className={clsx("px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px relative", tab === t_ ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink")}>
+              {t_ === "boxes" ? "Boxes" : t_ === "pending" ? "Pending" : "History"}
+              {t_ === "pending" && pendingSales.length > 0 && (
+                <span className="ml-1.5 bg-err text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{pendingSales.length}</span>
+              )}
             </button>
           ))}
         </div>
@@ -510,6 +600,89 @@ export default function KolusuPage() {
           </table>
         </div>
         </>
+      )}
+
+      {/* Pending tab */}
+      {tab === "pending" && (
+        <div className="space-y-3">
+          {pendingLoading ? (
+            <p className="text-ink-dim text-sm">Loading…</p>
+          ) : pendingSales.length === 0 ? (
+            <div className="bg-white border border-line rounded-xl p-8 text-center text-ink-dim shadow-soft text-sm">
+              No pending entries — all caught up!
+            </div>
+          ) : (
+            <>
+              <p className="text-xs text-ink-dim">{pendingSales.length} unassigned sale(s) from staff. Pick the box for each and confirm.</p>
+              <div className="space-y-2">
+                {pendingSales.map((p) => (
+                  <div key={p.id} className="bg-white border border-line rounded-xl shadow-soft overflow-hidden">
+                    <div className="px-4 py-3 flex items-start gap-3">
+                      <div className="flex-1 space-y-0.5 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-ink">{p.raw_wt_g}g</span>
+                          <span className="text-xs text-ink-dim">+ {p.cover_wt_g}g cover</span>
+                          {p.qty > 1 && <span className="text-xs bg-info/10 text-info px-1.5 py-0.5 rounded-full">×{p.qty}</span>}
+                          {p.source === "chat" && <span className="text-xs bg-warn/10 text-warn px-1.5 py-0.5 rounded-full">chat</span>}
+                        </div>
+                        {p.description && <div className="text-xs text-ink-dim font-medium">{p.description}</div>}
+                        <div className="text-xs text-ink-dim">
+                          {shortDate(p.tx_date)} · by {p.staff_name ?? "—"}
+                          {p.bill_no && <> · Bill {p.bill_no}</>}
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className="text-sm font-semibold text-err">
+                          −{grams(parseFloat((p.raw_wt_g + p.cover_wt_g).toFixed(3)))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Assign form */}
+                    {assignId === p.id ? (
+                      <div className="border-t border-line px-4 py-3 bg-canvas/50 space-y-2">
+                        <p className="text-xs text-ink-dim font-medium">Which box?</p>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {(boxes ?? []).map(b => (
+                            <button key={b.id}
+                              onClick={() => setAssignBoxId(assignBoxId === b.id ? "" : b.id)}
+                              className={clsx(
+                                "text-xs px-2 py-1.5 rounded-lg2 border text-left transition-colors",
+                                assignBoxId === b.id ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:border-gold"
+                              )}>
+                              <span className="font-mono font-medium">{b.box_no}</span>
+                              <span className="block text-[11px] opacity-80">{[b.color, b.size].filter(Boolean).join(" / ")}</span>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            disabled={!assignBoxId || assignPending.isPending}
+                            onClick={() => assignPending.mutate({ pendingId: p.id, boxId: assignBoxId })}
+                            className="bg-ok text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                            {assignPending.isPending ? "Saving…" : "Confirm"}
+                          </button>
+                          <button onClick={() => { setAssignId(null); setAssignBoxId(""); }}
+                            className="border border-line text-xs px-4 py-1.5 rounded-lg2 text-ink-dim">Cancel</button>
+                          <button
+                            onClick={() => { if (window.confirm("Dismiss this entry without recording?")) dismissPending.mutate(p.id); }}
+                            className="text-xs text-err hover:underline ml-auto">Dismiss</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="border-t border-line px-4 py-2 flex gap-2">
+                        <button onClick={() => { setAssignId(p.id); setAssignBoxId(""); }}
+                          className="text-xs bg-gold text-white px-3 py-1 rounded-lg2 hover:opacity-80">
+                          Assign to Box
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       )}
 
       {/* History tab */}

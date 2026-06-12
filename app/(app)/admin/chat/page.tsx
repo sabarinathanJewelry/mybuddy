@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/stores/auth";
+import { parseKolusuChat } from "@/lib/kolusu-parse";
 
 interface ChatMessage {
   id: string;
@@ -73,13 +74,31 @@ export default function AdminChatPage() {
   async function sendAsAdmin() {
     if (!chatInput.trim() || !profile) return;
     setSending(true);
-    const { data: { user } } = await supabase().auth.getUser();
+    const client = supabase();
+    const { data: { user } } = await client.auth.getUser();
+    const msg = chatInput.trim();
     if (user) {
-      await supabase().from("chat_messages").insert({
-        sender_id: user.id,
-        sender_name: profile.display_name,
-        message: chatInput.trim(),
-      });
+      await client.from("chat_messages").insert({ sender_id: user.id, sender_name: profile.display_name, message: msg });
+      const parsed = parseKolusuChat(msg);
+      if (parsed) {
+        const today = new Date().toISOString().slice(0, 10);
+        await client.from("kolusu_pending_sales").insert({
+          tx_date:     today,
+          raw_wt_g:    parsed.raw_wt_g,
+          cover_wt_g:  parsed.cover_wt_g,
+          qty:         parsed.qty,
+          description: parsed.description || null,
+          bill_no:     parsed.bill_no || null,
+          staff_name:  profile.display_name,
+          staff_id:    user.id,
+          source:      "chat",
+        });
+        await client.from("chat_messages").insert({
+          sender_id:   user.id,
+          sender_name: "MyBuddy",
+          message:     `✓ Kolusu sale logged: ${parsed.raw_wt_g}g + ${parsed.cover_wt_g}g cover${parsed.description ? ` (${parsed.description})` : ""}. Admin will assign to box.`,
+        });
+      }
     }
     setChatInput("");
     setSending(false);

@@ -30,6 +30,7 @@ const NAV = [
   { href: "/gold-chit",    icon: "🥇", key: "nav_gold_chit" as const },
   { href: "/cash-bonus",   icon: "💰", key: "nav_cash_bonus" as const },
   { href: "/kolusu",       icon: "🪬", key: "nav_kolusu" as const },
+  { href: "/kolusu-sale",  icon: "🏷️", key: "nav_kolusu_sale" as const },
   { href: "/walkins",      icon: "🚶", key: "nav_walkins" as const },
   { href: "/reports",      icon: "📈", key: "nav_reports" as const },
   { href: "/attendance",   icon: "🕐", key: "nav_attendance" as const },
