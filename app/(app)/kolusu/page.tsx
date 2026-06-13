@@ -41,10 +41,9 @@ function useKolusuBoxes() {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("kolusu_boxes")
-        .select("*")
-        .order("box_no");
+        .select("*");
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []).sort((a, b) => parseInt(a.box_no) - parseInt(b.box_no) || a.box_no.localeCompare(b.box_no));
     },
   });
 }
@@ -97,7 +96,7 @@ function useRecordSale() {
         notes: d.notes || null,
       });
       if (txErr) throw txErr;
-      // Deduct from box
+      // Deduct only kolusu weight from box (cover is packaging, not inventory stock)
       const { data: box, error: fetchErr } = await client
         .from("kolusu_boxes")
         .select("current_gross_wt_g, current_qty")
@@ -105,7 +104,7 @@ function useRecordSale() {
         .single();
       if (fetchErr) throw fetchErr;
       const { error: updErr } = await client.from("kolusu_boxes").update({
-        current_gross_wt_g: parseFloat((box.current_gross_wt_g - total_wt_g).toFixed(3)),
+        current_gross_wt_g: parseFloat((box.current_gross_wt_g - d.raw_wt_g).toFixed(3)),
         current_qty: box.current_qty - d.qty,
         updated_at: new Date().toISOString(),
       }).eq("id", d.box_id);
@@ -220,11 +219,11 @@ export default function KolusuPage() {
         notes:      pending.description ? `${pending.description}${pending.notes ? ` · ${pending.notes}` : ""}` : (pending.notes || null),
       });
       if (txErr) throw txErr;
-      // Deduct from box
+      // Deduct only kolusu weight from box (cover is packaging, not inventory stock)
       const { data: box, error: boxErr } = await client.from("kolusu_boxes").select("current_gross_wt_g, current_qty").eq("id", boxId).single();
       if (boxErr) throw boxErr;
       const { error: updErr } = await client.from("kolusu_boxes").update({
-        current_gross_wt_g: parseFloat((box.current_gross_wt_g - total_wt_g).toFixed(3)),
+        current_gross_wt_g: parseFloat((box.current_gross_wt_g - pending.raw_wt_g).toFixed(3)),
         current_qty: box.current_qty - pending.qty,
         updated_at: new Date().toISOString(),
       }).eq("id", boxId);
@@ -573,8 +572,8 @@ export default function KolusuPage() {
                             {saleForm.raw_wt_g > 0 && (
                               <div className="text-xs text-ink-dim bg-white rounded-lg px-3 py-2 border border-line">
                                 Cover total: <strong>{grams(coverTotal)}</strong> ({saleForm.qty} × {saleForm.cover_per_piece}g)
-                                {" · "}Total deducted: <strong className="text-err">{grams(totalWt)}</strong>
-                                {" · "}Remaining gross: <strong className="text-ok">{grams(box.current_gross_wt_g - totalWt)}</strong>
+                                {" · "}Kolusu deducted: <strong className="text-err">{grams(saleForm.raw_wt_g)}</strong>
+                                {" · "}Remaining gross: <strong className="text-ok">{grams(box.current_gross_wt_g - saleForm.raw_wt_g)}</strong>
                                 {" · "}Remaining qty: <strong className="text-ok">{box.current_qty - saleForm.qty}</strong>
                               </div>
                             )}
