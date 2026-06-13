@@ -240,6 +240,49 @@ export default function KolusuPage() {
     },
   });
 
+  // Transfer sale to a different box
+  const [transferTxId, setTransferTxId]   = useState<string | null>(null);
+  const [transferBoxId, setTransferBoxId] = useState("");
+
+  const transferSale = useMutation({
+    mutationFn: async ({ txId, oldBoxId, newBoxId }: { txId: string; oldBoxId: string; newBoxId: string }) => {
+      const client = supabase();
+      const tx = transactions?.find(t => t.id === txId);
+      if (!tx) throw new Error("Transaction not found");
+      const absQty = Math.abs(tx.qty_change);
+
+      // Reverse deduction on old box
+      const { data: oldBox, error: e1 } = await client.from("kolusu_boxes").select("current_gross_wt_g, current_qty").eq("id", oldBoxId).single();
+      if (e1) throw e1;
+      const { error: e2 } = await client.from("kolusu_boxes").update({
+        current_gross_wt_g: parseFloat((oldBox.current_gross_wt_g + tx.raw_wt_g).toFixed(3)),
+        current_qty: oldBox.current_qty + absQty,
+        updated_at: new Date().toISOString(),
+      }).eq("id", oldBoxId);
+      if (e2) throw e2;
+
+      // Apply deduction on new box
+      const { data: newBox, error: e3 } = await client.from("kolusu_boxes").select("current_gross_wt_g, current_qty").eq("id", newBoxId).single();
+      if (e3) throw e3;
+      const { error: e4 } = await client.from("kolusu_boxes").update({
+        current_gross_wt_g: parseFloat((newBox.current_gross_wt_g - tx.raw_wt_g).toFixed(3)),
+        current_qty: newBox.current_qty - absQty,
+        updated_at: new Date().toISOString(),
+      }).eq("id", newBoxId);
+      if (e4) throw e4;
+
+      // Update the transaction's box
+      const { error: e5 } = await client.from("kolusu_transactions").update({ box_id: newBoxId }).eq("id", txId);
+      if (e5) throw e5;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["kolusu_boxes"] });
+      qc.invalidateQueries({ queryKey: ["kolusu_transactions"] });
+      setTransferTxId(null);
+      setTransferBoxId("");
+    },
+  });
+
   const dismissPending = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase().from("kolusu_pending_sales")
@@ -687,7 +730,7 @@ export default function KolusuPage() {
       {/* History tab */}
       {tab === "history" && (
         <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
-          <table className="w-full text-sm" style={{ minWidth: "480px" }}>
+          <table className="w-full text-sm" style={{ minWidth: "520px" }}>
             <thead>
               <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                 <th className="text-left px-4 py-2.5">Date</th>
@@ -696,34 +739,94 @@ export default function KolusuPage() {
                 <th className="text-right px-3 py-2.5">Raw (g)</th>
                 <th className="text-right px-3 py-2.5">Cover (g)</th>
                 <th className="text-right px-3 py-2.5">Total (g)</th>
-                <th className="text-left px-3 py-2.5">Bill No</th>
+                <th className="text-left px-3 py-2.5">Notes</th>
+                <th className="px-3 py-2.5 w-20"></th>
               </tr>
             </thead>
             <tbody>
               {transactions?.map((tx) => {
                 const isRestock = tx.qty_change > 0;
+                const isTransferring = transferTxId === tx.id;
                 return (
-                  <tr key={tx.id} className={clsx("border-b border-line last:border-0 hover:bg-canvas/50", isRestock && "bg-ok/5")}>
-                    <td className="px-4 py-2.5 text-ink-dim">{shortDate(tx.tx_date)}</td>
-                    <td className="px-3 py-2.5 font-mono text-info">{tx.kolusu_boxes?.box_no ?? "—"}</td>
-                    <td className={clsx("px-3 py-2.5 text-right font-semibold", isRestock ? "text-ok" : "text-err")}>
-                      {isRestock ? `+${tx.qty_change}` : tx.qty_change}
-                    </td>
-                    <td className="px-3 py-2.5 text-right font-mono">{grams(tx.raw_wt_g)}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{isRestock ? "—" : grams(tx.cover_wt_g)}</td>
-                    <td className={clsx("px-3 py-2.5 text-right font-mono font-semibold", isRestock ? "text-ok" : "text-err")}>
-                      {isRestock ? `+${grams(tx.total_wt_g)}` : grams(tx.total_wt_g)}
-                    </td>
-                    <td className="px-3 py-2.5 text-ink-dim text-xs">
-                      {tx.bill_no && <span className="mr-1">{tx.bill_no}</span>}
-                      {isRestock && <span className="text-ok font-medium">Restock</span>}
-                      {tx.notes && !isRestock && <span className="text-ink-dim">{tx.notes}</span>}
-                    </td>
-                  </tr>
+                  <Fragment key={tx.id}>
+                    <tr className={clsx("border-b border-line last:border-0 hover:bg-canvas/50", isRestock && "bg-ok/5", isTransferring && "bg-warn/5")}>
+                      <td className="px-4 py-2.5 text-ink-dim">{shortDate(tx.tx_date)}</td>
+                      <td className="px-3 py-2.5 font-mono text-info">{tx.kolusu_boxes?.box_no ?? "—"}</td>
+                      <td className={clsx("px-3 py-2.5 text-right font-semibold", isRestock ? "text-ok" : "text-err")}>
+                        {isRestock ? `+${tx.qty_change}` : tx.qty_change}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono">{grams(tx.raw_wt_g)}</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{isRestock ? "—" : grams(tx.cover_wt_g)}</td>
+                      <td className={clsx("px-3 py-2.5 text-right font-mono font-semibold", isRestock ? "text-ok" : "text-err")}>
+                        {isRestock ? `+${grams(tx.total_wt_g)}` : grams(tx.total_wt_g)}
+                      </td>
+                      <td className="px-3 py-2.5 text-ink-dim text-xs">
+                        {tx.bill_no && <span className="mr-1">{tx.bill_no}</span>}
+                        {isRestock && <span className="text-ok font-medium">Restock</span>}
+                        {tx.notes && !isRestock && <span className="text-ink-dim">{tx.notes}</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        {!isRestock && (
+                          <button
+                            onClick={() => {
+                              setTransferTxId(isTransferring ? null : tx.id);
+                              setTransferBoxId("");
+                            }}
+                            className={clsx(
+                              "text-xs px-2 py-1 rounded-lg2 border transition-colors",
+                              isTransferring
+                                ? "border-warn/40 bg-warn/10 text-warn"
+                                : "border-line text-ink-dim hover:border-gold hover:text-gold"
+                            )}>
+                            {isTransferring ? "Cancel" : "Transfer"}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    {isTransferring && (
+                      <tr className="border-b border-line bg-warn/5">
+                        <td colSpan={8} className="px-4 py-4 space-y-3">
+                          <p className="text-xs font-semibold text-warn uppercase tracking-wide">
+                            Move this sale from Box <span className="font-mono">{tx.kolusu_boxes?.box_no ?? "?"}</span> to:
+                          </p>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            {(boxes ?? [])
+                              .filter(b => b.id !== tx.box_id)
+                              .map(b => (
+                                <button key={b.id}
+                                  onClick={() => setTransferBoxId(transferBoxId === b.id ? "" : b.id)}
+                                  className={clsx(
+                                    "text-xs px-2 py-1.5 rounded-lg2 border text-left transition-colors",
+                                    transferBoxId === b.id ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:border-gold"
+                                  )}>
+                                  <span className="font-mono font-medium">{b.box_no}</span>
+                                  <span className="block text-[11px] opacity-80">{[b.color, b.size].filter(Boolean).join(" / ")}</span>
+                                </button>
+                              ))}
+                          </div>
+                          {transferSale.isError && (
+                            <p className="text-xs text-err">{(transferSale.error as Error).message}</p>
+                          )}
+                          <div className="flex gap-2">
+                            <button
+                              disabled={!transferBoxId || transferSale.isPending}
+                              onClick={() => transferSale.mutate({ txId: tx.id, oldBoxId: tx.box_id, newBoxId: transferBoxId })}
+                              className="bg-warn text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                              {transferSale.isPending ? "Moving…" : "Confirm Transfer"}
+                            </button>
+                            <button onClick={() => { setTransferTxId(null); setTransferBoxId(""); }}
+                              className="border border-line text-xs px-4 py-1.5 rounded-lg2 text-ink-dim">
+                              Cancel
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
               {!transactions?.length && (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-ink-dim">No transactions recorded yet.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-ink-dim">No transactions recorded yet.</td></tr>
               )}
             </tbody>
           </table>
