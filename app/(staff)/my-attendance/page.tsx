@@ -542,6 +542,12 @@ export default function MyAttendancePage() {
             Repairs
           </Link>
         )}
+        {canLogKolusu && (
+          <Link href="/kolusu-sale"
+            className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-gold hover:border-gold transition-colors">
+            Kolusu Sale
+          </Link>
+        )}
         <button onClick={handleLogout}
           className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-err hover:border-err transition-colors">
           Logout
@@ -570,7 +576,7 @@ export default function MyAttendancePage() {
       )}
 
       {/* Tabs */}
-      <div className="flex border-b border-line gap-1">
+      <div className="flex flex-wrap border-b border-line gap-x-0 gap-y-0">
         {([
           { key: "today",     label: "Today" },
           { key: "monthly",   label: "Monthly" },
@@ -581,7 +587,7 @@ export default function MyAttendancePage() {
           { key: "kyc",        label: "KYC" },
         ] as { key: PageTab; label: string }[]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
+            className={`px-3 py-2 text-xs sm:text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1 whitespace-nowrap ${
               tab === t.key ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"
             }`}>
             {t.label}
