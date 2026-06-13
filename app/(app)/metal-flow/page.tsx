@@ -23,7 +23,7 @@ function useIntake() {
         .from("old_metal_intake")
         .select("*, customers(name)")
         .order("intake_date", { ascending: false })
-        .limit(100);
+        .limit(1000);
       if (error) throw error;
       return data ?? [];
     },
@@ -52,7 +52,7 @@ function useBatches() {
         .from("melt_batches")
         .select("*, melt_batch_items(id, gross_wt, purity_pct, pure_wt, intake_id), debris_wt")
         .order("batch_date", { ascending: false })
-        .limit(50);
+        .limit(200);
       if (error) throw error;
       return data ?? [];
     },
@@ -67,7 +67,7 @@ function useDispatches() {
         .from("metal_dispatches")
         .select("*, suppliers(name)")
         .order("dispatch_date", { ascending: false })
-        .limit(50);
+        .limit(200);
       if (error) throw error;
       return data ?? [];
     },
