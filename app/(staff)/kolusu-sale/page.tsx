@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useGlobalDate } from "@/stores/global-date";
-import { useAuth } from "@/stores/auth";
 import { grams } from "@/lib/format";
 
 const inp = "w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
@@ -15,32 +14,25 @@ const EXAMPLES = [
   "27.600  9 B  cover 1.100",
 ];
 
-// Parses: kolusu <raw_wt> [description] cover <cover_wt> [qty N] [bill XXXX]
-// All fields except raw_wt and cover_wt are optional.
 function parseChatFormat(text: string): { raw_wt_g: number; cover_wt_g: number; description: string; qty: number; bill_no: string } | null {
   const lower = text.trim().toLowerCase();
   if (!lower.startsWith("kolusu")) return null;
   const body = text.trim().slice(6).trim();
 
-  // Extract cover weight
   const coverMatch = body.match(/cover\s+([\d.]+)/i);
   if (!coverMatch) return null;
   const cover_wt_g = parseFloat(coverMatch[1]);
 
-  // Extract first number as raw weight
   const rawMatch = body.match(/^([\d.]+)/);
   if (!rawMatch) return null;
   const raw_wt_g = parseFloat(rawMatch[1]);
 
-  // Extract optional qty: "qty 2" or "x2"
   const qtyMatch = body.match(/(?:qty|x)\s*(\d+)/i);
   const qty = qtyMatch ? parseInt(qtyMatch[1]) : 1;
 
-  // Extract optional bill: "bill 1234" or "bill no 1234"
   const billMatch = body.match(/bill(?:\s*no)?\s+([^\s]+)/i);
   const bill_no = billMatch ? billMatch[1] : "";
 
-  // Description: everything between the first number and "cover"
   const afterFirst = body.slice(rawMatch[0].length).trim();
   const coverIdx = afterFirst.toLowerCase().indexOf("cover");
   const rawDesc = afterFirst.slice(0, coverIdx).replace(/qty\s*\d+|x\s*\d+|bill(?:\s*no)?\s+\S+/gi, "").trim();
@@ -50,9 +42,21 @@ function parseChatFormat(text: string): { raw_wt_g: number; cover_wt_g: number; 
 
 export default function KolusuSalePage() {
   const globalDate = useGlobalDate((s) => s.date);
-  const profile = useAuth((s) => s.profile);
 
-  const [mode, setMode] = useState<"form" | "chat">("form");
+  const [staffName, setStaffName] = useState<string | null>(null);
+  const [staffId, setStaffId]     = useState<string | null>(null);
+
+  useEffect(() => {
+    const client = supabase();
+    client.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return;
+      setStaffId(user.id);
+      const { data } = await client.from("profiles").select("display_name").eq("id", user.id).single();
+      if (data?.display_name) setStaffName(data.display_name);
+    });
+  }, []);
+
+  const [mode, setMode]           = useState<"form" | "chat">("form");
   const [chatInput, setChatInput] = useState("");
   const [chatParsed, setChatParsed] = useState<ReturnType<typeof parseChatFormat>>(null);
 
@@ -69,7 +73,6 @@ export default function KolusuSalePage() {
   const [lastSaved, setLastSaved] = useState<{ raw_wt_g: number; cover_wt_g: number; description: string } | null>(null);
 
   const coverTotal = parseFloat((form.qty * form.cover_per_piece).toFixed(3));
-  const totalWt = parseFloat(((mode === "form" ? form.raw_wt_g : 0) + coverTotal).toFixed(3));
 
   const save = useMutation({
     mutationFn: async (d: { tx_date: string; raw_wt_g: number; cover_wt_g: number; qty: number; description: string; bill_no: string; notes: string }) => {
@@ -81,8 +84,8 @@ export default function KolusuSalePage() {
         description: d.description || null,
         bill_no:     d.bill_no || null,
         notes:       d.notes || null,
-        staff_name:  profile?.display_name ?? null,
-        staff_id:    (await supabase().auth.getUser()).data.user?.id ?? null,
+        staff_name:  staffName,
+        staff_id:    staffId,
         source:      "form",
       });
       if (error) throw error;
@@ -102,8 +105,8 @@ export default function KolusuSalePage() {
         qty:         d.qty,
         description: d.description || null,
         bill_no:     d.bill_no || null,
-        staff_name:  profile?.display_name ?? null,
-        staff_id:    (await supabase().auth.getUser()).data.user?.id ?? null,
+        staff_name:  staffName,
+        staff_id:    staffId,
         source:      "form",
       });
       if (error) throw error;
@@ -123,9 +126,17 @@ export default function KolusuSalePage() {
 
   return (
     <div className="max-w-md mx-auto px-4 py-6 space-y-4">
-      <h1 className="text-lg font-semibold text-ink">Kolusu Sale Entry</h1>
+      <div className="flex items-center gap-3">
+        <div className="flex-1">
+          <h1 className="text-lg font-semibold text-ink">Kolusu Sale Entry</h1>
+          {staffName && <p className="text-xs text-ink-dim mt-0.5">{staffName}</p>}
+        </div>
+        <a href="/my-attendance"
+          className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-gold hover:border-gold transition-colors">
+          ← Back
+        </a>
+      </div>
 
-      {/* Success */}
       {lastSaved && (
         <div className="bg-ok/10 border border-ok/30 rounded-xl px-4 py-3 text-sm text-ok font-medium">
           Logged ✓ — {grams(lastSaved.raw_wt_g)} + {grams(lastSaved.cover_wt_g)} cover
@@ -200,8 +211,8 @@ export default function KolusuSalePage() {
                 <span className="font-mono">{grams(coverTotal)}</span>
               </div>
               <div className="flex justify-between font-semibold text-ink border-t border-line pt-1">
-                <span>Total deducted</span>
-                <span className="font-mono">{grams(totalWt)}</span>
+                <span>Total</span>
+                <span className="font-mono">{grams(form.raw_wt_g + coverTotal)}</span>
               </div>
             </div>
           )}
@@ -246,7 +257,6 @@ export default function KolusuSalePage() {
               autoFocus />
           </div>
 
-          {/* Format hint */}
           <div className="text-xs text-ink-dim space-y-1">
             <p className="font-medium text-ink">Format: <span className="font-mono text-info">kolusu [weight] [description] cover [cover_wt]</span></p>
             <p className="font-medium text-ink mb-0.5">Examples:</p>
@@ -259,7 +269,6 @@ export default function KolusuSalePage() {
             <p className="text-ink-dim pt-1">Optional: add <span className="font-mono">qty 2</span> for multiple pieces, <span className="font-mono">bill 1234</span> for bill number.</p>
           </div>
 
-          {/* Parsed preview */}
           {chatInput && !chatParsed && (
             <div className="bg-err/5 border border-err/20 rounded-lg2 px-3 py-2 text-xs text-err">
               Could not parse. Make sure format starts with <span className="font-mono">kolusu</span> and includes <span className="font-mono">cover [weight]</span>.
