@@ -15,15 +15,22 @@ const inp = "w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outli
 
 // ─── Data hooks ────────────────────────────────────────────────────────────────
 
-function useIntake() {
+function fyStart() {
+  const now = new Date();
+  const y = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${y}-04-01`;
+}
+
+function useIntake(fromDate: string) {
   return useQuery({
-    queryKey: ["metal_intake"],
+    queryKey: ["metal_intake", fromDate],
     queryFn: async () => {
-      const { data, error } = await supabase()
+      let q = supabase()
         .from("old_metal_intake")
         .select("*, customers(name)")
-        .order("intake_date", { ascending: false })
-        .limit(1000);
+        .order("intake_date", { ascending: false });
+      if (fromDate) q = q.gte("intake_date", fromDate);
+      const { data, error } = await q;
       if (error) throw error;
       return data ?? [];
     },
@@ -165,7 +172,8 @@ export default function MetalFlowPage() {
   const [tab, setTab] = useState<Tab>("intake");
 
   // Intake
-  const { data: intakeData, isLoading: intakeLoading } = useIntake();
+  const [intakeFromDate, setIntakeFromDate] = useState(fyStart);
+  const { data: intakeData, isLoading: intakeLoading } = useIntake(intakeFromDate);
   const { data: customers = [] } = useCustomers();
   const [selectedIntake, setSelectedIntake] = useState<Set<string>>(new Set());
   const [showIntakeForm, setShowIntakeForm] = useState(false);
@@ -637,6 +645,32 @@ export default function MetalFlowPage() {
         <div className="space-y-3">
           {/* Filter bar */}
           <div className="bg-white rounded-xl border border-line p-3 shadow-soft space-y-2">
+            {/* Date range */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-ink-dim font-medium w-12">From</span>
+              {(() => {
+                const now = new Date();
+                const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+                const last3m = new Date(now); last3m.setMonth(last3m.getMonth() - 3);
+                const last3mStr = `${last3m.getFullYear()}-${String(last3m.getMonth() + 1).padStart(2, "0")}-01`;
+                const thisFY = fyStart();
+                const presets = [
+                  { label: "This Month", value: thisMonth },
+                  { label: "Last 3M",    value: last3mStr },
+                  { label: "This FY",    value: thisFY },
+                  { label: "All time",   value: "" },
+                ];
+                return presets.map(p => (
+                  <button key={p.label} onClick={() => setIntakeFromDate(p.value)}
+                    className={`text-xs px-3 py-1 rounded-full border transition-colors ${intakeFromDate === p.value ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:border-gold"}`}>
+                    {p.label}
+                  </button>
+                ));
+              })()}
+              <input type="date" value={intakeFromDate}
+                onChange={e => setIntakeFromDate(e.target.value)}
+                className="border border-line rounded-lg2 px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+            </div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-ink-dim font-medium w-12">Metal</span>
               {[
