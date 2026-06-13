@@ -25,12 +25,10 @@ function useIntake(fromDate: string) {
   return useQuery({
     queryKey: ["metal_intake", fromDate],
     queryFn: async () => {
-      let q = supabase()
-        .from("old_metal_intake")
-        .select("*, customers(name)")
-        .order("intake_date", { ascending: false });
-      if (fromDate) q = q.gte("intake_date", fromDate);
-      const { data, error } = await q;
+      const base = supabase().from("old_metal_intake").select("*, customers(name)");
+      const { data, error } = await (fromDate
+        ? base.gte("intake_date", fromDate).order("intake_date", { ascending: false })
+        : base.order("intake_date", { ascending: false }));
       if (error) throw error;
       return data ?? [];
     },
