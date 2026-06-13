@@ -103,8 +103,9 @@ function useRecordSale() {
         .eq("id", d.box_id)
         .single();
       if (fetchErr) throw fetchErr;
+      // Deduct kolusu + cover (both physically leave the box when sold)
       const { error: updErr } = await client.from("kolusu_boxes").update({
-        current_gross_wt_g: parseFloat((box.current_gross_wt_g - d.raw_wt_g).toFixed(3)),
+        current_gross_wt_g: parseFloat((box.current_gross_wt_g - total_wt_g).toFixed(3)),
         current_qty: box.current_qty - d.qty,
         updated_at: new Date().toISOString(),
       }).eq("id", d.box_id);
@@ -251,11 +252,11 @@ export default function KolusuPage() {
         notes:      pending.description ? `${pending.description}${pending.notes ? ` · ${pending.notes}` : ""}` : (pending.notes || null),
       });
       if (txErr) throw txErr;
-      // Deduct only kolusu weight from box (cover is packaging, not inventory stock)
+      // Deduct kolusu + cover (both physically leave the box when sold)
       const { data: box, error: boxErr } = await client.from("kolusu_boxes").select("current_gross_wt_g, current_qty").eq("id", boxId).single();
       if (boxErr) throw boxErr;
       const { error: updErr } = await client.from("kolusu_boxes").update({
-        current_gross_wt_g: parseFloat((box.current_gross_wt_g - pending.raw_wt_g).toFixed(3)),
+        current_gross_wt_g: parseFloat((box.current_gross_wt_g - total_wt_g).toFixed(3)),
         current_qty: box.current_qty - pending.qty,
         updated_at: new Date().toISOString(),
       }).eq("id", boxId);
@@ -931,36 +932,41 @@ export default function KolusuPage() {
       {/* Report tab */}
       {tab === "report" && (() => {
         // Aggregate transactions per box from the chosen start date
-        const txByBox = new Map<string, { addedWt: number; addedQty: number; soldWt: number; soldQty: number }>();
+        const txByBox = new Map<string, { addedWt: number; addedQty: number; soldKolusu: number; soldCover: number; soldTotal: number; soldQty: number }>();
         for (const tx of transactions ?? []) {
           if (tx.tx_date < reportFrom) continue;
-          if (!txByBox.has(tx.box_id)) txByBox.set(tx.box_id, { addedWt: 0, addedQty: 0, soldWt: 0, soldQty: 0 });
+          if (tx.qty_change === 0) continue; // skip correction entries
+          if (!txByBox.has(tx.box_id)) txByBox.set(tx.box_id, { addedWt: 0, addedQty: 0, soldKolusu: 0, soldCover: 0, soldTotal: 0, soldQty: 0 });
           const row = txByBox.get(tx.box_id)!;
           if (tx.qty_change > 0) {
             row.addedWt  += Number(tx.raw_wt_g);
             row.addedQty += tx.qty_change;
           } else {
-            row.soldWt  += Number(tx.raw_wt_g);
-            row.soldQty += Math.abs(tx.qty_change);
+            row.soldKolusu += Number(tx.raw_wt_g);
+            row.soldCover  += Number(tx.cover_wt_g);
+            row.soldTotal  += Number(tx.total_wt_g);
+            row.soldQty    += Math.abs(tx.qty_change);
           }
         }
 
         const reportBoxes = (boxes ?? []);
         const totals = reportBoxes.reduce((acc, box) => {
-          const t = txByBox.get(box.id) ?? { addedWt: 0, addedQty: 0, soldWt: 0, soldQty: 0 };
-          // Opening = current − added + sold (reverse from current state)
-          const openWt  = parseFloat((box.current_gross_wt_g - t.addedWt + t.soldWt).toFixed(3));
+          const t = txByBox.get(box.id) ?? { addedWt: 0, addedQty: 0, soldKolusu: 0, soldCover: 0, soldTotal: 0, soldQty: 0 };
+          // Opening = current − added + total sold (kolusu+cover both deducted)
+          const openWt  = parseFloat((box.current_gross_wt_g - t.addedWt + t.soldTotal).toFixed(3));
           const openQty = box.current_qty - t.addedQty + t.soldQty;
-          acc.openWt  += openWt;
-          acc.openQty += openQty;
-          acc.addedWt  += t.addedWt;
-          acc.addedQty += t.addedQty;
-          acc.soldWt  += t.soldWt;
-          acc.soldQty += t.soldQty;
-          acc.curWt   += box.current_gross_wt_g;
-          acc.curQty  += box.current_qty;
+          acc.openWt     += openWt;
+          acc.openQty    += openQty;
+          acc.addedWt    += t.addedWt;
+          acc.addedQty   += t.addedQty;
+          acc.soldKolusu += t.soldKolusu;
+          acc.soldCover  += t.soldCover;
+          acc.soldTotal  += t.soldTotal;
+          acc.soldQty    += t.soldQty;
+          acc.curWt      += box.current_gross_wt_g;
+          acc.curQty     += box.current_qty;
           return acc;
-        }, { openWt: 0, openQty: 0, addedWt: 0, addedQty: 0, soldWt: 0, soldQty: 0, curWt: 0, curQty: 0 });
+        }, { openWt: 0, openQty: 0, addedWt: 0, addedQty: 0, soldKolusu: 0, soldCover: 0, soldTotal: 0, soldQty: 0, curWt: 0, curQty: 0 });
 
         return (
           <div className="space-y-4">
@@ -976,10 +982,10 @@ export default function KolusuPage() {
             {/* Summary strip */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
-                { label: "Opening Gross",  value: grams(totals.openWt),  sub: `${totals.openQty} pcs`, color: "text-ink" },
-                { label: "Added (Restock)", value: grams(totals.addedWt), sub: `${totals.addedQty} pcs`, color: "text-ok" },
-                { label: "Sold",           value: grams(totals.soldWt),  sub: `${totals.soldQty} pcs`, color: "text-err" },
-                { label: "Current Gross",  value: grams(totals.curWt),   sub: `${totals.curQty} pcs`, color: "text-gold" },
+                { label: "Opening Gross",   value: grams(totals.openWt),    sub: `${totals.openQty} pcs`,   color: "text-ink" },
+                { label: "Added (Restock)", value: grams(totals.addedWt),   sub: `${totals.addedQty} pcs`,  color: "text-ok" },
+                { label: "Sold Total",      value: grams(totals.soldTotal),  sub: `${totals.soldQty} pcs · kolusu ${grams(totals.soldKolusu)} + cover ${grams(totals.soldCover)}`, color: "text-err" },
+                { label: "Current Gross",   value: grams(totals.curWt),     sub: `${totals.curQty} pcs`,    color: "text-gold" },
               ].map(s => (
                 <div key={s.label} className="bg-white rounded-xl border border-line p-4 shadow-soft">
                   <p className="text-xs text-ink-dim">{s.label}</p>
@@ -991,7 +997,7 @@ export default function KolusuPage() {
 
             {/* Box-wise table */}
             <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
-              <table className="w-full text-sm" style={{ minWidth: "700px" }}>
+              <table className="w-full text-sm" style={{ minWidth: "900px" }}>
                 <thead>
                   <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                     <th className="text-left px-4 py-2.5">Box</th>
@@ -1000,7 +1006,9 @@ export default function KolusuPage() {
                     <th className="text-right px-3 py-2.5">Opening Qty</th>
                     <th className="text-right px-3 py-2.5 border-l border-line text-ok">+ Added (g)</th>
                     <th className="text-right px-3 py-2.5 text-ok">+ Qty</th>
-                    <th className="text-right px-3 py-2.5 border-l border-line text-err">− Sold (g)</th>
+                    <th className="text-right px-3 py-2.5 border-l border-line text-err">Kolusu (g)</th>
+                    <th className="text-right px-3 py-2.5 text-err">Cover (g)</th>
+                    <th className="text-right px-3 py-2.5 text-err">Total Sold</th>
                     <th className="text-right px-3 py-2.5 text-err">− Qty</th>
                     <th className="text-right px-3 py-2.5 border-l border-line text-gold">Current Gross</th>
                     <th className="text-right px-3 py-2.5 text-gold">Current Qty</th>
@@ -1008,10 +1016,10 @@ export default function KolusuPage() {
                 </thead>
                 <tbody>
                   {reportBoxes.map(box => {
-                    const t = txByBox.get(box.id) ?? { addedWt: 0, addedQty: 0, soldWt: 0, soldQty: 0 };
-                    const openWt  = parseFloat((box.current_gross_wt_g - t.addedWt + t.soldWt).toFixed(3));
+                    const t = txByBox.get(box.id) ?? { addedWt: 0, addedQty: 0, soldKolusu: 0, soldCover: 0, soldTotal: 0, soldQty: 0 };
+                    const openWt  = parseFloat((box.current_gross_wt_g - t.addedWt + t.soldTotal).toFixed(3));
                     const openQty = box.current_qty - t.addedQty + t.soldQty;
-                    const noMovement = t.addedWt === 0 && t.soldWt === 0;
+                    const noMovement = t.addedWt === 0 && t.soldTotal === 0;
                     return (
                       <tr key={box.id} className={clsx("border-b border-line last:border-0", noMovement ? "opacity-50" : "hover:bg-canvas/40")}>
                         <td className="px-4 py-2.5 font-mono font-semibold text-info">{box.box_no}</td>
@@ -1024,8 +1032,14 @@ export default function KolusuPage() {
                         <td className={clsx("px-3 py-2.5 text-right", t.addedQty > 0 ? "text-ok font-semibold" : "text-ink-dim")}>
                           {t.addedQty > 0 ? `+${t.addedQty}` : "—"}
                         </td>
-                        <td className={clsx("px-3 py-2.5 text-right font-mono border-l border-line", t.soldWt > 0 ? "text-err font-semibold" : "text-ink-dim")}>
-                          {t.soldWt > 0 ? grams(t.soldWt) : "—"}
+                        <td className={clsx("px-3 py-2.5 text-right font-mono border-l border-line", t.soldKolusu > 0 ? "text-err font-semibold" : "text-ink-dim")}>
+                          {t.soldKolusu > 0 ? grams(t.soldKolusu) : "—"}
+                        </td>
+                        <td className={clsx("px-3 py-2.5 text-right font-mono", t.soldCover > 0 ? "text-err" : "text-ink-dim")}>
+                          {t.soldCover > 0 ? grams(t.soldCover) : "—"}
+                        </td>
+                        <td className={clsx("px-3 py-2.5 text-right font-mono font-semibold", t.soldTotal > 0 ? "text-err" : "text-ink-dim")}>
+                          {t.soldTotal > 0 ? grams(t.soldTotal) : "—"}
                         </td>
                         <td className={clsx("px-3 py-2.5 text-right", t.soldQty > 0 ? "text-err font-semibold" : "text-ink-dim")}>
                           {t.soldQty > 0 ? t.soldQty : "—"}
@@ -1043,7 +1057,9 @@ export default function KolusuPage() {
                     <td className="px-3 py-2.5 text-right">{totals.openQty}</td>
                     <td className="px-3 py-2.5 text-right font-mono text-ok border-l border-line">+{grams(totals.addedWt)}</td>
                     <td className="px-3 py-2.5 text-right text-ok">+{totals.addedQty}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-err border-l border-line">{grams(totals.soldWt)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-err border-l border-line">{grams(totals.soldKolusu)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-err">{grams(totals.soldCover)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono font-bold text-err">{grams(totals.soldTotal)}</td>
                     <td className="px-3 py-2.5 text-right text-err">{totals.soldQty}</td>
                     <td className="px-3 py-2.5 text-right font-mono text-gold border-l border-line">{grams(totals.curWt)}</td>
                     <td className="px-3 py-2.5 text-right text-gold">{totals.curQty}</td>
