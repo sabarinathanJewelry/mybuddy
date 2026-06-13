@@ -94,6 +94,9 @@ export default function LoansPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteOpts, setDeleteOpts]       = useState({ removeLoanLedger: true, removePaymentLedger: true });
   const [payForm, setPayForm] = useState({ pay_date: globalDate, principal: 0, interest: 0, mode: "cash", notes: "" });
+  const [deletePaymentId, setDeletePaymentId] = useState<string | null>(null);
+  const [editPaymentId, setEditPaymentId]     = useState<string | null>(null);
+  const [editPayForm, setEditPayForm] = useState({ pay_date: "", principal: 0, interest: 0, mode: "cash", notes: "" });
 
   const [form, setForm] = useState({
     loan_date: globalDate, kind: "local", lender: "",
@@ -181,6 +184,57 @@ export default function LoansPage() {
       qc.invalidateQueries({ queryKey: ["loans"] });
       setPayLoanId(null);
       setPayForm({ pay_date: globalDate, principal: 0, interest: 0, mode: "cash", notes: "" });
+    },
+  });
+
+  const deletePayment = useMutation({
+    mutationFn: async ({ payment, loan }: { payment: any; loan: any }) => {
+      const client = supabase();
+      await client.from("cash_ledger").delete().eq("ref_type", "loan_payment").eq("ref_id", payment.id);
+      await client.from("bank_ledger").delete().eq("ref_type", "loan_payment").eq("ref_id", payment.id);
+      await client.from("loan_payments").delete().eq("id", payment.id);
+      if (Number(payment.principal) > 0) {
+        await client.from("loans").update({
+          outstanding: Number(loan.outstanding) + Number(payment.principal),
+        }).eq("id", loan.id);
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["loans"] });
+      setDeletePaymentId(null);
+    },
+  });
+
+  const updatePayment = useMutation({
+    mutationFn: async ({ payment, loan, pf }: { payment: any; loan: any; pf: typeof editPayForm }) => {
+      const client = supabase();
+      const total = parseFloat((pf.principal + pf.interest).toFixed(2));
+      await client.from("loan_payments").update({
+        pay_date: pf.pay_date, principal: pf.principal, interest: pf.interest,
+        total, mode: pf.mode, notes: pf.notes || null,
+      }).eq("id", payment.id);
+      // Adjust outstanding: reverse old principal, apply new principal
+      const principalDelta = Number(payment.principal) - pf.principal;
+      if (principalDelta !== 0) {
+        await client.from("loans").update({
+          outstanding: Math.max(0, Number(loan.outstanding) + principalDelta),
+        }).eq("id", loan.id);
+      }
+      // Update ledger entries
+      await client.from("cash_ledger").delete().eq("ref_type", "loan_payment").eq("ref_id", payment.id);
+      await client.from("bank_ledger").delete().eq("ref_type", "loan_payment").eq("ref_id", payment.id);
+      if (total > 0) {
+        const desc = `Loan repayment — ${loan.lender}`;
+        if (pf.mode === "cash") {
+          await client.from("cash_ledger").insert({ tx_date: pf.pay_date, direction: "out", amount: total, description: desc, ref_type: "loan_payment", ref_id: payment.id });
+        } else if (pf.mode === "bank" || pf.mode === "upi") {
+          await client.from("bank_ledger").insert({ tx_date: pf.pay_date, direction: "out", amount: total, description: desc, ref_type: "loan_payment", ref_id: payment.id });
+        }
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["loans"] });
+      setEditPaymentId(null);
     },
   });
 
@@ -481,12 +535,87 @@ export default function LoansPage() {
                         <p className="text-xs font-semibold text-ink-dim mb-2">Payment History</p>
                         <div className="space-y-1">
                           {[...l.loan_payments].sort((a: any, b: any) => b.pay_date.localeCompare(a.pay_date)).map((p: any) => (
-                            <div key={p.id} className="flex items-center gap-3 text-sm bg-canvas rounded-lg2 px-3 py-2">
-                              <span className="text-ink-dim text-xs">{shortDate(p.pay_date)}</span>
-                              <span className="capitalize text-xs border border-line rounded px-1.5 py-0.5 text-ink-dim">{p.mode}</span>
-                              {p.principal > 0 && <span className="text-xs text-ok">Principal: {inr(p.principal)}</span>}
-                              {p.interest > 0 && <span className="text-xs text-warn">Interest: {inr(p.interest)}</span>}
-                              <span className="font-mono font-medium ml-auto">{inr(p.total)}</span>
+                            <div key={p.id}>
+                              {/* Edit form */}
+                              {editPaymentId === p.id ? (
+                                <div className="bg-gold/5 border border-gold/20 rounded-lg2 px-3 py-3 space-y-2">
+                                  <p className="text-xs font-semibold text-ink-dim">Edit Payment</p>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                    <div>
+                                      <label className="block text-xs text-ink-dim mb-1">Date</label>
+                                      <input type="date" value={editPayForm.pay_date}
+                                        onChange={e => setEditPayForm(f => ({ ...f, pay_date: e.target.value }))}
+                                        className={inp} />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs text-ink-dim mb-1">Principal (₹)</label>
+                                      <input type="number" step="1" value={editPayForm.principal || ""}
+                                        onFocus={e => e.target.select()}
+                                        onChange={e => setEditPayForm(f => ({ ...f, principal: parseFloat(e.target.value) || 0 }))}
+                                        className={inp} />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs text-ink-dim mb-1">Interest (₹)</label>
+                                      <input type="number" step="1" value={editPayForm.interest || ""}
+                                        onFocus={e => e.target.select()}
+                                        onChange={e => setEditPayForm(f => ({ ...f, interest: parseFloat(e.target.value) || 0 }))}
+                                        className={inp} />
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs text-ink-dim mb-1">Mode</label>
+                                      <select value={editPayForm.mode}
+                                        onChange={e => setEditPayForm(f => ({ ...f, mode: e.target.value }))}
+                                        className={inp}>
+                                        <option value="cash">Cash</option>
+                                        <option value="bank">Bank</option>
+                                        <option value="upi">UPI</option>
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-xs text-ink-dim mb-1">Notes</label>
+                                      <input value={editPayForm.notes}
+                                        onChange={e => setEditPayForm(f => ({ ...f, notes: e.target.value }))}
+                                        className={inp} placeholder="Optional" />
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button
+                                      disabled={updatePayment.isPending}
+                                      onClick={() => updatePayment.mutate({ payment: p, loan: l, pf: editPayForm })}
+                                      className="bg-gold text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                                      {updatePayment.isPending ? "Saving…" : "Save"}
+                                    </button>
+                                    <button onClick={() => setEditPaymentId(null)}
+                                      className="border border-line text-xs px-4 py-1.5 rounded-lg2">Cancel</button>
+                                  </div>
+                                </div>
+                              ) : deletePaymentId === p.id ? (
+                                <div className="bg-err/5 border border-err/20 rounded-lg2 px-3 py-2 flex items-center gap-3 flex-wrap">
+                                  <span className="text-xs text-err flex-1">Delete {inr(p.total)} payment on {shortDate(p.pay_date)}?</span>
+                                  <button
+                                    disabled={deletePayment.isPending}
+                                    onClick={() => deletePayment.mutate({ payment: p, loan: l })}
+                                    className="bg-err text-white text-xs px-3 py-1 rounded-lg2 disabled:opacity-50">
+                                    {deletePayment.isPending ? "Deleting…" : "Delete"}
+                                  </button>
+                                  <button onClick={() => setDeletePaymentId(null)}
+                                    className="text-xs text-ink-dim hover:underline">Cancel</button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-3 text-sm bg-canvas rounded-lg2 px-3 py-2 group">
+                                  <span className="text-ink-dim text-xs">{shortDate(p.pay_date)}</span>
+                                  <span className="capitalize text-xs border border-line rounded px-1.5 py-0.5 text-ink-dim">{p.mode}</span>
+                                  {p.principal > 0 && <span className="text-xs text-ok">Principal: {inr(p.principal)}</span>}
+                                  {p.interest > 0 && <span className="text-xs text-warn">Interest: {inr(p.interest)}</span>}
+                                  <span className="font-mono font-medium ml-auto">{inr(p.total)}</span>
+                                  <button
+                                    onClick={() => { setEditPaymentId(p.id); setEditPayForm({ pay_date: p.pay_date, principal: Number(p.principal), interest: Number(p.interest), mode: p.mode ?? "cash", notes: p.notes ?? "" }); }}
+                                    className="text-xs text-ink-dim hover:text-gold opacity-0 group-hover:opacity-100 transition-opacity">Edit</button>
+                                  <button
+                                    onClick={() => setDeletePaymentId(p.id)}
+                                    className="text-xs text-err opacity-0 group-hover:opacity-100 transition-opacity">Delete</button>
+                                </div>
+                              )}
                             </div>
                           ))}
                         </div>
