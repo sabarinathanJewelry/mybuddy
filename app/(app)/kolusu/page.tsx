@@ -197,6 +197,37 @@ export default function KolusuPage() {
   const [tab, setTab] = useState<"boxes" | "history" | "pending" | "add_box" | "report">("boxes");
   const [reportFrom, setReportFrom] = useState("2026-06-01");
 
+  // Direct box weight/qty correction
+  const [editBoxId, setEditBoxId]   = useState<string | null>(null);
+  const [editForm, setEditForm]     = useState({ gross_wt_g: 0, qty: 0, reason: "" });
+
+  const editBox = useMutation({
+    mutationFn: async ({ id, gross_wt_g, qty, reason }: { id: string; gross_wt_g: number; qty: number; reason: string }) => {
+      const client = supabase();
+      const { error } = await client.from("kolusu_boxes").update({
+        current_gross_wt_g: gross_wt_g,
+        current_qty: qty,
+        updated_at: new Date().toISOString(),
+      }).eq("id", id);
+      if (error) throw error;
+      // Audit log as a correction transaction (zero qty_change so it doesn't affect counts)
+      await client.from("kolusu_transactions").insert({
+        tx_date:     new Date().toISOString().slice(0, 10),
+        box_id:      id,
+        qty_change:  0,
+        raw_wt_g:    0,
+        cover_wt_g:  0,
+        total_wt_g:  0,
+        notes:       `CORRECTION: set gross=${gross_wt_g}g qty=${qty}${reason ? ` — ${reason}` : ""}`,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["kolusu_boxes"] });
+      qc.invalidateQueries({ queryKey: ["kolusu_transactions"] });
+      setEditBoxId(null);
+    },
+  });
+
   // Assign pending sale to a box
   const [assignId, setAssignId] = useState<string | null>(null);
   const [assignBoxId, setAssignBoxId] = useState("");
@@ -502,7 +533,7 @@ export default function KolusuPage() {
                             setSaleForm({ tx_date: globalDate, qty: 1, raw_wt_g: 0, cover_per_piece: 1.3, bill_no: "", notes: "" });
                           }}
                             className="text-xs bg-gold text-white px-2 py-1 rounded-lg2 hover:opacity-80">
-                            Record Sale
+                            Sale
                           </button>
                           <button onClick={() => {
                             setSaleBoxId(null);
@@ -510,7 +541,16 @@ export default function KolusuPage() {
                             setRestockForm({ tx_date: globalDate, qty: 0, gross_wt_g: 0, bill_no: "", notes: "" });
                           }}
                             className="text-xs bg-ok/80 text-white px-2 py-1 rounded-lg2 hover:opacity-80">
-                            + Stock
+                            +Stock
+                          </button>
+                          <button onClick={() => {
+                            setSaleBoxId(null);
+                            setRestockBoxId(null);
+                            setEditBoxId(editBoxId === box.id ? null : box.id);
+                            setEditForm({ gross_wt_g: box.current_gross_wt_g, qty: box.current_qty, reason: "" });
+                          }}
+                            className="text-xs border border-line text-ink-dim px-2 py-1 rounded-lg2 hover:border-gold hover:text-gold">
+                            Edit
                           </button>
                         </div>
                       </td>
@@ -564,6 +604,60 @@ export default function KolusuPage() {
                                 className="border border-line text-xs px-4 py-1.5 rounded-lg2">Cancel</button>
                             </div>
                           </form>
+                        </td>
+                      </tr>
+                    )}
+                    {editBoxId === box.id && (
+                      <tr className="border-b border-line bg-warn/5">
+                        <td colSpan={7} className="px-4 py-4">
+                          <div className="space-y-3">
+                            <p className="text-xs font-semibold text-warn uppercase tracking-wide">
+                              Correct stock for {box.box_no} — {[box.color, box.size].filter(Boolean).join(" / ")}
+                            </p>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                              <div>
+                                <label className="text-xs text-ink-dim block mb-1">Correct Gross Weight (g) *</label>
+                                <input type="number" step="0.001" min="0"
+                                  value={editForm.gross_wt_g || ""}
+                                  onFocus={e => e.target.select()}
+                                  onChange={e => setEditForm(f => ({ ...f, gross_wt_g: parseFloat(e.target.value) || 0 }))}
+                                  className="border border-warn rounded-lg2 px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-warn w-full"
+                                  autoFocus />
+                              </div>
+                              <div>
+                                <label className="text-xs text-ink-dim block mb-1">Correct Qty *</label>
+                                <input type="number" step="1" min="0"
+                                  value={editForm.qty || ""}
+                                  onFocus={e => e.target.select()}
+                                  onChange={e => setEditForm(f => ({ ...f, qty: parseInt(e.target.value) || 0 }))}
+                                  className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold w-full" />
+                              </div>
+                              <div className="sm:col-span-2">
+                                <label className="text-xs text-ink-dim block mb-1">Reason for correction</label>
+                                <input type="text" value={editForm.reason} placeholder="e.g. wrong initial weight entered"
+                                  onChange={e => setEditForm(f => ({ ...f, reason: e.target.value }))}
+                                  className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold w-full" />
+                              </div>
+                            </div>
+                            {editForm.gross_wt_g > 0 && (
+                              <p className="text-xs text-ink-dim">
+                                Change: <span className="font-mono">{grams(box.current_gross_wt_g)}</span> → <span className="font-mono font-semibold text-warn">{grams(editForm.gross_wt_g)}</span>
+                                {" · "}Qty: <span className="font-semibold">{box.current_qty}</span> → <span className="font-semibold text-warn">{editForm.qty}</span>
+                                {" · "}Net kolusu will be: <span className="font-semibold text-gold">{grams(editForm.gross_wt_g - box.box_tare_g)}</span>
+                              </p>
+                            )}
+                            {editBox.isError && <p className="text-xs text-err">{(editBox.error as Error).message}</p>}
+                            <div className="flex gap-2">
+                              <button
+                                disabled={editBox.isPending || editForm.gross_wt_g <= 0}
+                                onClick={() => editBox.mutate({ id: box.id, gross_wt_g: editForm.gross_wt_g, qty: editForm.qty, reason: editForm.reason })}
+                                className="bg-warn text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                                {editBox.isPending ? "Saving…" : "Save Correction"}
+                              </button>
+                              <button onClick={() => setEditBoxId(null)}
+                                className="border border-line text-xs px-4 py-1.5 rounded-lg2">Cancel</button>
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     )}
