@@ -194,7 +194,8 @@ export default function KolusuPage() {
   const restock = useRestock();
   const { data: pendingSales = [], isLoading: pendingLoading } = usePendingSales();
 
-  const [tab, setTab] = useState<"boxes" | "history" | "pending" | "add_box">("boxes");
+  const [tab, setTab] = useState<"boxes" | "history" | "pending" | "add_box" | "report">("boxes");
+  const [reportFrom, setReportFrom] = useState("2026-06-01");
 
   // Assign pending sale to a box
   const [assignId, setAssignId] = useState<string | null>(null);
@@ -438,10 +439,10 @@ export default function KolusuPage() {
       {/* Tabs */}
       {tab !== "add_box" && (
         <div className="flex border-b border-line gap-1">
-          {(["boxes", "pending", "history"] as const).map((t_) => (
+          {(["boxes", "pending", "history", "report"] as const).map((t_) => (
             <button key={t_} onClick={() => setTab(t_)}
               className={clsx("px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px relative", tab === t_ ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink")}>
-              {t_ === "boxes" ? "Boxes" : t_ === "pending" ? "Pending" : "History"}
+              {t_ === "boxes" ? "Boxes" : t_ === "pending" ? "Pending" : t_ === "history" ? "History" : "Report"}
               {t_ === "pending" && pendingSales.length > 0 && (
                 <span className="ml-1.5 bg-err text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">{pendingSales.length}</span>
               )}
@@ -832,6 +833,134 @@ export default function KolusuPage() {
           </table>
         </div>
       )}
+
+      {/* Report tab */}
+      {tab === "report" && (() => {
+        // Aggregate transactions per box from the chosen start date
+        const txByBox = new Map<string, { addedWt: number; addedQty: number; soldWt: number; soldQty: number }>();
+        for (const tx of transactions ?? []) {
+          if (tx.tx_date < reportFrom) continue;
+          if (!txByBox.has(tx.box_id)) txByBox.set(tx.box_id, { addedWt: 0, addedQty: 0, soldWt: 0, soldQty: 0 });
+          const row = txByBox.get(tx.box_id)!;
+          if (tx.qty_change > 0) {
+            row.addedWt  += Number(tx.raw_wt_g);
+            row.addedQty += tx.qty_change;
+          } else {
+            row.soldWt  += Number(tx.raw_wt_g);
+            row.soldQty += Math.abs(tx.qty_change);
+          }
+        }
+
+        const reportBoxes = (boxes ?? []);
+        const totals = reportBoxes.reduce((acc, box) => {
+          const t = txByBox.get(box.id) ?? { addedWt: 0, addedQty: 0, soldWt: 0, soldQty: 0 };
+          // Opening = current − added + sold (reverse from current state)
+          const openWt  = parseFloat((box.current_gross_wt_g - t.addedWt + t.soldWt).toFixed(3));
+          const openQty = box.current_qty - t.addedQty + t.soldQty;
+          acc.openWt  += openWt;
+          acc.openQty += openQty;
+          acc.addedWt  += t.addedWt;
+          acc.addedQty += t.addedQty;
+          acc.soldWt  += t.soldWt;
+          acc.soldQty += t.soldQty;
+          acc.curWt   += box.current_gross_wt_g;
+          acc.curQty  += box.current_qty;
+          return acc;
+        }, { openWt: 0, openQty: 0, addedWt: 0, addedQty: 0, soldWt: 0, soldQty: 0, curWt: 0, curQty: 0 });
+
+        return (
+          <div className="space-y-4">
+            {/* Date picker */}
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-ink-dim font-medium">Opening date</label>
+              <input type="date" value={reportFrom}
+                onChange={e => setReportFrom(e.target.value)}
+                className="border border-line rounded-lg2 px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+              <span className="text-xs text-ink-dim">All transactions on or after this date are counted as movements</span>
+            </div>
+
+            {/* Summary strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: "Opening Gross",  value: grams(totals.openWt),  sub: `${totals.openQty} pcs`, color: "text-ink" },
+                { label: "Added (Restock)", value: grams(totals.addedWt), sub: `${totals.addedQty} pcs`, color: "text-ok" },
+                { label: "Sold",           value: grams(totals.soldWt),  sub: `${totals.soldQty} pcs`, color: "text-err" },
+                { label: "Current Gross",  value: grams(totals.curWt),   sub: `${totals.curQty} pcs`, color: "text-gold" },
+              ].map(s => (
+                <div key={s.label} className="bg-white rounded-xl border border-line p-4 shadow-soft">
+                  <p className="text-xs text-ink-dim">{s.label}</p>
+                  <p className={clsx("text-lg font-bold mt-0.5", s.color)}>{s.value}</p>
+                  <p className="text-xs text-ink-dim mt-0.5">{s.sub}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Box-wise table */}
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+              <table className="w-full text-sm" style={{ minWidth: "700px" }}>
+                <thead>
+                  <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                    <th className="text-left px-4 py-2.5">Box</th>
+                    <th className="text-left px-3 py-2.5">Color / Size</th>
+                    <th className="text-right px-3 py-2.5 border-l border-line">Opening Gross</th>
+                    <th className="text-right px-3 py-2.5">Opening Qty</th>
+                    <th className="text-right px-3 py-2.5 border-l border-line text-ok">+ Added (g)</th>
+                    <th className="text-right px-3 py-2.5 text-ok">+ Qty</th>
+                    <th className="text-right px-3 py-2.5 border-l border-line text-err">− Sold (g)</th>
+                    <th className="text-right px-3 py-2.5 text-err">− Qty</th>
+                    <th className="text-right px-3 py-2.5 border-l border-line text-gold">Current Gross</th>
+                    <th className="text-right px-3 py-2.5 text-gold">Current Qty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reportBoxes.map(box => {
+                    const t = txByBox.get(box.id) ?? { addedWt: 0, addedQty: 0, soldWt: 0, soldQty: 0 };
+                    const openWt  = parseFloat((box.current_gross_wt_g - t.addedWt + t.soldWt).toFixed(3));
+                    const openQty = box.current_qty - t.addedQty + t.soldQty;
+                    const noMovement = t.addedWt === 0 && t.soldWt === 0;
+                    return (
+                      <tr key={box.id} className={clsx("border-b border-line last:border-0", noMovement ? "opacity-50" : "hover:bg-canvas/40")}>
+                        <td className="px-4 py-2.5 font-mono font-semibold text-info">{box.box_no}</td>
+                        <td className="px-3 py-2.5 text-ink-dim text-xs">{[box.color, box.size].filter(Boolean).join(" / ") || "—"}</td>
+                        <td className="px-3 py-2.5 text-right font-mono border-l border-line">{grams(openWt)}</td>
+                        <td className="px-3 py-2.5 text-right">{openQty}</td>
+                        <td className={clsx("px-3 py-2.5 text-right font-mono border-l border-line", t.addedWt > 0 ? "text-ok font-semibold" : "text-ink-dim")}>
+                          {t.addedWt > 0 ? `+${grams(t.addedWt)}` : "—"}
+                        </td>
+                        <td className={clsx("px-3 py-2.5 text-right", t.addedQty > 0 ? "text-ok font-semibold" : "text-ink-dim")}>
+                          {t.addedQty > 0 ? `+${t.addedQty}` : "—"}
+                        </td>
+                        <td className={clsx("px-3 py-2.5 text-right font-mono border-l border-line", t.soldWt > 0 ? "text-err font-semibold" : "text-ink-dim")}>
+                          {t.soldWt > 0 ? grams(t.soldWt) : "—"}
+                        </td>
+                        <td className={clsx("px-3 py-2.5 text-right", t.soldQty > 0 ? "text-err font-semibold" : "text-ink-dim")}>
+                          {t.soldQty > 0 ? t.soldQty : "—"}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono font-semibold text-gold border-l border-line">{grams(box.current_gross_wt_g)}</td>
+                        <td className="px-3 py-2.5 text-right font-semibold text-gold">{box.current_qty}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-canvas border-t-2 border-line text-xs font-semibold">
+                    <td colSpan={2} className="px-4 py-2.5 text-ink-dim">Total</td>
+                    <td className="px-3 py-2.5 text-right font-mono border-l border-line">{grams(totals.openWt)}</td>
+                    <td className="px-3 py-2.5 text-right">{totals.openQty}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-ok border-l border-line">+{grams(totals.addedWt)}</td>
+                    <td className="px-3 py-2.5 text-right text-ok">+{totals.addedQty}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-err border-l border-line">{grams(totals.soldWt)}</td>
+                    <td className="px-3 py-2.5 text-right text-err">{totals.soldQty}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-gold border-l border-line">{grams(totals.curWt)}</td>
+                    <td className="px-3 py-2.5 text-right text-gold">{totals.curQty}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <p className="text-xs text-ink-dim">Boxes with no movement since the opening date are dimmed. Opening = Current − Added + Sold.</p>
+          </div>
+        );
+      })()}
 
       {isLoading && <p className="text-ink-dim text-sm">Loading…</p>}
     </div>
