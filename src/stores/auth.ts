@@ -9,6 +9,7 @@ export interface Profile {
   language: string;
   repair_access?: boolean;
   incentive_access?: boolean;
+  kolusu_access?: boolean;
   allowed_modules?: string[];
 }
 

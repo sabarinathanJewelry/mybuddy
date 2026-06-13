@@ -1,6 +1,10 @@
 // Parses staff kolusu sale messages from chat
-// Format: kolusu <raw_wt> [description] cover <cover_wt> [qty N] [bill XXXX]
-// Example: "kolusu 34.220 10 inch bomby cover 1.100"
+// Accepted prefixes: "KS" (short) or "kolusu" (long)
+// Format: KS <raw_wt> [description] cover <cover_wt> [qty N] [bill XXXX]
+// Examples:
+//   "KS 34.220 9 B cover 1.100"
+//   "KS 57.300 10 inch bomby cover 1.100 qty 2"
+//   "kolusu 34.220 9 B cover 1.100"
 
 export interface KolusuChatEntry {
   raw_wt_g: number;
@@ -12,9 +16,15 @@ export interface KolusuChatEntry {
 
 export function parseKolusuChat(text: string): KolusuChatEntry | null {
   const lower = text.trim().toLowerCase();
-  if (!lower.startsWith("kolusu")) return null;
 
-  const body = text.trim().slice(6).trim();
+  let body: string;
+  if (lower.startsWith("ks ") || lower === "ks") {
+    body = text.trim().slice(2).trim();
+  } else if (lower.startsWith("kolusu")) {
+    body = text.trim().slice(6).trim();
+  } else {
+    return null;
+  }
 
   // Must have "cover <number>"
   const coverMatch = body.match(/cover\s+([\d.]+)/i);

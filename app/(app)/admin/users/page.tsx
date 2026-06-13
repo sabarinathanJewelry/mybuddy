@@ -38,6 +38,14 @@ export default function AdminUsersPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["profiles"] }),
   });
 
+  const toggleKolusuAccess = useMutation({
+    mutationFn: async ({ id, value }: { id: string; value: boolean }) => {
+      const { error } = await supabase().from("profiles").update({ kolusu_access: value }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["profiles"] }),
+  });
+
   const setRole = useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: "staff" | "subadmin" }) => {
       const client = supabase();
@@ -113,6 +121,7 @@ where id = '<user-uuid>';`}
                 <th className="text-left px-3 py-2.5">Game Login</th>
                 <th className="text-center px-3 py-2.5">Repairs</th>
                 <th className="text-center px-3 py-2.5">Incentive</th>
+                <th className="text-center px-3 py-2.5">Kolusu</th>
                 <th className="text-center px-3 py-2.5">Sub-Admin</th>
               </tr>
             </thead>
@@ -173,6 +182,22 @@ where id = '<user-uuid>';`}
                             }`}
                           >
                             {p.incentive_access ? "On" : "Off"}
+                          </button>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        {p.role === "admin" ? (
+                          <span className="text-xs text-gold">Always</span>
+                        ) : (
+                          <button
+                            onClick={() => toggleKolusuAccess.mutate({ id: p.id, value: !p.kolusu_access })}
+                            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                              p.kolusu_access
+                                ? "bg-ok/10 border-ok/30 text-ok"
+                                : "border-line text-ink-dim hover:border-gold hover:text-gold"
+                            }`}
+                          >
+                            {p.kolusu_access ? "On" : "Off"}
                           </button>
                         )}
                       </td>

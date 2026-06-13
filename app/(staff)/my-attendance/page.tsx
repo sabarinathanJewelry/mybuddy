@@ -12,6 +12,7 @@ import {
   useMyKyc, useUpsertKyc, KYC_DOCS,
   type PermissionRequest, type LeaveRequest, type OutsideDuty,
 } from "@/modules/attendance/api";
+import { parseKolusuChat } from "@/lib/kolusu-parse";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const IST_MS = 5.5 * 3600000;
@@ -103,6 +104,7 @@ export default function MyAttendancePage() {
   const [error, setError]       = useState<string | null>(null);
   const [canSeeRepairs, setCanSeeRepairs]     = useState(false);
   const [canSeeIncentive, setCanSeeIncentive] = useState(false);
+  const [canLogKolusu, setCanLogKolusu]       = useState(false);
   const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
   const [masterSearch, setMasterSearch]       = useState("");
 
@@ -252,9 +254,10 @@ export default function MyAttendancePage() {
       if (user) {
         setSenderId(user.id);
         const { data: profile } = await client
-          .from("profiles").select("repair_access, incentive_access, display_name, role").eq("id", user.id).single();
+          .from("profiles").select("repair_access, incentive_access, kolusu_access, display_name, role").eq("id", user.id).single();
         if (profile?.repair_access === true) setCanSeeRepairs(true);
         if (profile?.incentive_access === true) setCanSeeIncentive(true);
+        if (profile?.kolusu_access === true) setCanLogKolusu(true);
         if (profile?.display_name) setSenderName(profile.display_name);
         if (profile?.role) setSenderRole(profile.role);
       }
@@ -446,11 +449,34 @@ export default function MyAttendancePage() {
   async function sendChatMessage() {
     if (!chatInput.trim() || !senderId || !senderName) return;
     setChatSending(true);
-    await supabase().from("chat_messages").insert({
-      sender_id: senderId,
-      sender_name: senderName,
-      message: chatInput.trim(),
-    });
+    const client = supabase();
+    const msg = chatInput.trim();
+    await client.from("chat_messages").insert({ sender_id: senderId, sender_name: senderName, message: msg });
+
+    // Auto-log kolusu sale if staff has kolusu_access and message matches KS / kolusu format
+    if (canLogKolusu) {
+      const parsed = parseKolusuChat(msg);
+      if (parsed) {
+        const today = new Date().toISOString().slice(0, 10);
+        await client.from("kolusu_pending_sales").insert({
+          tx_date:     today,
+          raw_wt_g:    parsed.raw_wt_g,
+          cover_wt_g:  parsed.cover_wt_g,
+          qty:         parsed.qty,
+          description: parsed.description || null,
+          bill_no:     parsed.bill_no || null,
+          staff_name:  senderName,
+          staff_id:    senderId,
+          source:      "chat",
+        });
+        await client.from("chat_messages").insert({
+          sender_id:   senderId,
+          sender_name: "MyBuddy",
+          message:     `✓ Kolusu logged: ${parsed.raw_wt_g}g + ${parsed.cover_wt_g}g cover${parsed.description ? ` (${parsed.description})` : ""}. Admin will assign box.`,
+        });
+      }
+    }
+
     setChatInput("");
     setChatSending(false);
   }
