@@ -30,7 +30,6 @@ const NAV = [
   { href: "/gold-chit",    icon: "🥇", key: "nav_gold_chit" as const },
   { href: "/cash-bonus",   icon: "💰", key: "nav_cash_bonus" as const },
   { href: "/kolusu",       icon: "🪬", key: "nav_kolusu" as const },
-  { href: "/kolusu-sale",  icon: "🏷️", key: "nav_kolusu_sale" as const },
   { href: "/walkins",      icon: "🚶", key: "nav_walkins" as const },
   { href: "/reports",      icon: "📈", key: "nav_reports" as const },
   { href: "/attendance",   icon: "🕐", key: "nav_attendance" as const },
@@ -136,8 +135,9 @@ export default function Sidebar() {
     return false;
   }
 
-  const canSeeRepairs   = isAdmin || profile?.repair_access === true || canAccess("repairs");
-  const canSeeIncentive = isAdmin || profile?.incentive_access === true;
+  const canSeeRepairs     = isAdmin || profile?.repair_access === true || canAccess("repairs");
+  const canSeeIncentive   = isAdmin || profile?.incentive_access === true;
+  const canSeeKolusuSale  = isAdmin || profile?.kolusu_access === true;
   const { data: repairAlerts = 0 } = useRepairAlertCount(canSeeRepairs);
   const [search, setSearch] = useState("");
 
@@ -151,7 +151,8 @@ export default function Sidebar() {
       ...NAV.filter(item => canAccess(item.href.slice(1))).map(item => ({ href: item.href, icon: item.icon, label: t(item.key) })),
       ...((isAdmin || canAccess("staff-management")) ? [{ href: "/staff-management", icon: "👥", label: t("nav_staff_mgmt") }] : []),
       ...(canSeeRepairs ? [{ href: "/repairs", icon: "🔧", label: t("nav_repairs"), badge: repairAlerts }] : []),
-      ...(canSeeIncentive ? [{ href: "/my-incentive", icon: "🎯", label: t("nav_my_incentive") }] : []),
+      ...(canSeeIncentive   ? [{ href: "/my-incentive", icon: "🎯",  label: t("nav_my_incentive") }] : []),
+      ...(canSeeKolusuSale  ? [{ href: "/kolusu-sale",  icon: "🏷️", label: t("nav_kolusu_sale")  }] : []),
       ...(isAdmin ? ADMIN_NAV.map(item => ({ href: item.href, icon: item.icon, label: t(item.key), isAdmin: true })) : []),
     ];
 
@@ -240,6 +241,16 @@ export default function Sidebar() {
                 label={t("nav_my_incentive")}
                 collapsed={collapsed}
                 active={pathname.startsWith("/my-incentive")}
+              />
+            )}
+
+            {canSeeKolusuSale && (
+              <NavItem
+                href="/kolusu-sale"
+                icon="🏷️"
+                label={t("nav_kolusu_sale")}
+                collapsed={collapsed}
+                active={pathname.startsWith("/kolusu-sale")}
               />
             )}
 
