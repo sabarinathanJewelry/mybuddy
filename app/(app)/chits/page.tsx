@@ -52,6 +52,11 @@ export default function ChitsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editAmount, setEditAmount] = useState(0);
 
+  const [showBonusForm, setShowBonusForm] = useState(false);
+  const [bonusCustomer, setBonusCustomer] = useState<Customer | null>(null);
+  const [bonusAmount, setBonusAmount] = useState(0);
+  const [bonusNotes, setBonusNotes] = useState("");
+
   // Current board rate for selected metal
   const boardRateForMetal = metalType === "gold"
     ? (boardRate?.gold_22k ?? 0)
@@ -191,6 +196,31 @@ export default function ChitsPage() {
     },
   });
 
+  const creditBonus = useMutation({
+    mutationFn: async ({ customer, amount, notes }: { customer: Customer; amount: number; notes: string }) => {
+      const client = supabase();
+      const { data: cust } = await client.from("customers").select("bonus_balance").eq("id", customer.id).single();
+      const current = Number((cust as any)?.bonus_balance) || 0;
+      const { error } = await client.from("customers")
+        .update({ bonus_balance: current + amount })
+        .eq("id", customer.id);
+      if (error) throw error;
+      // Record as a payment-in so it appears in customer ledger
+      await client.from("payments").insert({
+        pay_date: globalDate, direction: "in", mode: "cash",
+        amount, customer_id: customer.id,
+        notes: notes || "Chit bonus credited",
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["customers"] });
+      setShowBonusForm(false);
+      setBonusCustomer(null);
+      setBonusAmount(0);
+      setBonusNotes("");
+    },
+  });
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows = (payments as any[]) ?? [];
 
@@ -201,10 +231,16 @@ export default function ChitsPage() {
           <h1 className="text-xl font-bold">Metal Chit Savings</h1>
           <p className="text-sm text-ink-dim mt-0.5">Customer metal accumulation account</p>
         </div>
-        <button onClick={() => setShowForm(true)}
-          className="bg-gold text-white text-sm px-4 py-2 rounded-lg2">
-          + Add Payment
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => { setShowBonusForm(true); setShowForm(false); }}
+            className="bg-ok/10 text-ok border border-ok/30 text-sm px-4 py-2 rounded-lg2 hover:bg-ok/20">
+            + Credit Bonus
+          </button>
+          <button onClick={() => { setShowForm(true); setShowBonusForm(false); }}
+            className="bg-gold text-white text-sm px-4 py-2 rounded-lg2">
+            + Add Payment
+          </button>
+        </div>
       </div>
 
       {/* Payment form */}
@@ -322,6 +358,50 @@ export default function ChitsPage() {
               Save failed — run migration 003 in Supabase SQL Editor first (chit_payments table).
             </p>
           )}
+        </div>
+      )}
+
+      {/* Bonus credit form */}
+      {showBonusForm && (
+        <div className="bg-white border border-ok/30 rounded-xl p-5 shadow-soft space-y-4">
+          <h3 className="font-semibold text-sm text-ink">Credit Chit Bonus to Customer</h3>
+          <div>
+            <label className="block text-xs text-ink-dim mb-1">Customer *</label>
+            <CustomerPicker value={bonusCustomer} onChange={setBonusCustomer} />
+          </div>
+          {bonusCustomer && (
+            <div className="bg-canvas rounded-lg2 px-4 py-2.5 text-sm flex gap-6">
+              <div>
+                <span className="text-ink-dim text-xs">Current Bonus Balance: </span>
+                <strong className="text-ok">{inr((bonusCustomer as any).bonus_balance ?? 0)}</strong>
+              </div>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-ink-dim mb-1">Bonus Amount (₹) *</label>
+              <input type="number" step="1" min="0" value={bonusAmount || ""}
+                onFocus={e => e.target.select()}
+                onChange={e => setBonusAmount(parseFloat(e.target.value) || 0)}
+                className={inp} placeholder="0" />
+            </div>
+            <div>
+              <label className="block text-xs text-ink-dim mb-1">Notes</label>
+              <input value={bonusNotes} onChange={e => setBonusNotes(e.target.value)}
+                className={inp} placeholder="e.g. Board bonus June 2026" />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              disabled={!bonusCustomer || bonusAmount <= 0 || creditBonus.isPending}
+              onClick={() => bonusCustomer && creditBonus.mutate({ customer: bonusCustomer, amount: bonusAmount, notes: bonusNotes })}
+              className="bg-ok text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
+              {creditBonus.isPending ? "Saving…" : "Credit Bonus"}
+            </button>
+            <button onClick={() => { setShowBonusForm(false); setBonusCustomer(null); setBonusAmount(0); setBonusNotes(""); }}
+              className="border border-line text-sm px-5 py-2 rounded-lg2">Cancel</button>
+          </div>
+          {creditBonus.isError && <p className="text-xs text-err">Save failed — please try again.</p>}
         </div>
       )}
 

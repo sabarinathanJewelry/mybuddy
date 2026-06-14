@@ -64,7 +64,8 @@ const PAY_MODES: { value: PaymentMode; label: string }[] = [
   { value: "old_gold",   label: "Old Gold" },
   { value: "old_silver", label: "Old Silver" },
   { value: "advance",    label: "Advance" },
-  { value: "chit_metal", label: "Chit Metal" },
+  { value: "chit_metal",  label: "Chit Metal" },
+  { value: "chit_bonus",  label: "Chit Bonus" },
 ];
 
 function defaultMetalForSeries(series: SaleSeries): Metal {

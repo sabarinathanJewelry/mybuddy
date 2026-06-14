@@ -1,5 +1,5 @@
 export type Metal = "gold_22k" | "gold_24k" | "gold_18k" | "silver" | "silver_pure" | "silver_mpr" | "misc";
-export type PaymentMode = "cash" | "upi" | "bank" | "old_gold" | "old_silver" | "advance" | "chit_metal";
+export type PaymentMode = "cash" | "upi" | "bank" | "old_gold" | "old_silver" | "advance" | "chit_metal" | "chit_bonus";
 export type SaleSeries = "G22" | "G18" | "G24" | "S" | "D";
 
 export interface SaleItemDraft {

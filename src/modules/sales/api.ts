@@ -102,6 +102,20 @@ async function fanoutLedger(
         .eq("id", customerId);
     }
   }
+
+  // Deduct chit bonus (₹) from customer's bonus_balance
+  if (customerId) {
+    const bonusPayments = payments.filter((p) => p.mode === "chit_bonus" && p.amount > 0);
+    if (bonusPayments.length > 0) {
+      const totalBonus = bonusPayments.reduce((s, p) => s + p.amount, 0);
+      const { data: custData } = await client.from("customers")
+        .select("bonus_balance").eq("id", customerId).single();
+      const current = Number((custData as any)?.bonus_balance) || 0;
+      await client.from("customers")
+        .update({ bonus_balance: Math.max(0, current - totalBonus) })
+        .eq("id", customerId);
+    }
+  }
 }
 
 // Add kolusu return transactions when returned item goes back to a kolusu box
