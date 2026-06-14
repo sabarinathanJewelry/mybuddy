@@ -104,7 +104,7 @@ function newItem(series: SaleSeries = "G22", boardRate: import("@/lib/sales-calc
     show_diamond: false, diamond_amt: 0, diamond_carat_rate: 0, diamond_cents: 0,
     gst_enabled: true, gst_pct: 3,
     is_value_entry: metal === "silver_mpr" || metal === "misc",
-    is_suspense: false, supplier_id: null, supplier_name: null,
+    is_suspense: false, from_vault: false, supplier_id: null, supplier_name: null,
     net_wt: 0, pure_wt: 0, line_total: 0,
   };
 }
@@ -211,6 +211,7 @@ export default function SaleForm({ saleId }: Props) {
       gst_pct: item.gst_pct || 3,
       is_value_entry: item.metal === "silver_mpr" || item.metal === "misc",
       is_suspense: item.is_suspense,
+      from_vault: item.from_vault ?? false,
       supplier_id: item.supplier_id,
       supplier_name: null,
       net_wt: item.net_wt,
@@ -774,6 +775,11 @@ export default function SaleForm({ saleId }: Props) {
                   <span>Total: <strong className="text-gold text-sm">{inr(item.line_total)}</strong></span>
                 </div>
                 <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <input type="checkbox" checked={item.from_vault}
+                      onChange={(e) => updateItem(idx, { from_vault: e.target.checked })} className="accent-gold" />
+                    From Vault
+                  </label>
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
                     <input type="checkbox" checked={item.is_suspense}
                       onChange={(e) => updateItem(idx, { is_suspense: e.target.checked })} className="accent-gold" />

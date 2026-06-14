@@ -109,6 +109,7 @@ export default function SalesPage() {
                     .filter((i: any) => i.is_suspense && i.suppliers?.name)
                     .map((i: any) => i.suppliers.name as string)
                 )];
+                const hasVaultItems = items.some((i: any) => i.from_vault);
                 return (
                 <tr key={s.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
                   <td className="px-4 py-2.5">
@@ -127,15 +128,16 @@ export default function SalesPage() {
                         ? descriptions.slice(0, 3).join(", ") + (descriptions.length > 3 ? ` +${descriptions.length - 3}` : "")
                         : "—"}
                     </div>
-                    {suspenseSuppliers.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-0.5">
-                        {suspenseSuppliers.map((sup) => (
-                          <span key={sup} className="text-[10px] px-1.5 py-0.5 rounded bg-warn/15 text-warn font-semibold">
-                            {sup}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                    <div className="flex flex-wrap gap-1 mt-0.5">
+                      {hasVaultItems && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-info/15 text-info font-semibold">Vault</span>
+                      )}
+                      {suspenseSuppliers.map((sup) => (
+                        <span key={sup} className="text-[10px] px-1.5 py-0.5 rounded bg-warn/15 text-warn font-semibold">
+                          {sup}
+                        </span>
+                      ))}
+                    </div>
                   </td>
                   <td className="px-3 py-2.5 text-right text-xs text-ink-dim tabular-nums">
                     {totalGrossWt > 0 ? grams(totalGrossWt) : "—"}

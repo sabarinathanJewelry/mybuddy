@@ -27,6 +27,8 @@ export interface SaleItemDraft {
   is_value_entry: boolean;
   // Suspense
   is_suspense: boolean;
+  // Vault/stock
+  from_vault: boolean;
   supplier_id: string | null;
   supplier_name: string | null;
   // Computed

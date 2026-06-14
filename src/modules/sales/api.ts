@@ -202,6 +202,7 @@ function itemsInsertPayload(saleId: string, items: SaleDraft["items"]) {
     gst_pct: item.gst_enabled ? (item.gst_pct || 3) : 0,
     line_total: item.line_total,
     is_suspense: item.is_suspense,
+    from_vault: item.from_vault ?? false,
     supplier_id: item.supplier_id || null,
     sort_order: i,
   }));
@@ -213,7 +214,7 @@ export function useSales(date: string | null = null, limit = 100) {
     queryFn: async () => {
       let q = supabase()
         .from("sales")
-        .select("id, bill_no, bill_date, total, status, series, sale_type, exchange_ref_bill, customers(name), sale_items(description, gross_wt, net_wt, metal, is_suspense, suppliers(name))")
+        .select("id, bill_no, bill_date, total, status, series, sale_type, exchange_ref_bill, customers(name), sale_items(description, gross_wt, net_wt, metal, is_suspense, from_vault, suppliers(name))")
         .order("bill_date", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(limit);
