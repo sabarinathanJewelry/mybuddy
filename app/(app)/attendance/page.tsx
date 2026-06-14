@@ -88,6 +88,37 @@ function MonthlyTab() {
   const update = useUpdateStaff();
   const qc     = useQueryClient();
 
+  const settingsKey = `attendance_settings_${month}`;
+
+  // Load saved settings for this month
+  useQuery({
+    queryKey: ["attendance_settings", month],
+    queryFn: async () => {
+      const { data } = await supabase().from("app_settings").select("value").eq("key", settingsKey).maybeSingle();
+      if (data?.value) {
+        const v = data.value as any;
+        if (v.late_fine_amt  !== undefined) setLateFineAmt(v.late_fine_amt);
+        if (v.fine_mode      !== undefined) setFineMode(v.fine_mode);
+        if (v.apply_fine     !== undefined) setApplyFine(v.apply_fine);
+        if (v.equalize_ot    !== undefined) setEqualizeOt(v.equalize_ot);
+        if (v.apply_ot       !== undefined) setApplyOt(v.apply_ot);
+        if (v.ot_rate_amt    !== undefined) setOtRateAmt(v.ot_rate_amt);
+        if (v.ot_rate_mode   !== undefined) setOtRateMode(v.ot_rate_mode);
+        if (v.weekend_penalty !== undefined) setWeekendPenalty(v.weekend_penalty);
+      }
+      return data;
+    },
+  });
+
+  const saveSettings = useMutation({
+    mutationFn: async () => {
+      const value = { late_fine_amt: lateFineAmt, fine_mode: fineMode, apply_fine: applyFine, equalize_ot: equalizeOt, apply_ot: applyOt, ot_rate_amt: otRateAmt, ot_rate_mode: otRateMode, weekend_penalty: weekendPenalty };
+      const { error } = await supabase().from("app_settings").upsert({ key: settingsKey, value }, { onConflict: "key" });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance_settings", month] }),
+  });
+
   function shiftMonth(dir: -1 | 1) {
     const [y, m] = month.split("-").map(Number);
     const next = m + dir;
@@ -274,11 +305,19 @@ function MonthlyTab() {
             <span className="text-[10px] text-ink-dim/60">(extra 1× per-day salary on top of leave deduction)</span>
           </label>
         </div>
-        <p className="text-[11px] text-ink-dim leading-relaxed">
-          Fine: <strong>₹50–200 / late day</strong> or <strong>₹3–10 / min late</strong>.
-          OT: <strong>₹50 / hr</strong> is a common starting rate.
-          When equalization is on, late and OT cancel each other out monthly before fine/pay are applied.
-        </p>
+        <div className="flex items-center justify-between pt-1">
+          <p className="text-[11px] text-ink-dim leading-relaxed">
+            Fine: <strong>₹50–200 / late day</strong> or <strong>₹3–10 / min late</strong>.
+            OT: <strong>₹50 / hr</strong> is a common starting rate.
+            When equalization is on, late and OT cancel each other out monthly before fine/pay are applied.
+          </p>
+          <button
+            onClick={() => saveSettings.mutate()}
+            disabled={saveSettings.isPending}
+            className="shrink-0 ml-4 bg-gold text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-50 hover:opacity-90">
+            {saveSettings.isPending ? "Saving…" : saveSettings.isSuccess ? "Saved ✓" : `Save for ${month}`}
+          </button>
+        </div>
       </div>
 
       {/* Weekend absence alerts */}

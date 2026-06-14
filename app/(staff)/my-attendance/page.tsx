@@ -514,6 +514,24 @@ export default function MyAttendancePage() {
   const totalOtMins   = rows.reduce((s, r) => s + r.ot_minutes, 0);
   const totalLateMins = rows.reduce((s, r) => s + r.late_minutes, 0);
 
+  // Load admin-saved fine settings for the current month
+  const { data: fineSettings } = useQuery({
+    queryKey: ["attendance_settings", month],
+    queryFn: async () => {
+      const { data } = await supabase().from("app_settings").select("value").eq("key", `attendance_settings_${month}`).maybeSingle();
+      return (data?.value ?? null) as { late_fine_amt: number; fine_mode: "day" | "minute"; apply_fine: boolean; equalize_ot: boolean } | null;
+    },
+  });
+
+  const netLateMins = fineSettings?.equalize_ot
+    ? Math.max(0, totalLateMins - totalOtMins)
+    : totalLateMins;
+  const monthFine = fineSettings?.apply_fine
+    ? (fineSettings.fine_mode === "minute"
+        ? netLateMins * fineSettings.late_fine_amt
+        : 0)
+    : 0;
+
   // Today's row (only meaningful when viewing current month)
   const todayRow = month === todayMonth ? rows.find(r => r.date === todayStr) ?? null : null;
 
@@ -744,6 +762,18 @@ export default function MyAttendancePage() {
               </div>
             ))}
           </div>
+          {monthFine > 0 && (
+            <div className="bg-err/5 border border-err/20 rounded-xl px-4 py-3 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-err font-semibold">Late Fine — {monthLabel(todayMonth).split(" ")[0]}</p>
+                <p className="text-[11px] text-ink-dim mt-0.5">
+                  {netLateMins}m late × ₹{fineSettings?.late_fine_amt}/min
+                  {fineSettings?.equalize_ot && totalOtMins > 0 && ` (after ${formatMins(totalOtMins)} OT offset)`}
+                </p>
+              </div>
+              <p className="text-xl font-bold text-err">−₹{monthFine.toFixed(0)}</p>
+            </div>
+          )}
 
           <p className="text-xs text-ink-dim text-center">
             Boys: 9:30 AM – 9:30 PM · Girls: 9:30 AM – 8:30 PM · Grace till 9:50 AM
@@ -777,6 +807,18 @@ export default function MyAttendancePage() {
               </div>
             ))}
           </div>
+          {monthFine > 0 && (
+            <div className="bg-err/5 border border-err/20 rounded-xl px-4 py-3 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-err font-semibold">Late Fine — {monthLabel(month).split(" ")[0]}</p>
+                <p className="text-[11px] text-ink-dim mt-0.5">
+                  {netLateMins}m late × ₹{fineSettings?.late_fine_amt}/min
+                  {fineSettings?.equalize_ot && totalOtMins > 0 && ` (after ${formatMins(totalOtMins)} OT offset)`}
+                </p>
+              </div>
+              <p className="text-xl font-bold text-err">−₹{monthFine.toFixed(0)}</p>
+            </div>
+          )}
 
           {/* Weekend absence alert */}
           {(() => {
