@@ -10,7 +10,7 @@ import {
   useMyOutsideDuties, useCreateOutsideDuty,
   useLastSyncTime,
   useMyKyc, useUpsertKyc, KYC_DOCS,
-  useStaffTasks, useCompleteTask,
+  useStaffTasks, useCompleteTask, useCreateTask,
   type PermissionRequest, type LeaveRequest, type OutsideDuty, type StaffTask,
 } from "@/modules/attendance/api";
 import { parseKolusuChat } from "@/lib/kolusu-parse";
@@ -1600,9 +1600,12 @@ function StaffTasksTab({ tasks, staffName, bioUserId, todayStr }: {
   todayStr: string;
 }) {
   const completeTask = useCompleteTask();
+  const createTask   = useCreateTask();
   const [noteMap, setNoteMap] = useState<Record<string, string>>({});
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"pending" | "completed" | "all">("pending");
+  const [showCreate, setShowCreate] = useState(false);
+  const [createForm, setCreateForm] = useState({ title: "", description: "", due_date: todayStr });
 
   const filtered = tasks.filter(t => filter === "all" || t.status === filter);
 
@@ -1616,10 +1619,30 @@ function StaffTasksTab({ tasks, staffName, bioUserId, todayStr }: {
     setCompletingId(null);
   }
 
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!bioUserId || !createForm.title || !createForm.due_date) return;
+    await createTask.mutateAsync({
+      title: createForm.title,
+      description: createForm.description || undefined,
+      assigned_to: bioUserId,
+      created_by: bioUserId,
+      due_date: createForm.due_date,
+    });
+    setCreateForm({ title: "", description: "", due_date: todayStr });
+    setShowCreate(false);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-sm font-semibold text-ink">My Tasks</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold text-ink">My Tasks</h2>
+          <button onClick={() => setShowCreate(v => !v)}
+            className="text-xs text-gold border border-gold/30 px-2.5 py-1 rounded-lg2 hover:bg-gold/5">
+            {showCreate ? "Cancel" : "+ New Task"}
+          </button>
+        </div>
         <div className="flex rounded-lg overflow-hidden border border-line text-xs w-fit">
           {(["pending", "completed", "all"] as const).map(f => (
             <button key={f} onClick={() => setFilter(f)}
@@ -1631,6 +1654,44 @@ function StaffTasksTab({ tasks, staffName, bioUserId, todayStr }: {
           ))}
         </div>
       </div>
+
+      {showCreate && (
+        <form onSubmit={handleCreate} className="bg-white border border-gold/30 rounded-xl p-4 shadow-soft space-y-3">
+          <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide">New Task (for yourself)</p>
+          <div className="space-y-2">
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Task *</label>
+              <input required value={createForm.title}
+                onChange={e => setCreateForm(f => ({ ...f, title: e.target.value }))}
+                placeholder="e.g. Call customer about order"
+                className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <div className="flex-1 min-w-[160px]">
+                <label className="text-xs text-ink-dim block mb-1">Description (optional)</label>
+                <input value={createForm.description}
+                  onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))}
+                  placeholder="More details…"
+                  className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+              </div>
+              <div>
+                <label className="text-xs text-ink-dim block mb-1">Due Date *</label>
+                <input required type="date" value={createForm.due_date}
+                  onChange={e => setCreateForm(f => ({ ...f, due_date: e.target.value }))}
+                  className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" disabled={createTask.isPending}
+              className="bg-gold text-white text-sm px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+              {createTask.isPending ? "Saving…" : "Add Task"}
+            </button>
+            <button type="button" onClick={() => setShowCreate(false)}
+              className="border border-line text-sm px-4 py-1.5 rounded-lg2 text-ink-dim">Cancel</button>
+          </div>
+        </form>
+      )}
 
       {filtered.length === 0 ? (
         <div className="bg-white rounded-xl border border-line p-8 text-center text-ink-dim shadow-soft text-sm">
