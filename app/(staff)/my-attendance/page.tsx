@@ -1486,6 +1486,16 @@ export default function MyAttendancePage() {
           )}
         </div>
       )}
+
+      {/* ── TASKS TAB ─────────────────────────────────────────────────────────── */}
+      {tab === "tasks" && (
+        <StaffTasksTab
+          tasks={myTasks}
+          staffName={staff?.name ?? ""}
+          bioUserId={staff?.bio_user_id ?? null}
+          todayStr={todayStr}
+        />
+      )}
     </div>
   );
 }
@@ -1577,16 +1587,6 @@ function PoliciesTab() {
             );
           })}
         </div>
-      )}
-
-      {/* ── TASKS TAB ─────────────────────────────────────────────────────────── */}
-      {tab === "tasks" && (
-        <StaffTasksTab
-          tasks={myTasks}
-          staffName={staff?.name ?? ""}
-          bioUserId={staff?.bio_user_id ?? null}
-          todayStr={todayStr}
-        />
       )}
     </div>
   );
