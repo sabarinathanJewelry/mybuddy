@@ -278,30 +278,35 @@ export default function SaleForm({ saleId }: Props) {
 
   function applyChitVaBenefit() {
     const chitPayment = payments.find((p: SalePaymentDraft) => p.mode === "chit_metal");
-    if (!chitPayment || chitPayment.amount <= 0) return;
+    if (!chitPayment) return;
     const chitWt = chitPayment.metal_wt || 0;
-    const chitRate = chitPayment.rate || 0;
-    const useWeightBased = chitWt > 0 && chitRate > 0;
+    if (chitWt <= 0) return;
 
-    setItems((prev: SaleItemDraft[]) => {
-      let remainingWt = chitWt;
-      return prev.map((item: SaleItemDraft) => {
-        if (item.is_value_entry) return item;
-        if (useWeightBased) {
-          if (remainingWt <= 0) return item;
-          const covered = Math.min(item.net_wt, remainingWt);
-          const metalValue = item.net_wt * item.rate;
-          // va_amt = covered × (chitRate − item.rate); negative when chitRate < board rate
-          const va_amt = covered * (chitRate - item.rate);
-          const va_pct = metalValue > 0 ? (va_amt / metalValue) * 100 : 0;
-          remainingWt -= covered;
-          const updated = { ...item, va_pct };
-          return { ...updated, ...computeLine(updated) };
-        }
-        // Fallback: no weight info — monetary coverage, allow negative VA
-        return item;
-      });
+    // Split VA: chit-covered grams get no VA, remaining grams get full VA
+    let remainingChitWt = chitWt;
+    let newChitAmount = 0;
+
+    const newItems = items.map((item: SaleItemDraft) => {
+      if (item.is_value_entry || remainingChitWt <= 0) return item;
+      const covered = Math.min(item.net_wt, remainingChitWt);
+      remainingChitWt -= covered;
+      const uncovered = item.net_wt - covered;
+      // Effective va_pct applies only on the uncovered (non-chit) portion
+      const new_va_pct = item.net_wt > 0 ? (uncovered / item.net_wt) * item.va_pct : 0;
+      const updated = { ...item, va_pct: new_va_pct };
+      const computed = computeLine(updated);
+      const finalItem = { ...updated, ...computed };
+      // Chit payment gets proportional share of the recalculated line total
+      if (item.net_wt > 0) newChitAmount += (covered / item.net_wt) * finalItem.line_total;
+      return finalItem;
     });
+
+    setItems(newItems);
+    setPayments((prev: SalePaymentDraft[]) =>
+      prev.map((p: SalePaymentDraft) =>
+        p.mode === "chit_metal" ? { ...p, amount: Math.round(newChitAmount * 100) / 100 } : p
+      )
+    );
   }
 
   const grandTotal = items.reduce((s: number, i: SaleItemDraft) => s + i.line_total, 0);
@@ -991,8 +996,8 @@ export default function SaleForm({ saleId }: Props) {
         const cp = payments.find((p: SalePaymentDraft) => p.mode === "chit_metal");
         const chitWt = cp?.metal_wt || 0;
         const chitRate = cp?.rate || 0;
-        const hintText = chitWt > 0 && chitRate > 0
-          ? `Chit metal ${grams(chitWt)} @ ${inr(chitRate)}/g = ${inr(chitTotal)} — covered at chit rate, GST on full amount, balance at board rate`
+        const hintText = chitWt > 0
+          ? `Chit ${grams(chitWt)} — no VA on chit grams, VA applies only on remaining weight`
           : `Chit metal ${inr(chitTotal)}`;
         return (
           <div className="flex items-center gap-3 bg-gold/5 border border-gold/20 rounded-xl px-4 py-3">
