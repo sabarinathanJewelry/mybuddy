@@ -511,17 +511,22 @@ export default function MyAttendancePage() {
 
   const presentDays   = rows.filter(r => r.status !== "leave").length;
   const absentDays    = rows.filter(r => r.status === "leave").length;
-  const totalOtMins   = rows.reduce((s, r) => s + r.ot_minutes, 0);
-  const totalLateMins = rows.reduce((s, r) => s + r.late_minutes, 0);
+  const totalOtMins = rows.reduce((s, r) => s + r.ot_minutes, 0);
 
   // Load admin-saved fine settings for the current month
   const { data: fineSettings } = useQuery({
     queryKey: ["attendance_settings", month],
     queryFn: async () => {
       const { data } = await supabase().from("app_settings").select("value").eq("key", `attendance_settings_${month}`).maybeSingle();
-      return (data?.value ?? null) as { late_fine_amt: number; fine_mode: "day" | "minute"; apply_fine: boolean; equalize_ot: boolean } | null;
+      return (data?.value ?? null) as { late_fine_amt: number; fine_mode: "day" | "minute"; apply_fine: boolean; equalize_ot: boolean; fine_from_date?: string } | null;
     },
   });
+
+  // Only count late minutes on/after fine_from_date (if set)
+  const fineFromDate = fineSettings?.fine_from_date ?? "";
+  const totalLateMins = rows
+    .filter(r => !fineFromDate || r.date >= fineFromDate)
+    .reduce((s, r) => s + r.late_minutes, 0);
 
   const netLateMins = fineSettings?.equalize_ot
     ? Math.max(0, totalLateMins - totalOtMins)
@@ -769,6 +774,7 @@ export default function MyAttendancePage() {
                 <p className="text-[11px] text-ink-dim mt-0.5">
                   {netLateMins}m late × ₹{fineSettings?.late_fine_amt}/min
                   {fineSettings?.equalize_ot && totalOtMins > 0 && ` (after ${formatMins(totalOtMins)} OT offset)`}
+                  {fineFromDate && ` · from ${fineFromDate}`}
                 </p>
               </div>
               <p className="text-xl font-bold text-err">−₹{monthFine.toFixed(0)}</p>
@@ -814,6 +820,7 @@ export default function MyAttendancePage() {
                 <p className="text-[11px] text-ink-dim mt-0.5">
                   {netLateMins}m late × ₹{fineSettings?.late_fine_amt}/min
                   {fineSettings?.equalize_ot && totalOtMins > 0 && ` (after ${formatMins(totalOtMins)} OT offset)`}
+                  {fineFromDate && ` · from ${fineFromDate}`}
                 </p>
               </div>
               <p className="text-xl font-bold text-err">−₹{monthFine.toFixed(0)}</p>

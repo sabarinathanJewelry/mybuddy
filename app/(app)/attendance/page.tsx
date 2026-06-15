@@ -80,6 +80,7 @@ function MonthlyTab() {
   const [applyOt, setApplyOt]               = useState(false);
   const [otRateAmt, setOtRateAmt]           = useState(50);
   const [otRateMode, setOtRateMode]         = useState<"hour" | "minute">("hour");
+  const [fineFromDate, setFineFromDate]     = useState("");
 
   const { data = [], isLoading, refetch, isFetching } = useMonthlyAttendanceSummary(month);
   const { data: monthPerms  = [] } = useApprovedPermsByMonth(month);
@@ -105,6 +106,7 @@ function MonthlyTab() {
         if (v.ot_rate_amt    !== undefined) setOtRateAmt(v.ot_rate_amt);
         if (v.ot_rate_mode   !== undefined) setOtRateMode(v.ot_rate_mode);
         if (v.weekend_penalty !== undefined) setWeekendPenalty(v.weekend_penalty);
+        if (v.fine_from_date !== undefined) setFineFromDate(v.fine_from_date);
       }
       return data;
     },
@@ -112,7 +114,7 @@ function MonthlyTab() {
 
   const saveSettings = useMutation({
     mutationFn: async () => {
-      const value = { late_fine_amt: lateFineAmt, fine_mode: fineMode, apply_fine: applyFine, equalize_ot: equalizeOt, apply_ot: applyOt, ot_rate_amt: otRateAmt, ot_rate_mode: otRateMode, weekend_penalty: weekendPenalty };
+      const value = { late_fine_amt: lateFineAmt, fine_mode: fineMode, apply_fine: applyFine, equalize_ot: equalizeOt, apply_ot: applyOt, ot_rate_amt: otRateAmt, ot_rate_mode: otRateMode, weekend_penalty: weekendPenalty, fine_from_date: fineFromDate };
       const { error } = await supabase().from("app_settings").upsert({ key: settingsKey, value }, { onConflict: "key" });
       if (error) throw error;
     },
@@ -143,12 +145,12 @@ function MonthlyTab() {
   function effectiveLateDays(r: MonthlyEmployeeSummary): number {
     const pd = permDates(r.bio_user_id);
     const dd = dutyDates(r.bio_user_id);
-    return r.daily.filter(d => d.is_late && !pd.has(d.date) && !dd.has(d.date)).length;
+    return r.daily.filter(d => d.is_late && !pd.has(d.date) && !dd.has(d.date) && (!fineFromDate || d.date >= fineFromDate)).length;
   }
   function effectiveLateMins(r: MonthlyEmployeeSummary): number {
     const pd = permDates(r.bio_user_id);
     const dd = dutyDates(r.bio_user_id);
-    return r.daily.filter(d => d.is_late && !pd.has(d.date) && !dd.has(d.date)).reduce((s, d) => s + d.late_minutes, 0);
+    return r.daily.filter(d => d.is_late && !pd.has(d.date) && !dd.has(d.date) && (!fineFromDate || d.date >= fineFromDate)).reduce((s, d) => s + d.late_minutes, 0);
   }
   // Weekend absences without approved leave
   function weekendAbsentDays(r: MonthlyEmployeeSummary): string[] {
@@ -255,6 +257,22 @@ function MonthlyTab() {
                 Apply
               </label>
             </div>
+          </div>
+          {/* Fine start date */}
+          <div>
+            <label className="text-xs text-ink-dim block mb-1">Apply Fine From</label>
+            <div className="flex items-center gap-1.5">
+              <input type="date" value={fineFromDate}
+                onChange={e => setFineFromDate(e.target.value)}
+                className={inp + " w-36"} />
+              {fineFromDate && (
+                <button type="button" onClick={() => setFineFromDate("")}
+                  className="text-xs text-ink-dim hover:text-err">✕ all month</button>
+              )}
+            </div>
+            {fineFromDate && (
+              <p className="text-[10px] text-warn mt-0.5">Late days before {fineFromDate} excluded from fine</p>
+            )}
           </div>
           {/* OT pay */}
           <div>
