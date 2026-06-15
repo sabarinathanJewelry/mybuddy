@@ -177,7 +177,6 @@ async function convertOrderToSale(
         pure_wt: oi.estimated_wt || 0,
         rate: 0, va_pct: 0, making_amt: 0, stone_amt: 0, diamond_amt: 0, gst_pct: 0,
         line_total: oi.amount || 0,
-        is_value_entry: true,
         sort_order: idx,
       }))
     : [{
@@ -189,7 +188,6 @@ async function convertOrderToSale(
         pure_wt: finalWt || order.final_wt || order.estimated_wt || 0,
         rate: 0, va_pct: 0, making_amt: 0, stone_amt: 0, diamond_amt: 0, gst_pct: 0,
         line_total: total,
-        is_value_entry: true,
         sort_order: 0,
       }];
 

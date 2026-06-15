@@ -29,7 +29,7 @@ WHERE o.status = 'delivered'
 INSERT INTO sale_items (
   sale_id, description, metal, gross_wt, net_wt, pure_wt,
   rate, va_pct, making_amt, stone_amt, diamond_amt, gst_pct,
-  line_total, is_value_entry, sort_order
+  line_total, sort_order
 )
 SELECT
   s.id                                                            AS sale_id,
@@ -49,7 +49,6 @@ SELECT
   0 AS diamond_amt,
   0 AS gst_pct,
   COALESCE(oi.amount, 0)        AS line_total,
-  TRUE                          AS is_value_entry,
   COALESCE(oi.sort_order, 0)    AS sort_order
 FROM order_items oi
 JOIN orders o  ON oi.order_id = o.id
@@ -60,7 +59,7 @@ WHERE NOT EXISTS (SELECT 1 FROM sale_items si WHERE si.sale_id = s.id);
 INSERT INTO sale_items (
   sale_id, description, metal, gross_wt, net_wt, pure_wt,
   rate, va_pct, making_amt, stone_amt, diamond_amt, gst_pct,
-  line_total, is_value_entry, sort_order
+  line_total, sort_order
 )
 SELECT
   s.id                                                     AS sale_id,
@@ -76,7 +75,6 @@ SELECT
   0 AS diamond_amt,
   0 AS gst_pct,
   COALESCE(o.final_total, o.total, 0)       AS line_total,
-  TRUE                                      AS is_value_entry,
   0                                         AS sort_order
 FROM orders o
 JOIN sales s ON s.order_id = o.id
