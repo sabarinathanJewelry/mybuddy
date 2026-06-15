@@ -162,7 +162,6 @@ async function convertOrderToSale(
     subtotal: total,
     gst_amount: 0,
     total,
-    gst_included: order.gst_included || false,
     order_id: order.id,
     notes: `Converted from order ${order.order_no}`,
   }).select().single();

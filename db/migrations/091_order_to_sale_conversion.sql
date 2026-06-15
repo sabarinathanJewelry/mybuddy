@@ -9,7 +9,7 @@ ALTER TABLE sales ADD COLUMN IF NOT EXISTS order_id UUID REFERENCES orders(id) O
 CREATE INDEX IF NOT EXISTS idx_sales_order_id ON sales(order_id) WHERE order_id IS NOT NULL;
 
 -- Step 2: Create a confirmed sale for each delivered order not yet converted
-INSERT INTO sales (bill_no, series, bill_date, customer_id, status, subtotal, gst_amount, total, gst_included, order_id, notes)
+INSERT INTO sales (bill_no, series, bill_date, customer_id, status, subtotal, gst_amount, total, order_id, notes)
 SELECT
   o.order_no                                  AS bill_no,
   'O'                                         AS series,
@@ -19,7 +19,6 @@ SELECT
   COALESCE(o.final_total, o.total, 0)         AS subtotal,
   0                                           AS gst_amount,
   COALESCE(o.final_total, o.total, 0)         AS total,
-  COALESCE(o.gst_included, false)             AS gst_included,
   o.id                                        AS order_id,
   'Converted from order ' || o.order_no       AS notes
 FROM orders o
