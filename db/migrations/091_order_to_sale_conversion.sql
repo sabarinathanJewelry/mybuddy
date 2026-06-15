@@ -88,7 +88,7 @@ INSERT INTO payments (pay_date, direction, mode, amount, customer_id, sale_id, n
 SELECT
   op.pay_date,
   'in'                                              AS direction,
-  op.mode                                           AS mode,
+  op.mode::payment_mode                             AS mode,
   op.amount,
   o.customer_id,
   s.id                                              AS sale_id,
