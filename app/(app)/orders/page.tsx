@@ -132,6 +132,86 @@ async function fanoutOrderPayments(
   await Promise.allSettled(promises);
 }
 
+// ─── Order → Sale conversion ─────────────────────────────────────────────────
+// Creates a confirmed sale from a delivered order for reporting purposes.
+// Does NOT re-add to cash_ledger / bank_ledger — those were written at order-payment time.
+// Only writes to the payments table (customer balance) for the first time.
+async function convertOrderToSale(
+  client: ReturnType<typeof import("@/lib/supabase/client").supabase>,
+  order: any,
+  finalWt: number,
+  saleTotal: number,
+  saleDate: string
+) {
+  const { data: existing } = await client.from("sales").select("id").eq("order_id", order.id).maybeSingle();
+  if (existing) return;
+
+  const [{ data: orderItems }, { data: orderPays }] = await Promise.all([
+    client.from("order_items").select("*").eq("order_id", order.id).order("sort_order"),
+    client.from("order_payments").select("*").eq("order_id", order.id),
+  ]);
+
+  const total = saleTotal || order.final_total || order.total || 0;
+
+  const { data: sale, error: saleErr } = await client.from("sales").insert({
+    bill_no: order.order_no,
+    series: "O",
+    bill_date: saleDate,
+    customer_id: order.customer_id ?? null,
+    status: "confirmed",
+    subtotal: total,
+    gst_amount: 0,
+    total,
+    gst_included: order.gst_included || false,
+    order_id: order.id,
+    notes: `Converted from order ${order.order_no}`,
+  }).select().single();
+  if (saleErr || !sale) return;
+
+  const items: any[] = orderItems?.length
+    ? orderItems.map((oi: any, idx: number) => ({
+        sale_id: sale.id,
+        description: oi.description || order.description || "Custom order",
+        metal: oi.metal || "gold_22k",
+        gross_wt: oi.estimated_wt || 0,
+        net_wt: oi.estimated_wt || 0,
+        pure_wt: oi.estimated_wt || 0,
+        rate: 0, va_pct: 0, making_amt: 0, stone_amt: 0, diamond_amt: 0, gst_pct: 0,
+        line_total: oi.amount || 0,
+        is_value_entry: true,
+        sort_order: idx,
+      }))
+    : [{
+        sale_id: sale.id,
+        description: order.description || "Custom order",
+        metal: "gold_22k",
+        gross_wt: finalWt || order.final_wt || order.estimated_wt || 0,
+        net_wt: finalWt || order.final_wt || order.estimated_wt || 0,
+        pure_wt: finalWt || order.final_wt || order.estimated_wt || 0,
+        rate: 0, va_pct: 0, making_amt: 0, stone_amt: 0, diamond_amt: 0, gst_pct: 0,
+        line_total: total,
+        is_value_entry: true,
+        sort_order: 0,
+      }];
+
+  await client.from("sale_items").insert(items);
+
+  if (order.customer_id && orderPays?.length) {
+    const payEntries = orderPays
+      .filter((p: any) => p.amount > 0)
+      .map((p: any) => ({
+        pay_date: p.pay_date,
+        direction: "in",
+        mode: p.mode,
+        amount: p.amount,
+        customer_id: order.customer_id,
+        sale_id: sale.id,
+        notes: `Order payment — ${order.order_no}`,
+      }));
+    if (payEntries.length) await client.from("payments").insert(payEntries);
+  }
+}
+
 // ─── Data hooks ─────────────────────────────────────────────────────────────
 
 function useOrders() {
@@ -572,9 +652,13 @@ export default function OrdersPage() {
         );
         await fanoutOrderPayments(order.id, order.order_no, globalDate, validPay, order.customer_id);
       }
+
+      // Auto-create a sale record for reports (does not double-count cash/bank ledger)
+      await convertOrderToSale(client, order, finalWt, finalTotal || order.total, globalDate);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["sales"] });
       setDeliverOrderId(null); setFinalWt(0); setFinalTotal(0); setFinalPayments([]);
     },
   });
