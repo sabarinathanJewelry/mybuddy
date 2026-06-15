@@ -122,6 +122,12 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const [editPayForm, setEditPayForm] = useState({ pay_date: globalDate, mode: "cash", amount: 0, metal_wt: 0, metal_purity: 91.6, cut_rate: 0, notes: "" });
   const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
 
+  // Per-purchase payment panel
+  const [expandedPayPurchaseId, setExpandedPayPurchaseId] = useState<string | null>(null);
+  const blankPartPay = () => ({ pay_date: globalDate, mode: "cash" as string, amount: 0, notes: "" });
+  const [partPayForm, setPartPayForm] = useState(blankPartPay());
+  const [deletingPartPayId, setDeletingPartPayId] = useState<string | null>(null);
+
   function openEditPayment(p: any) {
     setEditingPaymentId(p.id);
     setEditPayForm({ pay_date: p.pay_date, mode: p.mode, amount: Number(p.amount), metal_wt: Number(p.metal_wt) || 0, metal_purity: Number(p.metal_purity) || 91.6, cut_rate: Number(p.cut_rate) || 0, notes: p.notes ?? "" });
@@ -168,6 +174,15 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
     if (roundMethod === "floor") return Math.floor(v * f) / f;
     if (roundMethod === "ceil") return Math.ceil(v * f) / f;
     return Math.round(v * f) / f;
+  }
+
+  // Per-purchase payment totals
+  const paidByPurchaseId = new Map<string, number>();
+  for (const pay of (view?.payments ?? [])) {
+    if ((pay as any).purchase_id) {
+      const prev = paidByPurchaseId.get((pay as any).purchase_id) ?? 0;
+      paidByPurchaseId.set((pay as any).purchase_id, prev + Number((pay as any).amount));
+    }
   }
 
   // Cash ledger — chronological statement with running balance
@@ -1028,13 +1043,155 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                       <td className="px-3 py-2.5 text-right font-mono">{inr(p.amount)}</td>
                       <td className="px-3 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {(p.amount ?? 0) > 0 && (
+                            <button
+                              onClick={() => { setExpandedPayPurchaseId(expandedPayPurchaseId === p.id ? null : p.id); setPartPayForm(blankPartPay()); setDeletingPartPayId(null); }}
+                              className="text-xs text-info hover:underline">
+                              {expandedPayPurchaseId === p.id ? "Hide" : "Payments"}
+                            </button>
+                          )}
                           <button onClick={() => { openEditPurchase(p); setDeletingPurchaseId(null); }}
                             className="text-xs text-gold hover:underline">Edit</button>
                           <button onClick={() => setDeletingPurchaseId(deletingPurchaseId === p.id ? null : p.id)}
                             className="text-xs text-err hover:underline">Del</button>
                         </div>
+                        {(p.amount ?? 0) > 0 && (() => {
+                          const paid = paidByPurchaseId.get(p.id) ?? 0;
+                          const outstanding = Number(p.amount) - paid;
+                          if (paid <= 0) return null;
+                          return (
+                            <div className="text-[10px] mt-0.5 text-right">
+                              <span className="text-ok">{inr(paid)} paid</span>
+                              {outstanding > 0.01 && <span className="text-err ml-1">{inr(outstanding)} due</span>}
+                              {outstanding <= 0.01 && <span className="text-ok ml-1">✓ settled</span>}
+                            </div>
+                          );
+                        })()}
                       </td>
                     </tr>
+                    {/* Part-payment panel */}
+                    {expandedPayPurchaseId === p.id && (
+                      <tr className="border-b border-line bg-info/3">
+                        <td colSpan={8} className="px-4 py-3">
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide">
+                                Payment History — {p.description || shortDate(p.purchase_date)} · Total {inr(p.amount)}
+                              </p>
+                              {(() => {
+                                const paid = paidByPurchaseId.get(p.id) ?? 0;
+                                const outstanding = Number(p.amount) - paid;
+                                return (
+                                  <div className="text-xs flex gap-3">
+                                    <span className="text-ok">Paid: {inr(paid)}</span>
+                                    <span className={outstanding > 0.01 ? "text-err font-semibold" : "text-ok"}>
+                                      {outstanding > 0.01 ? `Outstanding: ${inr(outstanding)}` : "Fully settled"}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+
+                            {/* Payment rows for this purchase */}
+                            {(() => {
+                              const purchasePayments = (view?.payments ?? []).filter((pay: any) => pay.purchase_id === p.id);
+                              if (purchasePayments.length === 0) {
+                                return <p className="text-xs text-ink-dim">No payments recorded yet.</p>;
+                              }
+                              return (
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="text-ink-dim border-b border-line">
+                                      <th className="text-left py-1 pr-3">Date</th>
+                                      <th className="text-left py-1 pr-3">Mode</th>
+                                      <th className="text-right py-1 pr-3">Amount</th>
+                                      <th className="text-left py-1 pr-3">Notes</th>
+                                      <th className="py-1 w-12" />
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {purchasePayments.map((pay: any) => (
+                                      <Fragment key={pay.id}>
+                                        <tr className="border-b border-line/50 last:border-0">
+                                          <td className="py-1 pr-3 text-ink-dim">{shortDate(pay.pay_date)}</td>
+                                          <td className="py-1 pr-3 capitalize">{pay.mode?.replace("_", " ")}</td>
+                                          <td className="py-1 pr-3 text-right font-mono font-medium text-err">{inr(pay.amount)}</td>
+                                          <td className="py-1 pr-3 text-ink-dim">{pay.notes || "—"}</td>
+                                          <td className="py-1 text-right">
+                                            {deletingPartPayId === pay.id ? (
+                                              <div className="flex gap-1 justify-end">
+                                                <button onClick={async () => {
+                                                  await deletePayment.mutateAsync({ id: pay.id, supplierId: id });
+                                                  setDeletingPartPayId(null);
+                                                }} className="text-[10px] bg-err text-white px-1.5 py-0.5 rounded">Yes</button>
+                                                <button onClick={() => setDeletingPartPayId(null)} className="text-[10px] border border-line px-1.5 py-0.5 rounded">No</button>
+                                              </div>
+                                            ) : (
+                                              <button onClick={() => setDeletingPartPayId(pay.id)} className="text-[10px] text-err hover:underline">Del</button>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      </Fragment>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              );
+                            })()}
+
+                            {/* Add part payment form */}
+                            <div className="border-t border-line/50 pt-3">
+                              <p className="text-xs text-ink-dim mb-2">+ Add Part Payment</p>
+                              <div className="flex flex-wrap gap-2 items-end">
+                                <div>
+                                  <label className="text-[10px] text-ink-dim block mb-0.5">Date</label>
+                                  <input type="date" value={partPayForm.pay_date}
+                                    onChange={e => setPartPayForm(f => ({ ...f, pay_date: e.target.value }))}
+                                    className="border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] text-ink-dim block mb-0.5">Mode</label>
+                                  <select value={partPayForm.mode}
+                                    onChange={e => setPartPayForm(f => ({ ...f, mode: e.target.value }))}
+                                    className="border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold bg-white">
+                                    {["cash", "upi", "bank"].map(m => <option key={m} value={m}>{m}</option>)}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="text-[10px] text-ink-dim block mb-0.5">Amount (₹)</label>
+                                  <input type="number" step="0.01" value={partPayForm.amount || ""}
+                                    onFocus={e => e.target.select()}
+                                    onChange={e => setPartPayForm(f => ({ ...f, amount: parseFloat(e.target.value) || 0 }))}
+                                    className="border border-line rounded-lg2 px-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-gold" />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] text-ink-dim block mb-0.5">Notes</label>
+                                  <input type="text" value={partPayForm.notes}
+                                    onChange={e => setPartPayForm(f => ({ ...f, notes: e.target.value }))}
+                                    placeholder="optional"
+                                    className="border border-line rounded-lg2 px-2 py-1 text-xs w-32 focus:outline-none focus:ring-1 focus:ring-gold" />
+                                </div>
+                                <button
+                                  disabled={savePayment.isPending || partPayForm.amount <= 0}
+                                  onClick={async () => {
+                                    await savePayment.mutateAsync({
+                                      supplier_id: id,
+                                      purchase_id: p.id,
+                                      pay_date: partPayForm.pay_date,
+                                      mode: partPayForm.mode,
+                                      amount: partPayForm.amount,
+                                      notes: partPayForm.notes || null,
+                                    });
+                                    setPartPayForm(blankPartPay());
+                                  }}
+                                  className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40">
+                                  {savePayment.isPending ? "Saving…" : "Save"}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                     {deletingPurchaseId === p.id && (
                       <tr className="border-b border-line bg-err/5">
                         <td colSpan={8} className="px-4 py-3">
