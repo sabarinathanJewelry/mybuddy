@@ -1389,3 +1389,129 @@ export function useVerifyKyc() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["staff_kyc"] }),
   });
 }
+
+// ── Staff Tasks ───────────────────────────────────────────────────────────────
+
+export type StaffTask = {
+  id: string;
+  title: string;
+  description: string | null;
+  assigned_to: string;
+  created_by: string;
+  due_date: string;
+  status: "pending" | "completed";
+  completed_at: string | null;
+  completed_note: string | null;
+  created_at: string;
+  staff?: { name: string } | null;
+};
+
+export function useStaffTasks(isAdmin: boolean, myBioUserId: string | null) {
+  return useQuery<StaffTask[]>({
+    queryKey: ["staff_tasks", isAdmin ? "admin" : myBioUserId],
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const client = supabase();
+      let q = client
+        .from("staff_tasks")
+        .select("*, staff:assigned_to(name)")
+        .order("due_date", { ascending: true })
+        .order("created_at", { ascending: false });
+      if (!isAdmin && myBioUserId) {
+        q = q.eq("assigned_to", myBioUserId);
+      }
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data ?? []) as StaffTask[];
+    },
+    enabled: isAdmin || !!myBioUserId,
+  });
+}
+
+export function useCreateTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      title: string;
+      description?: string;
+      assigned_to: string;
+      created_by: string;
+      due_date: string;
+    }) => {
+      const client = supabase();
+      const { error } = await client.from("staff_tasks").insert({
+        title: payload.title,
+        description: payload.description || null,
+        assigned_to: payload.assigned_to,
+        created_by: payload.created_by,
+        due_date: payload.due_date,
+      });
+      if (error) throw error;
+      await client.from("app_notifications").insert({
+        for_bio_user_id: payload.assigned_to,
+        title: "New Task Assigned",
+        body: `You have a new task: "${payload.title}" — due ${payload.due_date}.`,
+        ref_type: "staff_task",
+        ref_id: null,
+      });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["staff_tasks"] }),
+  });
+}
+
+export function useCompleteTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      id: string;
+      staff_name: string;
+      task_title: string;
+      completed_note?: string;
+    }) => {
+      const client = supabase();
+      const { error } = await client
+        .from("staff_tasks")
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+          completed_note: payload.completed_note || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", payload.id);
+      if (error) throw error;
+      await client.from("app_notifications").insert({
+        for_bio_user_id: null,
+        title: "Task Completed",
+        body: `${payload.staff_name} completed task: "${payload.task_title}".`,
+        ref_type: "staff_task",
+        ref_id: payload.id,
+      });
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["staff_tasks"] }),
+  });
+}
+
+export function useDeleteTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase().from("staff_tasks").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["staff_tasks"] }),
+  });
+}
+
+export function useReopenTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase()
+        .from("staff_tasks")
+        .update({ status: "pending", completed_at: null, completed_note: null, updated_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["staff_tasks"] }),
+  });
+}

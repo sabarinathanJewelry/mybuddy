@@ -18,15 +18,16 @@ import {
   useShopExceptionForDate, useUpsertShopException, useDeleteShopException,
   useMySpecialRequests, useAllSpecialRequests, useCreateSpecialRequest, useDecideSpecialRequest, useDeleteSpecialRequest,
   SPECIAL_REQUEST_CATEGORIES,
+  useStaffTasks, useCreateTask, useDeleteTask, useReopenTask,
   type StaffMember, type MonthlyEmployeeSummary, type PermissionRequest, type KioskTap,
-  type LeaveRequest, type AppNotification, type OutsideDuty, type StaffKyc, type SpecialRequest,
+  type LeaveRequest, type AppNotification, type OutsideDuty, type StaffKyc, type SpecialRequest, type StaffTask,
 } from "@/modules/attendance/api";
 import { useKiosk } from "@/stores/kiosk";
 import { useAuth } from "@/stores/auth";
 import { shortDate, inr } from "@/lib/format";
 import { parseKolusuChat } from "@/lib/kolusu-parse";
 
-type PageTab = "attendance" | "staff" | "monthly" | "requests" | "leaves" | "duties" | "chat" | "announcements" | "kyc";
+type PageTab = "attendance" | "staff" | "monthly" | "requests" | "leaves" | "duties" | "chat" | "announcements" | "kyc" | "tasks";
 
 interface ChatMsg { id: string; sender_id: string; sender_name: string; message: string; is_deleted: boolean; edited_at: string | null; created_at: string }
 
@@ -2319,6 +2320,7 @@ export default function AttendancePage() {
     chat:          "Staff Chat",
     announcements: "Announcements",
     kyc:           "KYC",
+    tasks:         "Tasks",
   };
 
   return (
@@ -2343,7 +2345,7 @@ export default function AttendancePage() {
       {/* Tabs — hidden in kiosk mode (always visible for admin) */}
       {(!isLocked || isAdmin) && (
         <div className="flex border-b border-line gap-1 flex-wrap">
-          {(["attendance", "staff", "monthly", "requests", "leaves", "duties", "chat", ...(isAdmin ? ["announcements", "kyc"] : [])] as PageTab[]).map((t) => (
+          {(["attendance", "staff", "monthly", "requests", "leaves", "duties", "chat", ...(isAdmin ? ["announcements", "kyc", "tasks"] : ["tasks"])] as PageTab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
                 tab === t ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"
@@ -2745,6 +2747,187 @@ export default function AttendancePage() {
 
       {/* ── KYC tab (admin only) ── */}
       {tab === "kyc" && isAdmin && <KycTab />}
+
+      {/* ── Tasks tab ── */}
+      {tab === "tasks" && <TasksAdminTab isAdmin={isAdmin} myBioUserId={myBioUserId} />}
+    </div>
+  );
+}
+
+// ── Staff Tasks Tab ───────────────────────────────────────────────────────────
+function TasksAdminTab({ isAdmin, myBioUserId }: { isAdmin: boolean; myBioUserId: string | null }) {
+  const today = new Date().toLocaleDateString("en-CA");
+  const { data: staff = [] } = useStaff();
+  const { data: tasks = [], isLoading } = useStaffTasks(isAdmin, myBioUserId);
+  const createTask = useCreateTask();
+  const deleteTask = useDeleteTask();
+  const reopenTask = useReopenTask();
+
+  const activeStaff = staff.filter((s) => s.active);
+
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ title: "", description: "", assigned_to: "", due_date: today });
+  const [filter, setFilter] = useState<"pending" | "completed" | "all">("pending");
+
+  const filtered = tasks.filter(t => filter === "all" || t.status === filter);
+  const pendingOverdue = tasks.filter(t => t.status === "pending" && t.due_date < today);
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.title || !form.assigned_to || !form.due_date) return;
+    await createTask.mutateAsync({
+      title: form.title,
+      description: form.description || undefined,
+      assigned_to: form.assigned_to,
+      created_by: myBioUserId ?? "admin",
+      due_date: form.due_date,
+    });
+    setForm({ title: "", description: "", assigned_to: "", due_date: today });
+    setShowForm(false);
+  }
+
+  const inpCls = "border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold text-ink">Staff Tasks</h2>
+          {pendingOverdue.length > 0 && (
+            <span className="text-xs bg-err/10 text-err font-semibold px-2 py-0.5 rounded-full">
+              {pendingOverdue.length} overdue
+            </span>
+          )}
+        </div>
+        {isAdmin && (
+          <button onClick={() => setShowForm(v => !v)}
+            className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 hover:opacity-90">
+            {showForm ? "Cancel" : "+ Assign Task"}
+          </button>
+        )}
+      </div>
+
+      {/* Create form */}
+      {showForm && isAdmin && (
+        <form onSubmit={handleCreate} className="bg-white border border-gold/30 rounded-xl p-4 shadow-soft space-y-3">
+          <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide">New Task</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2">
+              <label className="text-xs text-ink-dim block mb-1">Task Title *</label>
+              <input required value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                placeholder="e.g. Clean the showcase counter"
+                className={inpCls + " w-full"} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="text-xs text-ink-dim block mb-1">Description (optional)</label>
+              <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                rows={2} placeholder="Additional details…"
+                className={inpCls + " w-full resize-none"} />
+            </div>
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Assign To *</label>
+              <select required value={form.assigned_to} onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))}
+                className={inpCls + " w-full bg-white"}>
+                <option value="">— Select staff —</option>
+                {activeStaff.map(s => <option key={s.bio_user_id} value={s.bio_user_id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Due Date *</label>
+              <input required type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
+                className={inpCls + " w-full"} />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" disabled={createTask.isPending}
+              className="bg-gold text-white text-sm px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+              {createTask.isPending ? "Saving…" : "Assign Task"}
+            </button>
+            <button type="button" onClick={() => setShowForm(false)}
+              className="border border-line text-sm px-4 py-1.5 rounded-lg2 text-ink-dim">Cancel</button>
+          </div>
+          {createTask.isError && <p className="text-xs text-err">Failed — run migration 088 first.</p>}
+        </form>
+      )}
+
+      {/* Filter */}
+      <div className="flex rounded-lg overflow-hidden border border-line text-xs w-fit">
+        {(["pending", "completed", "all"] as const).map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`px-3 py-1.5 font-medium capitalize transition-colors ${filter === f ? "bg-gold text-white" : "bg-white text-ink-dim hover:bg-canvas"}`}>
+            {f === "pending"
+              ? `Pending (${tasks.filter(t => t.status === "pending").length})`
+              : f === "completed"
+              ? `Completed (${tasks.filter(t => t.status === "completed").length})`
+              : `All (${tasks.length})`}
+          </button>
+        ))}
+      </div>
+
+      {/* Task list */}
+      {isLoading ? (
+        <p className="text-sm text-ink-dim">Loading…</p>
+      ) : filtered.length === 0 ? (
+        <div className="bg-white rounded-xl border border-line p-8 text-center text-ink-dim shadow-soft text-sm">
+          {filter === "pending" ? "No pending tasks." : filter === "completed" ? "No completed tasks yet." : "No tasks assigned yet."}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((task: StaffTask) => {
+            const isOverdue = task.status === "pending" && task.due_date < today;
+            const isDueToday = task.status === "pending" && task.due_date === today;
+            return (
+              <div key={task.id} className={`bg-white rounded-xl border shadow-soft p-4 flex items-start gap-4 ${
+                isOverdue ? "border-err/40" : isDueToday ? "border-warn/40" : "border-line"
+              }`}>
+                {/* Status dot */}
+                <div className={`mt-1 w-2.5 h-2.5 rounded-full shrink-0 ${
+                  task.status === "completed" ? "bg-ok" : isOverdue ? "bg-err" : isDueToday ? "bg-warn" : "bg-gold"
+                }`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2 flex-wrap">
+                    <p className={`text-sm font-semibold ${task.status === "completed" ? "line-through text-ink-dim" : "text-ink"}`}>
+                      {task.title}
+                    </p>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                        task.status === "completed" ? "bg-ok/10 text-ok" :
+                        isOverdue ? "bg-err/10 text-err" :
+                        isDueToday ? "bg-warn/10 text-warn" : "bg-gold/10 text-gold"
+                      }`}>
+                        {task.status === "completed" ? "Done" : isOverdue ? "Overdue" : isDueToday ? "Due today" : "Pending"}
+                      </span>
+                      {isAdmin && task.status === "completed" && (
+                        <button onClick={() => reopenTask.mutate(task.id)} disabled={reopenTask.isPending}
+                          className="text-[11px] text-ink-dim hover:text-warn disabled:opacity-40">Reopen</button>
+                      )}
+                      {isAdmin && (
+                        <button onClick={() => { if (window.confirm("Delete this task?")) deleteTask.mutate(task.id); }}
+                          disabled={deleteTask.isPending}
+                          className="text-[11px] text-err hover:underline disabled:opacity-40">Del</button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 mt-1 flex-wrap text-xs text-ink-dim">
+                    <span>Assigned to <span className="font-medium text-ink">{(task.staff as any)?.name ?? task.assigned_to}</span></span>
+                    <span>Due <span className={`font-medium ${isOverdue ? "text-err" : isDueToday ? "text-warn" : "text-ink"}`}>{task.due_date}</span></span>
+                    {task.status === "completed" && task.completed_at && (
+                      <span className="text-ok">Completed {new Date(task.completed_at).toLocaleDateString("en-IN")}</span>
+                    )}
+                  </div>
+                  {task.description && (
+                    <p className="text-xs text-ink-dim mt-1">{task.description}</p>
+                  )}
+                  {task.completed_note && (
+                    <p className="text-xs text-ok mt-1">Note: {task.completed_note}</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

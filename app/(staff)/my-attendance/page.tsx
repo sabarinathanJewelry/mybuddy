@@ -10,7 +10,8 @@ import {
   useMyOutsideDuties, useCreateOutsideDuty,
   useLastSyncTime,
   useMyKyc, useUpsertKyc, KYC_DOCS,
-  type PermissionRequest, type LeaveRequest, type OutsideDuty,
+  useStaffTasks, useCompleteTask,
+  type PermissionRequest, type LeaveRequest, type OutsideDuty, type StaffTask,
 } from "@/modules/attendance/api";
 import { parseKolusuChat } from "@/lib/kolusu-parse";
 
@@ -89,7 +90,7 @@ type DayRow = {
 
 type StaffInfo = { bio_user_id: string; name: string; shift: string };
 
-type PageTab = "today" | "monthly" | "requests" | "incentive" | "chat" | "policies" | "kyc";
+type PageTab = "today" | "monthly" | "requests" | "incentive" | "chat" | "policies" | "kyc" | "tasks";
 
 // ── page ─────────────────────────────────────────────────────────────────────
 export default function MyAttendancePage() {
@@ -540,6 +541,11 @@ export default function MyAttendancePage() {
   // Today's row (only meaningful when viewing current month)
   const todayRow = month === todayMonth ? rows.find(r => r.date === todayStr) ?? null : null;
 
+  // Tasks for this staff member
+  const { data: myTasks = [] } = useStaffTasks(false, staff?.bio_user_id ?? null);
+  const pendingTasks = myTasks.filter((t: StaffTask) => t.status === "pending");
+  const overdueTasks = pendingTasks.filter((t: StaffTask) => t.due_date < todayStr);
+
   const inpCls = "border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
 
   return (
@@ -606,6 +612,7 @@ export default function MyAttendancePage() {
           { key: "requests",  label: "Requests" },
           ...(canSeeIncentive ? [{ key: "incentive", label: "Incentive" }] : []),
           { key: "chat",       label: "Chat" },
+          { key: "tasks",      label: "Tasks" },
           { key: "policies",   label: "Policies" },
           { key: "kyc",        label: "KYC" },
         ] as { key: PageTab; label: string }[]).map(t => (
@@ -617,6 +624,11 @@ export default function MyAttendancePage() {
             {t.key === "chat" && chatUnread > 0 && (
               <span className="bg-err text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
                 {chatUnread > 9 ? "9+" : chatUnread}
+              </span>
+            )}
+            {t.key === "tasks" && pendingTasks.length > 0 && (
+              <span className={`text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none ${overdueTasks.length > 0 ? "bg-err" : "bg-warn"}`}>
+                {pendingTasks.length}
               </span>
             )}
           </button>
@@ -1561,6 +1573,140 @@ function PoliciesTab() {
                     </div>
                   ))}
                 </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── TASKS TAB ─────────────────────────────────────────────────────────── */}
+      {tab === "tasks" && (
+        <StaffTasksTab
+          tasks={myTasks}
+          staffName={staff?.name ?? ""}
+          bioUserId={staff?.bio_user_id ?? null}
+          todayStr={todayStr}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Staff Tasks (staff view) ──────────────────────────────────────────────────
+function StaffTasksTab({ tasks, staffName, bioUserId, todayStr }: {
+  tasks: StaffTask[];
+  staffName: string;
+  bioUserId: string | null;
+  todayStr: string;
+}) {
+  const completeTask = useCompleteTask();
+  const [noteMap, setNoteMap] = useState<Record<string, string>>({});
+  const [completingId, setCompletingId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<"pending" | "completed" | "all">("pending");
+
+  const filtered = tasks.filter(t => filter === "all" || t.status === filter);
+
+  async function handleComplete(task: StaffTask) {
+    await completeTask.mutateAsync({
+      id: task.id,
+      staff_name: staffName,
+      task_title: task.title,
+      completed_note: noteMap[task.id] || undefined,
+    });
+    setCompletingId(null);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h2 className="text-sm font-semibold text-ink">My Tasks</h2>
+        <div className="flex rounded-lg overflow-hidden border border-line text-xs w-fit">
+          {(["pending", "completed", "all"] as const).map(f => (
+            <button key={f} onClick={() => setFilter(f)}
+              className={`px-3 py-1.5 font-medium capitalize transition-colors ${filter === f ? "bg-gold text-white" : "bg-white text-ink-dim hover:bg-canvas"}`}>
+              {f === "pending" ? `Pending (${tasks.filter(t => t.status === "pending").length})`
+                : f === "completed" ? `Done (${tasks.filter(t => t.status === "completed").length})`
+                : `All (${tasks.length})`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="bg-white rounded-xl border border-line p-8 text-center text-ink-dim shadow-soft text-sm">
+          {filter === "pending" ? "No pending tasks — you are all caught up!" : "No tasks here."}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((task: StaffTask) => {
+            const isOverdue = task.status === "pending" && task.due_date < todayStr;
+            const isDueToday = task.status === "pending" && task.due_date === todayStr;
+            const isCompleting = completingId === task.id;
+            return (
+              <div key={task.id} className={`bg-white rounded-xl border shadow-soft p-4 space-y-2 ${
+                isOverdue ? "border-err/40" : isDueToday ? "border-warn/40" : "border-line"
+              }`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-3">
+                    <div className={`mt-1 w-2.5 h-2.5 rounded-full shrink-0 ${
+                      task.status === "completed" ? "bg-ok" : isOverdue ? "bg-err" : isDueToday ? "bg-warn" : "bg-gold"
+                    }`} />
+                    <div>
+                      <p className={`text-sm font-semibold ${task.status === "completed" ? "line-through text-ink-dim" : "text-ink"}`}>
+                        {task.title}
+                      </p>
+                      {task.description && (
+                        <p className="text-xs text-ink-dim mt-0.5">{task.description}</p>
+                      )}
+                    </div>
+                  </div>
+                  <span className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                    task.status === "completed" ? "bg-ok/10 text-ok" :
+                    isOverdue ? "bg-err/10 text-err" :
+                    isDueToday ? "bg-warn/10 text-warn" : "bg-gold/10 text-gold"
+                  }`}>
+                    {task.status === "completed" ? "Done" : isOverdue ? "Overdue" : isDueToday ? "Due today" : "Pending"}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-3 text-xs text-ink-dim pl-5">
+                  <span>Due <span className={`font-medium ${isOverdue ? "text-err" : isDueToday ? "text-warn" : "text-ink"}`}>{task.due_date}</span></span>
+                  {task.status === "completed" && task.completed_at && (
+                    <span className="text-ok">Completed {new Date(task.completed_at).toLocaleDateString("en-IN")}</span>
+                  )}
+                  {task.completed_note && (
+                    <span className="text-ok">— {task.completed_note}</span>
+                  )}
+                </div>
+
+                {task.status === "pending" && (
+                  <div className="pl-5">
+                    {!isCompleting ? (
+                      <button onClick={() => setCompletingId(task.id)}
+                        className="text-xs bg-ok text-white px-3 py-1.5 rounded-lg2 hover:opacity-90">
+                        Mark as Done
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          placeholder="Add a note (optional)"
+                          value={noteMap[task.id] ?? ""}
+                          onChange={e => setNoteMap(m => ({ ...m, [task.id]: e.target.value }))}
+                          className="w-full border border-line rounded-lg2 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ok"
+                        />
+                        <div className="flex gap-2">
+                          <button onClick={() => handleComplete(task)} disabled={completeTask.isPending}
+                            className="text-xs bg-ok text-white px-3 py-1.5 rounded-lg2 disabled:opacity-50 hover:opacity-90">
+                            {completeTask.isPending ? "Saving…" : "Confirm Done"}
+                          </button>
+                          <button onClick={() => setCompletingId(null)}
+                            className="text-xs border border-line px-3 py-1.5 rounded-lg2 text-ink-dim">Cancel</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
