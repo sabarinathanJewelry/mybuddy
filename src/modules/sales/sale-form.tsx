@@ -280,33 +280,36 @@ export default function SaleForm({ saleId }: Props) {
     const chitPayment = payments.find((p: SalePaymentDraft) => p.mode === "chit_metal");
     if (!chitPayment) return;
     const chitWt = chitPayment.metal_wt || 0;
-    if (chitWt <= 0) return;
+    const chitAmount = chitPayment.amount || 0;
+    if (chitWt <= 0 || chitAmount <= 0) return;
 
-    // Split VA: chit-covered grams get no VA, remaining grams get full VA
+    // Chit avg rate per gram (e.g. 121000 / 10.389 = 11647/g)
+    const chitRatePerG = chitAmount / chitWt;
+
+    // For each item: chit-covered grams priced at chitRatePerG (no VA),
+    // remaining grams priced at board rate with original VA%.
+    // Express as a single effective va_pct on the item's board rate:
+    //   targetValue = covered × chitRatePerG + uncovered × rate × (1 + va_pct/100)
+    //   new_va_pct  = (targetValue / (net_wt × rate) − 1) × 100
     let remainingChitWt = chitWt;
-    let newChitAmount = 0;
 
     const newItems = items.map((item: SaleItemDraft) => {
-      if (item.is_value_entry || remainingChitWt <= 0) return item;
+      if (item.is_value_entry || remainingChitWt <= 0 || item.net_wt === 0 || item.rate === 0) return item;
       const covered = Math.min(item.net_wt, remainingChitWt);
       remainingChitWt -= covered;
       const uncovered = item.net_wt - covered;
-      // Effective va_pct applies only on the uncovered (non-chit) portion
-      const new_va_pct = item.net_wt > 0 ? (uncovered / item.net_wt) * item.va_pct : 0;
-      const updated = { ...item, va_pct: new_va_pct };
-      const computed = computeLine(updated);
-      const finalItem = { ...updated, ...computed };
-      // Chit payment gets proportional share of the recalculated line total
-      if (item.net_wt > 0) newChitAmount += (covered / item.net_wt) * finalItem.line_total;
-      return finalItem;
+
+      const chitPortion      = covered * chitRatePerG;
+      const uncoveredPortion = uncovered * item.rate * (1 + item.va_pct / 100);
+      const metalValue       = item.net_wt * item.rate;
+      const new_va_pct       = ((chitPortion + uncoveredPortion) / metalValue - 1) * 100;
+
+      const updated = { ...item, va_pct: Math.round(new_va_pct * 100) / 100 };
+      return { ...updated, ...computeLine(updated) };
     });
 
     setItems(newItems);
-    setPayments((prev: SalePaymentDraft[]) =>
-      prev.map((p: SalePaymentDraft) =>
-        p.mode === "chit_metal" ? { ...p, amount: Math.round(newChitAmount * 100) / 100 } : p
-      )
-    );
+    // Chit payment amount is set by the user — do not auto-update it
   }
 
   const grandTotal = items.reduce((s: number, i: SaleItemDraft) => s + i.line_total, 0);
