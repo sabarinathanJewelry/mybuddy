@@ -1080,11 +1080,23 @@ export default function OrdersPage() {
                 advanceBalance={customer ? (advanceBalance ?? undefined) : undefined}
                 partnerAccounts={partnerAccounts} />
             ))}
-            {advPayments.length > 0 && (
-              <p className="text-xs text-ink-dim text-right">
-                Total advance: <strong className="text-gold">{inr(advPayments.reduce((s, p) => s + p.amount, 0))}</strong>
-              </p>
-            )}
+            {advPayments.length > 0 && (() => {
+              const totalAdv = advPayments.reduce((s, p) => s + p.amount, 0);
+              const itemsTotal = orderItems.reduce((s, i) => s + (i.amount || 0), 0);
+              const effectiveTotal = itemsTotal > 0 ? itemsTotal : (estimatedTotal || 0);
+              const remaining = effectiveTotal - totalAdv;
+              return (
+                <div className="text-xs text-right space-y-0.5">
+                  <p className="text-ink-dim">Total advance: <strong className="text-gold">{inr(totalAdv)}</strong></p>
+                  {effectiveTotal > 0 && (
+                    <p className={remaining > 0 ? "text-err" : "text-ok"}>
+                      Remaining: <strong>{inr(Math.abs(remaining))}</strong>
+                      {remaining < 0 ? " (excess)" : ""}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           <div className="flex gap-2 pt-1">
