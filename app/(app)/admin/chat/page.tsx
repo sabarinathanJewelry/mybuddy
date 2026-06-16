@@ -29,37 +29,66 @@ export default function AdminChatPage() {
   const [chatInput, setChatInput]   = useState("");
   const [sending, setSending]       = useState(false);
   const bottomRef                   = useRef<HTMLDivElement>(null);
+  const adminUserIdRef              = useRef<string | null>(null);
+
+  async function processKolusuMsg(client: ReturnType<typeof supabase>, msg: ChatMessage) {
+    const parsed = parseKolusuChat(msg.message ?? "");
+    if (!parsed || msg.sender_name === "MyBuddy") return;
+    const today = msg.created_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10);
+    const { error } = await client.from("kolusu_pending_sales").insert({
+      tx_date:         today,
+      raw_wt_g:        parsed.raw_wt_g,
+      cover_wt_g:      parsed.cover_wt_g,
+      qty:             parsed.qty,
+      description:     parsed.description || null,
+      bill_no:         parsed.bill_no || null,
+      staff_name:      msg.sender_name,
+      staff_id:        msg.sender_id || null,
+      source:          "chat",
+      chat_message_id: msg.id,
+    });
+    if (error) return;
+    const adminId = adminUserIdRef.current;
+    if (adminId) {
+      await client.from("chat_messages").insert({
+        sender_id:   adminId,
+        sender_name: "MyBuddy",
+        message: `✓ Kolusu logged: ${parsed.raw_wt_g}g + ${parsed.cover_wt_g}g cover${parsed.description ? ` (${parsed.description})` : ""} from ${msg.sender_name}`,
+      });
+    }
+  }
 
   useEffect(() => {
     const client = supabase();
-    client.from("chat_messages")
-      .select("*").order("created_at", { ascending: true }).limit(200)
-      .then(({ data }) => setMessages((data ?? []) as ChatMessage[]));
+
+    async function init() {
+      const { data: { user } } = await client.auth.getUser();
+      adminUserIdRef.current = user?.id ?? null;
+
+      const [{ data: chatData }, { data: processed }] = await Promise.all([
+        client.from("chat_messages").select("*").order("created_at", { ascending: true }).limit(200),
+        client.from("kolusu_pending_sales").select("chat_message_id").not("chat_message_id", "is", null),
+      ]);
+
+      setMessages((chatData ?? []) as ChatMessage[]);
+
+      const processedIds = new Set((processed ?? []).map((r: any) => r.chat_message_id as string));
+      for (const msg of (chatData ?? []) as ChatMessage[]) {
+        if (!processedIds.has(msg.id) && parseKolusuChat(msg.message ?? "") && msg.sender_name !== "MyBuddy") {
+          await processKolusuMsg(client, msg);
+          processedIds.add(msg.id);
+        }
+      }
+    }
+
+    init();
 
     const channel = client.channel("admin_chat_mod")
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, async (payload) => {
         if (payload.eventType === "INSERT") {
           const msg = payload.new as ChatMessage;
           setMessages((prev) => [...prev, msg]);
-          // Auto-process incoming KS messages from staff
-          const parsed = parseKolusuChat(msg.message ?? "");
-          if (parsed && msg.sender_name !== "MyBuddy") {
-            const today = new Date().toISOString().slice(0, 10);
-            await client.from("kolusu_pending_sales").insert({
-              tx_date:     today,
-              raw_wt_g:    parsed.raw_wt_g,
-              cover_wt_g:  parsed.cover_wt_g,
-              qty:         parsed.qty,
-              description: parsed.description || null,
-              bill_no:     parsed.bill_no || null,
-              staff_name:  msg.sender_name,
-              source:      "chat",
-            });
-            await client.from("chat_messages").insert({
-              sender_name: "MyBuddy",
-              message: `✓ Kolusu sale logged: ${parsed.raw_wt_g}g + ${parsed.cover_wt_g}g cover${parsed.description ? ` (${parsed.description})` : ""} — from ${msg.sender_name}. Admin will assign to box.`,
-            });
-          }
+          await processKolusuMsg(client, msg);
         } else if (payload.eventType === "UPDATE")
           setMessages((prev) => prev.map((m) => m.id === payload.new.id ? payload.new as ChatMessage : m));
         else if (payload.eventType === "DELETE")
@@ -98,25 +127,26 @@ export default function AdminChatPage() {
     const { data: { user } } = await client.auth.getUser();
     const msg = chatInput.trim();
     if (user) {
-      await client.from("chat_messages").insert({ sender_id: user.id, sender_name: profile.display_name, message: msg });
+      const { data: sentMsg } = await client.from("chat_messages").insert({ sender_id: user.id, sender_name: profile.display_name, message: msg }).select().single();
       const parsed = parseKolusuChat(msg);
       if (parsed) {
         const today = new Date().toISOString().slice(0, 10);
         await client.from("kolusu_pending_sales").insert({
-          tx_date:     today,
-          raw_wt_g:    parsed.raw_wt_g,
-          cover_wt_g:  parsed.cover_wt_g,
-          qty:         parsed.qty,
-          description: parsed.description || null,
-          bill_no:     parsed.bill_no || null,
-          staff_name:  profile.display_name,
-          staff_id:    user.id,
-          source:      "chat",
+          tx_date:         today,
+          raw_wt_g:        parsed.raw_wt_g,
+          cover_wt_g:      parsed.cover_wt_g,
+          qty:             parsed.qty,
+          description:     parsed.description || null,
+          bill_no:         parsed.bill_no || null,
+          staff_name:      profile.display_name,
+          staff_id:        user.id,
+          source:          "chat",
+          chat_message_id: sentMsg?.id ?? null,
         });
         await client.from("chat_messages").insert({
           sender_id:   user.id,
           sender_name: "MyBuddy",
-          message:     `✓ Kolusu sale logged: ${parsed.raw_wt_g}g + ${parsed.cover_wt_g}g cover${parsed.description ? ` (${parsed.description})` : ""}. Admin will assign to box.`,
+          message:     `✓ Kolusu logged: ${parsed.raw_wt_g}g + ${parsed.cover_wt_g}g cover${parsed.description ? ` (${parsed.description})` : ""}`,
         });
       }
     }
