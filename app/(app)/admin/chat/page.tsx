@@ -37,10 +37,30 @@ export default function AdminChatPage() {
       .then(({ data }) => setMessages((data ?? []) as ChatMessage[]));
 
     const channel = client.channel("admin_chat_mod")
-      .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, (payload) => {
-        if (payload.eventType === "INSERT")
-          setMessages((prev) => [...prev, payload.new as ChatMessage]);
-        else if (payload.eventType === "UPDATE")
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, async (payload) => {
+        if (payload.eventType === "INSERT") {
+          const msg = payload.new as ChatMessage;
+          setMessages((prev) => [...prev, msg]);
+          // Auto-process incoming KS messages from staff
+          const parsed = parseKolusuChat(msg.message ?? "");
+          if (parsed && msg.sender_name !== "MyBuddy") {
+            const today = new Date().toISOString().slice(0, 10);
+            await client.from("kolusu_pending_sales").insert({
+              tx_date:     today,
+              raw_wt_g:    parsed.raw_wt_g,
+              cover_wt_g:  parsed.cover_wt_g,
+              qty:         parsed.qty,
+              description: parsed.description || null,
+              bill_no:     parsed.bill_no || null,
+              staff_name:  msg.sender_name,
+              source:      "chat",
+            });
+            await client.from("chat_messages").insert({
+              sender_name: "MyBuddy",
+              message: `✓ Kolusu sale logged: ${parsed.raw_wt_g}g + ${parsed.cover_wt_g}g cover${parsed.description ? ` (${parsed.description})` : ""} — from ${msg.sender_name}. Admin will assign to box.`,
+            });
+          }
+        } else if (payload.eventType === "UPDATE")
           setMessages((prev) => prev.map((m) => m.id === payload.new.id ? payload.new as ChatMessage : m));
         else if (payload.eventType === "DELETE")
           setMessages((prev) => prev.filter((m) => m.id !== (payload.old as any).id));
