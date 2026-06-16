@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase/client";
 import { useGlobalDate } from "@/stores/global-date";
 import { grams, shortDate } from "@/lib/format";
 import { clsx } from "clsx";
+import { parseKolusuChat } from "@/lib/kolusu-parse";
 
 const inp = "w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold";
 
@@ -194,6 +195,51 @@ export default function KolusuPage() {
   const recordSale = useRecordSale();
   const restock = useRestock();
   const { data: pendingSales = [], isLoading: pendingLoading } = usePendingSales();
+  const qc = useQueryClient();
+  const [syncResult, setSyncResult] = useState<string | null>(null);
+
+  async function syncFromChat() {
+    setSyncResult(null);
+    const client = supabase();
+    const { data: { user } } = await client.auth.getUser();
+
+    const [{ data: chatMsgs }, { data: already }] = await Promise.all([
+      client.from("chat_messages").select("*").order("created_at", { ascending: true }),
+      client.from("kolusu_pending_sales").select("chat_message_id").not("chat_message_id", "is", null),
+    ]);
+
+    const processedIds = new Set((already ?? []).map((r: any) => r.chat_message_id as string));
+    let imported = 0;
+    for (const msg of (chatMsgs ?? []) as any[]) {
+      if (processedIds.has(msg.id) || msg.sender_name === "MyBuddy") continue;
+      const parsed = parseKolusuChat(msg.message ?? "");
+      if (!parsed) continue;
+      const { error } = await client.from("kolusu_pending_sales").insert({
+        tx_date:         msg.created_at?.slice(0, 10) ?? globalDate,
+        raw_wt_g:        parsed.raw_wt_g,
+        cover_wt_g:      parsed.cover_wt_g,
+        qty:             parsed.qty,
+        description:     parsed.description || null,
+        bill_no:         parsed.bill_no || null,
+        staff_name:      msg.sender_name,
+        staff_id:        msg.sender_id || null,
+        source:          "chat",
+        chat_message_id: msg.id,
+      });
+      if (!error) {
+        imported++;
+        processedIds.add(msg.id);
+        if (user) {
+          await client.from("chat_messages").insert({
+            sender_id: user.id, sender_name: "MyBuddy",
+            message: `✓ Kolusu logged: ${parsed.raw_wt_g}g + ${parsed.cover_wt_g}g cover${parsed.description ? ` (${parsed.description})` : ""} from ${msg.sender_name}`,
+          });
+        }
+      }
+    }
+    setSyncResult(imported > 0 ? `Imported ${imported} KS message(s)` : "No new KS messages found");
+    qc.invalidateQueries({ queryKey: ["kolusu_pending_sales"] });
+  }
 
   const [tab, setTab] = useState<"boxes" | "history" | "pending" | "add_box" | "report">("boxes");
   const [reportFrom, setReportFrom] = useState("2026-06-01");
@@ -743,6 +789,13 @@ export default function KolusuPage() {
       {/* Pending tab */}
       {tab === "pending" && (
         <div className="space-y-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <button onClick={syncFromChat}
+              className="text-xs border border-gold/40 text-gold px-3 py-1.5 rounded-lg2 hover:bg-gold/5">
+              Sync KS from Chat
+            </button>
+            {syncResult && <span className="text-xs text-ok">{syncResult}</span>}
+          </div>
           {pendingLoading ? (
             <p className="text-ink-dim text-sm">Loading…</p>
           ) : pendingSales.length === 0 ? (
