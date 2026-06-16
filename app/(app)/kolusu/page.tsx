@@ -195,7 +195,6 @@ export default function KolusuPage() {
   const recordSale = useRecordSale();
   const restock = useRestock();
   const { data: pendingSales = [], isLoading: pendingLoading } = usePendingSales();
-  const qc = useQueryClient();
   const [syncResult, setSyncResult] = useState<string | null>(null);
 
   async function syncFromChat() {
