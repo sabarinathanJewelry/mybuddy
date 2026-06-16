@@ -217,11 +217,25 @@ function useOrders() {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("orders")
-        .select("*, customers(name, phone), order_items(description)")
+        .select("*, customers(name, phone)")
         .order("order_date", { ascending: false })
         .limit(200);
       if (error) throw error;
       return (data ?? []) as any[];
+    },
+  });
+}
+
+function useOrderItemSearch(q: string) {
+  return useQuery({
+    queryKey: ["order-item-search", q],
+    enabled: q.length > 0,
+    queryFn: async () => {
+      const { data } = await supabase()
+        .from("order_items")
+        .select("order_id")
+        .ilike("description", `%${q}%`);
+      return new Set((data ?? []).map((r: any) => r.order_id as string));
     },
   });
 }
@@ -507,6 +521,7 @@ export default function OrdersPage() {
   const [filterDate, setFilterDate] = useState("");
   const [filterSearch, setFilterSearch] = useState("");
   const [filterBalance, setFilterBalance] = useState<"all" | "due" | "paid">("all");
+  const { data: itemSearchIds } = useOrderItemSearch(filterSearch.trim());
 
   const filteredOrders = (orders as any[]).filter((o) => {
     if (filterStatus !== "all" && o.status !== filterStatus) return false;
@@ -516,7 +531,7 @@ export default function OrdersPage() {
       const q = filterSearch.toLowerCase();
       const nameMatch = o.customers?.name?.toLowerCase().includes(q);
       const descMatch = o.description?.toLowerCase().includes(q);
-      const itemMatch = (o.order_items ?? []).some((i: any) => i.description?.toLowerCase().includes(q));
+      const itemMatch = itemSearchIds?.has(o.id) ?? false;
       if (!nameMatch && !descMatch && !itemMatch) return false;
     }
     if (filterBalance !== "all") {
