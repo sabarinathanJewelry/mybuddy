@@ -226,16 +226,19 @@ function useOrders() {
   });
 }
 
-function useOrderItemSearch(q: string) {
+function useOrderItemDescriptions() {
   return useQuery({
-    queryKey: ["order-item-search", q],
-    enabled: q.length > 0,
+    queryKey: ["order-items-descriptions"],
     queryFn: async () => {
       const { data } = await supabase()
         .from("order_items")
-        .select("order_id")
-        .ilike("description", `%${q}%`);
-      return new Set((data ?? []).map((r: any) => r.order_id as string));
+        .select("order_id, description");
+      const map = new Map<string, string>();
+      for (const row of data ?? []) {
+        const prev = map.get(row.order_id) ?? "";
+        map.set(row.order_id, prev ? `${prev} ${row.description ?? ""}` : (row.description ?? ""));
+      }
+      return map;
     },
   });
 }
@@ -521,7 +524,7 @@ export default function OrdersPage() {
   const [filterDate, setFilterDate] = useState("");
   const [filterSearch, setFilterSearch] = useState("");
   const [filterBalance, setFilterBalance] = useState<"all" | "due" | "paid">("all");
-  const { data: itemSearchIds } = useOrderItemSearch(filterSearch.trim());
+  const { data: itemDescMap } = useOrderItemDescriptions();
 
   const filteredOrders = (orders as any[]).filter((o) => {
     if (filterStatus !== "all" && o.status !== filterStatus) return false;
@@ -531,7 +534,7 @@ export default function OrdersPage() {
       const q = filterSearch.toLowerCase();
       const nameMatch = o.customers?.name?.toLowerCase().includes(q);
       const descMatch = o.description?.toLowerCase().includes(q);
-      const itemMatch = itemSearchIds?.has(o.id) ?? false;
+      const itemMatch = (itemDescMap?.get(o.id) ?? "").toLowerCase().includes(q);
       if (!nameMatch && !descMatch && !itemMatch) return false;
     }
     if (filterBalance !== "all") {
