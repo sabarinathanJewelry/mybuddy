@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "934915480190",
+    "project_id": "mybuddy-32090",
+    "storage_bucket": "mybuddy-32090.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:934915480190:android:878e8a582b32e31070562f",
+        "android_client_info": {
+          "package_name": "com.sabarinathanjewellery.mybuddy"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAfwxOfJXLAGuc9RDur6UQYcakBKbzeFJg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

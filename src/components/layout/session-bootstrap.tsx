@@ -7,6 +7,8 @@ import { useAuth } from "@/stores/auth";
 import { useBoardRate } from "@/stores/board-rate";
 import { useLangStore } from "@/stores/lang";
 import { useGlobalDate } from "@/stores/global-date";
+import { usePushNotifications } from "@/modules/notifications/usePushNotifications";
+import { useWebPush } from "@/modules/notifications/useWebPush";
 
 async function fetchRateForDate(date: string) {
   const { data } = await supabase()
@@ -23,10 +25,14 @@ async function fetchRateForDate(date: string) {
 export default function SessionBootstrap({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const router = useRouter();
+  const profile = useAuth((s) => s.profile);
   const setProfile = useAuth((s) => s.setProfile);
   const setRate = useBoardRate((s) => s.setRate);
   const setLang = useLangStore((s) => s.setLang);
   const globalDate = useGlobalDate((s) => s.date);
+
+  usePushNotifications(profile?.id);
+  useWebPush(profile?.id);
 
   // Initial session + board rate load
   useEffect(() => {
