@@ -16,6 +16,7 @@ async function saveToken(userId: string, token: string, platform: "android" | "i
 export function usePushNotifications(userId: string | null | undefined) {
   useEffect(() => {
     if (!userId || !isNative()) return;
+    const uid = userId;
 
     let cleanup: (() => void) | undefined;
 
@@ -32,7 +33,7 @@ export function usePushNotifications(userId: string | null | undefined) {
         const platform = Capacitor.getPlatform() as "android" | "ios";
 
         const regListener = await PushNotifications.addListener("registration", (token) => {
-          saveToken(userId, token.value, platform);
+          saveToken(uid, token.value, platform);
         });
 
         const foregroundListener = await PushNotifications.addListener(
