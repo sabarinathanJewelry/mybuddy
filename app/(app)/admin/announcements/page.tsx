@@ -5,6 +5,81 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/stores/auth";
 
+function SendPushSection() {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [target, setTarget] = useState("all");
+  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [result, setResult] = useState("");
+  const inp = "w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
+
+  const { data: profiles = [] } = useQuery({
+    queryKey: ["profiles_list"],
+    queryFn: async () => {
+      const { data } = await supabase().from("profiles").select("id, display_name").order("display_name");
+      return data ?? [];
+    },
+  });
+
+  async function send() {
+    if (!title.trim()) return;
+    setStatus("sending");
+    try {
+      let user_ids: string[];
+      if (target === "all") {
+        user_ids = profiles.map((p: any) => p.id);
+      } else {
+        user_ids = [target];
+      }
+      const { data, error } = await supabase().functions.invoke("send-notification", {
+        body: { user_ids, title: title.trim(), body: body.trim() },
+      });
+      if (error) throw error;
+      setResult(`Sent to ${data?.sent ?? 0} device(s)`);
+      setStatus("sent");
+      setTitle("");
+      setBody("");
+    } catch (e: any) {
+      setResult(e?.message ?? "Failed to send");
+      setStatus("error");
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-line shadow-soft p-5 space-y-3">
+      <p className="text-sm font-semibold text-ink">Send Push Notification</p>
+      <div>
+        <label className="text-xs text-ink-dim block mb-1">Send to</label>
+        <select value={target} onChange={(e) => setTarget(e.target.value)} className={inp}>
+          <option value="all">All Staff</option>
+          {profiles.map((p: any) => (
+            <option key={p.id} value={p.id}>{p.display_name}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="text-xs text-ink-dim block mb-1">Title *</label>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Great work today!" className={inp} />
+      </div>
+      <div>
+        <label className="text-xs text-ink-dim block mb-1">Message (optional)</label>
+        <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} placeholder="Type your message…" className={`${inp} resize-none`} />
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={send}
+          disabled={status === "sending" || !title.trim()}
+          className="bg-gold text-white px-5 py-2 rounded-lg2 text-sm font-medium disabled:opacity-40 hover:opacity-90"
+        >
+          {status === "sending" ? "Sending…" : "Send Notification"}
+        </button>
+        {status === "sent" && <p className="text-xs text-ok">{result}</p>}
+        {status === "error" && <p className="text-xs text-err">{result}</p>}
+      </div>
+    </div>
+  );
+}
+
 interface Announcement {
   id: string;
   title: string;
@@ -86,6 +161,8 @@ export default function AnnouncementsPage() {
       <p className="text-sm text-ink-dim -mt-4">
         Active announcements are shown to all staff on their attendance page. Write in Tamil, English, or both.
       </p>
+
+      <SendPushSection />
 
       {/* Create form */}
       <div className="bg-white rounded-xl border border-line shadow-soft p-5 space-y-3">
