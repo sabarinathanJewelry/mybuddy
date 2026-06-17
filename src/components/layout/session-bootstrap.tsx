@@ -9,6 +9,7 @@ import { useLangStore } from "@/stores/lang";
 import { useGlobalDate } from "@/stores/global-date";
 import { usePushNotifications } from "@/modules/notifications/usePushNotifications";
 import { useWebPush } from "@/modules/notifications/useWebPush";
+import { NotificationPermissionBanner } from "@/modules/notifications/NotificationPermissionBanner";
 
 async function fetchRateForDate(date: string) {
   const { data } = await supabase()
@@ -107,5 +108,10 @@ export default function SessionBootstrap({ children }: { children: React.ReactNo
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      {profile?.id && <NotificationPermissionBanner userId={profile.id} />}
+    </>
+  );
 }
