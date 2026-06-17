@@ -1,0 +1,77 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2D1F0A"/>
+      <stop offset="100%" stop-color="#1A1410"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F0C040"/>
+      <stop offset="100%" stop-color="#C9980A"/>
+    </linearGradient>
+    <linearGradient id="gemGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFE680"/>
+      <stop offset="50%" stop-color="#E8B84B"/>
+      <stop offset="100%" stop-color="#A07A00"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
+      <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="108" fill="url(#bgGrad)"/>
+
+  <!-- Subtle radial glow in center -->
+  <radialGradient id="centerGlow" cx="50%" cy="42%" r="45%">
+    <stop offset="0%" stop-color="#C9980A" stop-opacity="0.18"/>
+    <stop offset="100%" stop-color="#C9980A" stop-opacity="0"/>
+  </radialGradient>
+  <rect width="512" height="512" rx="108" fill="url(#centerGlow)"/>
+
+  <!-- Diamond gem top -->
+  <!-- Top facet -->
+  <polygon points="256,62 310,130 256,148 202,130" fill="#FFE066" opacity="0.95"/>
+  <!-- Left facet -->
+  <polygon points="202,130 256,148 220,200 168,156" fill="#C9980A" opacity="0.9"/>
+  <!-- Right facet -->
+  <polygon points="310,130 344,156 292,200 256,148" fill="#E8B84B" opacity="0.9"/>
+  <!-- Bottom facets -->
+  <polygon points="220,200 256,148 292,200 256,228" fill="#A07A00" opacity="0.95"/>
+  <!-- Inner highlight lines -->
+  <line x1="256" y1="62" x2="256" y2="228" stroke="#FFE066" stroke-width="1" opacity="0.4"/>
+  <line x1="202" y1="130" x2="310" y2="130" stroke="#FFE066" stroke-width="1" opacity="0.4"/>
+  <!-- Gem sparkle -->
+  <circle cx="256" cy="108" r="4" fill="white" opacity="0.7" filter="url(#glow)"/>
+
+  <!-- Thin gold divider line -->
+  <line x1="96" y1="256" x2="416" y2="256" stroke="#C9980A" stroke-width="1.5" opacity="0.35"/>
+
+  <!-- MB monogram -->
+  <text
+    x="256" y="360"
+    text-anchor="middle"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="155"
+    font-weight="bold"
+    fill="url(#goldGrad)"
+    letter-spacing="-4"
+    filter="url(#glow)"
+  >MB</text>
+
+  <!-- MyBuddy name -->
+  <text
+    x="256" y="438"
+    text-anchor="middle"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="42"
+    fill="#E8B84B"
+    letter-spacing="10"
+    opacity="0.85"
+  >MyBuddy</text>
+
+  <!-- Bottom decorative dots -->
+  <circle cx="160" cy="472" r="3" fill="#C9980A" opacity="0.5"/>
+  <circle cx="256" cy="472" r="3" fill="#C9980A" opacity="0.5"/>
+  <circle cx="352" cy="472" r="3" fill="#C9980A" opacity="0.5"/>
+</svg>
