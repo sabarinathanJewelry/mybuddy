@@ -33,7 +33,6 @@ const NAV = [
   { href: "/walkins",      icon: "🚶", key: "nav_walkins" as const },
   { href: "/reports",      icon: "📈", key: "nav_reports" as const },
   { href: "/attendance",   icon: "🕐", key: "nav_attendance" as const },
-  { href: "/weekoffs",     icon: "📅", key: "nav_weekoffs" as const },
   { href: "/goldsmith",    icon: "⚒️",  key: "nav_goldsmith" as const },
   { href: "/social",       icon: "📲", key: "nav_social" as const },
 ];
@@ -155,6 +154,7 @@ export default function Sidebar() {
       ...(canSeeRepairs ? [{ href: "/repairs", icon: "🔧", label: t("nav_repairs"), badge: repairAlerts }] : []),
       ...(canSeeIncentive   ? [{ href: "/my-incentive", icon: "🎯",  label: t("nav_my_incentive") }] : []),
       ...(canSeeKolusuSale  ? [{ href: "/kolusu-sale",  icon: "🏷️", label: t("nav_kolusu_sale")  }] : []),
+      { href: "/weekoffs", icon: "📅", label: t("nav_weekoffs") },
       ...(isAdmin ? ADMIN_NAV.map(item => ({ href: item.href, icon: item.icon, label: t(item.key), isAdmin: true })) : []),
     ];
 
@@ -245,6 +245,14 @@ export default function Sidebar() {
                 active={pathname.startsWith("/my-incentive")}
               />
             )}
+
+            <NavItem
+              href="/weekoffs"
+              icon="📅"
+              label={t("nav_weekoffs")}
+              collapsed={collapsed}
+              active={pathname.startsWith("/weekoffs")}
+            />
 
             {canSeeKolusuSale && (
               <NavItem
