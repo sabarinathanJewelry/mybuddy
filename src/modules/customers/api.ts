@@ -124,6 +124,43 @@ function paymentLedgerTable(mode: string): "cash_ledger" | "bank_ledger" | null 
   return null;
 }
 
+export function useAddPayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ customerId, pay_date, mode, amount, direction, notes }: {
+      customerId: string; pay_date: string; mode: string; amount: number; direction: string; notes?: string;
+    }) => {
+      const client = supabase();
+      const { data, error } = await client.from("payments").insert({
+        customer_id: customerId,
+        pay_date,
+        mode,
+        amount,
+        direction,
+        notes: notes || null,
+      }).select("id").single();
+      if (error) throw error;
+
+      const ledgerTable = paymentLedgerTable(mode);
+      if (ledgerTable && data?.id) {
+        await client.from(ledgerTable).insert({
+          tx_date: pay_date,
+          direction,
+          amount,
+          description: `Customer payment — ${mode}`,
+          ref_type: "payment",
+          ref_id: data.id,
+        });
+      }
+      return customerId;
+    },
+    onSuccess: (customerId) => {
+      qc.invalidateQueries({ queryKey: ["customer-360", customerId] });
+      qc.invalidateQueries({ queryKey: ["customer", customerId] });
+    },
+  });
+}
+
 export function useUpdatePayment() {
   const qc = useQueryClient();
   return useMutation({

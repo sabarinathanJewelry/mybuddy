@@ -2,7 +2,7 @@
 
 import { Fragment, use, useState } from "react";
 import Link from "next/link";
-import { useCustomer, useCustomer360, useUpdatePayment, useDeletePayment, useApplyAdvanceToOrder } from "@/modules/customers/api";
+import { useCustomer, useCustomer360, useAddPayment, useUpdatePayment, useDeletePayment, useApplyAdvanceToOrder } from "@/modules/customers/api";
 import { useT } from "@/i18n";
 import { inr, grams, shortDate } from "@/lib/format";
 
@@ -15,9 +15,12 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
   const [tab, setTab] = useState<Tab>("statement");
   const { data: customer } = useCustomer(id);
   const { data: view, isLoading } = useCustomer360(id);
+  const addPayment = useAddPayment();
   const updatePayment = useUpdatePayment();
   const deletePayment = useDeletePayment();
   const applyAdvance = useApplyAdvanceToOrder();
+  const [showAddPayment, setShowAddPayment] = useState(false);
+  const [newPayment, setNewPayment] = useState({ pay_date: new Date().toISOString().slice(0, 10), mode: "cash", amount: 0, direction: "in", notes: "" });
   const [editingPayment, setEditingPayment] = useState<{ id: string; pay_date: string; mode: string; amount: number; direction: string } | null>(null);
   const [applyingOrder, setApplyingOrder] = useState<{ id: string; order_no: string; amount: number } | null>(null);
 
@@ -279,6 +282,79 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
 
       {/* Payments tab */}
       {tab === "payments" && !isLoading && (
+        <div className="space-y-3">
+          <div className="flex justify-end">
+            <button
+              onClick={() => setShowAddPayment(v => !v)}
+              className="bg-gold text-white text-xs px-4 py-1.5 rounded-lg2 hover:opacity-90"
+            >
+              + Add Payment
+            </button>
+          </div>
+
+          {showAddPayment && (
+            <div className="bg-white rounded-xl border border-line shadow-soft p-4">
+              <p className="text-sm font-semibold text-ink mb-3">New Payment</p>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  await addPayment.mutateAsync({ customerId: id, ...newPayment });
+                  setShowAddPayment(false);
+                  setNewPayment({ pay_date: new Date().toISOString().slice(0, 10), mode: "cash", amount: 0, direction: "in", notes: "" });
+                }}
+                className="flex flex-wrap gap-3 items-end"
+              >
+                <div>
+                  <label className="text-xs text-ink-dim block mb-1">Date</label>
+                  <input type="date" value={newPayment.pay_date}
+                    onChange={e => setNewPayment(p => ({ ...p, pay_date: e.target.value }))}
+                    className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                </div>
+                <div>
+                  <label className="text-xs text-ink-dim block mb-1">Direction</label>
+                  <select value={newPayment.direction}
+                    onChange={e => setNewPayment(p => ({ ...p, direction: e.target.value }))}
+                    className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                    <option value="in">Received from customer</option>
+                    <option value="out">Paid back to customer</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-ink-dim block mb-1">Mode</label>
+                  <select value={newPayment.mode}
+                    onChange={e => setNewPayment(p => ({ ...p, mode: e.target.value }))}
+                    className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                    {["cash", "upi", "bank", "cheque", "old_gold", "old_silver"].map(m => (
+                      <option key={m} value={m}>{m.replace("_", " ")}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-ink-dim block mb-1">Amount (₹)</label>
+                  <input type="number" step="0.01" min="0" value={newPayment.amount || ""}
+                    onChange={e => setNewPayment(p => ({ ...p, amount: parseFloat(e.target.value) || 0 }))}
+                    placeholder="0.00"
+                    className="border border-line rounded-lg2 px-2 py-1.5 text-sm w-36 focus:outline-none focus:ring-1 focus:ring-gold" />
+                </div>
+                <div>
+                  <label className="text-xs text-ink-dim block mb-1">Notes (optional)</label>
+                  <input type="text" value={newPayment.notes}
+                    onChange={e => setNewPayment(p => ({ ...p, notes: e.target.value }))}
+                    placeholder="e.g. advance for wedding"
+                    className="border border-line rounded-lg2 px-2 py-1.5 text-sm w-48 focus:outline-none focus:ring-1 focus:ring-gold" />
+                </div>
+                <div className="flex gap-2">
+                  <button type="submit" disabled={addPayment.isPending || newPayment.amount <= 0}
+                    className="bg-gold text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-40">
+                    {addPayment.isPending ? "Saving…" : "Save"}
+                  </button>
+                  <button type="button" onClick={() => setShowAddPayment(false)}
+                    className="border border-line text-xs px-3 py-1.5 rounded-lg2">Cancel</button>
+                </div>
+              </form>
+            </div>
+          )}
+
         <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
@@ -364,6 +440,7 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
               {!view?.payments.length && <tr><td colSpan={4} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
             </tbody>
           </table>
+        </div>
         </div>
       )}
 
