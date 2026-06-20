@@ -318,39 +318,52 @@ export default function KolusuPage() {
     },
   });
 
-  // Transfer sale to a different box
+  // Exchange kolusu — same or different box, optionally different weight
   const [transferTxId, setTransferTxId]   = useState<string | null>(null);
   const [transferBoxId, setTransferBoxId] = useState("");
+  const [transferWt, setTransferWt]       = useState("");
 
   const transferSale = useMutation({
-    mutationFn: async ({ txId, oldBoxId, newBoxId }: { txId: string; oldBoxId: string; newBoxId: string }) => {
+    mutationFn: async ({ txId, oldBoxId, newBoxId, newWt }: { txId: string; oldBoxId: string; newBoxId: string; newWt: number }) => {
       const client = supabase();
       const tx = transactions?.find(t => t.id === txId);
       if (!tx) throw new Error("Transaction not found");
       const absQty = Math.abs(tx.qty_change);
+      const isSameBox = oldBoxId === newBoxId;
 
-      // Reverse deduction on old box
-      const { data: oldBox, error: e1 } = await client.from("kolusu_boxes").select("current_gross_wt_g, current_qty").eq("id", oldBoxId).single();
-      if (e1) throw e1;
-      const { error: e2 } = await client.from("kolusu_boxes").update({
-        current_gross_wt_g: parseFloat((oldBox.current_gross_wt_g + tx.raw_wt_g).toFixed(3)),
-        current_qty: oldBox.current_qty + absQty,
-        updated_at: new Date().toISOString(),
-      }).eq("id", oldBoxId);
-      if (e2) throw e2;
+      if (isSameBox) {
+        // Same box: just adjust weight difference
+        const { data: box, error: e1 } = await client.from("kolusu_boxes").select("current_gross_wt_g, current_qty").eq("id", oldBoxId).single();
+        if (e1) throw e1;
+        const diff = parseFloat((tx.raw_wt_g - newWt).toFixed(3));
+        const { error: e2 } = await client.from("kolusu_boxes").update({
+          current_gross_wt_g: parseFloat((box.current_gross_wt_g + diff).toFixed(3)),
+          updated_at: new Date().toISOString(),
+        }).eq("id", oldBoxId);
+        if (e2) throw e2;
+      } else {
+        // Different box: reverse on old, apply on new
+        const { data: oldBox, error: e1 } = await client.from("kolusu_boxes").select("current_gross_wt_g, current_qty").eq("id", oldBoxId).single();
+        if (e1) throw e1;
+        const { error: e2 } = await client.from("kolusu_boxes").update({
+          current_gross_wt_g: parseFloat((oldBox.current_gross_wt_g + tx.raw_wt_g).toFixed(3)),
+          current_qty: oldBox.current_qty + absQty,
+          updated_at: new Date().toISOString(),
+        }).eq("id", oldBoxId);
+        if (e2) throw e2;
 
-      // Apply deduction on new box
-      const { data: newBox, error: e3 } = await client.from("kolusu_boxes").select("current_gross_wt_g, current_qty").eq("id", newBoxId).single();
-      if (e3) throw e3;
-      const { error: e4 } = await client.from("kolusu_boxes").update({
-        current_gross_wt_g: parseFloat((newBox.current_gross_wt_g - tx.raw_wt_g).toFixed(3)),
-        current_qty: newBox.current_qty - absQty,
-        updated_at: new Date().toISOString(),
-      }).eq("id", newBoxId);
-      if (e4) throw e4;
+        const { data: newBox, error: e3 } = await client.from("kolusu_boxes").select("current_gross_wt_g, current_qty").eq("id", newBoxId).single();
+        if (e3) throw e3;
+        const { error: e4 } = await client.from("kolusu_boxes").update({
+          current_gross_wt_g: parseFloat((newBox.current_gross_wt_g - newWt).toFixed(3)),
+          current_qty: newBox.current_qty - absQty,
+          updated_at: new Date().toISOString(),
+        }).eq("id", newBoxId);
+        if (e4) throw e4;
+      }
 
-      // Update the transaction's box
-      const { error: e5 } = await client.from("kolusu_transactions").update({ box_id: newBoxId }).eq("id", txId);
+      // Update the transaction with new box and weight
+      const { error: e5 } = await client.from("kolusu_transactions").update({ box_id: newBoxId, raw_wt_g: newWt }).eq("id", txId);
       if (e5) throw e5;
     },
     onSuccess: () => {
@@ -358,6 +371,7 @@ export default function KolusuPage() {
       qc.invalidateQueries({ queryKey: ["kolusu_transactions"] });
       setTransferTxId(null);
       setTransferBoxId("");
+      setTransferWt("");
     },
   });
 
@@ -940,34 +954,50 @@ export default function KolusuPage() {
                       <tr className="border-b border-line bg-warn/5">
                         <td colSpan={8} className="px-4 py-4 space-y-3">
                           <p className="text-xs font-semibold text-warn uppercase tracking-wide">
-                            Move this sale from Box <span className="font-mono">{tx.kolusu_boxes?.box_no ?? "?"}</span> to:
+                            Exchange — original: Box <span className="font-mono">{tx.kolusu_boxes?.box_no ?? "?"}</span> · {tx.raw_wt_g}g
                           </p>
+                          <p className="text-xs text-ink-dim">Select new box (same box = exchange within same box)</p>
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                            {(boxes ?? [])
-                              .filter(b => b.id !== tx.box_id)
-                              .map(b => (
-                                <button key={b.id}
-                                  onClick={() => setTransferBoxId(transferBoxId === b.id ? "" : b.id)}
-                                  className={clsx(
-                                    "text-xs px-2 py-1.5 rounded-lg2 border text-left transition-colors",
-                                    transferBoxId === b.id ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:border-gold"
-                                  )}>
-                                  <span className="font-mono font-medium">{b.box_no}</span>
-                                  <span className="block text-[11px] opacity-80">{[b.color, b.size].filter(Boolean).join(" / ")}</span>
-                                </button>
-                              ))}
+                            {(boxes ?? []).map(b => (
+                              <button key={b.id}
+                                onClick={() => {
+                                  setTransferBoxId(transferBoxId === b.id ? "" : b.id);
+                                  setTransferWt(String(tx.raw_wt_g));
+                                }}
+                                className={clsx(
+                                  "text-xs px-2 py-1.5 rounded-lg2 border text-left transition-colors",
+                                  transferBoxId === b.id ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:border-gold",
+                                  b.id === tx.box_id && "ring-1 ring-gold/40"
+                                )}>
+                                <span className="font-mono font-medium">{b.box_no}</span>
+                                {b.id === tx.box_id && <span className="ml-1 text-[10px] text-gold opacity-80">current</span>}
+                                <span className="block text-[11px] opacity-80">{[b.color, b.size].filter(Boolean).join(" / ")}</span>
+                              </button>
+                            ))}
                           </div>
+                          {transferBoxId && (
+                            <div className="flex items-center gap-2">
+                              <label className="text-xs text-ink-dim shrink-0">New piece weight (g):</label>
+                              <input
+                                type="number"
+                                step="0.001"
+                                value={transferWt}
+                                onChange={(e) => setTransferWt(e.target.value)}
+                                className="w-28 border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                              />
+                            </div>
+                          )}
                           {transferSale.isError && (
                             <p className="text-xs text-err">{(transferSale.error as Error).message}</p>
                           )}
                           <div className="flex gap-2">
                             <button
-                              disabled={!transferBoxId || transferSale.isPending}
-                              onClick={() => transferSale.mutate({ txId: tx.id, oldBoxId: tx.box_id, newBoxId: transferBoxId })}
+                              disabled={!transferBoxId || !transferWt || transferSale.isPending}
+                              onClick={() => transferSale.mutate({ txId: tx.id, oldBoxId: tx.box_id, newBoxId: transferBoxId, newWt: parseFloat(transferWt) })}
                               className="bg-warn text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-50">
-                              {transferSale.isPending ? "Moving…" : "Confirm Transfer"}
+                              {transferSale.isPending ? "Saving…" : "Confirm Exchange"}
                             </button>
-                            <button onClick={() => { setTransferTxId(null); setTransferBoxId(""); }}
+                            <button onClick={() => { setTransferTxId(null); setTransferBoxId(""); setTransferWt(""); }}
                               className="border border-line text-xs px-4 py-1.5 rounded-lg2 text-ink-dim">
                               Cancel
                             </button>
