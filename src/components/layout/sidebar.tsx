@@ -33,6 +33,7 @@ const NAV = [
   { href: "/walkins",      icon: "🚶", key: "nav_walkins" as const },
   { href: "/reports",      icon: "📈", key: "nav_reports" as const },
   { href: "/attendance",   icon: "🕐", key: "nav_attendance" as const },
+  { href: "/weekoffs",     icon: "📅", key: "nav_weekoffs" as const },
   { href: "/goldsmith",    icon: "⚒️",  key: "nav_goldsmith" as const },
   { href: "/social",       icon: "📲", key: "nav_social" as const },
 ];
@@ -43,6 +44,7 @@ const ADMIN_NAV = [
   { href: "/admin/incentive-calc", icon: "🧮", key: "nav_incentive_calc" as const },
   { href: "/admin/payroll",        icon: "💵", key: "nav_payroll" as const },
   { href: "/admin/announcements",  icon: "📢", key: "nav_announcements" as const },
+  { href: "/admin/weekoffs",       icon: "📅", key: "nav_weekoff_approvals" as const },
   { href: "/admin/chat",           icon: "💬", key: "nav_chat_mod" as const },
   { href: "/admin/sop",            icon: "📋", key: "nav_sop" as const },
 ];
