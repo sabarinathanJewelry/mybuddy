@@ -860,10 +860,15 @@ export default function KolusuPage() {
                         </div>
                       </div>
                     ) : (
-                      <div className="border-t border-line px-4 py-2 flex gap-2">
+                      <div className="border-t border-line px-4 py-2 flex gap-2 items-center">
                         <button onClick={() => { setAssignId(p.id); setAssignBoxId(""); }}
                           className="text-xs bg-gold text-white px-3 py-1 rounded-lg2 hover:opacity-80">
                           Assign to Box
+                        </button>
+                        <button
+                          onClick={() => { if (window.confirm("Delete this duplicate entry?")) dismissPending.mutate(p.id); }}
+                          className="text-xs text-err hover:underline ml-auto">
+                          Delete
                         </button>
                       </div>
                     )}
