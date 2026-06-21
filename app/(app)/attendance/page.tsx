@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState } from "react";
-import WeekoffsPage from "@/app/(app)/weekoffs/page";
+import WeekoffsView from "@/components/weekoffs/WeekoffsView";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import {
@@ -2754,7 +2754,7 @@ export default function AttendancePage() {
       {tab === "tasks" && <TasksAdminTab isAdmin={isAdmin} myBioUserId={myBioUserId} />}
 
       {/* ── Week-offs tab ── */}
-      {tab === "weekoffs" && <WeekoffsPage />}
+      {tab === "weekoffs" && <WeekoffsView />}
     </div>
   );
 }
