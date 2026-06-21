@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState } from "react";
+import WeekoffsPage from "@/app/(app)/weekoffs/page";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import {
@@ -27,7 +28,7 @@ import { useAuth } from "@/stores/auth";
 import { shortDate, inr } from "@/lib/format";
 import { parseKolusuChat } from "@/lib/kolusu-parse";
 
-type PageTab = "attendance" | "staff" | "monthly" | "requests" | "leaves" | "duties" | "chat" | "announcements" | "kyc" | "tasks";
+type PageTab = "attendance" | "staff" | "monthly" | "requests" | "leaves" | "duties" | "chat" | "announcements" | "kyc" | "tasks" | "weekoffs";
 
 interface ChatMsg { id: string; sender_id: string; sender_name: string; message: string; is_deleted: boolean; edited_at: string | null; created_at: string }
 
@@ -2321,6 +2322,7 @@ export default function AttendancePage() {
     announcements: "Announcements",
     kyc:           "KYC",
     tasks:         "Tasks",
+    weekoffs:      "Week-offs",
   };
 
   return (
@@ -2345,7 +2347,7 @@ export default function AttendancePage() {
       {/* Tabs — hidden in kiosk mode (always visible for admin) */}
       {(!isLocked || isAdmin) && (
         <div className="flex border-b border-line gap-1 flex-wrap">
-          {(["attendance", "staff", "monthly", "requests", "leaves", "duties", "chat", ...(isAdmin ? ["announcements", "kyc", "tasks"] : ["tasks"])] as PageTab[]).map((t) => (
+          {(["attendance", "staff", "monthly", "requests", "leaves", "duties", "chat", ...(isAdmin ? ["announcements", "kyc", "tasks"] : ["tasks"]), "weekoffs"] as PageTab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
                 tab === t ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"
@@ -2750,6 +2752,9 @@ export default function AttendancePage() {
 
       {/* ── Tasks tab ── */}
       {tab === "tasks" && <TasksAdminTab isAdmin={isAdmin} myBioUserId={myBioUserId} />}
+
+      {/* ── Week-offs tab ── */}
+      {tab === "weekoffs" && <WeekoffsPage />}
     </div>
   );
 }
