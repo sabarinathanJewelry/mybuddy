@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCustomer, useCustomer360, useAddPayment, useUpdatePayment, useDeletePayment, useApplyAdvanceToOrder } from "@/modules/customers/api";
 import { useT } from "@/i18n";
 import { inr, grams, shortDate } from "@/lib/format";
+import { useGlobalDate } from "@/stores/global-date";
 
 const TABS = ["statement", "sales", "orders", "payments", "writeoffs", "info"] as const;
 type Tab = (typeof TABS)[number];
@@ -19,8 +20,9 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
   const updatePayment = useUpdatePayment();
   const deletePayment = useDeletePayment();
   const applyAdvance = useApplyAdvanceToOrder();
+  const globalDate = useGlobalDate((s) => s.date);
   const [showAddPayment, setShowAddPayment] = useState(false);
-  const [newPayment, setNewPayment] = useState({ pay_date: new Date().toISOString().slice(0, 10), mode: "cash", amount: 0, direction: "in", notes: "" });
+  const [newPayment, setNewPayment] = useState({ pay_date: globalDate, mode: "cash", amount: 0, direction: "in", notes: "" });
   const [editingPayment, setEditingPayment] = useState<{ id: string; pay_date: string; mode: string; amount: number; direction: string } | null>(null);
   const [applyingOrder, setApplyingOrder] = useState<{ id: string; order_no: string; amount: number } | null>(null);
 
@@ -308,7 +310,7 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
                   e.preventDefault();
                   await addPayment.mutateAsync({ customerId: id, ...newPayment });
                   setShowAddPayment(false);
-                  setNewPayment({ pay_date: new Date().toISOString().slice(0, 10), mode: "cash", amount: 0, direction: "in", notes: "" });
+                  setNewPayment({ pay_date: globalDate, mode: "cash", amount: 0, direction: "in", notes: "" });
                 }}
                 className="flex flex-wrap gap-3 items-end"
               >
