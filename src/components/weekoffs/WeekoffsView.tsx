@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/stores/auth";
 import { useMyMonthlyLeaveCount } from "@/modules/attendance/api";
 import { clsx } from "clsx";
+import { shortDate } from "@/lib/format";
 
 const BASE_MAX_DAYS = 3;
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -28,6 +29,7 @@ interface Weekoff {
   dates: string[];
   status: "draft" | "pending" | "approved" | "rejected";
   review_note: string | null;
+  submitted_at: string | null;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -36,6 +38,16 @@ const STATUS_COLORS: Record<string, string> = {
   approved: "bg-ok/10 text-ok",
   rejected: "bg-err/10 text-err",
 };
+
+async function sendPush(user_ids: string[], title: string, body: string) {
+  try {
+    await supabase().functions.invoke("send-notification", {
+      body: { user_ids, title, body },
+    });
+  } catch {
+    // non-fatal — approval still succeeded
+  }
+}
 
 export default function WeekoffsView() {
   const profile = useAuth((s) => s.profile);
@@ -47,13 +59,15 @@ export default function WeekoffsView() {
   const [month, setMonth] = useState(now.getMonth() === 11 ? 0 : now.getMonth() + 1);
   const monthKey = getMonthKey(year, month);
 
+  const [rejectNote, setRejectNote] = useState<Record<string, string>>({});
+
   const { data: allWeekoffs = [], error: weekoffsError } = useQuery<Weekoff[]>({
     queryKey: ["weekoffs", monthKey],
     enabled: !!profile?.id,
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("monthly_weekoffs")
-        .select("id, user_id, month, dates, status, review_note")
+        .select("id, user_id, month, dates, status, review_note, submitted_at")
         .eq("month", monthKey)
         .order("created_at");
       if (error) throw error;
@@ -134,8 +148,47 @@ export default function WeekoffsView() {
         const { error } = await supabase().from("monthly_weekoffs").insert({ ...payload, user_id: profile.id, month: monthKey, dates: selected });
         if (error) throw error;
       }
+      // Notify all admins
+      const { data: admins } = await supabase().from("profiles").select("id").eq("role", "admin");
+      if (admins?.length) {
+        await sendPush(
+          admins.map((a: any) => a.id),
+          "Week-off Request",
+          `${profile.display_name ?? "Staff"} has requested week-offs for ${MONTHS[month]} ${year}.`
+        );
+      }
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["weekoffs", monthKey] }); setSelected([]); },
+  });
+
+  const reviewWeekoff = useMutation({
+    mutationFn: async ({ id, status, note, staffUserId, staffName }: {
+      id: string;
+      status: "approved" | "rejected";
+      note?: string;
+      staffUserId: string;
+      staffName: string;
+    }) => {
+      const { error } = await supabase().from("monthly_weekoffs").update({
+        status,
+        reviewed_by: profile!.id,
+        reviewed_at: new Date().toISOString(),
+        review_note: note ?? null,
+        updated_at: new Date().toISOString(),
+      }).eq("id", id);
+      if (error) throw error;
+      // Notify the staff member
+      const label = status === "approved" ? "Approved" : "Rejected";
+      await sendPush(
+        [staffUserId],
+        `Week-off ${label}`,
+        `Your week-off request for ${MONTHS[month]} ${year} has been ${status}.${note ? ` Note: ${note}` : ""}`
+      );
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["weekoffs", monthKey] });
+      setRejectNote({});
+    },
   });
 
   const canEdit = !myWeekoff || myWeekoff.status === "draft" || myWeekoff.status === "rejected";
@@ -160,6 +213,9 @@ export default function WeekoffsView() {
     );
   }
 
+  const pendingWeekoffs  = allWeekoffs.filter(w => w.status === "pending");
+  const approvedWeekoffs = allWeekoffs.filter(w => w.status === "approved" && w.user_id !== profile?.id);
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
@@ -172,11 +228,6 @@ export default function WeekoffsView() {
             )}
           </p>
         </div>
-        {isAdmin && (
-          <a href="/admin/weekoffs" className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 hover:opacity-90">
-            Manage Approvals
-          </a>
-        )}
       </div>
 
       <div className="flex items-center gap-3">
@@ -186,6 +237,7 @@ export default function WeekoffsView() {
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
+        {/* Left: My Week-offs */}
         <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-ink">My Week-offs</p>
@@ -268,37 +320,92 @@ export default function WeekoffsView() {
           )}
         </div>
 
-        <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
-          <p className="text-sm font-semibold text-ink">Team Week-offs — {MONTHS[month]}</p>
-          {allWeekoffs.filter(w => w.status === "approved").length === 0 ? (
-            <p className="text-xs text-ink-dim">No approved week-offs yet for this month.</p>
-          ) : (
-            <div className="space-y-2">
-              {allWeekoffs.filter(w => w.status === "approved").map((w) => (
-                <div key={w.id} className="flex items-start gap-3 text-xs border-b border-line last:border-0 pb-2">
-                  <span className="font-medium text-ink min-w-[100px]">{profileNames[w.user_id] ?? "Staff"}</span>
-                  <div className="flex flex-wrap gap-1">
-                    {w.dates.sort().map((d) => (
-                      <span key={d} className="bg-gold/10 text-gold px-1.5 py-0.5 rounded-full font-mono">
-                        {new Date(d + "T00:00:00").getDate()}
-                      </span>
-                    ))}
+        {/* Right: Admin — Pending Approvals + Team view | Staff — Team view */}
+        <div className="space-y-4">
+          {/* Admin: Pending approvals */}
+          {isAdmin && pendingWeekoffs.length > 0 && (
+            <div className="bg-white rounded-xl border border-warn/30 shadow-soft p-4 space-y-3">
+              <p className="text-sm font-semibold text-warn">{pendingWeekoffs.length} Pending Approval</p>
+              {pendingWeekoffs.map((w) => {
+                const name = profileNames[w.user_id] ?? "Staff";
+                return (
+                  <div key={w.id} className="border border-line rounded-lg2 p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium text-ink">{name}</p>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {w.dates.sort().map(d => (
+                            <span key={d} className="bg-gold/10 text-gold text-xs px-1.5 py-0.5 rounded-full font-mono">
+                              {new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                            </span>
+                          ))}
+                        </div>
+                        {w.submitted_at && (
+                          <p className="text-[11px] text-ink-dim mt-1">Submitted {shortDate(w.submitted_at)}</p>
+                        )}
+                      </div>
+                    </div>
+                    <input
+                      value={rejectNote[w.id] ?? ""}
+                      onChange={e => setRejectNote(prev => ({ ...prev, [w.id]: e.target.value }))}
+                      placeholder="Rejection reason (optional)"
+                      className="w-full border border-line rounded-lg2 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => reviewWeekoff.mutate({ id: w.id, status: "approved", staffUserId: w.user_id, staffName: name })}
+                        disabled={reviewWeekoff.isPending}
+                        className="bg-ok text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-50"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => reviewWeekoff.mutate({ id: w.id, status: "rejected", note: rejectNote[w.id], staffUserId: w.user_id, staffName: name })}
+                        disabled={reviewWeekoff.isPending}
+                        className="bg-err text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-50"
+                      >
+                        Reject
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
-          {allWeekoffs.filter(w => w.status === "pending").length > 0 && (
-            <>
-              <p className="text-xs font-medium text-warn mt-2">Pending approval:</p>
-              {allWeekoffs.filter(w => w.status === "pending").map((w) => (
-                <div key={w.id} className="text-xs text-ink-dim flex items-center gap-2">
-                  <span>{profileNames[w.user_id] ?? "Staff"}</span>
-                  <span className="text-warn">— {w.dates.length} days pending</span>
-                </div>
-              ))}
-            </>
-          )}
+
+          {/* Team approved week-offs */}
+          <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
+            <p className="text-sm font-semibold text-ink">Team Week-offs — {MONTHS[month]}</p>
+            {allWeekoffs.filter(w => w.status === "approved").length === 0 ? (
+              <p className="text-xs text-ink-dim">No approved week-offs yet for this month.</p>
+            ) : (
+              <div className="space-y-2">
+                {allWeekoffs.filter(w => w.status === "approved").map((w) => (
+                  <div key={w.id} className="flex items-start gap-3 text-xs border-b border-line last:border-0 pb-2">
+                    <span className="font-medium text-ink min-w-[100px]">{profileNames[w.user_id] ?? "Staff"}</span>
+                    <div className="flex flex-wrap gap-1">
+                      {w.dates.sort().map((d) => (
+                        <span key={d} className="bg-gold/10 text-gold px-1.5 py-0.5 rounded-full font-mono">
+                          {new Date(d + "T00:00:00").getDate()}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {allWeekoffs.filter(w => w.status === "pending" && w.user_id !== profile?.id).length > 0 && (
+              <>
+                <p className="text-xs font-medium text-warn mt-2">Pending approval:</p>
+                {allWeekoffs.filter(w => w.status === "pending" && w.user_id !== profile?.id).map((w) => (
+                  <div key={w.id} className="text-xs text-ink-dim flex items-center gap-2">
+                    <span>{profileNames[w.user_id] ?? "Staff"}</span>
+                    <span className="text-warn">— {w.dates.length} days pending</span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>
