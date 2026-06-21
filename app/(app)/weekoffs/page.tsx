@@ -4,9 +4,10 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/stores/auth";
+import { useMyMonthlyLeaveCount } from "@/modules/attendance/api";
 import { clsx } from "clsx";
 
-const MAX_DAYS = 3;
+const BASE_MAX_DAYS = 3;
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -79,6 +80,9 @@ export default function WeekoffsPage() {
     },
   });
 
+  const { data: leaveCount = 0 } = useMyMonthlyLeaveCount(monthKey);
+  const maxDays = Math.max(0, BASE_MAX_DAYS - leaveCount);
+
   const myWeekoff = allWeekoffs.find((w) => w.user_id === profile?.id);
   const [selected, setSelected] = useState<string[]>([]);
 
@@ -103,7 +107,7 @@ export default function WeekoffsPage() {
     if (myWeekoff && myWeekoff.status !== "draft" && myWeekoff.status !== "rejected") return;
     setSelected((prev) => {
       if (prev.includes(dateStr)) return prev.filter((d) => d !== dateStr);
-      if (prev.length >= MAX_DAYS) return prev;
+      if (prev.length >= maxDays) return prev;
       return [...prev, dateStr];
     });
   }
@@ -167,7 +171,12 @@ export default function WeekoffsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">Week-off Planning</h1>
-          <p className="text-sm text-ink-dim mt-0.5">Pick your {MAX_DAYS} days off for the month and submit for approval.</p>
+          <p className="text-sm text-ink-dim mt-0.5">
+            Pick your {maxDays} day{maxDays !== 1 ? "s" : ""} off for the month and submit for approval.
+            {leaveCount > 0 && (
+              <span className="ml-1 text-warn">({leaveCount} casual/sick leave{leaveCount > 1 ? "s" : ""} taken — {BASE_MAX_DAYS - leaveCount} of {BASE_MAX_DAYS} remaining)</span>
+            )}
+          </p>
         </div>
         {isAdmin && (
           <a href="/admin/weekoffs" className="text-xs bg-gold text-white px-3 py-1.5 rounded-lg2 hover:opacity-90">
@@ -232,8 +241,9 @@ export default function WeekoffsPage() {
           </div>
 
           <p className="text-xs text-ink-dim">
-            {currentDates.length}/{MAX_DAYS} days selected
-            {canEdit && currentDates.length < MAX_DAYS && ` — pick ${MAX_DAYS - currentDates.length} more`}
+            {currentDates.length}/{maxDays} days selected
+            {canEdit && currentDates.length < maxDays && ` — pick ${maxDays - currentDates.length} more`}
+            {maxDays === 0 && <span className="text-warn ml-1">No weekoffs available this month due to leaves taken.</span>}
           </p>
 
           {canEdit && (
@@ -249,7 +259,7 @@ export default function WeekoffsPage() {
               )}
               <button
                 onClick={() => submitForApproval.mutate()}
-                disabled={submitForApproval.isPending || currentDates.length === 0}
+                disabled={submitForApproval.isPending || currentDates.length === 0 || maxDays === 0}
                 className="bg-gold text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-40 hover:opacity-90"
               >
                 {submitForApproval.isPending ? "Submitting…" : "Submit for Approval"}

@@ -702,6 +702,34 @@ export function useMyStaffProfile() {
   });
 }
 
+// Returns count of approved casual/sick leaves for the logged-in user in a given month (YYYY-MM)
+export function useMyMonthlyLeaveCount(monthKey: string) {
+  return useQuery<number>({
+    queryKey: ["my-monthly-leave-count", monthKey],
+    queryFn: async () => {
+      const { data: { user } } = await supabase().auth.getUser();
+      if (!user) return 0;
+      const { data: staffRow } = await supabase()
+        .from("staff")
+        .select("bio_user_id")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!staffRow?.bio_user_id) return 0;
+      const from = `${monthKey}-01`;
+      const to   = `${monthKey}-31`;
+      const { data } = await supabase()
+        .from("leave_requests")
+        .select("id")
+        .eq("bio_user_id", staffRow.bio_user_id)
+        .eq("status", "approved")
+        .in("leave_type", ["casual", "sick"])
+        .gte("leave_date", from)
+        .lte("leave_date", to);
+      return (data ?? []).length;
+    },
+  });
+}
+
 export function useSubmitLeaveRequest() {
   const qc = useQueryClient();
   return useMutation({
