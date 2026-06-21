@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import GroupCombobox from "@/components/ui/group-combobox";
 import { useQuery } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { useT } from "@/i18n";
 import { useGlobalDate } from "@/stores/global-date";
@@ -128,6 +128,8 @@ interface Props { saleId?: string }
 export default function SaleForm({ saleId }: Props) {
   const t = useT();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const backUrl = searchParams.get("back") ?? "/sales";
   const globalDate = useGlobalDate((s) => s.date);
   const boardRate = useBoardRate((s) => s.rate);
   const saveSale = useSaveSale();
@@ -403,7 +405,7 @@ export default function SaleForm({ saleId }: Props) {
     } else {
       await saveSale.mutateAsync(draft);
     }
-    router.push("/sales");
+    router.push(backUrl);
   }
 
   if (saleId && loadingExisting) return <p className="text-ink-dim text-sm p-6">Loading…</p>;
@@ -1102,7 +1104,7 @@ export default function SaleForm({ saleId }: Props) {
             )}
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={() => router.push("/sales")}
+            <button type="button" onClick={() => router.push(backUrl)}
               className="border border-line text-ink-mid text-sm px-5 py-2.5 rounded-lg2 hover:bg-canvas">
               {t("cancel")}
             </button>

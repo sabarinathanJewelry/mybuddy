@@ -170,7 +170,11 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
             <tbody>
               {view?.sales.map((s) => (
                 <tr key={s.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                  <td className="px-4 py-2.5 font-mono text-info">{s.bill_no}</td>
+                  <td className="px-4 py-2.5 font-mono">
+                    <Link href={`/sales/${s.id}/edit?back=/customers/${id}`} className="text-info hover:underline">
+                      {s.bill_no}
+                    </Link>
+                  </td>
                   <td className="px-3 py-2.5 text-ink-dim">{shortDate(s.bill_date)}</td>
                   <td className="px-3 py-2.5 text-right font-mono">{inr(s.total)}</td>
                   <td className="px-3 py-2.5 text-ink-dim capitalize">{s.status}</td>
@@ -215,7 +219,11 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
                   return (
                     <Fragment key={o.id}>
                       <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
-                        <td className="px-4 py-2.5 font-mono text-info">{o.order_no}</td>
+                        <td className="px-4 py-2.5 font-mono">
+                          <Link href={`/orders?back=/customers/${id}`} className="text-info hover:underline">
+                            {o.order_no}
+                          </Link>
+                        </td>
                         <td className="px-3 py-2.5 text-ink-dim">{shortDate(o.order_date)}</td>
                         <td className="px-3 py-2.5 text-right font-mono">{inr(o.total ?? 0)}</td>
                         <td className="px-3 py-2.5 text-right font-mono text-ok">{inr(advancePaid)}</td>
