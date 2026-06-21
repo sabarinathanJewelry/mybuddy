@@ -155,6 +155,20 @@ function useRestock() {
   });
 }
 
+function useUpdateRestockDate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, tx_date }: { id: string; tx_date: string }) => {
+      const { error } = await supabase()
+        .from("kolusu_transactions")
+        .update({ tx_date })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["kolusu_transactions"] }),
+  });
+}
+
 interface KolusuPendingSale {
   id: string;
   created_at: string;
@@ -194,8 +208,11 @@ export default function KolusuPage() {
   const addBox = useAddBox();
   const recordSale = useRecordSale();
   const restock = useRestock();
+  const updateRestockDate = useUpdateRestockDate();
   const { data: pendingSales = [], isLoading: pendingLoading } = usePendingSales();
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [editRestockId, setEditRestockId] = useState<string | null>(null);
+  const [editRestockDate, setEditRestockDate] = useState("");
 
   async function syncFromChat() {
     setSyncResult(null);
@@ -948,8 +965,46 @@ export default function KolusuPage() {
                             {isTransferring ? "Cancel" : "Transfer"}
                           </button>
                         )}
+                        {isRestock && (
+                          <button
+                            onClick={() => {
+                              if (editRestockId === tx.id) { setEditRestockId(null); }
+                              else { setEditRestockId(tx.id); setEditRestockDate(tx.tx_date); }
+                            }}
+                            className="text-xs px-2 py-1 rounded-lg2 border border-line text-ink-dim hover:border-gold hover:text-gold transition-colors">
+                            Edit date
+                          </button>
+                        )}
                       </td>
                     </tr>
+                    {isRestock && editRestockId === tx.id && (
+                      <tr className="border-b border-line bg-ok/5">
+                        <td colSpan={8} className="px-4 py-3">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className="text-xs text-ink-dim font-medium">Change date for this restock:</span>
+                            <input
+                              type="date"
+                              value={editRestockDate}
+                              onChange={e => setEditRestockDate(e.target.value)}
+                              className="border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+                            />
+                            <button
+                              disabled={updateRestockDate.isPending || !editRestockDate}
+                              onClick={async () => {
+                                await updateRestockDate.mutateAsync({ id: tx.id, tx_date: editRestockDate });
+                                setEditRestockId(null);
+                              }}
+                              className="bg-ok text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                              {updateRestockDate.isPending ? "Saving…" : "Save"}
+                            </button>
+                            <button onClick={() => setEditRestockId(null)}
+                              className="border border-line text-xs px-3 py-1.5 rounded-lg2 text-ink-dim">
+                              Cancel
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                     {isTransferring && (
                       <tr className="border-b border-line bg-warn/5">
                         <td colSpan={8} className="px-4 py-4 space-y-3">
