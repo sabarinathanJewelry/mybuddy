@@ -21,7 +21,6 @@ interface Weekoff {
   status: "draft" | "pending" | "approved" | "rejected";
   submitted_at: string | null;
   review_note: string | null;
-  profiles?: { display_name: string };
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -49,12 +48,28 @@ export default function AdminWeekoffsPage() {
   const { data: weekoffs = [], isLoading } = useQuery<Weekoff[]>({
     queryKey: ["weekoffs_admin", monthKey],
     queryFn: async () => {
-      const { data } = await supabase()
+      const { data, error } = await supabase()
         .from("monthly_weekoffs")
-        .select("*, profiles(display_name)")
+        .select("id, user_id, month, dates, status, submitted_at, review_note")
         .eq("month", monthKey)
         .order("submitted_at", { ascending: true, nullsFirst: false });
+      if (error) throw error;
       return (data ?? []) as Weekoff[];
+    },
+  });
+
+  const weekoffUserIds = [...new Set(weekoffs.map(w => w.user_id))];
+  const { data: profileNames = {} } = useQuery<Record<string, string>>({
+    queryKey: ["profiles_names", weekoffUserIds.join(",")],
+    enabled: weekoffUserIds.length > 0,
+    queryFn: async () => {
+      const { data } = await supabase()
+        .from("profiles")
+        .select("id, display_name")
+        .in("id", weekoffUserIds);
+      const map: Record<string, string> = {};
+      for (const p of data ?? []) map[p.id] = p.display_name;
+      return map;
     },
   });
 
@@ -123,7 +138,7 @@ export default function AdminWeekoffsPage() {
   }
 
   function WeekoffCard({ w }: { w: Weekoff }) {
-    const name = (w.profiles as any)?.display_name ?? "Staff";
+    const name = profileNames[w.user_id] ?? "Staff";
     const isEditing = editId === w.id;
     return (
       <div className={clsx("bg-white rounded-xl border shadow-soft p-4 space-y-3", STATUS_COLORS[w.status])}>

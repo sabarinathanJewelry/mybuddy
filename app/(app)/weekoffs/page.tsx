@@ -29,7 +29,6 @@ interface Weekoff {
   dates: string[];
   status: "draft" | "pending" | "approved" | "rejected";
   review_note: string | null;
-  profiles?: { display_name: string };
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -49,22 +48,39 @@ export default function WeekoffsPage() {
   const [month, setMonth] = useState(now.getMonth() === 11 ? 0 : now.getMonth() + 1);
   const monthKey = getMonthKey(year, month);
 
-  // All weekoffs for this month (team view)
-  const { data: allWeekoffs = [] } = useQuery<Weekoff[]>({
+  // All weekoffs for this month (no join — fetch names separately)
+  const { data: allWeekoffs = [], error: weekoffsError } = useQuery<Weekoff[]>({
     queryKey: ["weekoffs", monthKey],
+    enabled: !!profile?.id,
     queryFn: async () => {
-      const { data } = await supabase()
+      const { data, error } = await supabase()
         .from("monthly_weekoffs")
-        .select("*, profiles(display_name)")
+        .select("id, user_id, month, dates, status, review_note")
         .eq("month", monthKey)
         .order("created_at");
+      if (error) throw error;
       return (data ?? []) as Weekoff[];
+    },
+  });
+
+  // Fetch display names for all users who have submitted
+  const userIds = [...new Set(allWeekoffs.map(w => w.user_id))];
+  const { data: profileNames = {} } = useQuery<Record<string, string>>({
+    queryKey: ["profiles_names", userIds.join(",")],
+    enabled: userIds.length > 0,
+    queryFn: async () => {
+      const { data } = await supabase()
+        .from("profiles")
+        .select("id, display_name")
+        .in("id", userIds);
+      const map: Record<string, string> = {};
+      for (const p of data ?? []) map[p.id] = p.display_name;
+      return map;
     },
   });
 
   const myWeekoff = allWeekoffs.find((w) => w.user_id === profile?.id);
   const [selected, setSelected] = useState<string[]>([]);
-  const draftDates: string[] = myWeekoff ? myWeekoff.dates : selected;
 
   // Build calendar
   const daysInMonth = getDaysInMonth(year, month);
@@ -76,12 +92,12 @@ export default function WeekoffsPage() {
     for (const w of allWeekoffs) {
       if (w.status !== "approved") continue;
       for (const d of w.dates) {
-        const name = (w.profiles as any)?.display_name ?? "Staff";
+        const name = profileNames[w.user_id] ?? "Staff";
         map[d] = [...(map[d] ?? []), name];
       }
     }
     return map;
-  }, [allWeekoffs]);
+  }, [allWeekoffs, profileNames]);
 
   function toggleDate(dateStr: string) {
     if (myWeekoff && myWeekoff.status !== "draft" && myWeekoff.status !== "rejected") return;
@@ -94,7 +110,8 @@ export default function WeekoffsPage() {
 
   const saveDraft = useMutation({
     mutationFn: async () => {
-      const payload = { user_id: profile!.id, month: monthKey, dates: selected, status: "draft" as const, updated_at: new Date().toISOString() };
+      if (!profile?.id) throw new Error("Not logged in");
+      const payload = { user_id: profile.id, month: monthKey, dates: selected, status: "draft" as const, updated_at: new Date().toISOString() };
       if (myWeekoff) {
         const { error } = await supabase().from("monthly_weekoffs").update(payload).eq("id", myWeekoff.id);
         if (error) throw error;
@@ -108,6 +125,7 @@ export default function WeekoffsPage() {
 
   const submitForApproval = useMutation({
     mutationFn: async () => {
+      if (!profile?.id) throw new Error("Not logged in");
       const dates = myWeekoff ? myWeekoff.dates : selected;
       if (dates.length === 0) throw new Error("Select at least 1 day");
       const payload = { status: "pending" as const, submitted_at: new Date().toISOString(), updated_at: new Date().toISOString() };
@@ -115,7 +133,7 @@ export default function WeekoffsPage() {
         const { error } = await supabase().from("monthly_weekoffs").update(payload).eq("id", myWeekoff.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase().from("monthly_weekoffs").insert({ ...payload, user_id: profile!.id, month: monthKey, dates: selected });
+        const { error } = await supabase().from("monthly_weekoffs").insert({ ...payload, user_id: profile.id, month: monthKey, dates: selected });
         if (error) throw error;
       }
     },
@@ -132,6 +150,16 @@ export default function WeekoffsPage() {
   function nextMonth() {
     if (month === 11) { setMonth(0); setYear(y => y + 1); }
     else setMonth(m => m + 1);
+  }
+
+  if (weekoffsError) {
+    return (
+      <div className="max-w-xl mx-auto mt-10 bg-err/10 border border-err/30 rounded-xl p-6 text-sm text-err">
+        <p className="font-semibold mb-1">Week-offs table not set up yet</p>
+        <p className="text-ink-dim">Ask admin to run migration 095 in the Supabase SQL Editor.</p>
+        <p className="font-mono text-xs mt-2 text-err/70">{(weekoffsError as Error).message}</p>
+      </div>
+    );
   }
 
   return (
@@ -182,8 +210,7 @@ export default function WeekoffsPage() {
               {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
                 const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                const isMine = currentDates.includes(dateStr);
-                const isSelected = selected.includes(dateStr);
+                const isMine = myWeekoff ? myWeekoff.dates.includes(dateStr) : selected.includes(dateStr);
                 const isSunday = new Date(year, month, day).getDay() === 0;
                 return (
                   <button
@@ -192,8 +219,7 @@ export default function WeekoffsPage() {
                     disabled={!canEdit}
                     className={clsx(
                       "aspect-square flex items-center justify-center text-xs rounded-full transition-colors",
-                      isMine && myWeekoff ? "bg-gold text-white font-bold" :
-                      isSelected ? "bg-gold text-white font-bold" :
+                      isMine ? "bg-gold text-white font-bold" :
                       isSunday ? "text-err" : "hover:bg-canvas text-ink",
                       !canEdit && "cursor-default"
                     )}
@@ -211,7 +237,7 @@ export default function WeekoffsPage() {
           </p>
 
           {canEdit && (
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               {selected.length > 0 && (
                 <button
                   onClick={() => saveDraft.mutate()}
@@ -230,8 +256,14 @@ export default function WeekoffsPage() {
               </button>
             </div>
           )}
+          {saveDraft.isError && (
+            <p className="text-xs text-err">{(saveDraft.error as Error).message}</p>
+          )}
           {submitForApproval.isError && (
             <p className="text-xs text-err">{(submitForApproval.error as Error).message}</p>
+          )}
+          {(saveDraft.isSuccess || submitForApproval.isSuccess) && (
+            <p className="text-xs text-ok">Saved!</p>
           )}
         </div>
 
@@ -244,7 +276,7 @@ export default function WeekoffsPage() {
             <div className="space-y-2">
               {allWeekoffs.filter(w => w.status === "approved").map((w) => (
                 <div key={w.id} className="flex items-start gap-3 text-xs border-b border-line last:border-0 pb-2">
-                  <span className="font-medium text-ink min-w-[100px]">{(w.profiles as any)?.display_name}</span>
+                  <span className="font-medium text-ink min-w-[100px]">{profileNames[w.user_id] ?? "Staff"}</span>
                   <div className="flex flex-wrap gap-1">
                     {w.dates.sort().map((d) => (
                       <span key={d} className="bg-gold/10 text-gold px-1.5 py-0.5 rounded-full font-mono">
@@ -257,13 +289,12 @@ export default function WeekoffsPage() {
             </div>
           )}
 
-          {/* Pending submissions */}
           {allWeekoffs.filter(w => w.status === "pending").length > 0 && (
             <>
               <p className="text-xs font-medium text-warn mt-2">Pending approval:</p>
               {allWeekoffs.filter(w => w.status === "pending").map((w) => (
                 <div key={w.id} className="text-xs text-ink-dim flex items-center gap-2">
-                  <span>{(w.profiles as any)?.display_name}</span>
+                  <span>{profileNames[w.user_id] ?? "Staff"}</span>
                   <span className="text-warn">— {w.dates.length} days pending</span>
                 </div>
               ))}
