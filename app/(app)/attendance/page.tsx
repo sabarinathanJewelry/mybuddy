@@ -2347,7 +2347,12 @@ export default function AttendancePage() {
       {/* Tabs — hidden in kiosk mode (always visible for admin) */}
       {(!isLocked || isAdmin) && (
         <div className="flex border-b border-line gap-1 flex-wrap">
-          {(["attendance", "staff", "monthly", "requests", "leaves", "duties", "chat", ...(isAdmin ? ["announcements", "kyc", "tasks"] : ["tasks"]), "weekoffs"] as PageTab[]).map((t) => (
+          {([
+            "attendance",
+            ...(!isAdmin ? ["weekoffs"] : []),
+            "staff", "monthly", "requests", "leaves", "duties", "chat",
+            ...(isAdmin ? ["announcements", "kyc", "tasks", "weekoffs"] : ["tasks"]),
+          ] as PageTab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
                 tab === t ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"
