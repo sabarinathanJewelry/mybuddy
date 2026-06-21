@@ -168,7 +168,7 @@ export default function WeekoffsView() {
           <p className="text-sm text-ink-dim mt-0.5">
             Pick your {maxDays} day{maxDays !== 1 ? "s" : ""} off for the month and submit for approval.
             {leaveCount > 0 && (
-              <span className="ml-1 text-warn">({leaveCount} casual/sick leave{leaveCount > 1 ? "s" : ""} taken — {BASE_MAX_DAYS - leaveCount} of {BASE_MAX_DAYS} remaining)</span>
+              <span className="ml-1 text-warn">({leaveCount} absent day{leaveCount > 1 ? "s" : ""} this month — {Math.max(0, BASE_MAX_DAYS - leaveCount)} of {BASE_MAX_DAYS} remaining)</span>
             )}
           </p>
         </div>

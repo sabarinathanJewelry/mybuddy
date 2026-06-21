@@ -702,7 +702,8 @@ export function useMyStaffProfile() {
   });
 }
 
-// Returns count of approved casual/sick leaves for the logged-in user in a given month (YYYY-MM)
+// Returns count of working days (Mon–Sat) this month where the staff had no punch.
+// Covers both applied leaves and unapplied absences.
 export function useMyMonthlyLeaveCount(monthKey: string) {
   return useQuery<number>({
     queryKey: ["my-monthly-leave-count", monthKey],
@@ -715,17 +716,46 @@ export function useMyMonthlyLeaveCount(monthKey: string) {
         .eq("user_id", user.id)
         .maybeSingle();
       if (!staffRow?.bio_user_id) return 0;
-      const from = `${monthKey}-01`;
-      const to   = `${monthKey}-31`;
-      const { data } = await supabase()
-        .from("leave_requests")
-        .select("id")
+
+      const IST_MS = 5.5 * 3600000;
+      const [year, mon] = monthKey.split("-").map(Number);
+      const today = new Date(new Date().getTime() + IST_MS);
+      const isCurrentMonth = today.getUTCFullYear() === year && today.getUTCMonth() + 1 === mon;
+      const lastDay = isCurrentMonth ? today.getUTCDate() : new Date(year, mon, 0).getDate();
+
+      // Build set of Mon–Sat dates elapsed so far this month
+      const workingDates = new Set<string>();
+      for (let d = 1; d <= lastDay; d++) {
+        const dt = new Date(Date.UTC(year, mon - 1, d));
+        const dow = dt.getUTCDay();
+        if (dow !== 0) { // exclude Sundays
+          workingDates.add(`${year}-${String(mon).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+        }
+      }
+
+      // Fetch all punch records for this staff this month
+      const nextMon = mon === 12 ? `${year + 1}-01` : `${year}-${String(mon + 1).padStart(2, "0")}`;
+      const { data: punches } = await supabase()
+        .from("attendance_logs")
+        .select("punch_time")
         .eq("bio_user_id", staffRow.bio_user_id)
-        .eq("status", "approved")
-        .in("leave_type", ["casual", "sick"])
-        .gte("leave_date", from)
-        .lte("leave_date", to);
-      return (data ?? []).length;
+        .gte("punch_time", `${monthKey}-01T00:00:00+05:30`)
+        .lt("punch_time",  `${nextMon}-01T00:00:00+05:30`);
+
+      // Build set of dates that have at least one punch
+      const presentDates = new Set<string>();
+      for (const row of punches ?? []) {
+        const ist = new Date(new Date(row.punch_time).getTime() + IST_MS);
+        const dateStr = `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, "0")}-${String(ist.getUTCDate()).padStart(2, "0")}`;
+        presentDates.add(dateStr);
+      }
+
+      // Absent = working days with no punch
+      let absentCount = 0;
+      for (const d of workingDates) {
+        if (!presentDates.has(d)) absentCount++;
+      }
+      return absentCount;
     },
   });
 }
