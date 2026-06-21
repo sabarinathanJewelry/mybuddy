@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useKiosk } from "@/stores/kiosk";
+import { useAuth } from "@/stores/auth";
 import { useKioskSequence } from "@/modules/attendance/api";
 
 const IDLE_MS = 5 * 60 * 1000;
@@ -18,6 +19,7 @@ export default function KioskProvider({
 }) {
   const { isLocked, lock, unlock } = useKiosk();
   const { data: sequence, isLoading: seqLoading } = useKioskSequence();
+  const profile = useAuth((s) => s.profile);
   const router = useRouter();
   const pathname = usePathname();
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
@@ -28,6 +30,11 @@ export default function KioskProvider({
       unlock();
     }
   }, [seqLoading, sequence, unlock]);
+
+  // Staff on personal devices are never locked — kiosk is only for the shared shop screen
+  useEffect(() => {
+    if (profile?.role === "staff") unlock();
+  }, [profile?.role, unlock]);
 
   // When locked (and sequence is set), redirect to /attendance
   useEffect(() => {
