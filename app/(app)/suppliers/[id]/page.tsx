@@ -305,7 +305,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   }
 
   const vaPreview = editingVa
-    ? editingVa.gross_wt * (editingVa.purity_pct + editingVa.va_pct) / 100
+    ? editingVa.gross_wt * editingVa.va_pct / 100
     : 0;
 
   return (
@@ -1603,22 +1603,16 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                               <p className="text-sm font-mono">{grams(editingVa.gross_wt)}</p>
                             </div>
                             <div>
-                              <label className="text-xs text-ink-dim block mb-1">Base Purity%</label>
-                              <input type="number" step="0.01" value={editingVa.purity_pct}
-                                onChange={(e) => setEditingVa({ ...editingVa, purity_pct: parseFloat(e.target.value) || 0 })}
-                                className="border border-line rounded-lg2 px-2 py-1 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-gold" />
-                            </div>
-                            <div>
-                              <label className="text-xs text-ink-dim block mb-1">Supplier VA%</label>
+                              <label className="text-xs text-ink-dim block mb-1">Settlement Purity%</label>
                               <input type="number" step="0.01" value={editingVa.va_pct}
                                 onChange={(e) => setEditingVa({ ...editingVa, va_pct: parseFloat(e.target.value) || 0 })}
                                 className="border border-line rounded-lg2 px-2 py-1 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-gold"
                                 autoFocus />
                             </div>
                             <div>
-                              <label className="text-xs text-ink-dim block mb-1">Effective% = Pure Wt</label>
+                              <label className="text-xs text-ink-dim block mb-1">Pure Wt Owed</label>
                               <p className="text-sm font-mono text-info">
-                                {(editingVa.purity_pct + editingVa.va_pct).toFixed(2)}% = {grams(vaPreview)}
+                                {editingVa.va_pct.toFixed(2)}% = {grams(vaPreview)}
                               </p>
                             </div>
                             <div className="flex gap-2">
