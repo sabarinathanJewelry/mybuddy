@@ -1586,7 +1586,11 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                           </button>
                         )}
                         {s.supplier_confirmed && (
-                          <span className="text-xs text-ok">✓ {s.supplier_va_pct}%</span>
+                          <button
+                            onClick={() => setEditingVa({ id: s.id, gross_wt: s.gross_wt ?? 0, purity_pct: s.purity_pct ?? 92, va_pct: s.supplier_va_pct ?? 0 })}
+                            className="text-xs text-ok hover:underline">
+                            ✓ {s.supplier_va_pct}%
+                          </button>
                         )}
                       </td>
                     </tr>
