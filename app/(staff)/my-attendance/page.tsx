@@ -1276,7 +1276,7 @@ export default function MyAttendancePage() {
             {chatMessages.length === 0 && (
               <p className="text-center text-ink-dim text-sm py-8">No messages yet. Say hi!</p>
             )}
-            {chatMessages.map((m) => {
+            {chatMessages.filter((m) => senderRole === "admin" || m.sender_name !== "MyBuddy").map((m) => {
               const isOwn = m.sender_id === senderId;
               const isAdmin = senderRole === "admin";
               const canEdit = (isOwn || isAdmin) && !m.is_deleted;
