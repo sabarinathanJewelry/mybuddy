@@ -147,7 +147,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   // Cash balance — opening + cash-mode purchases + cut_rate conversions − actual cash/bank paid
   const openingCash = Number(view?.supplier?.opening_balance) || 0;
   const totalPurchased = view?.purchases.reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
-  const totalCashPaid = view?.payments.filter((p: any) => ["cash", "bank", "upi"].includes(p.mode)).reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
+  const totalCashPaid = view?.payments.filter((p: any) => ["cash", "bank", "upi"].includes(p.mode) && !(Number(p.metal_wt) > 0)).reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
   const totalCutRateValue = view?.payments.filter((p: any) => p.mode === "cut_rate").reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
   const cashBalance = openingCash + totalPurchased + totalCutRateValue - totalCashPaid;
 
