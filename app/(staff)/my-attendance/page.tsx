@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import WeekoffsView from "@/components/weekoffs/WeekoffsView";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import {
@@ -90,7 +91,7 @@ type DayRow = {
 
 type StaffInfo = { bio_user_id: string; name: string; shift: string };
 
-type PageTab = "today" | "monthly" | "requests" | "incentive" | "chat" | "policies" | "kyc" | "tasks";
+type PageTab = "today" | "monthly" | "requests" | "incentive" | "chat" | "policies" | "kyc" | "tasks" | "weekoffs";
 
 // ── page ─────────────────────────────────────────────────────────────────────
 export default function MyAttendancePage() {
@@ -608,6 +609,7 @@ export default function MyAttendancePage() {
       <div className="flex flex-wrap border-b border-line gap-x-0 gap-y-0">
         {([
           { key: "today",     label: "Today" },
+          { key: "weekoffs",  label: "Week-offs" },
           { key: "monthly",   label: "Monthly" },
           { key: "requests",  label: "Requests" },
           ...(canSeeIncentive ? [{ key: "incentive", label: "Incentive" }] : []),
@@ -1365,6 +1367,8 @@ export default function MyAttendancePage() {
 
       {/* ── POLICIES TAB ──────────────────────────────────────────────────────── */}
       {tab === "policies" && <PoliciesTab />}
+
+      {tab === "weekoffs" && <WeekoffsView />}
 
       {/* ── KYC TAB ───────────────────────────────────────────────────────────── */}
       {tab === "kyc" && (
