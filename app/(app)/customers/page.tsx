@@ -125,6 +125,8 @@ export default function CustomersPage() {
     }
   }
 
+  const balanceMap = Object.fromEntries(balances.map((r: any) => [r.id, Number(r.balance)]));
+
   // Split into "owe us" (negative balance) and "has credit" (positive)
   const owingRows = balances.filter((r: any) => Number(r.balance) < -0.01)
     .sort((a: any, b: any) => Number(a.balance) - Number(b.balance));
@@ -197,7 +199,9 @@ export default function CustomersPage() {
                   <tr key={c.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
                     <td className="px-4 py-2.5 font-medium">{c.name}</td>
                     <td className="px-3 py-2.5 text-ink-dim hidden sm:table-cell">{c.phone}</td>
-                    <td className="px-3 py-2.5 text-right font-mono">{inr(c.opening_balance)}</td>
+                    <td className={`px-3 py-2.5 text-right font-mono ${(balanceMap[c.id] ?? 0) < -0.01 ? "text-err" : (balanceMap[c.id] ?? 0) > 0.01 ? "text-ok" : ""}`}>
+                      {inr(balanceMap[c.id] ?? c.opening_balance)}
+                    </td>
                     <td className="px-3 py-2.5 text-right text-ink-dim hidden sm:table-cell">{grams(c.gold_balance_g)}</td>
                     <td className="px-3 py-2.5 text-right">
                       <div className="flex gap-2 justify-end">
