@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import React, { Fragment, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useGlobalDate } from "@/stores/global-date";
@@ -267,21 +267,23 @@ export default function KolusuPage() {
   const editBox = useMutation({
     mutationFn: async ({ id, gross_wt_g, qty, reason }: { id: string; gross_wt_g: number; qty: number; reason: string }) => {
       const client = supabase();
+      // Fetch before-values for audit trail
+      const { data: before } = await client.from("kolusu_boxes")
+        .select("current_gross_wt_g, current_qty").eq("id", id).single();
       const { error } = await client.from("kolusu_boxes").update({
         current_gross_wt_g: gross_wt_g,
         current_qty: qty,
         updated_at: new Date().toISOString(),
       }).eq("id", id);
       if (error) throw error;
-      // Audit log as a correction transaction (zero qty_change so it doesn't affect counts)
       await client.from("kolusu_transactions").insert({
-        tx_date:     new Date().toISOString().slice(0, 10),
-        box_id:      id,
-        qty_change:  0,
-        raw_wt_g:    0,
-        cover_wt_g:  0,
-        total_wt_g:  0,
-        notes:       `CORRECTION: set gross=${gross_wt_g}g qty=${qty}${reason ? ` — ${reason}` : ""}`,
+        tx_date:    new Date().toISOString().slice(0, 10),
+        box_id:     id,
+        qty_change: 0,
+        raw_wt_g:   0,
+        cover_wt_g: 0,
+        total_wt_g: 0,
+        notes: `CORRECTION: gross ${before?.current_gross_wt_g ?? "?"}g → ${gross_wt_g}g | qty ${before?.current_qty ?? "?"} → ${qty}${reason ? ` | ${reason}` : ""}`,
       });
     },
     onSuccess: () => {
@@ -571,6 +573,50 @@ export default function KolusuPage() {
             {boxSearch && (
               <button onClick={() => setBoxSearch("")} className="text-xs text-err hover:underline">Clear</button>
             )}
+            <button
+              onClick={() => {
+                const rows = (filteredBoxes.length ? filteredBoxes : boxes ?? []) as typeof boxes;
+                const win = window.open("", "_blank");
+                if (!win) return;
+                win.document.write(`<!DOCTYPE html><html><head><title>Kolusu Inventory</title>
+                <style>
+                  body{font-family:sans-serif;font-size:12px;margin:20px}
+                  h2{margin-bottom:4px}p.sub{color:#888;font-size:11px;margin:0 0 12px}
+                  table{width:100%;border-collapse:collapse}
+                  th,td{border:1px solid #ccc;padding:5px 8px;text-align:left}
+                  th{background:#f5f5f5;font-weight:600}
+                  .right{text-align:right}.gold{color:#b8860b;font-weight:600}
+                  @media print{@page{margin:15mm}}
+                </style></head><body>
+                <h2>Kolusu Inventory</h2>
+                <p class="sub">Printed on ${new Date().toLocaleString("en-IN")}</p>
+                <table><thead><tr>
+                  <th>Box No</th><th>Color / Size</th>
+                  <th class="right">Tare (g)</th><th class="right">Gross (g)</th>
+                  <th class="right">Net Kolusu (g)</th><th class="right">Qty</th>
+                </tr></thead><tbody>
+                ${(rows ?? []).map((b: any) => `<tr>
+                  <td>${b.box_no}</td><td>${b.color} / ${b.size}</td>
+                  <td class="right">${b.box_tare_g.toFixed(3)}</td>
+                  <td class="right">${b.current_gross_wt_g.toFixed(3)}</td>
+                  <td class="right gold">${(b.current_gross_wt_g - b.box_tare_g).toFixed(3)}</td>
+                  <td class="right">${b.current_qty}</td>
+                </tr>`).join("")}
+                </tbody></table>
+                <p style="margin-top:10px;font-size:11px;color:#888">
+                  Total Boxes: ${(rows ?? []).length} &nbsp;|&nbsp;
+                  Total Gross: ${(rows ?? []).reduce((s: number, b: any) => s + b.current_gross_wt_g, 0).toFixed(3)}g &nbsp;|&nbsp;
+                  Total Net: ${(rows ?? []).reduce((s: number, b: any) => s + (b.current_gross_wt_g - b.box_tare_g), 0).toFixed(3)}g &nbsp;|&nbsp;
+                  Total Qty: ${(rows ?? []).reduce((s: number, b: any) => s + b.current_qty, 0)}
+                </p>
+                </body></html>`);
+                win.document.close();
+                win.print();
+              }}
+              className="border border-line text-xs px-3 py-2 rounded-lg2 text-ink-dim hover:border-gold hover:text-gold transition-colors shrink-0"
+            >
+              Print
+            </button>
           </div>
           {q && <p className="text-xs text-ink-dim">{filteredBoxes.length} box(es) match &quot;{boxSearch}&quot;</p>}
         <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
@@ -930,24 +976,47 @@ export default function KolusuPage() {
             <tbody>
               {transactions?.map((tx) => {
                 const isRestock = tx.qty_change > 0;
+                const isCorrection = tx.qty_change === 0 && tx.notes?.startsWith("CORRECTION:");
                 const isTransferring = transferTxId === tx.id;
+                // Parse correction note: "CORRECTION: gross Xg → Yg | qty A → B | reason"
+                let correctionDisplay: React.ReactNode = null;
+                if (isCorrection && tx.notes) {
+                  const body = tx.notes.replace("CORRECTION:", "").trim();
+                  const parts = body.split("|").map((s: string) => s.trim());
+                  correctionDisplay = (
+                    <div className="space-y-0.5">
+                      {parts.map((p: string, i: number) => (
+                        <span key={i} className={`block ${i < 2 ? "text-warn font-medium" : "text-ink-dim"}`}>{p}</span>
+                      ))}
+                    </div>
+                  );
+                }
                 return (
                   <Fragment key={tx.id}>
-                    <tr className={clsx("border-b border-line last:border-0 hover:bg-canvas/50", isRestock && "bg-ok/5", isTransferring && "bg-warn/5")}>
+                    <tr className={clsx("border-b border-line last:border-0 hover:bg-canvas/50",
+                      isRestock && "bg-ok/5",
+                      isCorrection && "bg-warn/5",
+                      isTransferring && "bg-warn/5")}>
                       <td className="px-4 py-2.5 text-ink-dim">{shortDate(tx.tx_date)}</td>
                       <td className="px-3 py-2.5 font-mono text-info">{tx.kolusu_boxes?.box_no ?? "—"}</td>
-                      <td className={clsx("px-3 py-2.5 text-right font-semibold", isRestock ? "text-ok" : "text-err")}>
-                        {isRestock ? `+${tx.qty_change}` : tx.qty_change}
+                      <td className={clsx("px-3 py-2.5 text-right font-semibold",
+                        isCorrection ? "text-warn" : isRestock ? "text-ok" : "text-err")}>
+                        {isCorrection ? "edit" : isRestock ? `+${tx.qty_change}` : tx.qty_change}
                       </td>
-                      <td className="px-3 py-2.5 text-right font-mono">{grams(tx.raw_wt_g)}</td>
-                      <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{isRestock ? "—" : grams(tx.cover_wt_g)}</td>
-                      <td className={clsx("px-3 py-2.5 text-right font-mono font-semibold", isRestock ? "text-ok" : "text-err")}>
-                        {isRestock ? `+${grams(tx.total_wt_g)}` : grams(tx.total_wt_g)}
+                      <td className="px-3 py-2.5 text-right font-mono">{isCorrection ? "—" : grams(tx.raw_wt_g)}</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{isCorrection || isRestock ? "—" : grams(tx.cover_wt_g)}</td>
+                      <td className={clsx("px-3 py-2.5 text-right font-mono font-semibold",
+                        isCorrection ? "text-warn" : isRestock ? "text-ok" : "text-err")}>
+                        {isCorrection ? "—" : isRestock ? `+${grams(tx.total_wt_g)}` : grams(tx.total_wt_g)}
                       </td>
-                      <td className="px-3 py-2.5 text-ink-dim text-xs">
-                        {tx.bill_no && <span className="mr-1">{tx.bill_no}</span>}
-                        {isRestock && <span className="text-ok font-medium">Restock</span>}
-                        {tx.notes && !isRestock && <span className="text-ink-dim">{tx.notes}</span>}
+                      <td className="px-3 py-2.5 text-xs">
+                        {isCorrection ? correctionDisplay : (
+                          <>
+                            {tx.bill_no && <span className="mr-1 text-ink-dim">{tx.bill_no}</span>}
+                            {isRestock && <span className="text-ok font-medium">Restock</span>}
+                            {tx.notes && !isRestock && <span className="text-ink-dim">{tx.notes}</span>}
+                          </>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 text-right">
                         {!isRestock && (
