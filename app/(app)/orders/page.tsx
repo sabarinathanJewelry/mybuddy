@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import GroupCombobox from "@/components/ui/group-combobox";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
@@ -510,6 +510,29 @@ export default function OrdersPage() {
     description: string; estimated_wt: number; estimated_total: number; gst_included: boolean;
     final_total: number; final_wt: number;
   }>({ customer: null, order_date: "", delivery_date: "", description: "", estimated_wt: 0, estimated_total: 0, gst_included: false, final_total: 0, final_wt: 0 });
+  const [editOrderItems, setEditOrderItems] = useState<OrderItemDraft[]>([]);
+  const { data: editItemsFromDB = [] } = useOrderItems(editOrderId ?? null);
+  // Seed edit items from DB when edit panel opens
+  useEffect(() => {
+    if (editOrderId && editItemsFromDB.length > 0) {
+      setEditOrderItems(editItemsFromDB.map((i: any) => ({
+        id: i.id,
+        description: i.description ?? "",
+        metal: i.metal ?? "gold_22k",
+        estimated_wt: Number(i.estimated_wt) || 0,
+        amount: Number(i.amount) || 0,
+        notes: i.notes ?? "",
+      })));
+    } else if (!editOrderId) {
+      setEditOrderItems([]);
+    }
+  }, [editOrderId, editItemsFromDB.length]);
+
+  // When items change, auto-update estimated total from items sum
+  useEffect(() => {
+    const total = editOrderItems.reduce((s, i) => s + (i.amount || 0), 0);
+    if (total > 0) setEditOrderForm(f => ({ ...f, estimated_total: total }));
+  }, [editOrderItems]);
   const [addPayOrderId, setAddPayOrderId] = useState<string | null>(null);
   const [addPayments, setAddPayments] = useState<PaymentDraft[]>([newPayment()]);
   const [addPayDate, setAddPayDate] = useState(globalDate);
@@ -691,22 +714,43 @@ export default function OrdersPage() {
   const updateOrder = useMutation({
     mutationFn: async ({ id }: { id: string }) => {
       const f = editOrderForm;
-      // GST is inclusive — the entered value already contains GST
-      const total = parseFloat((f.estimated_total || 0).toFixed(2));
-      const { error } = await supabase().from("orders").update({
+      const client = supabase();
+      // If items exist, derive total from them; otherwise use the form field
+      const itemsTotal = editOrderItems.reduce((s, i) => s + (i.amount || 0), 0);
+      const total = parseFloat((itemsTotal > 0 ? itemsTotal : (f.estimated_total || 0)).toFixed(2));
+      const totalWt = editOrderItems.reduce((s, i) => s + (i.estimated_wt || 0), 0) || f.estimated_wt || null;
+      const { error } = await client.from("orders").update({
         customer_id: f.customer?.id ?? null,
         order_date: f.order_date,
         delivery_date: f.delivery_date || null,
         description: f.description || null,
-        estimated_wt: f.estimated_wt || null,
+        estimated_wt: totalWt,
         total,
         gst_included: f.gst_included,
         final_total: f.final_total > 0 ? parseFloat(f.final_total.toFixed(2)) : null,
         final_wt: f.final_wt > 0 ? f.final_wt : null,
       }).eq("id", id);
       if (error) throw error;
+      // Update order items: delete all then re-insert
+      if (editOrderItems.length > 0 || editItemsFromDB.length > 0) {
+        await client.from("order_items").delete().eq("order_id", id);
+        if (editOrderItems.length > 0) {
+          const { error: itemErr } = await client.from("order_items").insert(
+            editOrderItems.map((item, idx) => ({
+              order_id: id, description: item.description || null,
+              metal: item.metal || null, estimated_wt: item.estimated_wt || 0,
+              amount: item.amount || 0, notes: item.notes || null, sort_order: idx,
+            }))
+          );
+          if (itemErr) throw itemErr;
+        }
+      }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["orders"] }); setEditOrderId(null); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["order_items", editOrderId] });
+      setEditOrderId(null);
+    },
   });
 
   // ── Edit order payment (with ledger rebuild)
@@ -1626,6 +1670,65 @@ export default function OrdersPage() {
                               rows={2} className={inp + " resize-none"} placeholder="What the customer wants made…" />
                           </div>
                         </div>
+
+                        {/* Line items editor */}
+                        {editOrderItems.length > 0 && (
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <p className="text-xs font-semibold text-ink-dim">Order Items</p>
+                              <button type="button" onClick={() => setEditOrderItems(it => [...it, newOrderItem()])}
+                                className="text-xs text-gold hover:underline">+ Add item</button>
+                            </div>
+                            <div className="space-y-2">
+                              {editOrderItems.map((item, idx) => (
+                                <div key={item.id} className="bg-white border border-line rounded-lg2 p-3 grid grid-cols-2 sm:grid-cols-5 gap-2 items-end">
+                                  <div className="col-span-2">
+                                    <label className="block text-[10px] text-ink-dim mb-0.5">Description</label>
+                                    <input value={item.description}
+                                      onChange={e => setEditOrderItems(prev => prev.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))}
+                                      className={inp} placeholder="Ring, Chain…" />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-ink-dim mb-0.5">Metal</label>
+                                    <select value={item.metal}
+                                      onChange={e => setEditOrderItems(prev => prev.map((x, i) => i === idx ? { ...x, metal: e.target.value } : x))}
+                                      className={inp}>
+                                      {METALS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-ink-dim mb-0.5">Est. Wt (g)</label>
+                                    <input type="number" step="0.001" value={item.estimated_wt || ""}
+                                      onFocus={e => e.target.select()} placeholder="0.000"
+                                      onChange={e => setEditOrderItems(prev => prev.map((x, i) => i === idx ? { ...x, estimated_wt: parseFloat(e.target.value) || 0 } : x))}
+                                      className={inp} />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-ink-dim mb-0.5">Amount (₹)</label>
+                                    <div className="flex gap-1">
+                                      <input type="number" step="0.01" value={item.amount || ""}
+                                        onFocus={e => e.target.select()} placeholder="0"
+                                        onChange={e => setEditOrderItems(prev => prev.map((x, i) => i === idx ? { ...x, amount: parseFloat(e.target.value) || 0 } : x))}
+                                        className={inp} />
+                                      <button type="button" onClick={() => setEditOrderItems(prev => prev.filter((_, i) => i !== idx))}
+                                        className="shrink-0 text-err text-xs border border-err/20 rounded-lg2 px-2 hover:bg-err/5">✕</button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <p className="text-xs text-ink-dim mt-2">
+                              Items total: <strong className="text-ink">{inr(editOrderItems.reduce((s, i) => s + (i.amount || 0), 0))}</strong>
+                              {editOrderItems.reduce((s, i) => s + (i.estimated_wt || 0), 0) > 0 &&
+                                ` · ${grams(editOrderItems.reduce((s, i) => s + (i.estimated_wt || 0), 0))}`}
+                            </p>
+                          </div>
+                        )}
+                        {editOrderItems.length === 0 && editItemsFromDB.length === 0 && (
+                          <button type="button" onClick={() => setEditOrderItems([newOrderItem()])}
+                            className="text-xs text-gold hover:underline">+ Add line items</button>
+                        )}
+
                         <div className="flex gap-2">
                           <button disabled={updateOrder.isPending}
                             onClick={() => updateOrder.mutate({ id: o.id })}
