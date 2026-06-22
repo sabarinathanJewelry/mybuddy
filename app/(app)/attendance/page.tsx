@@ -8,6 +8,7 @@ import {
   useAttendanceByDate, useStaff, useUpdateStaff, useDeleteStaff,
   useMonthlyAttendanceSummary, useAllPermissions, useDecidePermission,
   useKioskSequence, useSaveKioskSequence, useKioskSecret, useSaveKioskSecret, useLastSyncTime,
+  useAdminKioskSequences, useSaveUserKioskSequence,
   useLeavesByDate, useAllLeaveRequests, useMyLeaveRequests, usePendingLeaveCount,
   useMyStaffProfile, useSubmitLeaveRequest, useDecideLeaveRequest, useDeleteLeaveRequest,
   useAppNotifications, useMarkNotificationRead, useMarkAllNotificationsRead,
@@ -2036,111 +2037,107 @@ function AnnouncementsTab() {
   );
 }
 
-// ── Kiosk sequence configuration (admin only, unlocked) ─────────────────────
-function KioskConfig() {
-  const { data: currentSeq = [], isLoading } = useKioskSequence();
-  const saveSeq = useSaveKioskSequence();
-  const { data: staff = [] } = useStaff();
+// ── Per-user kiosk sequence editor ───────────────────────────────────────────
+function UserSeqEditor({ user, staff }: { user: { id: string; display_name: string; role: string; kiosk_sequence: KioskTap[] | null }; staff: StaffMember[] }) {
+  const save = useSaveUserKioskSequence();
   const lock = useKiosk((s) => s.lock);
-  const { data: savedSecret } = useKioskSecret();
-  const saveSecret = useSaveKioskSecret();
-
-  const activeStaff = staff.filter((s) => s.active);
   const [editing, setEditing] = useState(false);
-  const [steps, setSteps] = useState<KioskTap[]>([
+  const activeStaff = staff.filter((s) => s.active);
+  const blankSteps: KioskTap[] = [
     { bio_user_id: "", action: "in" },
     { bio_user_id: "", action: "out" },
     { bio_user_id: "", action: "in" },
     { bio_user_id: "", action: "out" },
-  ]);
+  ];
+  const [steps, setSteps] = useState<KioskTap[]>(user.kiosk_sequence ?? blankSteps);
+  useEffect(() => { setSteps(user.kiosk_sequence ?? blankSteps); }, [user.kiosk_sequence]);
 
-  const [editingSecret, setEditingSecret] = useState(false);
-  const [secretInput, setSecretInput] = useState("");
-  const [showSecret, setShowSecret] = useState(false);
-
-  useEffect(() => {
-    if (currentSeq.length === 4) setSteps(currentSeq);
-  }, [currentSeq]);
+  const isSet = user.kiosk_sequence && user.kiosk_sequence.length === 4;
 
   async function handleSave() {
     if (steps.some((s) => !s.bio_user_id)) return;
-    await saveSeq.mutateAsync(steps);
+    await save.mutateAsync({ userId: user.id, sequence: steps });
     setEditing(false);
     lock();
   }
 
-  async function handleClear() {
-    if (!confirm("Clear kiosk sequence? The app will stop locking on startup.")) return;
-    await saveSeq.mutateAsync([]);
-    setEditing(false);
-  }
-
-  if (isLoading) return null;
-  const isConfigured = currentSeq.length === 4;
-
   return (
-    <div className="bg-white rounded-xl border border-line shadow-soft p-4">
+    <div className="py-3 border-b border-line last:border-0">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold text-ink">Kiosk Lock</p>
-          <p className="text-xs text-ink-dim mt-0.5">
-            {isConfigured
-              ? "Sequence active — app locks on startup, unlocks by tap sequence"
-              : "No sequence set — app starts unlocked"}
-          </p>
+          <span className="text-sm font-medium">{user.display_name}</span>
+          <span className={`ml-2 text-xs px-1.5 py-0.5 rounded-full ${user.role === "admin" ? "bg-gold/10 text-gold-dark" : "bg-info/10 text-info"}`}>{user.role}</span>
+          <span className={`ml-2 text-xs ${isSet ? "text-ok" : "text-ink-dim"}`}>{isSet ? "Sequence set" : "No sequence"}</span>
         </div>
-        <div className="flex gap-3">
-          <button onClick={() => setEditing((v) => !v)} className="text-xs text-gold hover:underline">
-            {editing ? "Cancel" : isConfigured ? "Change" : "Set up"}
-          </button>
-          {isConfigured && !editing && (
-            <button onClick={handleClear} className="text-xs text-err hover:underline">Disable</button>
+        <div className="flex gap-2">
+          <button onClick={() => { setSteps(user.kiosk_sequence ?? blankSteps); setEditing(v => !v); }}
+            className="text-xs text-gold hover:underline">{editing ? "Cancel" : isSet ? "Change" : "Set"}</button>
+          {isSet && !editing && (
+            <button onClick={() => save.mutate({ userId: user.id, sequence: null })}
+              className="text-xs text-err hover:underline">Clear</button>
           )}
         </div>
       </div>
-
       {editing && (
-        <div className="mt-3 space-y-2">
-          <p className="text-xs text-ink-dim">
-            Choose 4 taps in order. Tap left side of a row = IN · Tap right side = OUT.
-          </p>
+        <div className="mt-2 space-y-2">
+          <p className="text-xs text-ink-dim">4 taps in order — left side of row = IN, right side = OUT.</p>
           {steps.map((step, i) => (
             <div key={i} className="flex items-center gap-2">
               <span className="text-xs text-ink-dim w-12 shrink-0">Step {i + 1}</span>
-              <select
-                value={step.bio_user_id}
-                onChange={(e) => setSteps((prev) => prev.map((s, idx) => idx === i ? { ...s, bio_user_id: e.target.value } : s))}
-                className={inp + " flex-1"}
-              >
+              <select value={step.bio_user_id}
+                onChange={e => setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, bio_user_id: e.target.value } : s))}
+                className={inp + " flex-1"}>
                 <option value="">— Select staff —</option>
-                {activeStaff.map((s) => (
-                  <option key={s.bio_user_id} value={s.bio_user_id}>{s.name}</option>
-                ))}
+                {activeStaff.map(s => <option key={s.bio_user_id} value={s.bio_user_id}>{s.name}</option>)}
               </select>
-              <select
-                value={step.action}
-                onChange={(e) => setSteps((prev) => prev.map((s, idx) => idx === i ? { ...s, action: e.target.value as "in" | "out" } : s))}
-                className={inp + " w-28"}
-              >
+              <select value={step.action}
+                onChange={e => setSteps(prev => prev.map((s, idx) => idx === i ? { ...s, action: e.target.value as "in" | "out" } : s))}
+                className={inp + " w-28"}>
                 <option value="in">Left (IN)</option>
                 <option value="out">Right (OUT)</option>
               </select>
             </div>
           ))}
           <div className="flex gap-2 pt-1">
-            <button
-              onClick={handleSave}
-              disabled={steps.some((s) => !s.bio_user_id) || saveSeq.isPending}
-              className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40"
-            >
-              {saveSeq.isPending ? "Saving…" : "Save & Lock"}
+            <button onClick={handleSave} disabled={steps.some(s => !s.bio_user_id) || save.isPending}
+              className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40">
+              {save.isPending ? "Saving…" : "Save & Lock"}
             </button>
-            <button onClick={() => setEditing(false)} className="border border-line text-xs px-3 py-1.5 rounded-lg2">
-              Cancel
-            </button>
+            <button onClick={() => setEditing(false)} className="border border-line text-xs px-3 py-1.5 rounded-lg2">Cancel</button>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Kiosk sequence configuration (admin only, unlocked) ─────────────────────
+function KioskConfig() {
+  const { data: staff = [] } = useStaff();
+  const { data: adminUsers = [], isLoading } = useAdminKioskSequences();
+  const { data: savedSecret } = useKioskSecret();
+  const saveSecret = useSaveKioskSecret();
+
+  const [editingSecret, setEditingSecret] = useState(false);
+  const [secretInput, setSecretInput] = useState("");
+  const [showSecret, setShowSecret] = useState(false);
+
+  if (isLoading) return null;
+  const anySet = adminUsers.some(u => u.kiosk_sequence?.length);
+
+  return (
+    <div className="bg-white rounded-xl border border-line shadow-soft p-4">
+      <div className="mb-3">
+        <p className="text-sm font-semibold text-ink">Kiosk Lock — Per-User Sequences</p>
+        <p className="text-xs text-ink-dim mt-0.5">
+          {anySet
+            ? "Kiosk will lock after inactivity. Each person unlocks with their own sequence and logs in as themselves."
+            : "No sequences set — kiosk will not lock."}
+        </p>
+      </div>
+      <div>
+        {adminUsers.map(u => <UserSeqEditor key={u.id} user={u} staff={staff} />)}
+      </div>
 
       {/* Recovery key */}
       <div className="mt-3 pt-3 border-t border-line flex items-center justify-between">
@@ -2218,27 +2215,80 @@ export default function AttendancePage() {
 
   const { isLocked: rawLocked, unlock } = useKiosk();
   const profile = useAuth((s) => s.profile);
+  const setProfile = useAuth((s) => s.setProfile);
   const { data: kioskSeq }         = useKioskSequence();
+  const { data: adminSeqs = [] }   = useAdminKioskSequences();
   const { data: myStaffProfile }   = useMyStaffProfile();
   const { data: pendingLeaveCount = 0 } = usePendingLeaveCount();
   const myBioUserId = myStaffProfile?.bio_user_id ?? null;
   const isAdmin = profile?.role !== "staff";
   const { data: notifications = [] } = useAppNotifications(isAdmin ? null : myBioUserId);
-  // Effective lock only when a sequence is actually configured
-  const isLocked = rawLocked && !!kioskSeq?.length;
+
+  // Kiosk is locked when: per-user sequences exist OR global sequence exists
+  const hasPerUserSeqs = adminSeqs.some((p) => p.kiosk_sequence?.length);
+  const isLocked = rawLocked && (hasPerUserSeqs || !!kioskSeq?.length);
   const [tapBuffer, setTapBuffer] = useState<KioskTap[]>([]);
 
   // Force attendance tab when locked — but not for admin (they see all tabs)
   useEffect(() => { if (isLocked && !isAdmin) setTab("attendance"); }, [isLocked, isAdmin]);
 
-  function handleKioskTap(bio_user_id: string, e: React.MouseEvent<HTMLTableRowElement>) {
-    if (!isLocked || !kioskSeq?.length) return;
+  function seqEquals(a: KioskTap[], b: KioskTap[]): boolean {
+    if (a.length !== b.length) return false;
+    return a.every((s, i) => s.bio_user_id === b[i].bio_user_id && s.action === b[i].action);
+  }
+
+  async function handleKioskTap(bio_user_id: string, e: React.MouseEvent<HTMLTableRowElement>) {
+    if (!isLocked) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const action: "in" | "out" = e.clientX - rect.left < rect.width * 0.4 ? "in" : "out";
+    const next = [...tapBuffer, { bio_user_id, action }];
+
+    // Check per-user sequences
+    if (hasPerUserSeqs) {
+      // Find any user whose sequence starts with the current buffer
+      const stillPossible = adminSeqs.filter(
+        (p) => p.kiosk_sequence?.length && next.every((t, i) => {
+          const s = (p.kiosk_sequence as KioskTap[])[i];
+          return s && s.bio_user_id === t.bio_user_id && s.action === t.action;
+        })
+      );
+      if (stillPossible.length === 0) { setTapBuffer([]); return; }
+      const matched = stillPossible.find((p) => seqEquals(next, p.kiosk_sequence as KioskTap[]));
+      if (matched) {
+        setTapBuffer([]);
+        try {
+          const res = await fetch("/api/auth/kiosk-unlock", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sequence: next }),
+          });
+          if (!res.ok) { return; }
+          const { token } = await res.json();
+          await supabase().auth.signOut();
+          const { error } = await supabase().auth.verifyOtp({ token_hash: token, type: "magiclink" });
+          if (!error) {
+            // Reload profile for newly signed-in user
+            const { data: { session } } = await supabase().auth.getSession();
+            if (session) {
+              const { data: newProfile } = await supabase().from("profiles")
+                .select("id, display_name, role, language, repair_access, incentive_access, kolusu_access, allowed_modules, is_active")
+                .eq("id", session.user.id).single();
+              if (newProfile) setProfile(newProfile);
+            }
+            unlock();
+          }
+        } catch { /* silent */ }
+      } else {
+        setTapBuffer(next);
+      }
+      return;
+    }
+
+    // Fallback: global kiosk sequence
+    if (!kioskSeq?.length) return;
     const step = tapBuffer.length;
     const expected = kioskSeq[step];
     if (expected?.bio_user_id === bio_user_id && expected?.action === action) {
-      const next = [...tapBuffer, { bio_user_id, action }];
       if (next.length === kioskSeq.length) {
         unlock();
         setTapBuffer([]);

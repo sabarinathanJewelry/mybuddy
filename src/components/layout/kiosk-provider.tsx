@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useKiosk } from "@/stores/kiosk";
 import { useAuth } from "@/stores/auth";
-import { useKioskSequence } from "@/modules/attendance/api";
+import { useKioskSequence, useAdminKioskSequences } from "@/modules/attendance/api";
 
 const IDLE_MS = 5 * 60 * 1000;
 
@@ -19,17 +19,21 @@ export default function KioskProvider({
 }) {
   const { isLocked, lock, unlock } = useKiosk();
   const { data: sequence, isLoading: seqLoading } = useKioskSequence();
+  const { data: adminSeqs = [], isLoading: adminSeqLoading } = useAdminKioskSequences();
   const profile = useAuth((s) => s.profile);
   const router = useRouter();
   const pathname = usePathname();
   const timerRef = useRef<ReturnType<typeof setTimeout>>();
 
-  // No sequence configured → no kiosk mode, stay unlocked
+  const loading = seqLoading || adminSeqLoading;
+  const hasPerUserSeqs = adminSeqs.some((p) => p.kiosk_sequence?.length);
+  const hasGlobalSeq = !!sequence?.length;
+  const hasAnySeq = hasPerUserSeqs || hasGlobalSeq;
+
+  // No sequences configured anywhere → stay unlocked
   useEffect(() => {
-    if (!seqLoading && (!sequence || sequence.length === 0)) {
-      unlock();
-    }
-  }, [seqLoading, sequence, unlock]);
+    if (!loading && !hasAnySeq) unlock();
+  }, [loading, hasAnySeq, unlock]);
 
   // Staff on personal devices are never locked — kiosk is only for the shared shop screen
   useEffect(() => {
@@ -38,14 +42,14 @@ export default function KioskProvider({
 
   // When locked (and sequence is set), redirect to /attendance
   useEffect(() => {
-    if (isLocked && !seqLoading && sequence && sequence.length > 0 && pathname !== "/attendance") {
+    if (isLocked && !loading && hasAnySeq && pathname !== "/attendance") {
       router.replace("/attendance");
     }
-  }, [isLocked, seqLoading, sequence, pathname, router]);
+  }, [isLocked, loading, hasAnySeq, pathname, router]);
 
-  // Inactivity auto-lock — only when unlocked and sequence is configured
+  // Inactivity auto-lock — only when unlocked and any sequence is configured
   useEffect(() => {
-    if (isLocked || !sequence?.length) return;
+    if (isLocked || !hasAnySeq) return;
 
     const resetTimer = () => {
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -60,9 +64,9 @@ export default function KioskProvider({
       events.forEach((e) => window.removeEventListener(e, resetTimer));
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [isLocked, sequence?.length, lock]);
+  }, [isLocked, hasAnySeq, lock]);
 
-  if (seqLoading) {
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-canvas">
         <div className="w-8 h-8 border-4 border-gold border-t-transparent rounded-full animate-spin" />
@@ -71,7 +75,7 @@ export default function KioskProvider({
   }
 
   // Locked mode: full-screen attendance board, no nav
-  if (isLocked && sequence && sequence.length > 0) {
+  if (isLocked && hasAnySeq) {
     return (
       <div className="h-screen overflow-y-auto bg-canvas">
         <main className="max-w-5xl mx-auto p-4 md:p-6">{children}</main>

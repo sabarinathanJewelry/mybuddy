@@ -609,6 +609,36 @@ export function useSaveKioskSecret() {
   });
 }
 
+export function useAdminKioskSequences() {
+  return useQuery<{ id: string; display_name: string; role: string; kiosk_sequence: KioskTap[] | null }[]>({
+    queryKey: ["admin-kiosk-sequences"],
+    staleTime: 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("profiles")
+        .select("id, display_name, role, kiosk_sequence")
+        .in("role", ["admin", "subadmin"])
+        .order("display_name");
+      if (error) throw error;
+      return (data ?? []) as { id: string; display_name: string; role: string; kiosk_sequence: KioskTap[] | null }[];
+    },
+  });
+}
+
+export function useSaveUserKioskSequence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ userId, sequence }: { userId: string; sequence: KioskTap[] | null }) => {
+      const { error } = await supabase()
+        .from("profiles")
+        .update({ kiosk_sequence: sequence })
+        .eq("id", userId);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-kiosk-sequences"] }),
+  });
+}
+
 // ── Leave requests ────────────────────────────────────────────────────────────
 
 export type LeaveRequest = {
