@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import ShootingRange, { type Shot } from "@/components/login/shooting-range";
@@ -8,10 +8,19 @@ import { clsx } from "clsx";
 
 type Mode = "game" | "password";
 
+function DeactivatedBanner() {
+  const searchParams = useSearchParams();
+  if (searchParams.get("reason") !== "deactivated") return null;
+  return (
+    <div className="mb-5 bg-err/10 border border-err/30 rounded-xl p-4 text-center">
+      <p className="text-err font-semibold text-sm">Account Deactivated</p>
+      <p className="text-err/70 text-xs mt-1">Your account has been deactivated. Please contact your admin.</p>
+    </div>
+  );
+}
+
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const isDeactivated = searchParams.get("reason") === "deactivated";
   const [mode, setMode] = useState<Mode>("game");
   const [secret, setSecret] = useState("");
   const [pattern, setPattern] = useState<Shot[]>([]);
@@ -64,12 +73,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-sidebar-bg p-4">
       <div className="w-full max-w-sm">
-        {isDeactivated && (
-          <div className="mb-5 bg-err/10 border border-err/30 rounded-xl p-4 text-center">
-            <p className="text-err font-semibold text-sm">Account Deactivated</p>
-            <p className="text-err/70 text-xs mt-1">Your account has been deactivated. Please contact your admin.</p>
-          </div>
-        )}
+        <Suspense><DeactivatedBanner /></Suspense>
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="text-5xl mb-2">🔫</div>
