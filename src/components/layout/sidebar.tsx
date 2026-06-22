@@ -25,6 +25,7 @@ const NAV = [
   { href: "/bullion",      icon: "🔶", key: "nav_bullion" as const },
   { href: "/loans",        icon: "🏦", key: "nav_loans" as const },
   { href: "/expenses",     icon: "📝", key: "nav_expenses" as const },
+  { href: "/av-income",   icon: "💹", key: "nav_av_income" as const },
   { href: "/writeoff",     icon: "✂️",  key: "nav_scrap" as const },
   { href: "/chits",        icon: "🪙", key: "nav_chits" as const },
   { href: "/gold-chit",    icon: "🥇", key: "nav_gold_chit" as const },

@@ -16,7 +16,7 @@ function useDaily(date: string) {
   return useQuery({
     queryKey: ["daily-sheet", date],
     queryFn: async () => {
-      const [cashRes, bankRes, salesRes, metalRes, walkinRes, chitRes, gsdRes, cbRes, expRes] = await Promise.all([
+      const [cashRes, bankRes, salesRes, metalRes, walkinRes, chitRes, gsdRes, cbRes, expRes, avRes] = await Promise.all([
         client.from("cash_ledger").select("direction, amount").eq("tx_date", date),
         client.from("bank_ledger").select("direction, amount").eq("tx_date", date),
         client.from("sales").select("id, total, gst_amount, status, sale_items(metal, net_wt, line_total, is_suspense, suppliers(name))").eq("bill_date", date).eq("status", "confirmed"),
@@ -26,6 +26,7 @@ function useDaily(date: string) {
         client.from("gold_savings_deposits").select("pure_wt, metal_type").eq("deposit_date", date),
         client.from("cash_savings_deposits").select("amount").eq("deposit_date", date),
         client.from("expenses").select("amount").eq("exp_date", date),
+        client.from("av_income").select("amount").eq("income_date", date),
       ]);
 
       const cashIn   = (cashRes.data ?? []).filter((r) => r.direction === "in").reduce((s, r) => s + Number(r.amount), 0);
@@ -57,6 +58,7 @@ function useDaily(date: string) {
       );
 
       const expenseTotal = (expRes.data ?? []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      const avTotal = (avRes.data ?? []).reduce((s, r) => s + (Number(r.amount) || 0), 0);
       const oldGoldG   = (metalRes.data ?? []).filter((r) => r.metal?.startsWith("gold")).reduce((s, r) => s + (Number(r.pure_wt) || 0), 0);
       const oldSilverG = (metalRes.data ?? []).filter((r) => r.metal?.startsWith("silver")).reduce((s, r) => s + (Number(r.pure_wt) || 0), 0);
       const walkinRow = (walkinRes.data ?? [])[0];
@@ -87,7 +89,7 @@ function useDaily(date: string) {
         chitAmt, chitGoldG, chitSilverG, chitCount,
         smartGoldG, smartSilverG, smartCount,
         cashBonusAmt, cashBonusCount,
-        goldSoldG, silverSoldG, mrpTotal, expenseTotal,
+        goldSoldG, silverSoldG, mrpTotal, expenseTotal, avTotal,
         suspenseCount, suspenseTotalAmt, suspenseBySupplier,
       };
     },
@@ -2154,6 +2156,7 @@ export default function DailySheetPage() {
             <StatCard label="Silver Sold" value={grams(data.silverSoldG)} color="text-ink-mid" sub="Net wt today" />
             <StatCard label="MRP Items" value={inr(data.mrpTotal)} color="text-info" sub="Silver MPR line total" />
             <StatCard label="Total Expenses" value={inr(data.expenseTotal)} color="text-err" sub="All expenses today" />
+            {data.avTotal > 0 && <StatCard label="AV Income" value={inr(data.avTotal)} color="text-ok" sub="Commission / facilitation" />}
           </div>
 
           {/* Outside / Suspense breakdown */}
