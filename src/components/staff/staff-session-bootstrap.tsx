@@ -22,10 +22,15 @@ export default function StaffSessionBootstrap({ children }: { children: React.Re
 
       const { data: profile } = await client
         .from("profiles")
-        .select("id, display_name, role, language, repair_access, incentive_access, kolusu_access, allowed_modules")
+        .select("id, display_name, role, language, repair_access, incentive_access, kolusu_access, allowed_modules, is_active")
         .eq("id", session.user.id)
         .single();
 
+      if (profile?.is_active === false) {
+        await client.auth.signOut();
+        router.replace("/login?reason=deactivated");
+        return;
+      }
       if (profile) setProfile(profile);
 
       setReady(true);

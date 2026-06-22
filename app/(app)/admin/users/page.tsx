@@ -81,6 +81,25 @@ export default function AdminUsersPage() {
     updateModules.mutate({ id: userId, modules: next });
   }
 
+  const toggleActive = useMutation({
+    mutationFn: async ({ userId, reactivate }: { userId: string; reactivate: boolean }) => {
+      const { data: { session } } = await supabase().auth.getSession();
+      const res = await fetch("/api/admin/deactivate-user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({ userId, reactivate }),
+      });
+      if (!res.ok) {
+        const body = await res.json();
+        throw new Error(body.error ?? "Failed");
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["profiles"] }),
+  });
+
   if (profile?.role !== "admin") {
     return <div className="p-8 text-center text-ink-dim">Admin access required.</div>;
   }
@@ -123,6 +142,7 @@ where id = '<user-uuid>';`}
                 <th className="text-center px-3 py-2.5">Incentive</th>
                 <th className="text-center px-3 py-2.5">Kolusu</th>
                 <th className="text-center px-3 py-2.5">Sub-Admin</th>
+                <th className="text-center px-3 py-2.5">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -133,7 +153,7 @@ where id = '<user-uuid>';`}
 
                 return (
                   <>
-                    <tr key={p.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                    <tr key={p.id} className={`border-b border-line last:border-0 hover:bg-canvas/50 ${p.is_active === false ? "opacity-50" : ""}`}>
                       <td className="px-4 py-2.5 font-medium">{p.display_name}</td>
                       <td className="px-3 py-2.5">
                         <span className={`text-xs px-2 py-0.5 rounded-full ${
@@ -233,6 +253,32 @@ where id = '<user-uuid>';`}
                               </button>
                             )}
                           </div>
+                        )}
+                      </td>
+                      {/* Deactivate / Reactivate */}
+                      <td className="px-3 py-2.5 text-center">
+                        {p.role === "admin" ? (
+                          <span className="text-xs text-gold">—</span>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              const isActive = p.is_active !== false;
+                              const msg = isActive
+                                ? `Deactivate ${p.display_name}? They will be logged out and cannot log in again.`
+                                : `Reactivate ${p.display_name}?`;
+                              if (confirm(msg)) {
+                                toggleActive.mutate({ userId: p.id, reactivate: !isActive });
+                              }
+                            }}
+                            disabled={toggleActive.isPending}
+                            className={`text-xs px-2.5 py-1 rounded-full border transition-colors disabled:opacity-40 ${
+                              p.is_active !== false
+                                ? "border-err/30 text-err hover:bg-err/10"
+                                : "border-ok/30 text-ok hover:bg-ok/10"
+                            }`}
+                          >
+                            {p.is_active !== false ? "Deactivate" : "Reactivate"}
+                          </button>
                         )}
                       </td>
                     </tr>

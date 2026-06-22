@@ -59,6 +59,11 @@ export default function SessionBootstrap({ children }: { children: React.ReactNo
 
       const profile = await loadProfile();
       if (profile) {
+        if (profile.is_active === false) {
+          await client.auth.signOut();
+          router.replace("/login?reason=deactivated");
+          return;
+        }
         setProfile(profile);
         if (profile.language) setLang(profile.language as "en" | "ta");
       }
