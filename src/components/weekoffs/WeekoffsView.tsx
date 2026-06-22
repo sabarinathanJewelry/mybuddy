@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/stores/auth";
@@ -96,6 +96,17 @@ export default function WeekoffsView() {
   const myWeekoff = allWeekoffs.find((w) => w.user_id === profile?.id);
   const [selected, setSelected] = useState<string[]>([]);
 
+  // Seed selected from DB when draft/rejected weekoff loads (e.g. after rejection, reopen)
+  useEffect(() => {
+    if (myWeekoff && (myWeekoff.status === "draft" || myWeekoff.status === "rejected")) {
+      setSelected(myWeekoff.dates);
+    } else if (!myWeekoff) {
+      setSelected([]);
+    }
+  // Only run when the weekoff record itself changes (id or status), not on every render
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myWeekoff?.id, myWeekoff?.status, monthKey]);
+
   const daysInMonth = getDaysInMonth(year, month);
   const firstDay    = getFirstDay(year, month);
 
@@ -138,14 +149,13 @@ export default function WeekoffsView() {
   const submitForApproval = useMutation({
     mutationFn: async () => {
       if (!profile?.id) throw new Error("Not logged in");
-      const dates = myWeekoff ? myWeekoff.dates : selected;
-      if (dates.length === 0) throw new Error("Select at least 1 day");
-      const payload = { status: "pending" as const, submitted_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      if (selected.length === 0) throw new Error("Select at least 1 day");
+      const payload = { status: "pending" as const, dates: selected, submitted_at: new Date().toISOString(), updated_at: new Date().toISOString() };
       if (myWeekoff) {
         const { error } = await supabase().from("monthly_weekoffs").update(payload).eq("id", myWeekoff.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase().from("monthly_weekoffs").insert({ ...payload, user_id: profile.id, month: monthKey, dates: selected });
+        const { error } = await supabase().from("monthly_weekoffs").insert({ ...payload, user_id: profile.id, month: monthKey });
         if (error) throw error;
       }
       // Notify all admins
@@ -192,7 +202,8 @@ export default function WeekoffsView() {
   });
 
   const canEdit = !myWeekoff || myWeekoff.status === "draft" || myWeekoff.status === "rejected";
-  const currentDates = myWeekoff?.dates ?? selected;
+  // Always use local selected state so new picks are reflected immediately
+  const currentDates = selected;
 
   function prevMonth() {
     if (month === 0) { setMonth(11); setYear(y => y - 1); }
@@ -262,7 +273,7 @@ export default function WeekoffsView() {
               {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
                 const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                const isMine = myWeekoff ? myWeekoff.dates.includes(dateStr) : selected.includes(dateStr);
+                const isMine = selected.includes(dateStr);
                 const isSunday = new Date(year, month, day).getDay() === 0;
                 return (
                   <button
