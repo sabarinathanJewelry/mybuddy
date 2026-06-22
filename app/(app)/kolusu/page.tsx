@@ -260,6 +260,44 @@ export default function KolusuPage() {
   const [tab, setTab] = useState<"boxes" | "history" | "pending" | "add_box" | "report">("boxes");
   const [reportFrom, setReportFrom] = useState("2026-06-01");
 
+  // Edit sale transaction
+  const [editSaleTxId, setEditSaleTxId] = useState<string | null>(null);
+  const [editSaleForm, setEditSaleForm] = useState({ raw_wt_g: 0, cover_wt_g: 0, bill_no: "", notes: "", tx_date: "" });
+
+  const editSaleTx = useMutation({
+    mutationFn: async ({ tx }: { tx: any }) => {
+      const client = supabase();
+      const new_total = parseFloat((editSaleForm.raw_wt_g + editSaleForm.cover_wt_g).toFixed(3));
+      const old_total = parseFloat((tx.total_wt_g ?? 0).toFixed(3));
+      const wt_diff = parseFloat((new_total - old_total).toFixed(3));
+      // Update transaction
+      const { error: txErr } = await client.from("kolusu_transactions").update({
+        raw_wt_g:   editSaleForm.raw_wt_g,
+        cover_wt_g: editSaleForm.cover_wt_g,
+        total_wt_g: new_total,
+        bill_no:    editSaleForm.bill_no || null,
+        notes:      editSaleForm.notes || null,
+        tx_date:    editSaleForm.tx_date,
+      }).eq("id", tx.id);
+      if (txErr) throw txErr;
+      // Adjust box: if new_total > old_total we sold more than recorded, box goes down more
+      if (wt_diff !== 0) {
+        const { data: box, error: fetchErr } = await client.from("kolusu_boxes")
+          .select("current_gross_wt_g").eq("id", tx.box_id).single();
+        if (fetchErr) throw fetchErr;
+        await client.from("kolusu_boxes").update({
+          current_gross_wt_g: parseFloat((box.current_gross_wt_g - wt_diff).toFixed(3)),
+          updated_at: new Date().toISOString(),
+        }).eq("id", tx.box_id);
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["kolusu_boxes"] });
+      qc.invalidateQueries({ queryKey: ["kolusu_transactions"] });
+      setEditSaleTxId(null);
+    },
+  });
+
   // Direct box weight/qty correction
   const [editBoxId, setEditBoxId]   = useState<string | null>(null);
   const [editForm, setEditForm]     = useState({ gross_wt_g: 0, qty: 0, reason: "" });
@@ -1019,20 +1057,44 @@ export default function KolusuPage() {
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-right">
-                        {!isRestock && (
-                          <button
-                            onClick={() => {
-                              setTransferTxId(isTransferring ? null : tx.id);
-                              setTransferBoxId("");
-                            }}
-                            className={clsx(
-                              "text-xs px-2 py-1 rounded-lg2 border transition-colors",
-                              isTransferring
-                                ? "border-warn/40 bg-warn/10 text-warn"
-                                : "border-line text-ink-dim hover:border-gold hover:text-gold"
-                            )}>
-                            {isTransferring ? "Cancel" : "Transfer"}
-                          </button>
+                        {!isRestock && !isCorrection && (
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => {
+                                if (editSaleTxId === tx.id) { setEditSaleTxId(null); return; }
+                                setEditSaleTxId(tx.id);
+                                setTransferTxId(null);
+                                setEditSaleForm({
+                                  raw_wt_g:   tx.raw_wt_g,
+                                  cover_wt_g: tx.cover_wt_g,
+                                  bill_no:    tx.bill_no ?? "",
+                                  notes:      tx.notes ?? "",
+                                  tx_date:    tx.tx_date,
+                                });
+                              }}
+                              className={clsx(
+                                "text-xs px-2 py-1 rounded-lg2 border transition-colors",
+                                editSaleTxId === tx.id
+                                  ? "border-err/40 bg-err/10 text-err"
+                                  : "border-line text-ink-dim hover:border-gold hover:text-gold"
+                              )}>
+                              {editSaleTxId === tx.id ? "Cancel" : "Edit"}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setTransferTxId(isTransferring ? null : tx.id);
+                                setEditSaleTxId(null);
+                                setTransferBoxId("");
+                              }}
+                              className={clsx(
+                                "text-xs px-2 py-1 rounded-lg2 border transition-colors",
+                                isTransferring
+                                  ? "border-warn/40 bg-warn/10 text-warn"
+                                  : "border-line text-ink-dim hover:border-gold hover:text-gold"
+                              )}>
+                              {isTransferring ? "Cancel" : "Transfer"}
+                            </button>
+                          </div>
                         )}
                         {isRestock && (
                           <button
@@ -1046,6 +1108,66 @@ export default function KolusuPage() {
                         )}
                       </td>
                     </tr>
+                    {editSaleTxId === tx.id && (
+                      <tr className="border-b border-line bg-err/5">
+                        <td colSpan={8} className="px-4 py-4">
+                          <p className="text-xs font-semibold text-err mb-3">Edit Sale — Box {tx.kolusu_boxes?.box_no}</p>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                            <div>
+                              <label className="block text-xs text-ink-dim mb-1">Date</label>
+                              <input type="date" value={editSaleForm.tx_date}
+                                onChange={e => setEditSaleForm(f => ({ ...f, tx_date: e.target.value }))}
+                                className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-ink-dim mb-1">Raw / Kolusu (g)</label>
+                              <input type="number" step="0.001" value={editSaleForm.raw_wt_g}
+                                onChange={e => setEditSaleForm(f => ({ ...f, raw_wt_g: parseFloat(e.target.value) || 0 }))}
+                                className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-ink-dim mb-1">Cover (g)</label>
+                              <input type="number" step="0.001" value={editSaleForm.cover_wt_g}
+                                onChange={e => setEditSaleForm(f => ({ ...f, cover_wt_g: parseFloat(e.target.value) || 0 }))}
+                                className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-ink-dim mb-1">Total (auto)</label>
+                              <div className="border border-line rounded-lg2 px-2 py-1.5 text-sm bg-canvas text-ink-dim font-mono">
+                                {(editSaleForm.raw_wt_g + editSaleForm.cover_wt_g).toFixed(3)}g
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-xs text-ink-dim mb-1">Bill No</label>
+                              <input type="text" value={editSaleForm.bill_no}
+                                onChange={e => setEditSaleForm(f => ({ ...f, bill_no: e.target.value }))}
+                                className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <label className="block text-xs text-ink-dim mb-1">Notes</label>
+                              <input type="text" value={editSaleForm.notes}
+                                onChange={e => setEditSaleForm(f => ({ ...f, notes: e.target.value }))}
+                                className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              disabled={editSaleTx.isPending}
+                              onClick={() => editSaleTx.mutate({ tx })}
+                              className="bg-err text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                              {editSaleTx.isPending ? "Saving…" : "Save"}
+                            </button>
+                            <button onClick={() => setEditSaleTxId(null)}
+                              className="border border-line text-xs px-3 py-1.5 rounded-lg2 text-ink-dim">
+                              Cancel
+                            </button>
+                            {editSaleTx.isError && (
+                              <span className="text-xs text-err">{(editSaleTx.error as Error).message}</span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                     {isRestock && editRestockId === tx.id && (
                       <tr className="border-b border-line bg-ok/5">
                         <td colSpan={8} className="px-4 py-3">
