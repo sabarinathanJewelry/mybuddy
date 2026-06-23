@@ -6,7 +6,7 @@ import { supabase } from "@/lib/supabase/client";
 import { useGlobalDate } from "@/stores/global-date";
 import { useAuth } from "@/stores/auth";
 import { useT } from "@/i18n";
-import { grams, shortDate } from "@/lib/format";
+import { grams, inr, shortDate } from "@/lib/format";
 
 const TABS = ["intake", "batches", "reserve"] as const;
 type Tab = (typeof TABS)[number];
@@ -25,7 +25,7 @@ function useIntake(fromDate: string) {
   return useQuery({
     queryKey: ["metal_intake", fromDate],
     queryFn: async () => {
-      const base = supabase().from("old_metal_intake").select("*, customers(name)");
+      const base = supabase().from("old_metal_intake").select("*, customers(name), old_metal_intake_payouts(id, pay_date, amount, mode, notes)");
       const { data, error } = await (fromDate
         ? base.gte("intake_date", fromDate).order("intake_date", { ascending: false })
         : base.order("intake_date", { ascending: false }));
@@ -178,7 +178,10 @@ export default function MetalFlowPage() {
   const [payoutRowId, setPayoutRowId] = useState<string | null>(null);
   const [payoutForm, setPayoutForm] = useState({ amount: 0, mode: "cash" as "cash" | "bank" });
   const [editIntakeId, setEditIntakeId] = useState<string | null>(null);
-  const [editIntakeForm, setEditIntakeForm] = useState<{ intake_date: string; customer_id: string; metal: string; gross_wt: number; purity_pct: number; pure_wt: number; notes: string; payout_amount: number; payout_mode: "cash" | "bank" } | null>(null);
+  const [editIntakeForm, setEditIntakeForm] = useState<{ intake_date: string; customer_id: string; metal: string; gross_wt: number; purity_pct: number; pure_wt: number; notes: string; payout_amount: number; payout_mode: "cash" | "bank"; agreed_price: number } | null>(null);
+  const [addPayoutId, setAddPayoutId] = useState<string | null>(null);
+  const [addPayoutForm, setAddPayoutForm] = useState({ pay_date: globalDate, amount: 0, mode: "cash" as "cash" | "bank" });
+  const [payoutPendingOnly, setPayoutPendingOnly] = useState(false);
   const [metalFilter, setMetalFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "used" | "sold">("all");
   const defaultIntakeForm = () => ({
@@ -189,6 +192,10 @@ export default function MetalFlowPage() {
     purity_pct: 91.6,
     pure_wt: 0,
     notes: "",
+    agreed_price: 0,
+    pay_now_amount: 0,
+    pay_now_mode: "cash" as "cash" | "bank",
+    // kept for backward compat with legacy payout path
     payout_amount: 0,
     payout_mode: "cash" as "cash" | "bank",
   });
@@ -219,7 +226,14 @@ export default function MetalFlowPage() {
       (metalFilter === "gold" && r.metal?.startsWith("gold")) ||
       (metalFilter === "silver" && r.metal?.startsWith("silver"));
     const statusOk = statusFilter === "all" || r.status === statusFilter;
-    return metalOk && statusOk;
+    if (!metalOk || !statusOk) return false;
+    if (payoutPendingOnly) {
+      const agreedPrice = Number(r.agreed_price ?? 0);
+      if (agreedPrice <= 0) return false;
+      const paid = (r.old_metal_intake_payouts ?? []).reduce((s: number, p: any) => s + Number(p.amount), 0);
+      return paid < agreedPrice - 0.5;
+    }
+    return true;
   });
   const filterTotalGross = filteredIntake.reduce((s: number, r: any) => s + (r.gross_wt ?? 0), 0);
   const filterTotalPure  = filteredIntake.reduce((s: number, r: any) => s + (r.pure_wt ?? 0), 0);
@@ -341,35 +355,30 @@ export default function MetalFlowPage() {
         notes: d.notes || null,
         source_type: "standalone",
         status: "pending",
-        payout_amount: d.payout_amount > 0 ? d.payout_amount : null,
-        payout_mode: d.payout_amount > 0 ? d.payout_mode : null,
+        agreed_price: d.agreed_price > 0 ? d.agreed_price : null,
+        payout_amount: null,
+        payout_mode: null,
       }).select("id").single();
       if (error) throw error;
 
-      if (d.payout_amount > 0) {
-        // Debit shop's cash or bank ledger (money going out to customer)
-        const table = d.payout_mode === "bank" ? "bank_ledger" : "cash_ledger";
-        const { error: ledgerErr } = await client.from(table).insert({
-          tx_date: d.intake_date,
-          direction: "out",
-          amount: d.payout_amount,
+      if (d.pay_now_amount > 0 && intakeRec) {
+        const { data: payout } = await client.from("old_metal_intake_payouts").insert({
+          intake_id: intakeRec.id, pay_date: d.intake_date,
+          amount: d.pay_now_amount, mode: d.pay_now_mode,
+        }).select("id").single();
+        const table = d.pay_now_mode === "bank" ? "bank_ledger" : "cash_ledger";
+        await client.from(table).insert({
+          tx_date: d.intake_date, direction: "out", amount: d.pay_now_amount,
           description: "Old gold purchase payout",
-          ref_type: "old_metal_intake",
-          ref_id: intakeRec?.id ?? null,
+          ref_type: "old_metal_intake", ref_id: payout?.id ?? intakeRec.id,
         });
-        if (ledgerErr) throw ledgerErr;
-
-        // Credit customer balance so their account reflects the advance they're owed
         if (d.customer_id) {
-          const { error: payErr } = await client.from("payments").insert({
-            pay_date: d.intake_date,
-            direction: "in",
-            mode: d.payout_mode === "bank" ? "bank" : "cash",
-            amount: d.payout_amount,
-            customer_id: d.customer_id,
-            notes: "Old gold purchase — cash payout to customer",
+          await client.from("payments").insert({
+            pay_date: d.intake_date, direction: "in",
+            mode: d.pay_now_mode === "bank" ? "bank" : "cash",
+            amount: d.pay_now_amount, customer_id: d.customer_id,
+            notes: "Old gold purchase — payout",
           });
-          if (payErr) console.warn("Customer payment record failed:", payErr);
         }
       }
     },
@@ -403,6 +412,7 @@ export default function MetalFlowPage() {
         notes: d.notes || null,
         payout_amount: d.payout_amount > 0 ? d.payout_amount : null,
         payout_mode:   d.payout_amount > 0 ? d.payout_mode   : null,
+        agreed_price:  d.agreed_price > 0   ? d.agreed_price  : null,
       }).eq("id", d.id);
       if (error) throw error;
 
@@ -486,6 +496,50 @@ export default function MetalFlowPage() {
       qc.invalidateQueries({ queryKey: ["ledger_detail"] });
       setPayoutRowId(null);
       setPayoutForm({ amount: 0, mode: "cash" });
+    },
+  });
+
+  const addIntakePayout = useMutation({
+    mutationFn: async ({ intakeId, customerId }: { intakeId: string; customerId: string | null }) => {
+      const client = supabase();
+      const { pay_date, amount, mode } = addPayoutForm;
+      if (amount <= 0) throw new Error("Amount required");
+      const { data: payout, error: pErr } = await client.from("old_metal_intake_payouts")
+        .insert({ intake_id: intakeId, pay_date, amount, mode }).select("id").single();
+      if (pErr) throw pErr;
+      const table = mode === "bank" ? "bank_ledger" : "cash_ledger";
+      await client.from(table).insert({
+        tx_date: pay_date, direction: "out", amount,
+        description: "Old gold purchase payout",
+        ref_type: "old_metal_intake", ref_id: payout?.id,
+      });
+      if (customerId) {
+        await client.from("payments").insert({
+          pay_date, direction: "in", mode: mode === "bank" ? "bank" : "cash",
+          amount, customer_id: customerId, notes: "Old gold purchase — partial payout",
+        });
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["metal_intake"] });
+      qc.invalidateQueries({ queryKey: ["ledger_detail"] });
+      setAddPayoutId(null);
+      setAddPayoutForm({ pay_date: globalDate, amount: 0, mode: "cash" });
+    },
+  });
+
+  const deleteIntakePayout = useMutation({
+    mutationFn: async ({ payoutId, mode }: { payoutId: string; mode: string }) => {
+      const client = supabase();
+      const table = mode === "bank" ? "bank_ledger" : "cash_ledger";
+      await Promise.all([
+        client.from("old_metal_intake_payouts").delete().eq("id", payoutId),
+        client.from(table).delete().eq("ref_type", "old_metal_intake").eq("ref_id", payoutId),
+      ]);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["metal_intake"] });
+      qc.invalidateQueries({ queryKey: ["ledger_detail"] });
     },
   });
 
@@ -688,8 +742,8 @@ export default function MetalFlowPage() {
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-ink-dim font-medium w-12">Status</span>
               {([["all", "All"], ["pending", "Ready to Melt"], ["used", "Used"], ["sold", "Sold to Supplier"]] as const).map(([v, l]) => (
-                <button key={v} onClick={() => setStatusFilter(v)}
-                  className={`text-xs px-3 py-1 rounded-full border transition-colors ${statusFilter === v
+                <button key={v} onClick={() => { setStatusFilter(v); setPayoutPendingOnly(false); }}
+                  className={`text-xs px-3 py-1 rounded-full border transition-colors ${statusFilter === v && !payoutPendingOnly
                     ? v === "pending" ? "bg-warn text-white border-warn"
                     : v === "used"    ? "bg-ok text-white border-ok"
                     : v === "sold"    ? "bg-info text-white border-info"
@@ -698,8 +752,13 @@ export default function MetalFlowPage() {
                   {l}
                 </button>
               ))}
-              {(metalFilter !== "all" || statusFilter !== "all") && (
-                <button onClick={() => { setMetalFilter("all"); setStatusFilter("all"); }}
+              <button
+                onClick={() => { setPayoutPendingOnly(v => !v); setStatusFilter("all"); }}
+                className={`text-xs px-3 py-1 rounded-full border transition-colors ${payoutPendingOnly ? "bg-err text-white border-err" : "border-line text-ink-dim hover:border-err"}`}>
+                Payout Pending
+              </button>
+              {(metalFilter !== "all" || statusFilter !== "all" || payoutPendingOnly) && (
+                <button onClick={() => { setMetalFilter("all"); setStatusFilter("all"); setPayoutPendingOnly(false); }}
                   className="text-xs text-err hover:underline ml-2">Clear filters</button>
               )}
             </div>
@@ -792,25 +851,38 @@ export default function MetalFlowPage() {
                 </div>
               </div>
 
-              <div className="border-t border-line pt-3 space-y-2">
-                <p className="text-xs font-medium text-ink-dim">Cash Payout to Customer (optional)</p>
+              <div className="border-t border-line pt-3 space-y-3">
+                <p className="text-xs font-medium text-ink-dim">Purchase Payment (optional)</p>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-xs text-ink-dim mb-1">Amount Paid (₹)</label>
-                    <input type="number" step="1" value={intakeForm.payout_amount || ""}
+                    <label className="block text-xs text-ink-dim mb-1">Agreed Price (₹)</label>
+                    <input type="number" step="1" value={intakeForm.agreed_price || ""}
                       onFocus={(e) => e.target.select()}
-                      onChange={(e) => setIntakeForm({ ...intakeForm, payout_amount: parseFloat(e.target.value) || 0 })}
-                      className={inp} placeholder="0" />
+                      onChange={(e) => setIntakeForm({ ...intakeForm, agreed_price: parseFloat(e.target.value) || 0 })}
+                      className={inp} placeholder="Total agreed amount" />
                   </div>
-                  <div>
-                    <label className="block text-xs text-ink-dim mb-1">Paid via</label>
-                    <select value={intakeForm.payout_mode}
-                      onChange={(e) => setIntakeForm({ ...intakeForm, payout_mode: e.target.value as "cash" | "bank" })}
-                      className={inp}>
-                      <option value="cash">Cash</option>
-                      <option value="bank">Bank / UPI</option>
-                    </select>
-                  </div>
+                  {intakeForm.agreed_price > 0 && (
+                    <>
+                      <div>
+                        <label className="block text-xs text-ink-dim mb-1">Pay Now (₹)</label>
+                        <input type="number" step="1" value={intakeForm.pay_now_amount || ""}
+                          onFocus={(e) => e.target.select()}
+                          onChange={(e) => setIntakeForm({ ...intakeForm, pay_now_amount: parseFloat(e.target.value) || 0 })}
+                          className={inp} placeholder="0 = pay later" />
+                      </div>
+                      {intakeForm.pay_now_amount > 0 && (
+                        <div>
+                          <label className="block text-xs text-ink-dim mb-1">Pay via</label>
+                          <select value={intakeForm.pay_now_mode}
+                            onChange={(e) => setIntakeForm({ ...intakeForm, pay_now_mode: e.target.value as "cash" | "bank" })}
+                            className={inp}>
+                            <option value="cash">Cash</option>
+                            <option value="bank">Bank / UPI</option>
+                          </select>
+                        </div>
+                      )}
+                    </>
+                  )}
                   <div>
                     <label className="block text-xs text-ink-dim mb-1">Notes</label>
                     <input value={intakeForm.notes}
@@ -913,23 +985,43 @@ export default function MetalFlowPage() {
                         </td>
                         <td className="px-3 py-2.5">
                           <div className="flex items-center gap-2 flex-wrap">
-                            {r.source_type === "batch_debris" ? (
-                              <span className="text-xs text-warn font-medium">Debris box</span>
-                            ) : r.source_type === "sale" || r.source_type === "order" ? (
-                              <span className="text-xs text-ink-dim">
-                                Via {r.source_type} — paid
-                              </span>
-                            ) : r.payout_amount > 0 ? (
-                              <span className="text-xs text-ok font-medium">
-                                ✓ {r.payout_mode === "bank" ? "Bank" : "Cash"} paid
-                              </span>
-                            ) : (
-                              <button
-                                onClick={() => { setPayoutRowId(r.id); setPayoutForm({ amount: 0, mode: "cash" }); }}
-                                className="text-xs text-gold hover:underline">
-                                + Pay Out
-                              </button>
-                            )}
+                            {(() => {
+                              if (r.source_type === "batch_debris") return <span className="text-xs text-warn font-medium">Debris box</span>;
+                              if (r.source_type === "sale" || r.source_type === "order") return <span className="text-xs text-ink-dim">Via {r.source_type} — paid</span>;
+                              const payouts: any[] = r.old_metal_intake_payouts ?? [];
+                              const agreedPrice = Number(r.agreed_price ?? 0);
+                              const paidTotal = payouts.reduce((s, p) => s + Number(p.amount), 0);
+                              if (agreedPrice > 0) {
+                                const balance = agreedPrice - paidTotal;
+                                if (balance <= 0.5) return <span className="text-xs text-ok font-medium">✓ Paid {inr(agreedPrice)}</span>;
+                                if (paidTotal > 0) return (
+                                  <span className="text-xs text-warn font-medium">
+                                    {inr(paidTotal)} / {inr(agreedPrice)} paid
+                                  </span>
+                                );
+                                return <span className="text-xs text-err font-medium">Pending {inr(agreedPrice)}</span>;
+                              }
+                              if (r.payout_amount > 0) return <span className="text-xs text-ok font-medium">✓ {r.payout_mode === "bank" ? "Bank" : "Cash"} paid</span>;
+                              return (
+                                <button
+                                  onClick={() => { setPayoutRowId(r.id); setPayoutForm({ amount: 0, mode: "cash" }); }}
+                                  className="text-xs text-gold hover:underline">
+                                  + Pay Out
+                                </button>
+                              );
+                            })()}
+                            {r.source_type !== "batch_debris" && r.source_type !== "sale" && r.source_type !== "order" && Number(r.agreed_price ?? 0) > 0 && (() => {
+                              const paidTotal = (r.old_metal_intake_payouts ?? []).reduce((s: number, p: any) => s + Number(p.amount), 0);
+                              const balance = Number(r.agreed_price) - paidTotal;
+                              if (balance > 0.5) return (
+                                <button
+                                  onClick={() => { setAddPayoutId(r.id); setAddPayoutForm({ pay_date: globalDate, amount: 0, mode: "cash" }); }}
+                                  className="text-xs text-gold border border-gold/30 px-2 py-0.5 rounded hover:bg-gold/10">
+                                  + Add Payment
+                                </button>
+                              );
+                              return null;
+                            })()}
                             {r.status === "pending" && (
                               <button
                                 disabled={markSold.isPending}
@@ -963,7 +1055,9 @@ export default function MetalFlowPage() {
                                     notes: r.notes ?? "",
                                     payout_amount: r.payout_amount ?? 0,
                                     payout_mode: (r.payout_mode ?? "cash") as "cash" | "bank",
+                                    agreed_price: Number(r.agreed_price ?? 0),
                                   });
+                                  setAddPayoutId(null);
                                   setPayoutRowId(null);
                                 }}
                                 className="text-xs text-ink-dim hover:text-gold hover:underline">
@@ -1056,26 +1150,37 @@ export default function MetalFlowPage() {
                               </div>
 
                               {(r.source_type !== "sale" && r.source_type !== "order") && (
-                                <div className="border-t border-line pt-3 space-y-2">
-                                  <p className="text-xs font-medium text-ink-dim">Cash Payout to Customer</p>
+                                <div className="border-t border-line pt-3 space-y-3">
+                                  <p className="text-xs font-medium text-ink-dim">Purchase Payment</p>
                                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                     <div>
-                                      <label className="block text-xs text-ink-dim mb-1">Amount Paid (₹)</label>
-                                      <input type="number" step="1" value={editIntakeForm.payout_amount || ""}
+                                      <label className="block text-xs text-ink-dim mb-1">Agreed Price (₹)</label>
+                                      <input type="number" step="1" value={editIntakeForm.agreed_price || ""}
                                         onFocus={e => e.target.select()}
-                                        onChange={e => setEditIntakeForm({ ...editIntakeForm, payout_amount: parseFloat(e.target.value) || 0 })}
-                                        className={inp} placeholder="0" />
-                                    </div>
-                                    <div>
-                                      <label className="block text-xs text-ink-dim mb-1">Paid via</label>
-                                      <select value={editIntakeForm.payout_mode}
-                                        onChange={e => setEditIntakeForm({ ...editIntakeForm, payout_mode: e.target.value as "cash" | "bank" })}
-                                        className={inp}>
-                                        <option value="cash">Cash</option>
-                                        <option value="bank">Bank / UPI</option>
-                                      </select>
+                                        onChange={e => setEditIntakeForm({ ...editIntakeForm, agreed_price: parseFloat(e.target.value) || 0 })}
+                                        className={inp} placeholder="Total agreed amount" />
                                     </div>
                                   </div>
+                                  {/* Existing payouts */}
+                                  {(r.old_metal_intake_payouts ?? []).length > 0 && (() => {
+                                    const payouts: any[] = r.old_metal_intake_payouts ?? [];
+                                    const paidTotal = payouts.reduce((s, p) => s + Number(p.amount), 0);
+                                    return (
+                                      <div className="space-y-1">
+                                        <p className="text-xs text-ink-dim">Payments recorded:</p>
+                                        {payouts.map((p: any) => (
+                                          <div key={p.id} className="flex items-center gap-3 text-xs bg-ok/5 border border-ok/20 rounded px-3 py-1.5">
+                                            <span className="text-ink-dim">{shortDate(p.pay_date)}</span>
+                                            <span className="font-medium text-ok">{inr(p.amount)}</span>
+                                            <span className="text-ink-dim">{p.mode === "bank" ? "Bank/UPI" : "Cash"}</span>
+                                            <button onClick={() => { if (confirm("Delete this payment?")) deleteIntakePayout.mutate({ payoutId: p.id, mode: p.mode }); }}
+                                              className="ml-auto text-err hover:underline text-xs">Delete</button>
+                                          </div>
+                                        ))}
+                                        <p className="text-xs font-semibold text-ink">Total paid: {inr(paidTotal)} / {inr(editIntakeForm.agreed_price || r.agreed_price || 0)}</p>
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               )}
 
@@ -1092,6 +1197,42 @@ export default function MetalFlowPage() {
                               {updateIntake.isError && (
                                 <p className="text-xs text-err">Save failed — please try again.</p>
                               )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      {addPayoutId === r.id && (
+                        <tr className="bg-gold/5">
+                          <td colSpan={9} className="px-4 py-3">
+                            <div className="space-y-2">
+                              <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide">Add Partial Payment</p>
+                              <div className="flex items-center gap-3 flex-wrap">
+                                <input type="date" value={addPayoutForm.pay_date}
+                                  onChange={e => setAddPayoutForm({ ...addPayoutForm, pay_date: e.target.value })}
+                                  className="border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                                <input type="number" step="1" placeholder="Amount (₹)"
+                                  value={addPayoutForm.amount || ""}
+                                  onFocus={e => e.target.select()}
+                                  onChange={e => setAddPayoutForm({ ...addPayoutForm, amount: parseFloat(e.target.value) || 0 })}
+                                  className="border border-line rounded-lg2 px-2 py-1 text-sm w-36 focus:outline-none focus:ring-1 focus:ring-gold" />
+                                <select value={addPayoutForm.mode}
+                                  onChange={e => setAddPayoutForm({ ...addPayoutForm, mode: e.target.value as "cash" | "bank" })}
+                                  className="border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                                  <option value="cash">Cash</option>
+                                  <option value="bank">Bank / UPI</option>
+                                </select>
+                                <button
+                                  disabled={!addPayoutForm.amount || addIntakePayout.isPending}
+                                  onClick={() => addIntakePayout.mutate({ intakeId: r.id, customerId: r.customer_id ?? null })}
+                                  className="bg-gold text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                                  {addIntakePayout.isPending ? "Saving…" : "Save Payment"}
+                                </button>
+                                <button onClick={() => setAddPayoutId(null)} className="text-xs text-ink-dim hover:underline">Cancel</button>
+                                {r.customers?.name && (
+                                  <span className="text-xs text-ink-dim ml-auto">Will credit {r.customers.name}&apos;s balance</span>
+                                )}
+                              </div>
+                              {addIntakePayout.isError && <p className="text-xs text-err">Save failed — try again.</p>}
                             </div>
                           </td>
                         </tr>
@@ -1132,7 +1273,7 @@ export default function MetalFlowPage() {
                       )}
                     </>
                   ))}
-                  {!filteredIntake.length && <tr><td colSpan={9} className="px-4 py-8 text-center text-ink-dim">{metalFilter !== "all" || statusFilter !== "all" ? "No items match the current filter." : t("no_data")}</td></tr>}
+                  {!filteredIntake.length && <tr><td colSpan={9} className="px-4 py-8 text-center text-ink-dim">{metalFilter !== "all" || statusFilter !== "all" || payoutPendingOnly ? "No items match the current filter." : t("no_data")}</td></tr>}
                 </tbody>
               </table>
             </div>
