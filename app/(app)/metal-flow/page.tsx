@@ -401,7 +401,9 @@ export default function MetalFlowPage() {
         .eq("id", d.id)
         .maybeSingle();
 
-      // Update the intake record
+      const switchingToPartial = d.agreed_price > 0 && (cur?.payout_amount ?? 0) > 0;
+
+      // Update the intake record — clear payout_amount when switching to agreed_price system
       const { error } = await client.from("old_metal_intake").update({
         intake_date: d.intake_date,
         metal: d.metal,
@@ -410,24 +412,28 @@ export default function MetalFlowPage() {
         pure_wt: d.pure_wt,
         customer_id: d.customer_id || null,
         notes: d.notes || null,
-        payout_amount: d.payout_amount > 0 ? d.payout_amount : null,
-        payout_mode:   d.payout_amount > 0 ? d.payout_mode   : null,
-        agreed_price:  d.agreed_price > 0   ? d.agreed_price  : null,
+        payout_amount: switchingToPartial ? null : (d.payout_amount > 0 ? d.payout_amount : null),
+        payout_mode:   switchingToPartial ? null : (d.payout_amount > 0 ? d.payout_mode   : null),
+        agreed_price:  d.agreed_price > 0  ? d.agreed_price  : null,
       }).eq("id", d.id);
       if (error) throw error;
 
-      // Sync the cash/bank ledger entry
-      if (d.payout_amount > 0) {
+      if (switchingToPartial) {
+        // Remove the old single-payment ledger entry (ref_id = intake.id) since
+        // partial payouts now use ref_id = payout.id
+        const oldTable = (cur?.payout_mode ?? "cash") === "bank" ? "bank_ledger" : "cash_ledger";
+        await client.from(oldTable).delete()
+          .eq("ref_type", "old_metal_intake").eq("ref_id", d.id);
+      } else if (d.payout_amount > 0) {
+        // Sync the single-payment ledger entry
         const oldMode  = (cur?.payout_mode ?? "cash") as "cash" | "bank";
         const oldTable = oldMode === "bank" ? "bank_ledger" : "cash_ledger";
         const newTable = d.payout_mode === "bank" ? "bank_ledger" : "cash_ledger";
 
         if (oldMode === d.payout_mode) {
-          // Same table — just update amount
           await client.from(newTable).update({ amount: d.payout_amount, tx_date: d.intake_date })
             .eq("ref_type", "old_metal_intake").eq("ref_id", d.id);
         } else {
-          // Mode changed — move entry to the new table
           await client.from(oldTable).delete()
             .eq("ref_type", "old_metal_intake").eq("ref_id", d.id);
           await client.from(newTable).insert({
@@ -437,7 +443,6 @@ export default function MetalFlowPage() {
           });
         }
 
-        // Sync customer payment if linked
         if (d.customer_id) {
           await client.from("payments")
             .update({ amount: d.payout_amount, mode: d.payout_mode === "bank" ? "bank" : "cash", pay_date: d.intake_date })
