@@ -89,6 +89,8 @@ export default function LoansPage() {
   const qc = useQueryClient();
 
   const [showForm, setShowForm]           = useState(false);
+  const [showClosed, setShowClosed]       = useState(false);
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
   const [expanded, setExpanded]           = useState<string | null>(null);
   const [payLoanId, setPayLoanId]         = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -238,9 +240,23 @@ export default function LoansPage() {
     },
   });
 
-  // Total summary
-  const totalOutstanding = (loans as any[])?.reduce((s, l) => s + Number(l.outstanding), 0) ?? 0;
-  const totalAccrued = (loans as any[])?.reduce((s, l) => s + accruedInterest(l, globalDate), 0) ?? 0;
+  // Summary: active loans only
+  const activeLoans = (loans as any[])?.filter(l => Number(l.outstanding) > 0) ?? [];
+  const totalOutstanding = activeLoans.reduce((s, l) => s + Number(l.outstanding), 0);
+  const totalAccrued = activeLoans.reduce((s, l) => s + accruedInterest(l, globalDate), 0);
+
+  // Group by lender (filtered by showClosed)
+  const visibleLoans = (loans as any[])?.filter(l => showClosed || Number(l.outstanding) > 0) ?? [];
+  const groupMap = visibleLoans.reduce((acc: Record<string, any[]>, l) => {
+    if (!acc[l.lender]) acc[l.lender] = [];
+    acc[l.lender].push(l);
+    return acc;
+  }, {});
+  const sortedGroups = Object.entries(groupMap).sort(([, ga], [, gb]) => {
+    const aActive = ga.some(l => Number(l.outstanding) > 0) ? 0 : 1;
+    const bActive = gb.some(l => Number(l.outstanding) > 0) ? 0 : 1;
+    return aActive - bActive;
+  });
 
   return (
     <div className="max-w-3xl mx-auto space-y-5">
@@ -361,52 +377,95 @@ export default function LoansPage() {
       {/* Loans list */}
       {isLoading ? <p className="text-ink-dim text-sm">{t("loading")}</p> : (
         <div className="space-y-2">
-          {(loans as any[])?.map((l) => {
-            const accrued = accruedInterest(l, globalDate);
-            const totalDue = Number(l.outstanding) + accrued;
-            const startDate = new Date(l.loan_date);
-            const today = new Date(globalDate);
-            const daysElapsed = Math.max(0, Math.floor((today.getTime() - startDate.getTime()) / 86400000));
-            const isOpen = expanded === l.id;
-            const period = (l.interest_period ?? "monthly") as InterestPeriod;
-            const eq = equivalentRates(Number(l.interest_rate), period);
+          {/* Show/Hide closed toggle */}
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-ink-dim">{sortedGroups.length} lender{sortedGroups.length !== 1 ? "s" : ""}</p>
+            <button onClick={() => setShowClosed(v => !v)}
+              className={`text-xs px-3 py-1 rounded-full border transition-colors ${showClosed ? "bg-ink text-white border-ink" : "border-line text-ink-dim hover:border-gold"}`}>
+              {showClosed ? "Hide Closed" : "Show Closed"}
+            </button>
+          </div>
+
+          {sortedGroups.map(([lender, lenderLoans]) => {
+            const groupOutstanding = lenderLoans.reduce((s, l) => s + Number(l.outstanding), 0);
+            const groupAccrued = lenderLoans.reduce((s, l) => s + accruedInterest(l, globalDate), 0);
+            const groupPrincipal = lenderLoans.reduce((s, l) => s + Number(l.principal), 0);
+            const hasActive = lenderLoans.some(l => Number(l.outstanding) > 0);
+            const isGroupOpen = expandedGroup === lender;
 
             return (
-              <div key={l.id} className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
-                {/* Summary row */}
+              <div key={lender} className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+                {/* Group header row */}
                 <div className="flex flex-wrap items-center gap-3 px-4 py-3 cursor-pointer hover:bg-canvas/50"
-                  onClick={() => setExpanded(isOpen ? null : l.id)}>
+                  onClick={() => setExpandedGroup(isGroupOpen ? null : lender)}>
                   <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm">{l.lender}</p>
-                    <p className="text-xs text-ink-dim">{shortDate(l.loan_date)} · {l.kind}</p>
+                    <p className="font-semibold text-sm">{lender}</p>
+                    <p className="text-xs text-ink-dim">{lenderLoans.length} loan{lenderLoans.length !== 1 ? "s" : ""}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-ink-dim">Principal</p>
-                    <p className="font-mono text-sm">{inr(l.principal)}</p>
+                    <p className="font-mono text-sm">{inr(groupPrincipal)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-ink-dim">Outstanding</p>
-                    <p className="font-mono text-sm font-semibold text-err">{inr(l.outstanding)}</p>
+                    <p className="font-mono text-sm font-semibold text-err">{inr(groupOutstanding)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-ink-dim">Accrued Int.</p>
-                    <p className="font-mono text-sm text-warn">{inr(accrued)}</p>
+                    <p className="font-mono text-sm text-warn">{inr(groupAccrued)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-ink-dim">Total Due</p>
-                    <p className="font-mono text-sm font-bold text-err">{inr(totalDue)}</p>
+                    <p className="font-mono text-sm font-bold text-err">{inr(groupOutstanding + groupAccrued)}</p>
                   </div>
-                  <div className={clsx("text-xs px-2 py-0.5 rounded-full", l.outstanding <= 0 ? "bg-ok/10 text-ok" : "bg-err/10 text-err")}>
-                    {l.outstanding <= 0 ? "Closed" : "Active"}
-                  </div>
-                  <div className={clsx("text-xs px-2 py-0.5 rounded-full", l.affects_cash ? "bg-info/10 text-info" : "bg-canvas text-ink-dim border border-line")}>
-                    {l.affects_cash ? "Cash" : "Non-cash"}
-                  </div>
-                  <span className="text-ink-dim text-xs">{isOpen ? "▲" : "▼"}</span>
+                  <span className={clsx("text-xs px-2 py-0.5 rounded-full", hasActive ? "bg-err/10 text-err" : "bg-ok/10 text-ok")}>
+                    {hasActive ? "Active" : "Closed"}
+                  </span>
+                  <span className="text-ink-dim text-xs">{isGroupOpen ? "▲" : "▼"}</span>
                 </div>
 
-                {/* Expanded detail */}
-                {isOpen && (
+                {/* Individual loans within group */}
+                {isGroupOpen && (
+                  <div className="border-t border-line divide-y divide-line">
+                    {lenderLoans.map((l) => {
+                      const accrued = accruedInterest(l, globalDate);
+                      const totalDue = Number(l.outstanding) + accrued;
+                      const daysElapsed = Math.max(0, Math.floor((new Date(globalDate).getTime() - new Date(l.loan_date).getTime()) / 86400000));
+                      const isOpen = expanded === l.id;
+                      const period = (l.interest_period ?? "monthly") as InterestPeriod;
+                      const eq = equivalentRates(Number(l.interest_rate), period);
+
+                      return (
+                        <div key={l.id}>
+                          {/* Individual loan summary row */}
+                          <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-canvas/40 bg-canvas/20"
+                            onClick={() => setExpanded(isOpen ? null : l.id)}>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-ink-dim">{shortDate(l.loan_date)} · {l.kind}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-mono text-sm">{inr(l.principal)}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-mono text-sm font-semibold text-err">{inr(l.outstanding)}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-mono text-sm text-warn">{inr(accrued)}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-mono text-sm font-bold text-err">{inr(totalDue)}</p>
+                            </div>
+                            <span className={clsx("text-xs px-2 py-0.5 rounded-full", l.outstanding <= 0 ? "bg-ok/10 text-ok" : "bg-err/10 text-err")}>
+                              {l.outstanding <= 0 ? "Closed" : "Active"}
+                            </span>
+                            <span className={clsx("text-xs px-2 py-0.5 rounded-full", l.affects_cash ? "bg-info/10 text-info" : "bg-canvas text-ink-dim border border-line")}>
+                              {l.affects_cash ? "Cash" : "Non-cash"}
+                            </span>
+                            <span className="text-ink-dim text-xs">{isOpen ? "▲" : "▼"}</span>
+                          </div>
+
+                          {/* Expanded detail */}
+                          {isOpen && (
                   <div className="border-t border-line px-4 py-4 space-y-4">
                     {/* Interest breakdown */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
@@ -683,13 +742,18 @@ export default function LoansPage() {
                       )}
                     </div>
                   </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             );
           })}
-          {!loans?.length && (
+          {!sortedGroups.length && (
             <div className="bg-white rounded-xl border border-line p-10 text-center text-ink-dim shadow-soft">
-              No loans yet.
+              {(loans as any[])?.length ? "No active loans. Toggle \"Show Closed\" to see all." : "No loans yet."}
             </div>
           )}
         </div>
