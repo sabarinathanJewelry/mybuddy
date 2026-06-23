@@ -94,6 +94,8 @@ export default function LoansPage() {
   const [expanded, setExpanded]           = useState<string | null>(null);
   const [payLoanId, setPayLoanId]         = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [editGroupLoanId, setEditGroupLoanId] = useState<string | null>(null);
+  const [editGroupValue, setEditGroupValue]   = useState("");
   const [deleteOpts, setDeleteOpts]       = useState({ removeLoanLedger: true, removePaymentLedger: true });
   const [payForm, setPayForm] = useState({ pay_date: globalDate, principal: 0, interest: 0, mode: "cash", notes: "" });
   const [deletePaymentId, setDeletePaymentId] = useState<string | null>(null);
@@ -240,6 +242,16 @@ export default function LoansPage() {
     },
   });
 
+  const setGroupLabel = useMutation({
+    mutationFn: async ({ loanId, groupLabel }: { loanId: string; groupLabel: string }) => {
+      await supabase().from("loans").update({ group_label: groupLabel.trim() || null }).eq("id", loanId);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["loans"] });
+      setEditGroupLoanId(null);
+    },
+  });
+
   // Summary: active loans only
   const activeLoans = (loans as any[])?.filter(l => Number(l.outstanding) > 0) ?? [];
   const totalOutstanding = activeLoans.reduce((s, l) => s + Number(l.outstanding), 0);
@@ -247,9 +259,12 @@ export default function LoansPage() {
 
   // Group by lender (filtered by showClosed)
   const visibleLoans = (loans as any[])?.filter(l => showClosed || Number(l.outstanding) > 0) ?? [];
+  const allGroupLabels = [...new Set((loans as any[])?.map(l => l.group_label ?? l.lender) ?? [])];
+
   const groupMap = visibleLoans.reduce((acc: Record<string, any[]>, l) => {
-    if (!acc[l.lender]) acc[l.lender] = [];
-    acc[l.lender].push(l);
+    const key = l.group_label ?? l.lender;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(l);
     return acc;
   }, {});
   const sortedGroups = Object.entries(groupMap).sort(([, ga], [, gb]) => {
@@ -441,6 +456,7 @@ export default function LoansPage() {
                           <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-canvas/40 bg-canvas/20"
                             onClick={() => setExpanded(isOpen ? null : l.id)}>
                             <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-ink">{l.lender}</p>
                               <p className="text-xs text-ink-dim">{shortDate(l.loan_date)} · {l.kind}</p>
                             </div>
                             <div className="text-right">
@@ -461,8 +477,40 @@ export default function LoansPage() {
                             <span className={clsx("text-xs px-2 py-0.5 rounded-full", l.affects_cash ? "bg-info/10 text-info" : "bg-canvas text-ink-dim border border-line")}>
                               {l.affects_cash ? "Cash" : "Non-cash"}
                             </span>
+                            <button
+                              onClick={e => { e.stopPropagation(); setEditGroupLoanId(editGroupLoanId === l.id ? null : l.id); setEditGroupValue(l.group_label ?? l.lender); }}
+                              className="text-xs text-ink-dim hover:text-gold border border-line rounded px-1.5 py-0.5 hover:border-gold">
+                              Group
+                            </button>
                             <span className="text-ink-dim text-xs">{isOpen ? "▲" : "▼"}</span>
                           </div>
+
+                          {/* Set Group inline */}
+                          {editGroupLoanId === l.id && (
+                            <div className="px-4 py-2 bg-gold/5 border-t border-line flex items-center gap-2 flex-wrap"
+                              onClick={e => e.stopPropagation()}>
+                              <span className="text-xs text-ink-dim">Group name:</span>
+                              <input
+                                list="group-labels"
+                                value={editGroupValue}
+                                onChange={e => setEditGroupValue(e.target.value)}
+                                placeholder={l.lender}
+                                autoFocus
+                                className="border border-line rounded-lg2 px-2 py-1 text-sm w-44 focus:outline-none focus:ring-1 focus:ring-gold"
+                              />
+                              <datalist id="group-labels">
+                                {allGroupLabels.map(g => <option key={g} value={g} />)}
+                              </datalist>
+                              <button
+                                disabled={setGroupLabel.isPending}
+                                onClick={() => setGroupLabel.mutate({ loanId: l.id, groupLabel: editGroupValue })}
+                                className="bg-gold text-white text-xs px-3 py-1 rounded-lg2 disabled:opacity-50">
+                                {setGroupLabel.isPending ? "…" : "Save"}
+                              </button>
+                              <button onClick={() => setEditGroupLoanId(null)}
+                                className="text-xs text-ink-dim hover:underline">Cancel</button>
+                            </div>
+                          )}
 
                           {/* Expanded detail */}
                           {isOpen && (
