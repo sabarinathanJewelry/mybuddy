@@ -4,7 +4,7 @@ import QueryProvider from "@/components/providers/query-provider";
 
 export const metadata: Metadata = {
   title: "MyBuddy",
-  description: "Sabarinathan Jewellery Management System",
+  description: "Attendance & Staff Management",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,

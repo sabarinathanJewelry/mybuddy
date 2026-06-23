@@ -78,7 +78,7 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           <div className="text-5xl mb-2">🔫</div>
           <h1 className="text-2xl font-bold text-gold">MyBuddy</h1>
-          <p className="text-white/40 text-sm mt-1">Jewellers ERP</p>
+          <p className="text-white/40 text-sm mt-1">Attendance &amp; Staff Management</p>
         </div>
 
         {/* Card */}
