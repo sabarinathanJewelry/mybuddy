@@ -178,7 +178,7 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
         client.from("sales")
           .select("id, bill_no, bill_date, total, change_due, change_mode, customers(name), sale_items(description, metal, net_wt, is_suspense, suppliers(name)), sale_payments(mode, amount, metal_wt)")
           .gte("bill_date", fromDate).lte("bill_date", toDate)
-          .eq("status", "confirmed").order("bill_date").order("created_at"),
+          .eq("status", "confirmed").is("order_id", null).order("bill_date").order("created_at"),
         // Order payments grouped by order+date (handles old gold, UPI, cash, advance per order)
         client.from("order_payments")
           .select("id, order_id, pay_date, mode, amount, metal_wt, orders(order_no, order_date, total, final_total, advance_paid, customer_id, customers(name))")
