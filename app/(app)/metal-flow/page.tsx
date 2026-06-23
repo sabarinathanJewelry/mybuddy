@@ -182,6 +182,7 @@ export default function MetalFlowPage() {
   const [addPayoutId, setAddPayoutId] = useState<string | null>(null);
   const [addPayoutForm, setAddPayoutForm] = useState({ pay_date: globalDate, amount: 0, mode: "cash" as "cash" | "bank" });
   const [payoutPendingOnly, setPayoutPendingOnly] = useState(false);
+  const [deleteIntakeId, setDeleteIntakeId] = useState<string | null>(null);
   const [metalFilter, setMetalFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "used" | "sold">("all");
   const defaultIntakeForm = () => ({
@@ -545,6 +546,28 @@ export default function MetalFlowPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["metal_intake"] });
       qc.invalidateQueries({ queryKey: ["ledger_detail"] });
+    },
+  });
+
+  const deleteIntake = useMutation({
+    mutationFn: async (r: any) => {
+      const client = supabase();
+      // Delete partial payout ledger entries
+      for (const p of (r.old_metal_intake_payouts ?? [])) {
+        const t = p.mode === "bank" ? "bank_ledger" : "cash_ledger";
+        await client.from(t).delete().eq("ref_type", "old_metal_intake").eq("ref_id", p.id);
+      }
+      // Delete legacy single-payment ledger entry (ref_id = intake.id)
+      await client.from("cash_ledger").delete().eq("ref_type", "old_metal_intake").eq("ref_id", r.id);
+      await client.from("bank_ledger").delete().eq("ref_type", "old_metal_intake").eq("ref_id", r.id);
+      // Delete the intake (payouts cascade)
+      const { error } = await client.from("old_metal_intake").delete().eq("id", r.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["metal_intake"] });
+      qc.invalidateQueries({ queryKey: ["ledger_detail"] });
+      setDeleteIntakeId(null);
     },
   });
 
@@ -1069,6 +1092,13 @@ export default function MetalFlowPage() {
                                 Edit
                               </button>
                             )}
+                            {r.source_type !== "sale" && r.source_type !== "order" && r.status !== "used" && (
+                              <button
+                                onClick={() => setDeleteIntakeId(r.id)}
+                                className="text-xs text-err hover:underline">
+                                Delete
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1202,6 +1232,26 @@ export default function MetalFlowPage() {
                               {updateIntake.isError && (
                                 <p className="text-xs text-err">Save failed — please try again.</p>
                               )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      {deleteIntakeId === r.id && (
+                        <tr className="bg-err/5">
+                          <td colSpan={9} className="px-4 py-3">
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <span className="text-xs text-err font-medium">
+                                Delete {r.gross_wt}g {r.metal?.replace(/_/g, " ")} intake ({r.intake_date})?
+                                {(r.old_metal_intake_payouts?.length > 0 || r.payout_amount > 0) && " Payout ledger entries will also be removed."}
+                              </span>
+                              <button
+                                disabled={deleteIntake.isPending}
+                                onClick={() => deleteIntake.mutate(r)}
+                                className="bg-err text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-50">
+                                {deleteIntake.isPending ? "Deleting…" : "Confirm Delete"}
+                              </button>
+                              <button onClick={() => setDeleteIntakeId(null)}
+                                className="text-xs text-ink-dim hover:underline">Cancel</button>
                             </div>
                           </td>
                         </tr>
