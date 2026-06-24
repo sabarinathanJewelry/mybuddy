@@ -602,6 +602,20 @@ export default function MetalFlowPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["melt_batches"] }),
   });
 
+  const revertRefinedToOpen = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase().from("melt_batches").update({
+        status: "open",
+        output_wt: 0, melt_wt: 0, loss_wt: 0, debris_wt: 0, output_purity_pct: null,
+      }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["melt_batches"] });
+      qc.invalidateQueries({ queryKey: ["metal_reserve"] });
+    },
+  });
+
   const removeBatchItem = useMutation({
     mutationFn: async ({ batchId, itemId, intakeId, pureWt }: { batchId: string; itemId: string; intakeId: string; pureWt: number }) => {
       const client = supabase();
@@ -1604,15 +1618,25 @@ export default function MetalFlowPage() {
                               {b.loss_wt > 0 && <span className="text-ink-dim ml-2">(loss: {grams(b.loss_wt)})</span>}
                             </span>
                             {!refineryForm && (
-                              <button
-                                onClick={() => {
-                                  const usable = Number(b.melt_wt ?? b.output_wt) || 0;
-                                  const debris = Number(b.debris_wt) || 0;
-                                  setRefineryForm({ batchId: b.id, total_output_wt: usable + debris, debris_wt: debris, output_wt: usable, loss_wt: Number(b.loss_wt) || 0, output_purity_pct: Number(b.output_purity_pct) || 91.6 });
-                                }}
-                                className="text-xs text-gold hover:underline">
-                                Edit
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => {
+                                    const usable = Number(b.melt_wt ?? b.output_wt) || 0;
+                                    const debris = Number(b.debris_wt) || 0;
+                                    setRefineryForm({ batchId: b.id, total_output_wt: usable + debris, debris_wt: debris, output_wt: usable, loss_wt: Number(b.loss_wt) || 0, output_purity_pct: Number(b.output_purity_pct) || 91.6 });
+                                  }}
+                                  className="text-xs text-gold hover:underline">
+                                  Edit Result
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    if (window.confirm("Revert to Open? This clears the refinery result so you can add/remove items, then re-enter the result."))
+                                      revertRefinedToOpen.mutate(b.id);
+                                  }}
+                                  className="text-xs text-ink-dim hover:text-err hover:underline">
+                                  ← Revert to Open
+                                </button>
+                              </>
                             )}
                           </div>
                         )}
