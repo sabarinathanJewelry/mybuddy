@@ -19,8 +19,8 @@ const PAY_MODES = [
   { value: "advance", label: "From Customer Advance" },
 ];
 
-interface PaySplit { id: string; amount: number; mode: string; }
-function newSplit(): PaySplit { return { id: crypto.randomUUID(), amount: 0, mode: "cash" }; }
+interface PaySplit { id: string; amount: number; mode: string; date: string; }
+function newSplit(date: string): PaySplit { return { id: crypto.randomUUID(), amount: 0, mode: "cash", date }; }
 
 function useChitPayments() {
   return useQuery({
@@ -49,7 +49,7 @@ export default function ChitsPage() {
   const [metalType, setMetalType] = useState<"gold" | "silver">("gold");
   const [payDate, setPayDate] = useState(globalDate);
   const [notes, setNotes] = useState("");
-  const [splits, setSplits] = useState<PaySplit[]>([newSplit()]);
+  const [splits, setSplits] = useState<PaySplit[]>([newSplit(globalDate)]);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editAmount, setEditAmount] = useState(0);
@@ -74,7 +74,7 @@ export default function ChitsPage() {
 
   function resetForm() {
     setCustomer(null); setMetalType("gold"); setPayDate(globalDate);
-    setNotes(""); setSplits([newSplit()]); setShowForm(false);
+    setNotes(""); setSplits([newSplit(globalDate)]); setShowForm(false);
   }
 
   function startEdit(p: any) { setEditingId(p.id); setEditAmount(Number(p.amount)); }
@@ -139,7 +139,7 @@ export default function ChitsPage() {
       // 1. Insert chit payment record (total amount)
       const { data: row, error } = await client.from("chit_payments").insert({
         customer_id: customer.id,
-        pay_date: payDate,
+        pay_date: validSplits[0].date,
         metal_type: metalType,
         amount: totalAmount,
         mode: storedMode,
@@ -163,17 +163,17 @@ export default function ChitsPage() {
         const desc = `Chit (${metalType}): ${customer.name}`;
         if (split.mode === "cash") {
           await client.from("cash_ledger").insert({
-            tx_date: payDate, direction: "in", amount: split.amount,
+            tx_date: split.date, direction: "in", amount: split.amount,
             description: desc, ref_type: "chit_payment", ref_id: row.id,
           });
         } else if (split.mode === "upi" || split.mode === "bank") {
           await client.from("bank_ledger").insert({
-            tx_date: payDate, direction: "in", amount: split.amount,
+            tx_date: split.date, direction: "in", amount: split.amount,
             description: desc, ref_type: "chit_payment", ref_id: row.id,
           });
         } else if (split.mode === "advance") {
           await client.from("payments").insert({
-            pay_date: payDate, direction: "out", mode: "advance",
+            pay_date: split.date, direction: "out", mode: "advance",
             amount: split.amount, customer_id: customer.id, is_advance: true,
             notes: `Chit payment (${metalType}) — ${metalGrams.toFixed(4)}g`,
           });
@@ -249,25 +249,19 @@ export default function ChitsPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-ink-dim mb-1">Metal</label>
-              <div className="flex gap-2">
-                {(["gold", "silver"] as const).map((m) => (
-                  <button key={m} type="button" onClick={() => setMetalType(m)}
-                    className={`flex-1 py-2 rounded-lg2 text-sm font-medium border transition-colors ${
-                      metalType === m
-                        ? m === "gold" ? "bg-gold/10 border-gold text-gold" : "bg-ink-mid/10 border-ink-mid text-ink-mid"
-                        : "border-line text-ink-dim hover:border-gold"
-                    }`}>
-                    {m === "gold" ? "Gold" : "Silver"}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs text-ink-dim mb-1">Date</label>
-              <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} className={inp} />
+          <div>
+            <label className="block text-xs text-ink-dim mb-1">Metal</label>
+            <div className="flex gap-2">
+              {(["gold", "silver"] as const).map((m) => (
+                <button key={m} type="button" onClick={() => setMetalType(m)}
+                  className={`flex-1 py-2 rounded-lg2 text-sm font-medium border transition-colors ${
+                    metalType === m
+                      ? m === "gold" ? "bg-gold/10 border-gold text-gold" : "bg-ink-mid/10 border-ink-mid text-ink-mid"
+                      : "border-line text-ink-dim hover:border-gold"
+                  }`}>
+                  {m === "gold" ? "Gold" : "Silver"}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -275,25 +269,28 @@ export default function ChitsPage() {
           <div className="space-y-2">
             <label className="block text-xs text-ink-dim">Payment Breakdown</label>
             {splits.map((split, idx) => (
-              <div key={split.id} className="flex gap-2 items-center">
+              <div key={split.id} className="flex gap-2 items-center flex-wrap sm:flex-nowrap">
+                <input type="date" value={split.date}
+                  onChange={(e) => updateSplit(split.id, { date: e.target.value })}
+                  className="border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold w-36 shrink-0" />
                 <input
                   type="number" step="0.01" value={split.amount || ""}
                   placeholder="Amount (₹)"
                   onFocus={(e) => e.target.select()}
                   onChange={(e) => updateSplit(split.id, { amount: parseFloat(e.target.value) || 0 })}
-                  className="flex-1 border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                  className="flex-1 min-w-[100px] border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
                 <select value={split.mode} onChange={(e) => updateSplit(split.id, { mode: e.target.value })}
                   className="border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
                   {PAY_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                 </select>
                 {splits.length > 1 && (
                   <button type="button" onClick={() => setSplits((prev) => prev.filter((_, i) => i !== idx))}
-                    className="text-err text-sm px-2 hover:underline">×</button>
+                    className="text-err text-sm px-2 hover:underline shrink-0">×</button>
                 )}
               </div>
             ))}
             <button type="button"
-              onClick={() => setSplits((prev) => [...prev, newSplit()])}
+              onClick={() => setSplits((prev) => [...prev, newSplit(prev[prev.length - 1]?.date ?? payDate)])}
               className="text-xs text-gold hover:underline">
               + Add payment mode
             </button>
