@@ -16,22 +16,11 @@ const PAY_MODES = [
   { value: "cash",    label: "Cash" },
   { value: "upi",     label: "UPI/GPay" },
   { value: "bank",    label: "Bank" },
-  { value: "advance", label: "From Advance" },
+  { value: "advance", label: "From Customer Advance" },
 ];
 
-interface PaymentDraft {
-  id: string;
-  customer: Customer | null;
-  metalType: "gold" | "silver";
-  amount: number;
-  mode: string;
-  payDate: string;
-  notes: string;
-}
-
-function newDraft(date: string): PaymentDraft {
-  return { id: crypto.randomUUID(), customer: null, metalType: "gold", amount: 0, mode: "cash", payDate: date, notes: "" };
-}
+interface PaySplit { id: string; amount: number; mode: string; }
+function newSplit(): PaySplit { return { id: crypto.randomUUID(), amount: 0, mode: "cash" }; }
 
 function useChitPayments() {
   return useQuery({
@@ -56,7 +45,11 @@ export default function ChitsPage() {
   const { data: payments, isLoading } = useChitPayments();
 
   const [showForm, setShowForm] = useState(false);
-  const [drafts, setDrafts] = useState<PaymentDraft[]>([]);
+  const [customer, setCustomer] = useState<Customer | null>(null);
+  const [metalType, setMetalType] = useState<"gold" | "silver">("gold");
+  const [payDate, setPayDate] = useState(globalDate);
+  const [notes, setNotes] = useState("");
+  const [splits, setSplits] = useState<PaySplit[]>([newSplit()]);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editAmount, setEditAmount] = useState(0);
@@ -66,37 +59,28 @@ export default function ChitsPage() {
   const [bonusAmount, setBonusAmount] = useState(0);
   const [bonusNotes, setBonusNotes] = useState("");
 
-  function openForm() {
-    setDrafts([newDraft(globalDate)]);
-    setShowForm(true);
-    setShowBonusForm(false);
+  const boardRateForMetal = metalType === "gold"
+    ? (boardRate?.gold_22k ?? 0)
+    : (boardRate?.silver ?? 0);
+
+  const totalAmount = splits.reduce((s, p) => s + (p.amount || 0), 0);
+  const metalGrams = boardRateForMetal > 0
+    ? parseFloat((totalAmount / boardRateForMetal).toFixed(4))
+    : 0;
+
+  function updateSplit(id: string, patch: Partial<PaySplit>) {
+    setSplits((prev) => prev.map((s) => s.id === id ? { ...s, ...patch } : s));
   }
 
-  function closeForm() {
-    setShowForm(false);
-    setDrafts([]);
-  }
-
-  function updateDraft(id: string, patch: Partial<PaymentDraft>) {
-    setDrafts((prev) => prev.map((d) => d.id === id ? { ...d, ...patch } : d));
-  }
-
-  function removeDraft(id: string) {
-    setDrafts((prev) => prev.filter((d) => d.id !== id));
-  }
-
-  function rateFor(metalType: "gold" | "silver") {
-    return metalType === "gold" ? (boardRate?.gold_22k ?? 0) : (boardRate?.silver ?? 0);
-  }
-
-  function gramsFor(draft: PaymentDraft) {
-    const rate = rateFor(draft.metalType);
-    return rate > 0 ? parseFloat((draft.amount / rate).toFixed(4)) : 0;
+  function resetForm() {
+    setCustomer(null); setMetalType("gold"); setPayDate(globalDate);
+    setNotes(""); setSplits([newSplit()]); setShowForm(false);
   }
 
   function startEdit(p: any) { setEditingId(p.id); setEditAmount(Number(p.amount)); }
   function cancelEdit() { setEditingId(null); setEditAmount(0); }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows = (payments as any[]) ?? [];
 
   const updatePayment = useMutation({
@@ -105,12 +89,11 @@ export default function ChitsPage() {
       const row = rows.find((p: any) => p.id === id);
       if (!row) throw new Error("Row not found");
 
-      const oldAmount = Number(row.amount);
       const oldGrams = Number(row.metal_grams);
       const storedRate = Number(row.board_rate);
       const newGrams = storedRate > 0 ? parseFloat((newAmount / storedRate).toFixed(4)) : oldGrams;
       const deltaGrams = newGrams - oldGrams;
-      const deltaAmount = newAmount - oldAmount;
+      const deltaAmount = newAmount - Number(row.amount);
 
       const { error } = await client.from("chit_payments")
         .update({ amount: newAmount, metal_grams: newGrams }).eq("id", id);
@@ -146,54 +129,53 @@ export default function ChitsPage() {
     },
   });
 
-  const saveAll = useMutation({
+  const save = useMutation({
     mutationFn: async () => {
-      const valid = drafts.filter((d) => d.customer && d.amount > 0);
-      if (!valid.length) throw new Error("No valid entries");
+      if (!customer || totalAmount <= 0 || boardRateForMetal <= 0) throw new Error("Invalid input");
       const client = supabase();
+      const validSplits = splits.filter((s) => s.amount > 0);
+      const storedMode = validSplits.length === 1 ? validSplits[0].mode : "split";
 
-      for (const draft of valid) {
-        const rate = rateFor(draft.metalType);
-        const metalGrams = rate > 0 ? parseFloat((draft.amount / rate).toFixed(4)) : 0;
+      // 1. Insert chit payment record (total amount)
+      const { data: row, error } = await client.from("chit_payments").insert({
+        customer_id: customer.id,
+        pay_date: payDate,
+        metal_type: metalType,
+        amount: totalAmount,
+        mode: storedMode,
+        board_rate: boardRateForMetal,
+        metal_grams: metalGrams,
+        notes: notes || null,
+      }).select().single();
+      if (error) throw error;
 
-        const { data: row, error } = await client.from("chit_payments").insert({
-          customer_id: draft.customer!.id,
-          pay_date: draft.payDate,
-          metal_type: draft.metalType,
-          amount: draft.amount,
-          mode: draft.mode,
-          board_rate: rate,
-          metal_grams: metalGrams,
-          notes: draft.notes || null,
-        }).select().single();
-        if (error) throw error;
+      // 2. Update customer metal balance
+      const balanceField = metalType === "gold" ? "gold_balance_g" : "silver_balance_g";
+      const { data: cust } = await client.from("customers")
+        .select("gold_balance_g, silver_balance_g").eq("id", customer.id).single();
+      const current = Number((cust as any)?.[balanceField]) || 0;
+      await client.from("customers")
+        .update({ [balanceField]: parseFloat((current + metalGrams).toFixed(4)) })
+        .eq("id", customer.id);
 
-        const balanceField = draft.metalType === "gold" ? "gold_balance_g" : "silver_balance_g";
-        const { data: cust } = await client.from("customers")
-          .select("gold_balance_g, silver_balance_g").eq("id", draft.customer!.id).single();
-        const current = Number((cust as any)?.[balanceField]) || 0;
-        await client.from("customers")
-          .update({ [balanceField]: parseFloat((current + metalGrams).toFixed(4)) })
-          .eq("id", draft.customer!.id);
-
-        if (draft.mode === "cash") {
+      // 3. Fan out one ledger entry per split
+      for (const split of validSplits) {
+        const desc = `Chit (${metalType}): ${customer.name}`;
+        if (split.mode === "cash") {
           await client.from("cash_ledger").insert({
-            tx_date: draft.payDate, direction: "in", amount: draft.amount,
-            description: `Chit (${draft.metalType}): ${draft.customer!.name}`,
-            ref_type: "chit_payment", ref_id: row.id,
+            tx_date: payDate, direction: "in", amount: split.amount,
+            description: desc, ref_type: "chit_payment", ref_id: row.id,
           });
-        } else if (draft.mode === "upi" || draft.mode === "bank") {
+        } else if (split.mode === "upi" || split.mode === "bank") {
           await client.from("bank_ledger").insert({
-            tx_date: draft.payDate, direction: "in", amount: draft.amount,
-            description: `Chit (${draft.metalType}): ${draft.customer!.name}`,
-            ref_type: "chit_payment", ref_id: row.id,
+            tx_date: payDate, direction: "in", amount: split.amount,
+            description: desc, ref_type: "chit_payment", ref_id: row.id,
           });
-        } else if (draft.mode === "advance") {
+        } else if (split.mode === "advance") {
           await client.from("payments").insert({
-            pay_date: draft.payDate, direction: "out", mode: "advance",
-            amount: draft.amount, customer_id: draft.customer!.id,
-            is_advance: true,
-            notes: `Chit payment (${draft.metalType}) — ${metalGrams.toFixed(4)}g`,
+            pay_date: payDate, direction: "out", mode: "advance",
+            amount: split.amount, customer_id: customer.id, is_advance: true,
+            notes: `Chit payment (${metalType}) — ${metalGrams.toFixed(4)}g`,
           });
         }
       }
@@ -201,7 +183,7 @@ export default function ChitsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["chit_payments"] });
       qc.invalidateQueries({ queryKey: ["customers"] });
-      closeForm();
+      resetForm();
     },
   });
 
@@ -221,18 +203,12 @@ export default function ChitsPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["customers"] });
-      setShowBonusForm(false);
-      setBonusCustomer(null);
-      setBonusAmount(0);
-      setBonusNotes("");
+      setShowBonusForm(false); setBonusCustomer(null); setBonusAmount(0); setBonusNotes("");
     },
   });
 
-  const validCount = drafts.filter((d) => d.customer && d.amount > 0).length;
-  const totalAmount = drafts.filter((d) => d.customer && d.amount > 0).reduce((s, d) => s + d.amount, 0);
-
   return (
-    <div className="max-w-4xl mx-auto space-y-5">
+    <div className="max-w-3xl mx-auto space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold">Metal Chit Savings</h1>
@@ -243,127 +219,128 @@ export default function ChitsPage() {
             className="bg-ok/10 text-ok border border-ok/30 text-sm px-4 py-2 rounded-lg2 hover:bg-ok/20">
             + Credit Bonus
           </button>
-          <button onClick={openForm}
+          <button onClick={() => { setShowForm(true); setShowBonusForm(false); }}
             className="bg-gold text-white text-sm px-4 py-2 rounded-lg2">
             + Add Payment
           </button>
         </div>
       </div>
 
-      {/* Multi-entry payment form */}
+      {/* Payment form */}
       {showForm && (
         <div className="bg-white border border-line rounded-xl p-5 shadow-soft space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-sm text-ink">Record Chit Payments</h3>
-            {validCount > 0 && (
-              <span className="text-xs text-ink-dim">{validCount} entr{validCount === 1 ? "y" : "ies"} · {inr(totalAmount)} total</span>
-            )}
+          <h3 className="font-semibold text-sm text-ink">Record Chit Payment</h3>
+
+          <div>
+            <label className="block text-xs text-ink-dim mb-1">Customer *</label>
+            <CustomerPicker value={customer} onChange={setCustomer} />
           </div>
 
-          <div className="space-y-3">
-            {drafts.map((draft, idx) => {
-              const rate = rateFor(draft.metalType);
-              const metalGrams = gramsFor(draft);
-              return (
-                <div key={draft.id} className="border border-line rounded-lg2 p-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-ink-dim font-medium">#{idx + 1}</span>
-                    {drafts.length > 1 && (
-                      <button type="button" onClick={() => removeDraft(draft.id)}
-                        className="text-xs text-err hover:underline ml-auto">Remove</button>
-                    )}
-                  </div>
+          {customer && (
+            <div className="bg-canvas rounded-lg2 px-4 py-2.5 flex gap-6 text-sm">
+              <div>
+                <span className="text-ink-dim text-xs">Cash Balance: </span>
+                <strong className={customer.opening_balance < 0 ? "text-err" : "text-ok"}>
+                  {inr(customer.opening_balance)}
+                </strong>
+              </div>
+              <div><span className="text-ink-dim text-xs">Gold: </span><strong className="text-gold">{grams(customer.gold_balance_g)}</strong></div>
+              <div><span className="text-ink-dim text-xs">Silver: </span><strong className="text-ink-mid">{grams(customer.silver_balance_g)}</strong></div>
+            </div>
+          )}
 
-                  {/* Row 1: Customer */}
-                  <div>
-                    <label className="block text-xs text-ink-dim mb-1">Customer *</label>
-                    <CustomerPicker
-                      value={draft.customer}
-                      onChange={(c) => updateDraft(draft.id, { customer: c })}
-                    />
-                  </div>
-
-                  {/* Row 2: Metal + Date + Amount + Mode */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    <div>
-                      <label className="block text-xs text-ink-dim mb-1">Metal</label>
-                      <div className="flex gap-1">
-                        {(["gold", "silver"] as const).map((m) => (
-                          <button key={m} type="button"
-                            onClick={() => updateDraft(draft.id, { metalType: m })}
-                            className={`flex-1 py-1.5 rounded-lg2 text-xs font-medium border transition-colors ${
-                              draft.metalType === m
-                                ? m === "gold" ? "bg-gold/10 border-gold text-gold" : "bg-ink-mid/10 border-ink-mid text-ink-mid"
-                                : "border-line text-ink-dim hover:border-gold"
-                            }`}>
-                            {m === "gold" ? "Gold" : "Silver"}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs text-ink-dim mb-1">Date</label>
-                      <input type="date" value={draft.payDate}
-                        onChange={(e) => updateDraft(draft.id, { payDate: e.target.value })}
-                        className={inp} />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs text-ink-dim mb-1">Amount (₹) *</label>
-                      <input type="number" step="0.01" value={draft.amount || ""}
-                        placeholder="0" onFocus={(e) => e.target.select()}
-                        onChange={(e) => updateDraft(draft.id, { amount: parseFloat(e.target.value) || 0 })}
-                        className={inp} />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs text-ink-dim mb-1">Mode</label>
-                      <select value={draft.mode}
-                        onChange={(e) => updateDraft(draft.id, { mode: e.target.value })}
-                        className={inp}>
-                        {PAY_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Preview + notes */}
-                  {draft.amount > 0 && rate > 0 && (
-                    <div className="flex items-center justify-between bg-gold/5 border border-gold/20 rounded-lg2 px-3 py-1.5 text-xs">
-                      <span className="text-ink-dim">{draft.metalType === "gold" ? "Gold 22K" : "Silver"} @ {inr(rate)}/g</span>
-                      <span className="font-semibold text-gold">{metalGrams.toFixed(4)} g credited</span>
-                    </div>
-                  )}
-
-                  <div>
-                    <input value={draft.notes}
-                      onChange={(e) => updateDraft(draft.id, { notes: e.target.value })}
-                      className={inp} placeholder="Notes (optional)" />
-                  </div>
-                </div>
-              );
-            })}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-ink-dim mb-1">Metal</label>
+              <div className="flex gap-2">
+                {(["gold", "silver"] as const).map((m) => (
+                  <button key={m} type="button" onClick={() => setMetalType(m)}
+                    className={`flex-1 py-2 rounded-lg2 text-sm font-medium border transition-colors ${
+                      metalType === m
+                        ? m === "gold" ? "bg-gold/10 border-gold text-gold" : "bg-ink-mid/10 border-ink-mid text-ink-mid"
+                        : "border-line text-ink-dim hover:border-gold"
+                    }`}>
+                    {m === "gold" ? "Gold" : "Silver"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-ink-dim mb-1">Date</label>
+              <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} className={inp} />
+            </div>
           </div>
 
-          <button type="button"
-            onClick={() => setDrafts((prev) => [...prev, newDraft(prev[prev.length - 1]?.payDate ?? globalDate)])}
-            className="text-sm text-gold hover:underline">
-            + Add another customer
-          </button>
-
-          <div className="flex gap-2 pt-1 border-t border-line">
-            <button
-              disabled={saveAll.isPending || validCount === 0}
-              onClick={() => saveAll.mutate()}
-              className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
-              {saveAll.isPending ? "Saving…" : validCount > 1 ? `Save All (${validCount})` : "Save"}
+          {/* Payment splits */}
+          <div className="space-y-2">
+            <label className="block text-xs text-ink-dim">Payment Breakdown</label>
+            {splits.map((split, idx) => (
+              <div key={split.id} className="flex gap-2 items-center">
+                <input
+                  type="number" step="0.01" value={split.amount || ""}
+                  placeholder="Amount (₹)"
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => updateSplit(split.id, { amount: parseFloat(e.target.value) || 0 })}
+                  className="flex-1 border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                <select value={split.mode} onChange={(e) => updateSplit(split.id, { mode: e.target.value })}
+                  className="border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
+                  {PAY_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                </select>
+                {splits.length > 1 && (
+                  <button type="button" onClick={() => setSplits((prev) => prev.filter((_, i) => i !== idx))}
+                    className="text-err text-sm px-2 hover:underline">×</button>
+                )}
+              </div>
+            ))}
+            <button type="button"
+              onClick={() => setSplits((prev) => [...prev, newSplit()])}
+              className="text-xs text-gold hover:underline">
+              + Add payment mode
             </button>
-            <button type="button" onClick={closeForm}
-              className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
-            {saveAll.isError && (
-              <p className="text-xs text-err self-center">Save failed — please try again.</p>
+          </div>
+
+          {/* Total + grams preview */}
+          <div className="bg-gold/5 border border-gold/20 rounded-lg2 px-4 py-3 space-y-1 text-sm">
+            <div className="flex justify-between">
+              <span className="text-ink-dim">{metalType === "gold" ? "Gold 22K" : "Silver"} rate</span>
+              <span className="font-mono">{inr(boardRateForMetal)}/g</span>
+            </div>
+            {splits.length > 1 && (
+              <div className="flex justify-between text-ink-dim">
+                <span>Total payment</span>
+                <span className="font-mono">{inr(totalAmount)}</span>
+              </div>
+            )}
+            <div className="flex justify-between font-semibold">
+              <span>{metalType === "gold" ? "Gold" : "Silver"} credited</span>
+              <span className="text-gold">{metalGrams.toFixed(4)} g</span>
+            </div>
+            {splits.some((s) => s.mode === "advance") && customer && (
+              <div className="flex justify-between text-err text-xs pt-1 border-t border-gold/20">
+                <span>Advance balance after payment</span>
+                <strong>{inr(customer.opening_balance - splits.filter((s) => s.mode === "advance").reduce((sum, s) => sum + s.amount, 0))}</strong>
+              </div>
             )}
           </div>
+
+          <div>
+            <label className="block text-xs text-ink-dim mb-1">Notes</label>
+            <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inp} placeholder="Optional…" />
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              disabled={save.isPending || !customer || totalAmount <= 0 || boardRateForMetal <= 0}
+              onClick={() => save.mutate()}
+              className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
+              {save.isPending ? "Saving…" : t("save")}
+            </button>
+            <button type="button" onClick={resetForm}
+              className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
+          </div>
+          {save.isError && (
+            <p className="text-xs text-err">Save failed — run migration 003 in Supabase SQL Editor first (chit_payments table).</p>
+          )}
         </div>
       )}
 
@@ -377,10 +354,8 @@ export default function ChitsPage() {
           </div>
           {bonusCustomer && (
             <div className="bg-canvas rounded-lg2 px-4 py-2.5 text-sm flex gap-6">
-              <div>
-                <span className="text-ink-dim text-xs">Current Bonus Balance: </span>
-                <strong className="text-ok">{inr((bonusCustomer as any).bonus_balance ?? 0)}</strong>
-              </div>
+              <span className="text-ink-dim text-xs">Current Bonus Balance: </span>
+              <strong className="text-ok">{inr((bonusCustomer as any).bonus_balance ?? 0)}</strong>
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
@@ -448,10 +423,9 @@ export default function ChitsPage() {
                         className="w-28 border border-gold rounded px-2 py-1 text-sm font-mono text-right focus:outline-none focus:ring-1 focus:ring-gold" />
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-gold">{previewGrams}g</td>
-                    <td className="px-3 py-2.5 text-ink-dim capitalize">{p.mode === "advance" ? "Advance" : p.mode}</td>
+                    <td className="px-3 py-2.5 text-ink-dim capitalize">{p.mode === "advance" ? "Advance" : p.mode === "split" ? "Split" : p.mode}</td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
-                      <button
-                        disabled={updatePayment.isPending || editAmount <= 0}
+                      <button disabled={updatePayment.isPending || editAmount <= 0}
                         onClick={() => updatePayment.mutate({ id: p.id, newAmount: editAmount })}
                         className="bg-gold text-white text-xs px-3 py-1 rounded disabled:opacity-50 mr-1">
                         {updatePayment.isPending ? "…" : "Save"}
@@ -469,7 +443,7 @@ export default function ChitsPage() {
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono">{inr(p.amount)}</td>
                     <td className="px-3 py-2.5 text-right font-mono text-gold">{Number(p.metal_grams).toFixed(4)}g</td>
-                    <td className="px-3 py-2.5 text-ink-dim capitalize">{p.mode === "advance" ? "Advance" : p.mode}</td>
+                    <td className="px-3 py-2.5 text-ink-dim capitalize">{p.mode === "advance" ? "Advance" : p.mode === "split" ? "Split" : p.mode}</td>
                     <td className="px-3 py-2.5 text-right">
                       <button onClick={() => startEdit(p)}
                         className="text-xs text-ink-dim border border-line rounded px-2 py-0.5 hover:border-gold hover:text-gold">Edit</button>
