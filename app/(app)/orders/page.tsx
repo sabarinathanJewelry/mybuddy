@@ -33,6 +33,7 @@ interface PaymentDraft {
 interface OrderItemDraft {
   id: string;
   description: string;
+  qty: number;
   metal: string;
   estimated_wt: number;
   amount: number;
@@ -71,7 +72,7 @@ function newPayment(): PaymentDraft {
 }
 
 function newOrderItem(): OrderItemDraft {
-  return { id: crypto.randomUUID(), description: "", metal: "gold_22k", estimated_wt: 0, amount: 0, notes: "" };
+  return { id: crypto.randomUUID(), description: "", qty: 1, metal: "gold_22k", estimated_wt: 0, amount: 0, notes: "" };
 }
 
 // ─── Fan-out helper ─────────────────────────────────────────────────────────
@@ -518,6 +519,7 @@ export default function OrdersPage() {
       setEditOrderItems(editItemsFromDB.map((i: any) => ({
         id: i.id,
         description: i.description ?? "",
+        qty: Number(i.qty) || 1,
         metal: i.metal ?? "gold_22k",
         estimated_wt: Number(i.estimated_wt) || 0,
         amount: Number(i.amount) || 0,
@@ -613,6 +615,7 @@ export default function OrdersPage() {
         await client.from("order_items").insert(
           orderItems.map((item, idx) => ({
             order_id: order.id, description: item.description || null,
+            qty: item.qty ?? 1,
             metal: item.metal || null, estimated_wt: item.estimated_wt || 0,
             amount: item.amount || 0, notes: item.notes || null, sort_order: idx,
           }))
@@ -738,6 +741,7 @@ export default function OrdersPage() {
           const { error: itemErr } = await client.from("order_items").insert(
             editOrderItems.map((item, idx) => ({
               order_id: id, description: item.description || null,
+              qty: item.qty ?? 1,
               metal: item.metal || null, estimated_wt: item.estimated_wt || 0,
               amount: item.amount || 0, notes: item.notes || null, sort_order: idx,
             }))
@@ -1067,6 +1071,13 @@ export default function OrdersPage() {
                   <input value={item.description}
                     onChange={(e) => setOrderItems((prev) => prev.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))}
                     placeholder="Ring, chain, kolusu…"
+                    className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                </div>
+                <div>
+                  <label className="block text-xs text-ink-dim mb-1">Qty</label>
+                  <input type="number" step="1" min="1" value={item.qty ?? 1}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => setOrderItems((prev) => prev.map((x, i) => i === idx ? { ...x, qty: Math.max(1, parseInt(e.target.value) || 1) } : x))}
                     className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
                 </div>
                 <div>
@@ -1681,12 +1692,19 @@ export default function OrdersPage() {
                             </div>
                             <div className="space-y-2">
                               {editOrderItems.map((item, idx) => (
-                                <div key={item.id} className="bg-white border border-line rounded-lg2 p-3 grid grid-cols-2 sm:grid-cols-5 gap-2 items-end">
+                                <div key={item.id} className="bg-white border border-line rounded-lg2 p-3 grid grid-cols-2 sm:grid-cols-6 gap-2 items-end">
                                   <div className="col-span-2">
                                     <label className="block text-[10px] text-ink-dim mb-0.5">Description</label>
                                     <input value={item.description}
                                       onChange={e => setEditOrderItems(prev => prev.map((x, i) => i === idx ? { ...x, description: e.target.value } : x))}
                                       className={inp} placeholder="Ring, Chain…" />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-ink-dim mb-0.5">Qty</label>
+                                    <input type="number" step="1" min="1" value={item.qty ?? 1}
+                                      onFocus={e => e.target.select()}
+                                      onChange={e => setEditOrderItems(prev => prev.map((x, i) => i === idx ? { ...x, qty: Math.max(1, parseInt(e.target.value) || 1) } : x))}
+                                      className={inp} />
                                   </div>
                                   <div>
                                     <label className="block text-[10px] text-ink-dim mb-0.5">Metal</label>

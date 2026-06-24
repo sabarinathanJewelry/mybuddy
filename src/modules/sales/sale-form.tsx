@@ -98,7 +98,7 @@ function newItem(series: SaleSeries = "G22", boardRate: import("@/lib/sales-calc
   const rate = boardRate ? rateForMetal(boardRate, metal) : 0;
   return {
     id: crypto.randomUUID(),
-    description: "", metal, gross_wt: 0, stone_wt: 0,
+    description: "", qty: 1, metal, gross_wt: 0, stone_wt: 0,
     purity_pct: defaultPurityForMetal(metal), rate, va_pct: 0, making_amt: 0,
     show_stone: false, stone_amt: 0,
     show_diamond: false, diamond_amt: 0, diamond_carat_rate: 0, diamond_cents: 0,
@@ -196,6 +196,7 @@ export default function SaleForm({ saleId }: Props) {
     setItems(dbItems.map((item: any) => ({
       id: crypto.randomUUID(),
       description: item.description,
+      qty: Number(item.qty) || 1,
       metal: item.metal as Metal,
       gross_wt: item.gross_wt,
       stone_wt: item.stone_wt,
@@ -670,6 +671,10 @@ export default function SaleForm({ saleId }: Props) {
                     placeholder="Item description"
                     className={inp}
                   />
+                </div>
+                <div>
+                  <label className="text-xs text-ink-dim">Qty</label>
+                  <Num value={item.qty ?? 1} onChange={(v) => updateItem(idx, { qty: Math.max(1, Math.round(v)) })} step="1" />
                 </div>
                 <div>
                   <label className="text-xs text-ink-dim">Metal</label>

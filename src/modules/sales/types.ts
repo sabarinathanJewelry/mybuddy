@@ -5,6 +5,7 @@ export type SaleSeries = "G22" | "G18" | "G24" | "S" | "D";
 export interface SaleItemDraft {
   id: string;
   description: string;
+  qty: number;
   metal: Metal | null;
   gross_wt: number;
   stone_wt: number;

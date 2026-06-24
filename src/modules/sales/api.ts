@@ -188,6 +188,7 @@ function itemsInsertPayload(saleId: string, items: SaleDraft["items"]) {
   return items.map((item, i) => ({
     sale_id: saleId,
     description: item.description,
+    qty: item.qty ?? 1,
     metal: item.metal,
     gross_wt: item.gross_wt,
     stone_wt: item.show_stone ? item.stone_wt : 0,
