@@ -61,18 +61,18 @@ export default function GoldChitPage() {
         metal_type: metalType,
         gross_wt: grossWt,
         purity_pct: purityPct,
-        pure_wt: pureWt,
+        pure_wt: grossWt,
         notes: notes || null,
       });
       if (error) throw error;
 
-      // Credit pure grams to customer balance
+      // Credit gross grams to customer balance (no purity conversion)
       const balanceField = metalType === "gold" ? "gold_balance_g" : "silver_balance_g";
       const { data: cust } = await client.from("customers")
         .select("gold_balance_g, silver_balance_g").eq("id", customer.id).single();
       const current = (cust as Record<string, number>)?.[balanceField] ?? 0;
       await client.from("customers")
-        .update({ [balanceField]: parseFloat((current + pureWt).toFixed(4)) })
+        .update({ [balanceField]: parseFloat((current + grossWt).toFixed(4)) })
         .eq("id", customer.id);
     },
     onSuccess: () => {
@@ -177,10 +177,10 @@ export default function GoldChitPage() {
           {/* Result */}
           <div className="bg-gold/5 border border-gold/20 rounded-lg2 px-4 py-3 flex items-center justify-between text-sm">
             <div>
-              <span className="text-ink-dim">Pure weight credited to customer</span>
-              <p className="text-xs text-ink-dim mt-0.5">{grossWt}g × {purityPct}% = {pureWt.toFixed(4)}g</p>
+              <span className="text-ink-dim">Weight credited to customer (as-is)</span>
+              <p className="text-xs text-ink-dim mt-0.5">Gross weight — no purity conversion</p>
             </div>
-            <span className="text-2xl font-bold text-gold">{pureWt.toFixed(4)} g</span>
+            <span className="text-2xl font-bold text-gold">{grossWt.toFixed(3)} g</span>
           </div>
 
           <div>
