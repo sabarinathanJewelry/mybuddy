@@ -29,10 +29,8 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- 2. Drop old chit_payments (group-based) and recreate as personal customer metal savings
-DROP TABLE IF EXISTS chit_payments CASCADE;
-
-CREATE TABLE chit_payments (
+-- 2. Personal chit payments table (create only if not already present)
+CREATE TABLE IF NOT EXISTS chit_payments (
   id           uuid primary key default gen_random_uuid(),
   customer_id  uuid not null references customers(id),
   pay_date     date not null default current_date,

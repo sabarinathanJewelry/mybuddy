@@ -336,7 +336,7 @@ export default function ChitsPage() {
               className="border border-line text-sm px-5 py-2 rounded-lg2">{t("cancel")}</button>
           </div>
           {save.isError && (
-            <p className="text-xs text-err">Save failed — run migration 003 in Supabase SQL Editor first (chit_payments table).</p>
+            <p className="text-xs text-err">Save failed — {(save.error as Error)?.message ?? "please try again"}</p>
           )}
         </div>
       )}
