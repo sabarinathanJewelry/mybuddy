@@ -152,11 +152,12 @@ export default function SaleForm({ saleId }: Props) {
   const [marketingStaffId, setMarketingStaffId] = useState<string>("");
   const [refBillPreview, setRefBillPreview] = useState<{
     bill_no: string; bill_date: string; customer_name: string | null;
-    items: { description: string; metal: string; gross_wt: number; net_wt: number; line_total: number }[];
+    items: { id: string; description: string; metal: string; gross_wt: number; net_wt: number; line_total: number; qty: number }[];
     total: number;
   } | null>(null);
   const [refBillError, setRefBillError] = useState<string | null>(null);
   const [lookingUp, setLookingUp] = useState(false);
+  const [selectedReturnIds, setSelectedReturnIds] = useState<Set<string>>(new Set());
 
   // Auto-fill rates when board rate loads (form opens before boardRate is ready)
   useEffect(() => {
@@ -362,7 +363,7 @@ export default function SaleForm({ saleId }: Props) {
     try {
       const { data, error } = await supabase()
         .from("sales")
-        .select("bill_no, bill_date, total, customers(name), sale_items(description, metal, gross_wt, net_wt, line_total)")
+        .select("bill_no, bill_date, total, customers(name), sale_items(id, description, metal, gross_wt, net_wt, line_total, qty)")
         .eq("bill_no", exchangeRefBill.trim())
         .single();
       if (error || !data) {
@@ -378,10 +379,34 @@ export default function SaleForm({ saleId }: Props) {
           items: (data.sale_items as any[]) ?? [],
           total: data.total,
         });
+        setSelectedReturnIds(new Set());
       }
     } finally {
       setLookingUp(false);
     }
+  }
+
+  function applySelectedAsReturn() {
+    if (!refBillPreview || selectedReturnIds.size === 0) return;
+    const GOLD: string[] = ["gold_22k", "gold_18k", "gold_24k"];
+    const SILVER: string[] = ["silver", "silver_pure", "silver_mpr"];
+    const selected = refBillPreview.items.filter(i => selectedReturnIds.has(i.id));
+    const goldItems   = selected.filter(i => GOLD.includes(i.metal));
+    const silverItems = selected.filter(i => SILVER.includes(i.metal));
+    const goldAmt  = goldItems.reduce((s, i) => s + i.line_total, 0);
+    const goldWt   = goldItems.reduce((s, i) => s + i.net_wt, 0);
+    const silverAmt = silverItems.reduce((s, i) => s + i.line_total, 0);
+    const silverWt  = silverItems.reduce((s, i) => s + i.net_wt, 0);
+    // Remove any existing old_gold / old_silver rows, then add new ones from selection
+    const base = payments.filter(p => p.mode !== "old_gold" && p.mode !== "old_silver");
+    const added: SalePaymentDraft[] = [];
+    if (goldAmt > 0) {
+      added.push({ id: crypto.randomUUID(), mode: "old_gold", amount: goldAmt, metal_wt: goldWt, metal_purity: 91.6, rate: goldWt > 0 ? goldAmt / goldWt : 0, is_advance: false });
+    }
+    if (silverAmt > 0) {
+      added.push({ id: crypto.randomUUID(), mode: "old_silver", amount: silverAmt, metal_wt: silverWt, metal_purity: 92.5, rate: silverWt > 0 ? silverAmt / silverWt : 0, is_advance: false });
+    }
+    setPayments([...base, ...added]);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -509,44 +534,75 @@ export default function SaleForm({ saleId }: Props) {
             {refBillError && (
               <p className="text-xs text-err mt-1">{refBillError}</p>
             )}
-            {refBillPreview && (
-              <div className="mt-2 bg-white border border-gold/30 rounded-xl p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-ink">{refBillPreview.bill_no}</span>
-                  <span className="text-xs text-ink-dim">{shortDate(refBillPreview.bill_date)}</span>
-                </div>
-                {refBillPreview.customer_name && (
-                  <p className="text-xs text-ink-dim">Customer: <strong className="text-ink">{refBillPreview.customer_name}</strong></p>
-                )}
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-ink-dim border-b border-line">
-                      <th className="text-left pb-1 font-medium">Item</th>
-                      <th className="text-right pb-1 font-medium">Gross</th>
-                      <th className="text-right pb-1 font-medium">Net</th>
-                      <th className="text-right pb-1 font-medium">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {refBillPreview.items.map((item, i) => (
-                      <tr key={i} className="border-b border-line/40">
-                        <td className="py-0.5">{item.description || item.metal}</td>
-                        <td className="text-right py-0.5 font-semibold text-warn">{grams(item.gross_wt)}</td>
-                        <td className="text-right py-0.5">{grams(item.net_wt)}</td>
-                        <td className="text-right py-0.5">{inr(item.line_total)}</td>
+            {refBillPreview && (() => {
+              const GOLD = ["gold_22k", "gold_18k", "gold_24k"];
+              const SILVER = ["silver", "silver_pure", "silver_mpr"];
+              const selItems = refBillPreview.items.filter(i => selectedReturnIds.has(i.id));
+              const selGoldAmt   = selItems.filter(i => GOLD.includes(i.metal)).reduce((s, i) => s + i.line_total, 0);
+              const selGoldWt    = selItems.filter(i => GOLD.includes(i.metal)).reduce((s, i) => s + i.net_wt, 0);
+              const selSilverAmt = selItems.filter(i => SILVER.includes(i.metal)).reduce((s, i) => s + i.line_total, 0);
+              const selSilverWt  = selItems.filter(i => SILVER.includes(i.metal)).reduce((s, i) => s + i.net_wt, 0);
+              return (
+                <div className="mt-2 bg-white border border-gold/30 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-ink">{refBillPreview.bill_no}</span>
+                    <span className="text-xs text-ink-dim">{shortDate(refBillPreview.bill_date)}</span>
+                  </div>
+                  {refBillPreview.customer_name && (
+                    <p className="text-xs text-ink-dim">Customer: <strong className="text-ink">{refBillPreview.customer_name}</strong></p>
+                  )}
+                  <p className="text-xs text-ink-dim">Tick the items the customer is <strong className="text-ink">returning</strong>:</p>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-ink-dim border-b border-line">
+                        <th className="text-left pb-1 w-6"></th>
+                        <th className="text-left pb-1 font-medium">Item</th>
+                        <th className="text-right pb-1 font-medium">Net Wt</th>
+                        <th className="text-right pb-1 font-medium">Value</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <div className="flex items-center justify-between pt-1 border-t border-line">
-                  <span className="text-xs text-ink-dim">Bill Total</span>
-                  <span className="text-xs font-semibold text-gold">{inr(refBillPreview.total)}</span>
+                    </thead>
+                    <tbody>
+                      {refBillPreview.items.map((item) => {
+                        const checked = selectedReturnIds.has(item.id);
+                        return (
+                          <tr key={item.id} className={`border-b border-line/40 cursor-pointer ${checked ? "bg-warn/5" : ""}`}
+                            onClick={() => setSelectedReturnIds(prev => {
+                              const n = new Set(prev);
+                              checked ? n.delete(item.id) : n.add(item.id);
+                              return n;
+                            })}>
+                            <td className="py-1.5 pr-1">
+                              <input type="checkbox" readOnly checked={checked} className="accent-gold w-3.5 h-3.5" />
+                            </td>
+                            <td className="py-1.5">
+                              <span className={checked ? "font-medium text-ink" : "text-ink-dim"}>{item.description || item.metal}</span>
+                              {item.qty > 1 && <span className="ml-1 text-[10px] text-ink-dim">×{item.qty}</span>}
+                            </td>
+                            <td className="text-right py-1.5">{grams(item.net_wt)}</td>
+                            <td className={`text-right py-1.5 font-semibold ${checked ? "text-warn" : "text-ink-dim"}`}>{inr(item.line_total)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  <div className="flex items-center justify-between pt-1 border-t border-line">
+                    <span className="text-xs text-ink-dim">Bill Total</span>
+                    <span className="text-xs font-semibold text-gold">{inr(refBillPreview.total)}</span>
+                  </div>
+                  {selectedReturnIds.size > 0 && (
+                    <div className="bg-warn/10 border border-warn/20 rounded-lg2 px-3 py-2 space-y-1.5">
+                      <p className="text-xs font-semibold text-warn">{selectedReturnIds.size} item{selectedReturnIds.size !== 1 ? "s" : ""} selected for return — {inr(selGoldAmt + selSilverAmt)}</p>
+                      {selGoldAmt > 0 && <p className="text-xs text-ink">Gold: {grams(selGoldWt)} · {inr(selGoldAmt)}</p>}
+                      {selSilverAmt > 0 && <p className="text-xs text-ink">Silver: {grams(selSilverWt)} · {inr(selSilverAmt)}</p>}
+                      <button type="button" onClick={applySelectedAsReturn}
+                        className="w-full text-xs bg-warn text-white font-medium px-3 py-1.5 rounded-lg2 hover:opacity-90">
+                        Apply as return — fills Old Gold/Silver payment rows below
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <p className="text-xs bg-warn/10 text-warn rounded-lg2 px-2 py-1.5 font-medium">
-                  ↓ Original items totalled {grams(refBillPreview.items.reduce((s, i) => s + (i.gross_wt || 0), 0))} — enter the weight the customer is returning in the Old Silver / Old Gold payment below
-                </p>
-              </div>
-            )}
+              );
+            })()}
           </div>
 
           {/* Metal flow summary — live computed from payments + items */}
