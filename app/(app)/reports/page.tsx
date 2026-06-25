@@ -260,6 +260,23 @@ function useMetalDispatches(from: string, to: string) {
   });
 }
 
+// Orders placed in the period (pending + in-progress + delivered + converted)
+function useOrdersReport(from: string, to: string) {
+  return useQuery({
+    queryKey: ["orders-report", from, to],
+    enabled: !!from && !!to,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("orders")
+        .select("id, status, order_date, delivery_date, sale_id, order_items(metal, estimated_wt, amount)")
+        .gte("order_date", from)
+        .lte("order_date", to);
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
 // Bullion sell trades in the period (old gold/refined sold to dealer or supplier)
 function useBullionSells(from: string, to: string) {
   return useQuery({
@@ -591,6 +608,7 @@ export default function ReportsPage() {
   const { data: cutRatePayments = [] }                              = useCutRatePayments(range.from, range.to);
   const { data: metalDispatches = [] }                              = useMetalDispatches(range.from, range.to);
   const { data: bullionSells = [] }                                 = useBullionSells(range.from, range.to);
+  const { data: ordersReport = [] }                                 = useOrdersReport(range.from, range.to);
 
   const isLoading = loadingItems || loadingPurchases || loadingExpenses;
 
@@ -651,6 +669,17 @@ export default function ReportsPage() {
   const bullionSellGoldCost    = bullionSellGoldWt * goldWAC;
   const bullionSellSilvCost    = bullionSellSilvWt * silverWAC;
   const bullionTradingProfit   = (bullionSellGoldRevenue + bullionSellSilvRevenue) - (bullionSellGoldCost + bullionSellSilvCost);
+
+  // Orders placed in the period
+  const ordersAll        = ordersReport as any[];
+  const ordersDelivered  = ordersAll.filter(o => o.status === "delivered" || o.sale_id);
+  const ordersConverted  = ordersAll.filter(o => !!o.sale_id);
+  const goldOrderItems   = ordersAll.flatMap((o: any) => (o.order_items ?? []).filter((i: any) => GOLD_METALS.includes(i.metal)));
+  const silverOrderItems = ordersAll.flatMap((o: any) => (o.order_items ?? []).filter((i: any) => SILVER_METALS.includes(i.metal)));
+  const orderGoldWt      = goldOrderItems.reduce((s: number, i: any) => s + Number(i.estimated_wt || 0), 0);
+  const orderSilverWt    = silverOrderItems.reduce((s: number, i: any) => s + Number(i.estimated_wt || 0), 0);
+  const orderGoldValue   = goldOrderItems.reduce((s: number, i: any) => s + Number(i.amount || 0), 0);
+  const orderSilverValue = silverOrderItems.reduce((s: number, i: any) => s + Number(i.amount || 0), 0);
 
   // Effective P&L: use WAC-based metal cost when reserve data exists, else fall back to period purchases
   const hasWac = goldWAC > 0;
@@ -760,6 +789,53 @@ export default function ReportsPage() {
                 <div className="px-4 py-3">
                   <p className="text-xs text-ink-dim">Note</p>
                   <p className="text-xs text-ink-dim">MPR items are direct-value; purchase cost tracked separately</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Orders placed this period */}
+          {ordersAll.length > 0 && (
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+              <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-info bg-info/5 flex items-center justify-between">
+                <span>Orders Placed — {MONTHS[month - 1]} {year}
+                  <span className="ml-2 text-xs font-normal text-ink-dim">{ordersAll.length} order{ordersAll.length !== 1 ? "s" : ""}</span>
+                </span>
+                <div className="flex gap-3 text-xs font-normal">
+                  <span className="text-ok">{ordersConverted.length} converted to sale</span>
+                  <span className="text-warn">{ordersDelivered.length - ordersConverted.length > 0 ? `${ordersDelivered.length - ordersConverted.length} delivered` : ""}</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-x divide-line text-sm">
+                <div className="px-4 py-3">
+                  <p className="text-xs text-ink-dim">Gold Ordered (est. wt)</p>
+                  <p className="font-semibold text-gold">{orderGoldWt > 0 ? grams(orderGoldWt) : "—"}</p>
+                </div>
+                <div className="px-4 py-3">
+                  <p className="text-xs text-ink-dim">Gold Est. Value</p>
+                  <p className="font-semibold text-gold">{orderGoldValue > 0 ? inr(orderGoldValue) : "—"}</p>
+                </div>
+                <div className="px-4 py-3">
+                  <p className="text-xs text-ink-dim">Silver Ordered (est. wt)</p>
+                  <p className="font-semibold text-ink-mid">{orderSilverWt > 0 ? grams(orderSilverWt) : "—"}</p>
+                </div>
+                <div className="px-4 py-3">
+                  <p className="text-xs text-ink-dim">Silver Est. Value</p>
+                  <p className="font-semibold text-ink-mid">{orderSilverValue > 0 ? inr(orderSilverValue) : "—"}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-0 divide-x divide-line text-sm border-t border-line">
+                <div className="px-4 py-3">
+                  <p className="text-xs text-ink-dim">Total Orders</p>
+                  <p className="font-semibold">{ordersAll.length}</p>
+                </div>
+                <div className="px-4 py-3">
+                  <p className="text-xs text-ink-dim">Delivered this month</p>
+                  <p className="font-semibold text-ok">{ordersDelivered.length}</p>
+                </div>
+                <div className="px-4 py-3">
+                  <p className="text-xs text-ink-dim">Converted to Sale</p>
+                  <p className="font-bold text-ok">{ordersConverted.length}</p>
                 </div>
               </div>
             </div>
