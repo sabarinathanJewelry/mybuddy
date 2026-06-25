@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useKiosk } from "@/stores/kiosk";
 import { useAuth } from "@/stores/auth";
 import { useKioskSequence, useAdminKioskSequences } from "@/modules/attendance/api";
+import StaffAbsenceBanner from "@/components/layout/staff-absence-banner";
 
 const IDLE_MS = 5 * 60 * 1000;
 
@@ -89,6 +90,7 @@ export default function KioskProvider({
       {sidebar}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         {topbar}
+        <StaffAbsenceBanner />
         <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
       </div>
     </div>
