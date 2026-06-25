@@ -96,9 +96,9 @@ export default function WeekoffsView() {
   const myWeekoff = allWeekoffs.find((w) => w.user_id === profile?.id);
   const [selected, setSelected] = useState<string[]>([]);
 
-  // Seed selected from DB when draft/rejected weekoff loads (e.g. after rejection, reopen)
+  // Seed selected from DB on load/status change
   useEffect(() => {
-    if (myWeekoff && (myWeekoff.status === "draft" || myWeekoff.status === "rejected")) {
+    if (myWeekoff && myWeekoff.status !== "pending") {
       setSelected(myWeekoff.dates);
     } else if (!myWeekoff) {
       setSelected([]);
@@ -122,8 +122,11 @@ export default function WeekoffsView() {
     return map;
   }, [allWeekoffs, profileNames]);
 
+  const approvedDates = myWeekoff?.status === "approved" ? (myWeekoff.dates ?? []) : [];
+
   function toggleDate(dateStr: string) {
-    if (myWeekoff && myWeekoff.status !== "draft" && myWeekoff.status !== "rejected") return;
+    if (!canEdit) return;
+    if (approvedDates.includes(dateStr)) return; // already-approved dates are locked
     setSelected((prev) => {
       if (prev.includes(dateStr)) return prev.filter((d) => d !== dateStr);
       if (prev.length >= maxDays) return prev;
@@ -201,7 +204,10 @@ export default function WeekoffsView() {
     },
   });
 
-  const canEdit = !myWeekoff || myWeekoff.status === "draft" || myWeekoff.status === "rejected";
+  const canEdit = !myWeekoff
+    || myWeekoff.status === "draft"
+    || myWeekoff.status === "rejected"
+    || (myWeekoff.status === "approved" && myWeekoff.dates.length < maxDays);
   // Always use local selected state so new picks are reflected immediately
   const currentDates = selected;
 
@@ -273,18 +279,22 @@ export default function WeekoffsView() {
               {Array.from({ length: daysInMonth }).map((_, i) => {
                 const day = i + 1;
                 const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-                const isMine = selected.includes(dateStr);
+                const isApproved = approvedDates.includes(dateStr);
+                const isNewSelected = selected.includes(dateStr) && !isApproved;
                 const isSunday = new Date(year, month, day).getDay() === 0;
+                const clickable = canEdit && !isApproved;
                 return (
                   <button
                     key={day}
-                    onClick={() => canEdit && toggleDate(dateStr)}
-                    disabled={!canEdit}
+                    onClick={() => clickable && toggleDate(dateStr)}
+                    disabled={!clickable}
+                    title={isApproved ? "Already approved" : undefined}
                     className={clsx(
                       "aspect-square flex items-center justify-center text-xs rounded-full transition-colors",
-                      isMine ? "bg-gold text-white font-bold" :
-                      isSunday ? "text-err" : "hover:bg-canvas text-ink",
-                      !canEdit && "cursor-default"
+                      isApproved   ? "bg-gold text-white font-bold cursor-default" :
+                      isNewSelected ? "bg-gold/40 text-gold font-bold ring-2 ring-gold" :
+                      isSunday     ? "text-err hover:bg-canvas" : "hover:bg-canvas text-ink",
+                      !clickable && !isApproved && "cursor-default"
                     )}
                   >
                     {day}
@@ -295,14 +305,16 @@ export default function WeekoffsView() {
           </div>
 
           <p className="text-xs text-ink-dim">
-            {currentDates.length}/{maxDays} days selected
-            {canEdit && currentDates.length < maxDays && ` — pick ${maxDays - currentDates.length} more`}
+            {approvedDates.length > 0
+              ? <>{approvedDates.length} approved · <span className="text-gold">{maxDays - approvedDates.length} more available</span></>
+              : <>{currentDates.length}/{maxDays} days selected{canEdit && currentDates.length < maxDays && ` — pick ${maxDays - currentDates.length} more`}</>
+            }
             {maxDays === 0 && <span className="text-warn ml-1">No weekoffs available this month due to leaves taken.</span>}
           </p>
 
           {canEdit && (
             <div className="flex gap-2 flex-wrap">
-              {selected.length > 0 && (
+              {myWeekoff?.status !== "approved" && selected.length > 0 && (
                 <button
                   onClick={() => saveDraft.mutate()}
                   disabled={saveDraft.isPending}
@@ -313,10 +325,13 @@ export default function WeekoffsView() {
               )}
               <button
                 onClick={() => submitForApproval.mutate()}
-                disabled={submitForApproval.isPending || currentDates.length === 0 || maxDays === 0}
+                disabled={submitForApproval.isPending || currentDates.length === 0 || maxDays === 0
+                  || (myWeekoff?.status === "approved" && selected.length <= approvedDates.length)}
                 className="bg-gold text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-40 hover:opacity-90"
               >
-                {submitForApproval.isPending ? "Submitting…" : "Submit for Approval"}
+                {submitForApproval.isPending ? "Submitting…"
+                  : myWeekoff?.status === "approved" ? "Request More Days"
+                  : "Submit for Approval"}
               </button>
             </div>
           )}
