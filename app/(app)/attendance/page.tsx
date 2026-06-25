@@ -10,7 +10,7 @@ import {
   useKioskSequence, useSaveKioskSequence, useKioskSecret, useSaveKioskSecret, useLastSyncTime,
   useAdminKioskSequences, useSaveUserKioskSequence,
   useLeavesByDate, useAllLeaveRequests, useMyLeaveRequests, usePendingLeaveCount,
-  useMyStaffProfile, useSubmitLeaveRequest, useDecideLeaveRequest, useDeleteLeaveRequest,
+  useMyStaffProfile, useSubmitLeaveRequest, useDecideLeaveRequest, useDeleteLeaveRequest, useWeekoffBioIdsByDate,
   useAppNotifications, useMarkNotificationRead, useMarkAllNotificationsRead,
   useStaffAdvances, useSaveStaffAdvance, useDeleteStaffAdvance,
   useApprovedPermsByDate, useApprovedPermsByMonth, useApprovedLeavesByMonth,
@@ -2305,6 +2305,7 @@ export default function AttendancePage() {
   const { data: leavesByDate = [] }       = useLeavesByDate(date);
   const { data: dailyPerms = [] }         = useApprovedPermsByDate(date);
   const { data: dailyDuties = [] }        = useOutsideDutiesByDate(date);
+  const { data: weekoffBioIds = new Set<string>() } = useWeekoffBioIdsByDate(date);
   const createOutsideDuty                 = useCreateOutsideDuty();
   const { data: shopException }            = useShopExceptionForDate(date);
   const upsertException                    = useUpsertShopException();
@@ -2322,7 +2323,8 @@ export default function AttendancePage() {
 
 
   const present    = data.filter((r) => r.present);
-  const absent     = data.filter((r) => !r.present);
+  const onWeekoff  = data.filter((r) => !r.present && weekoffBioIds.has(r.bio_user_id));
+  const absent     = data.filter((r) => !r.present && !weekoffBioIds.has(r.bio_user_id));
   const checkedOut = present.filter((r) => r.last_out !== null);
 
   const lateCount       = present.filter(r => r.is_late).length;
@@ -2497,12 +2499,13 @@ export default function AttendancePage() {
           {/* Kiosk setup card — admin only, unlocked */}
           {!isLocked && profile?.role === "admin" && <KioskConfig />}
 
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-5 gap-3">
             {[
-              { label: "Total Staff", value: data.length,        color: "text-ink"  },
-              { label: "Present",     value: present.length,     color: "text-ok"   },
-              { label: "Checked Out", value: checkedOut.length,  color: "text-info" },
-              { label: "Absent",      value: absent.length,      color: "text-err"  },
+              { label: "Total Staff", value: data.length,          color: "text-ink"  },
+              { label: "Present",     value: present.length,       color: "text-ok"   },
+              { label: "Checked Out", value: checkedOut.length,    color: "text-info" },
+              { label: "Week Off",    value: onWeekoff.length,     color: "text-gold" },
+              { label: "Absent",      value: absent.length,        color: "text-err"  },
             ].map(c => (
               <div key={c.label} className="bg-white rounded-xl border border-line p-4 shadow-soft text-center">
                 <p className={`text-2xl font-bold ${c.color}`}>{c.value}</p>
@@ -2593,7 +2596,7 @@ export default function AttendancePage() {
                   {data.map((r, i) => (
                     <Fragment key={r.bio_user_id}>
                       <tr
-                        className={`border-b border-line last:border-0 ${r.present ? "hover:bg-canvas/50" : "opacity-50 hover:opacity-70"} ${isLocked ? "cursor-pointer select-none" : ""}`}
+                        className={`border-b border-line last:border-0 ${r.present || weekoffBioIds.has(r.bio_user_id) ? "hover:bg-canvas/50" : "opacity-50 hover:opacity-70"} ${isLocked ? "cursor-pointer select-none" : ""}`}
                         onClick={isLocked ? (e) => handleKioskTap(r.bio_user_id, e) : undefined}
                       >
                         <td className="px-4 py-2.5 text-ink-dim text-xs">{i + 1}</td>
@@ -2606,7 +2609,9 @@ export default function AttendancePage() {
                               ? r.last_out
                                 ? <span className="text-[10px] font-semibold bg-ok/10 text-ok px-2 py-0.5 rounded-full">Out</span>
                                 : <span className="text-[10px] font-semibold bg-info/10 text-info px-2 py-0.5 rounded-full">In</span>
-                              : <span className="text-[10px] font-semibold bg-err/10 text-err px-2 py-0.5 rounded-full">Absent</span>
+                              : weekoffBioIds.has(r.bio_user_id)
+                                ? <span className="text-[10px] font-semibold bg-gold/10 text-gold px-2 py-0.5 rounded-full">Week Off</span>
+                                : <span className="text-[10px] font-semibold bg-err/10 text-err px-2 py-0.5 rounded-full">Absent</span>
                             }
                             {r.is_late && (() => {
                               const hasPerm = dailyPerms.some(p => p.bio_user_id === r.bio_user_id);

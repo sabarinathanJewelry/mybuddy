@@ -58,6 +58,33 @@ export default function AdminWeekoffsPage() {
     },
   });
 
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Upcoming approved weekoffs (next 60 days across current + next month)
+  const upcomingMonths = [monthKey, (() => {
+    const m = month === 11 ? 0 : month + 1;
+    const y = month === 11 ? year + 1 : year;
+    return `${y}-${String(m + 1).padStart(2, "0")}`;
+  })()];
+  const { data: upcomingWeekoffs = [] } = useQuery<Weekoff[]>({
+    queryKey: ["weekoffs_upcoming", upcomingMonths.join(",")],
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("monthly_weekoffs")
+        .select("id, user_id, month, dates, status, submitted_at, review_note")
+        .in("month", upcomingMonths)
+        .eq("status", "approved");
+      if (error) throw error;
+      return (data ?? []) as Weekoff[];
+    },
+  });
+
+  // Flatten to individual date entries, filter to today+future, sort by date
+  const upcomingEntries = upcomingWeekoffs
+    .flatMap(w => (w.dates ?? []).map(d => ({ date: d, user_id: w.user_id })))
+    .filter(e => e.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
   // All pending across every month — so admin never misses a request in another month
   const { data: allPending = [] } = useQuery<Weekoff[]>({
     queryKey: ["weekoffs_admin_pending_all"],
@@ -293,6 +320,32 @@ export default function AdminWeekoffsPage() {
                   >
                     Go to {label}
                   </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Upcoming approved weekoff dates */}
+      {upcomingEntries.length > 0 && (
+        <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-line bg-gold/5 flex items-center justify-between">
+            <p className="text-sm font-semibold text-gold">Upcoming Approved Week-offs</p>
+            <p className="text-xs text-ink-dim">{upcomingEntries.length} day{upcomingEntries.length !== 1 ? "s" : ""}</p>
+          </div>
+          <div className="divide-y divide-line">
+            {upcomingEntries.map((e, i) => {
+              const d = new Date(e.date + "T00:00:00");
+              const isToday = e.date === today;
+              const dow = d.toLocaleDateString("en-IN", { weekday: "short" });
+              const dLabel = d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+              return (
+                <div key={i} className={`flex items-center justify-between px-4 py-2.5 text-sm ${isToday ? "bg-gold/5" : ""}`}>
+                  <span className="font-medium text-ink">{profileNames[e.user_id] ?? "Staff"}</span>
+                  <span className={`font-mono text-xs ${isToday ? "text-gold font-semibold" : "text-ink-dim"}`}>
+                    {dow}, {dLabel}{isToday ? " — Today" : ""}
+                  </span>
                 </div>
               );
             })}

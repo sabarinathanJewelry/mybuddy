@@ -1603,3 +1603,29 @@ export function useReopenTask() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["staff_tasks"] }),
   });
 }
+
+// Returns Set of bio_user_ids who have an approved weekoff on the given date (YYYY-MM-DD)
+export function useWeekoffBioIdsByDate(date: string) {
+  const monthKey = date.slice(0, 7);
+  return useQuery<Set<string>>({
+    queryKey: ["weekoff_bio_ids", date],
+    queryFn: async () => {
+      // Get approved weekoffs for this month that include this date
+      const { data: weekoffs } = await supabase()
+        .from("monthly_weekoffs")
+        .select("user_id, dates")
+        .eq("month", monthKey)
+        .eq("status", "approved");
+      const userIds = (weekoffs ?? [])
+        .filter((w: any) => Array.isArray(w.dates) && w.dates.includes(date))
+        .map((w: any) => w.user_id as string);
+      if (!userIds.length) return new Set<string>();
+      // Map profiles.id → staff.bio_user_id
+      const { data: staffRows } = await supabase()
+        .from("staff")
+        .select("bio_user_id")
+        .in("user_id", userIds);
+      return new Set((staffRows ?? []).map((s: any) => s.bio_user_id as string));
+    },
+  });
+}
