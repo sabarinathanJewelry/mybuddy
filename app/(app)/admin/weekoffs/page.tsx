@@ -58,7 +58,23 @@ export default function AdminWeekoffsPage() {
     },
   });
 
-  const weekoffUserIds = [...new Set(weekoffs.map(w => w.user_id))];
+  // All pending across every month — so admin never misses a request in another month
+  const { data: allPending = [] } = useQuery<Weekoff[]>({
+    queryKey: ["weekoffs_admin_pending_all"],
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("monthly_weekoffs")
+        .select("id, user_id, month, dates, status, submitted_at, review_note")
+        .eq("status", "pending")
+        .order("submitted_at", { ascending: true, nullsFirst: false });
+      if (error) throw error;
+      return (data ?? []) as Weekoff[];
+    },
+  });
+
+  const pendingOtherMonths = allPending.filter(w => w.month !== monthKey);
+
+  const weekoffUserIds = [...new Set([...weekoffs, ...allPending].map(w => w.user_id))];
   const { data: profileNames = {} } = useQuery<Record<string, string>>({
     queryKey: ["profiles_names", weekoffUserIds.join(",")],
     enabled: weekoffUserIds.length > 0,
@@ -84,7 +100,10 @@ export default function AdminWeekoffsPage() {
       }).eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["weekoffs_admin", monthKey] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["weekoffs_admin", monthKey] });
+      qc.invalidateQueries({ queryKey: ["weekoffs_admin_pending_all"] });
+    },
   });
 
   const editDraft = useMutation({
@@ -251,6 +270,35 @@ export default function AdminWeekoffsPage() {
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <h1 className="text-xl font-bold">Week-off Approvals</h1>
+
+      {/* Pending requests in other months */}
+      {pendingOtherMonths.length > 0 && (
+        <div className="bg-warn/10 border border-warn/30 rounded-xl p-4 space-y-2">
+          <p className="text-sm font-semibold text-warn">
+            {pendingOtherMonths.length} pending request{pendingOtherMonths.length !== 1 ? "s" : ""} in other month{pendingOtherMonths.length !== 1 ? "s" : ""}
+          </p>
+          <div className="space-y-1.5">
+            {pendingOtherMonths.map(w => {
+              const [y, m] = w.month.split("-").map(Number);
+              const label = `${MONTHS[m - 1]} ${y}`;
+              return (
+                <div key={w.id} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-ink">
+                    <span className="font-medium">{profileNames[w.user_id] ?? "Staff"}</span>
+                    <span className="text-ink-dim ml-1.5">— {label}</span>
+                  </span>
+                  <button
+                    onClick={() => { setYear(y); setMonth(m - 1); }}
+                    className="text-xs text-warn underline underline-offset-2 hover:text-err shrink-0"
+                  >
+                    Go to {label}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Month nav */}
       <div className="flex items-center gap-3">
