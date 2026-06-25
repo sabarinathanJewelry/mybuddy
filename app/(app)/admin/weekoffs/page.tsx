@@ -37,8 +37,8 @@ export default function AdminWeekoffsPage() {
   const qc = useQueryClient();
 
   const now = new Date();
-  const [year, setYear]   = useState(now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth() === 11 ? 0 : now.getMonth() + 1);
+  const [year, setYear]   = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth()); // 0-indexed; admin defaults to current month
   const monthKey = getMonthKey(year, month);
 
   const [rejectNote, setRejectNote] = useState<Record<string, string>>({});
