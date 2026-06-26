@@ -112,8 +112,15 @@ export default function MyAttendancePage() {
     if (typeof window === "undefined") return true;
     return localStorage.getItem("staff_smart_view") !== "classic";
   });
-  function switchToTab(t: PageTab) { setTab(t); setSmartView(false); localStorage.setItem("staff_smart_view", "classic"); }
-  function switchSmartView(v: boolean) { setSmartView(v); localStorage.setItem("staff_smart_view", v ? "smart" : "classic"); }
+  // showCards: show the smart home card grid (vs tab content). Separate from smartView (the stored preference).
+  const [showCards, setShowCards] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return localStorage.getItem("staff_smart_view") !== "classic";
+  });
+  function switchToTab(t: PageTab) { setTab(t); setShowCards(false); }
+  function goHome() { setShowCards(true); }
+  function enableSmartView() { setSmartView(true); setShowCards(true); localStorage.setItem("staff_smart_view", "smart"); }
+  function enableClassicView() { setSmartView(false); setShowCards(false); localStorage.setItem("staff_smart_view", "classic"); }
   const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
   const [masterSearch, setMasterSearch]       = useState("");
 
@@ -559,7 +566,8 @@ export default function MyAttendancePage() {
   return (
     <div className="max-w-2xl mx-auto p-4 space-y-4">
       {/* Header */}
-      {smartView ? (
+      {showCards ? (
+        /* Smart home header */
         <div className="flex items-center justify-between py-2">
           <div>
             <h1 className="text-xl font-bold text-ink">
@@ -569,6 +577,20 @@ export default function MyAttendancePage() {
           </div>
           <button onClick={handleLogout}
             className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-err hover:border-err transition-colors">
+            Logout
+          </button>
+        </div>
+      ) : smartView ? (
+        /* Smart mode — viewing a tab — show back button */
+        <div className="flex items-center gap-3 py-2">
+          <button onClick={goHome}
+            className="flex items-center gap-1.5 text-sm text-gold font-medium">
+            ← Home
+          </button>
+          <span className="text-ink-dim text-sm">|</span>
+          <span className="text-sm font-semibold text-ink capitalize">{tab}</span>
+          <button onClick={handleLogout}
+            className="ml-auto text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-err hover:border-err transition-colors">
             Logout
           </button>
         </div>
@@ -632,7 +654,7 @@ export default function MyAttendancePage() {
       )}
 
       {/* ── Smart Home View ── */}
-      {smartView && (
+      {showCards && (
         <div className="py-2 space-y-5">
           {/* Section: My Work */}
           <div>
@@ -727,7 +749,7 @@ export default function MyAttendancePage() {
           )}
 
           <div className="text-center pt-2">
-            <button onClick={() => switchSmartView(false)}
+            <button onClick={enableClassicView}
               className="text-xs text-ink-dim underline underline-offset-2">
               Switch to classic view
             </button>
@@ -735,8 +757,8 @@ export default function MyAttendancePage() {
         </div>
       )}
 
-      {/* Tabs */}
-      {!smartView && <div className="flex flex-wrap border-b border-line gap-x-0 gap-y-0">
+      {/* Tabs — only in classic mode */}
+      {!smartView && !showCards && <div className="flex flex-wrap border-b border-line gap-x-0 gap-y-0">
         {([
           { key: "today",     label: "Today" },
           { key: "weekoffs",  label: "Week-offs" },
@@ -768,7 +790,7 @@ export default function MyAttendancePage() {
       </div>}
 
       {/* ── TODAY TAB ─────────────────────────────────────────────────────────── */}
-      {!smartView && tab === "today" && (
+      {!showCards && tab === "today" && (
         <div className="space-y-4">
           {/* Today's activity card */}
           <div className="bg-white rounded-xl border border-line shadow-soft p-4">
@@ -932,7 +954,7 @@ export default function MyAttendancePage() {
       )}
 
       {/* ── MONTHLY TAB ───────────────────────────────────────────────────────── */}
-      {!smartView && tab === "monthly" && (
+      {!showCards && tab === "monthly" && (
         <div className="space-y-4">
           {/* Month nav */}
           <div className="flex items-center gap-2">
@@ -1076,7 +1098,7 @@ export default function MyAttendancePage() {
       )}
 
       {/* ── REQUESTS TAB ──────────────────────────────────────────────────────── */}
-      {!smartView && tab === "requests" && (
+      {!showCards && tab === "requests" && (
         <div className="space-y-4">
           {/* Permission Requests */}
           <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
@@ -1336,7 +1358,7 @@ export default function MyAttendancePage() {
       )}
 
       {/* ── INCENTIVE TAB ─────────────────────────────────────────────────────── */}
-      {!smartView && tab === "incentive" && (
+      {!showCards && tab === "incentive" && (
         <div className="space-y-4">
           {(incSheetsLoading || incSheetLoading) && (
             <p className="text-ink-dim text-sm">Loading…</p>
@@ -1399,7 +1421,7 @@ export default function MyAttendancePage() {
       )}
 
       {/* ── CHAT TAB ──────────────────────────────────────────────────────────── */}
-      {!smartView && tab === "chat" && (
+      {!showCards && tab === "chat" && (
         <div className="flex flex-col gap-3" style={{ height: "65vh" }}>
           {/* Messages area */}
           <div className="flex-1 overflow-y-auto bg-white rounded-xl border border-line shadow-soft p-3 space-y-1 min-h-0">
@@ -1496,12 +1518,12 @@ export default function MyAttendancePage() {
       )}
 
       {/* ── POLICIES TAB ──────────────────────────────────────────────────────── */}
-      {!smartView && tab === "policies" && <PoliciesTab />}
+      {!showCards && tab === "policies" && <PoliciesTab />}
 
-      {!smartView && tab === "weekoffs" && <WeekoffsView />}
+      {!showCards && tab === "weekoffs" && <WeekoffsView />}
 
       {/* ── KYC TAB ───────────────────────────────────────────────────────────── */}
-      {!smartView && tab === "kyc" && (
+      {!showCards && tab === "kyc" && (
         <div className="space-y-4">
           {/* Status banner */}
           {myKyc && (
@@ -1622,7 +1644,7 @@ export default function MyAttendancePage() {
       )}
 
       {/* ── TASKS TAB ─────────────────────────────────────────────────────────── */}
-      {!smartView && tab === "tasks" && (
+      {!showCards && tab === "tasks" && (
         <StaffTasksTab
           tasks={myTasks}
           staffName={staff?.name ?? ""}
@@ -1632,11 +1654,11 @@ export default function MyAttendancePage() {
       )}
 
       {/* Back to smart home */}
-      {!smartView && (
+      {!showCards && (
         <div className="text-center py-4 border-t border-line mt-4">
-          <button onClick={() => switchSmartView(true)}
+          <button onClick={smartView ? goHome : enableSmartView}
             className="text-xs text-ink-dim underline underline-offset-2">
-            Switch to smart view
+            {smartView ? "← Back to Home" : "Switch to smart view"}
           </button>
         </div>
       )}
