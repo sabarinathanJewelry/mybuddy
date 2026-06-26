@@ -117,7 +117,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between pt-1">
         <div>
           <h1 className="text-lg font-bold text-ink">
-            Hi, {profile?.name?.split(" ")[0] ?? "there"}
+            Hi, {profile?.display_name?.split(" ")[0] ?? "there"}
           </h1>
           <p className="text-xs text-ink-dim">Sabarinathan Jewellery</p>
         </div>
