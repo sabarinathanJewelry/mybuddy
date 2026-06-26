@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import WeekoffsView from "@/components/weekoffs/WeekoffsView";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
@@ -2378,6 +2379,17 @@ export default function AttendancePage() {
   const [assignDutyFor, setAssignDutyFor] = useState<string | null>(null);
   const [dutyForm, setDutyForm]           = useState({ description: "", expected_arrival: "" });
 
+  // Smart home view
+  const [showCards, setShowCards] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return localStorage.getItem("admin_attendance_smart_view") !== "classic";
+  });
+  const [showReview, setShowReview] = useState(false);
+  function switchToSection(t: PageTab) { setTab(t); setShowCards(false); }
+  function goAttendanceHome() { setShowCards(true); }
+  function enableAttendanceClassic() { setShowCards(false); localStorage.setItem("admin_attendance_smart_view", "classic"); }
+  function enableAttendanceSmart() { setShowCards(true); localStorage.setItem("admin_attendance_smart_view", "smart"); }
+
   const approvedDutySet = new Set(
     dailyDuties.filter(d => d.status === "approved").map(d => d.bio_user_id)
   );
@@ -2438,11 +2450,117 @@ export default function AttendancePage() {
     weekoffs:      "Week-offs",
   };
 
+  // Smart home cards — only for admin/subadmin, only when kiosk is not locked
+  if (showCards && isAdmin && !isLocked) {
+    const CARDS: { icon: string; label: string; tab?: PageTab; href?: string; action?: () => void }[] = [
+      { icon: "🕐", label: "Attendance",    tab: "attendance" },
+      { icon: "📋", label: "Requests",      tab: "requests" },
+      { icon: "🏖️", label: "Leaves",        tab: "leaves" },
+      { icon: "🚗", label: "Outside Duty",  tab: "duties" },
+      { icon: "👥", label: "Staff",         tab: "staff" },
+      { icon: "📆", label: "Monthly",       tab: "monthly" },
+      { icon: "📅", label: "Week-offs",     tab: "weekoffs" },
+      { icon: "🔍", label: "KYC",           tab: "kyc" },
+      { icon: "💬", label: "Chat",          tab: "chat" },
+      { icon: "📢", label: "Notices",       tab: "announcements" },
+      { icon: "✅", label: "Tasks",         tab: "tasks" },
+      { icon: "⭐", label: "Review",        action: () => setShowReview(true) },
+    ];
+    return (
+      <div className="max-w-2xl mx-auto space-y-6 pb-8">
+        {/* Greeting header */}
+        <div className="flex items-center justify-between pt-1">
+          <div>
+            <h1 className="text-lg font-bold text-ink">
+              Hi, {profile?.display_name?.split(" ")[0] ?? "there"}
+            </h1>
+            <p className="text-xs text-ink-dim">Sabarinathan Jewellery</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <NotificationBell notifications={notifications} bioUserId={null} />
+            <button onClick={enableAttendanceClassic}
+              className="text-xs text-ink-dim underline underline-offset-2">
+              Classic view
+            </button>
+          </div>
+        </div>
+
+        {/* Cards */}
+        <div>
+          <p className="text-[11px] font-bold tracking-widest text-ink-dim uppercase mb-2">Staff & Attendance</p>
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+            {CARDS.map((c) => {
+              const cls = "bg-canvas border border-line rounded-lg2 shadow-soft p-4 flex flex-col items-center gap-2 hover:border-gold/50 active:scale-95 transition-all cursor-pointer w-full";
+              if (c.tab) {
+                return (
+                  <button key={c.label} onClick={() => switchToSection(c.tab!)} className={cls}>
+                    <span className="text-3xl">{c.icon}</span>
+                    <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">{c.label}</span>
+                  </button>
+                );
+              }
+              return (
+                <button key={c.label} onClick={c.action} className={cls}>
+                  <span className="text-3xl">{c.icon}</span>
+                  <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">{c.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Google Review overlay */}
+        {showReview && (
+          <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white cursor-pointer"
+            onClick={() => setShowReview(false)}>
+            <p className="absolute top-4 right-4 text-xs text-gray-400">Tap anywhere to close</p>
+            <div className="flex flex-col items-center gap-6 px-8 text-center" onClick={e => e.stopPropagation()}>
+              <div>
+                <span className="font-bold tracking-tight text-6xl">
+                  <span style={{ color: "#4285F4" }}>G</span><span style={{ color: "#EA4335" }}>o</span>
+                  <span style={{ color: "#FBBC05" }}>o</span><span style={{ color: "#4285F4" }}>g</span>
+                  <span style={{ color: "#34A853" }}>l</span><span style={{ color: "#EA4335" }}>e</span>
+                </span>
+                <p className="text-gray-400 text-sm mt-1 font-medium tracking-widest uppercase">Review</p>
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-800 leading-tight">Enjoyed shopping<br />with us?</h1>
+                <p className="text-gray-500 mt-2 text-lg">Share your experience on Google</p>
+              </div>
+              <div className="flex gap-1">
+                {[0,1,2,3,4].map(i => <span key={i} className="text-5xl" style={{ color: "#FBBC05" }}>★</span>)}
+              </div>
+              <div className="bg-white border-2 border-gray-200 rounded-2xl p-5 shadow-lg">
+                <img src="/google-review-qr.png" alt="Google Review QR" className="w-64 h-64 object-contain" />
+              </div>
+              <div>
+                <p className="text-gray-700 font-semibold text-lg">Scan to write a review</p>
+                <p className="text-gray-400 text-sm mt-1">Sabarinathan Jewellery</p>
+              </div>
+            </div>
+            <button className="absolute bottom-6 px-6 py-2 rounded-full border border-gray-300 text-gray-500 text-sm"
+              onClick={() => setShowReview(false)}>Close</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-5xl mx-auto space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3 flex-wrap">
-        <h1 className="text-xl font-bold text-ink">Attendance</h1>
+        {showCards ? null : (
+          isAdmin && !isLocked
+            ? <button onClick={goAttendanceHome} className="text-sm text-gold font-medium">← Home</button>
+            : <h1 className="text-xl font-bold text-ink">Attendance</h1>
+        )}
+        {!showCards && isAdmin && !isLocked && (
+          <h1 className="text-xl font-bold text-ink capitalize">{tab}</h1>
+        )}
+        {!showCards && (!isAdmin || isLocked) && (
+          <h1 className="text-xl font-bold text-ink">Attendance</h1>
+        )}
         <div className="flex-1" />
         {tab === "attendance" && (
           <label className="flex items-center gap-1.5 text-sm text-ink-dim cursor-pointer select-none">
@@ -2876,6 +2994,16 @@ export default function AttendancePage() {
 
       {/* ── Week-offs tab ── */}
       {tab === "weekoffs" && <WeekoffsView />}
+
+      {/* Back to smart home */}
+      {isAdmin && !isLocked && (
+        <div className="text-center py-4 border-t border-line mt-4">
+          <button onClick={enableAttendanceSmart}
+            className="text-xs text-ink-dim underline underline-offset-2">
+            ← Back to Home
+          </button>
+        </div>
+      )}
     </div>
   );
 }
