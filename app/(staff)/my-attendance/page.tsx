@@ -107,6 +107,7 @@ export default function MyAttendancePage() {
   const [canSeeRepairs, setCanSeeRepairs]     = useState(false);
   const [canSeeIncentive, setCanSeeIncentive] = useState(false);
   const [canLogKolusu, setCanLogKolusu]       = useState(false);
+  const [showGoogleReview, setShowGoogleReview] = useState(false);
   const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
   const [masterSearch, setMasterSearch]       = useState("");
 
@@ -578,6 +579,10 @@ export default function MyAttendancePage() {
             Kolusu Sale
           </Link>
         )}
+        <button onClick={() => setShowGoogleReview(true)}
+          className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-gold hover:border-gold transition-colors">
+          ⭐ Review
+        </button>
         <button onClick={handleLogout}
           className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-err hover:border-err transition-colors">
           Logout
@@ -1778,5 +1783,48 @@ function StaffTasksTab({ tasks, staffName, bioUserId, todayStr }: {
         </div>
       )}
     </div>
+
+    {/* ── Google Review full-screen overlay ── */}
+    {showGoogleReview && (
+      <div
+        className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white cursor-pointer"
+        onClick={() => setShowGoogleReview(false)}
+      >
+        <p className="absolute top-4 right-4 text-xs text-gray-400">Tap anywhere to close</p>
+        <div className="flex flex-col items-center gap-6 px-8 text-center" onClick={(e) => e.stopPropagation()}>
+          <div>
+            <span className="font-bold tracking-tight text-6xl">
+              <span style={{ color: "#4285F4" }}>G</span>
+              <span style={{ color: "#EA4335" }}>o</span>
+              <span style={{ color: "#FBBC05" }}>o</span>
+              <span style={{ color: "#4285F4" }}>g</span>
+              <span style={{ color: "#34A853" }}>l</span>
+              <span style={{ color: "#EA4335" }}>e</span>
+            </span>
+            <p className="text-gray-400 text-sm mt-1 font-medium tracking-widest uppercase">Review</p>
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-800 leading-tight">Enjoyed shopping<br />with us?</h1>
+            <p className="text-gray-500 mt-2 text-lg">Share your experience on Google</p>
+          </div>
+          <div className="flex gap-1">
+            {[1,2,3,4,5].map(i => <span key={i} className="text-5xl" style={{ color: "#FBBC05" }}>★</span>)}
+          </div>
+          <div className="bg-white border-2 border-gray-200 rounded-2xl p-5 shadow-lg">
+            <img src="/google-review-qr.png" alt="Google Review QR Code" className="w-64 h-64 object-contain" />
+          </div>
+          <div>
+            <p className="text-gray-700 font-semibold text-lg">Scan to write a review</p>
+            <p className="text-gray-400 text-sm mt-1">Sabarinathan Jewellery</p>
+          </div>
+        </div>
+        <button
+          className="absolute bottom-6 px-6 py-2 rounded-full border border-gray-300 text-gray-500 text-sm"
+          onClick={() => setShowGoogleReview(false)}
+        >
+          Close
+        </button>
+      </div>
+    )}
   );
 }
