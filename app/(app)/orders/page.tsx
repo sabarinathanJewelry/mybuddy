@@ -659,6 +659,24 @@ export default function OrdersPage() {
         advance_paid: (Number(order.advance_paid) || 0) + extra,
       }).eq("id", order.id);
       await fanoutOrderPayments(order.id, order.order_no, addPayDate, validPay, order.customer_id);
+
+      // If order is already delivered, also add to payments table linked to the sale
+      // (convertOrderToSale already synced earlier payments; late payments need manual sync)
+      if (order.status === "delivered" && order.customer_id) {
+        const { data: sale } = await client.from("sales").select("id").eq("order_id", order.id).maybeSingle();
+        if (sale) {
+          const payEntries = validPay
+            .filter((p) => p.mode !== "advance") // advance already handled by fanout
+            .map((p) => ({
+              pay_date: addPayDate, direction: "in" as const,
+              mode: p.mode, amount: p.amount,
+              customer_id: order.customer_id,
+              sale_id: sale.id,
+              notes: p.notes || `Late payment — ${order.order_no}`,
+            }));
+          if (payEntries.length) await client.from("payments").insert(payEntries);
+        }
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["orders"] });
@@ -1528,7 +1546,7 @@ export default function OrdersPage() {
 
                     {/* Action buttons */}
                     <div className="flex flex-wrap gap-2 pt-1 border-t border-line">
-                      {o.status !== "delivered" && o.status !== "cancelled" && (
+                      {o.status !== "cancelled" && (
                         <>
                           {o.status === "pending" && (
                             <button onClick={() => updateStatus.mutate({ id: o.id, status: "ready" })}
