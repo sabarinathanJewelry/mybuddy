@@ -559,41 +559,56 @@ export default function MyAttendancePage() {
   return (
     <div className="max-w-2xl mx-auto p-4 space-y-4">
       {/* Header */}
-      <div className="flex items-center gap-3 py-2">
-        <div className="flex-1">
-          <h1 className="text-lg font-bold text-ink">My Attendance</h1>
-          {staff && (
-            <p className="text-sm text-ink-dim">
-              {staff.name}
-              <span className={`ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                staff.shift === "girls" ? "bg-info/10 text-info" : staff.shift === "helper" ? "bg-ok/10 text-ok" : "bg-gold/10 text-gold"
-              }`}>
-                {staff.shift === "girls" ? "Girls shift" : staff.shift === "helper" ? "Helper shift" : "Boys shift"}
-              </span>
-            </p>
-          )}
+      {smartView ? (
+        <div className="flex items-center justify-between py-2">
+          <div>
+            <h1 className="text-xl font-bold text-ink">
+              Hi, {staff?.name?.split(" ")[0] ?? "there"}
+            </h1>
+            <p className="text-xs text-ink-dim mt-0.5">Sabarinathan Jewellery</p>
+          </div>
+          <button onClick={handleLogout}
+            className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-err hover:border-err transition-colors">
+            Logout
+          </button>
         </div>
-        {canSeeRepairs && (
-          <Link href="/my-repairs"
+      ) : (
+        <div className="flex items-center gap-3 py-2">
+          <div className="flex-1">
+            <h1 className="text-lg font-bold text-ink">My Attendance</h1>
+            {staff && (
+              <p className="text-sm text-ink-dim">
+                {staff.name}
+                <span className={`ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                  staff.shift === "girls" ? "bg-info/10 text-info" : staff.shift === "helper" ? "bg-ok/10 text-ok" : "bg-gold/10 text-gold"
+                }`}>
+                  {staff.shift === "girls" ? "Girls shift" : staff.shift === "helper" ? "Helper shift" : "Boys shift"}
+                </span>
+              </p>
+            )}
+          </div>
+          {canSeeRepairs && (
+            <Link href="/my-repairs"
+              className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-gold hover:border-gold transition-colors">
+              Repairs
+            </Link>
+          )}
+          {canLogKolusu && (
+            <Link href="/kolusu-sale"
+              className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-gold hover:border-gold transition-colors">
+              Kolusu Sale
+            </Link>
+          )}
+          <button onClick={() => setShowGoogleReview(true)}
             className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-gold hover:border-gold transition-colors">
-            Repairs
-          </Link>
-        )}
-        {canLogKolusu && (
-          <Link href="/kolusu-sale"
-            className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-gold hover:border-gold transition-colors">
-            Kolusu Sale
-          </Link>
-        )}
-        <button onClick={() => setShowGoogleReview(true)}
-          className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-gold hover:border-gold transition-colors">
-          ⭐ Review
-        </button>
-        <button onClick={handleLogout}
-          className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-err hover:border-err transition-colors">
-          Logout
-        </button>
-      </div>
+            ⭐ Review
+          </button>
+          <button onClick={handleLogout}
+            className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-err hover:border-err transition-colors">
+            Logout
+          </button>
+        </div>
+      )}
 
       {error && <div className="bg-err/10 text-err text-sm px-4 py-3 rounded-xl">{error}</div>}
 
