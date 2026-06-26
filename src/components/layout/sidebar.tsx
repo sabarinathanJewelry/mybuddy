@@ -37,7 +37,6 @@ const NAV = [
   { href: "/attendance",   icon: "🕐", key: "nav_attendance" as const },
   { href: "/goldsmith",    icon: "⚒️",  key: "nav_goldsmith" as const },
   { href: "/social",         icon: "📲", key: "nav_social" as const },
-  { href: "/google-review", icon: "⭐", key: "nav_google_review" as const },
 ];
 
 const ADMIN_NAV = [
@@ -157,7 +156,8 @@ export default function Sidebar() {
       ...(canSeeRepairs ? [{ href: "/repairs", icon: "🔧", label: t("nav_repairs"), badge: repairAlerts }] : []),
       ...(canSeeIncentive   ? [{ href: "/my-incentive", icon: "🎯",  label: t("nav_my_incentive") }] : []),
       ...(canSeeKolusuSale  ? [{ href: "/kolusu-sale",  icon: "🏷️", label: t("nav_kolusu_sale")  }] : []),
-      { href: "/weekoffs", icon: "📅", label: t("nav_weekoffs") },
+      { href: "/weekoffs",      icon: "📅", label: t("nav_weekoffs") },
+      { href: "/google-review", icon: "⭐", label: t("nav_google_review") },
       ...(isAdmin ? ADMIN_NAV.map(item => ({ href: item.href, icon: item.icon, label: t(item.key), isAdmin: true })) : []),
     ];
 
