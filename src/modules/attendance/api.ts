@@ -1205,6 +1205,28 @@ export function useSaveStaffAdvance() {
   });
 }
 
+export function useUpdateStaffAdvance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { id: string; advance_date: string; type: "given" | "repaid"; amount: number; notes?: string }) => {
+      const client = supabase();
+      const { error } = await client.from("staff_advances").update({
+        advance_date: payload.advance_date,
+        type: payload.type,
+        amount: payload.amount,
+        notes: payload.notes ?? null,
+      }).eq("id", payload.id);
+      if (error) throw error;
+      await client.from("cash_ledger").update({
+        tx_date: payload.advance_date,
+        direction: payload.type === "given" ? "out" : "in",
+        amount: payload.amount,
+      }).eq("ref_type", "staff_advance").eq("ref_id", payload.id);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["staff-advances"] }),
+  });
+}
+
 export function useDeleteStaffAdvance() {
   const qc = useQueryClient();
   return useMutation({

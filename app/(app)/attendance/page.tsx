@@ -12,7 +12,7 @@ import {
   useLeavesByDate, useAllLeaveRequests, useMyLeaveRequests, usePendingLeaveCount,
   useMyStaffProfile, useSubmitLeaveRequest, useDecideLeaveRequest, useDeleteLeaveRequest, useWeekoffBioIdsByDate,
   useAppNotifications, useMarkNotificationRead, useMarkAllNotificationsRead,
-  useStaffAdvances, useSaveStaffAdvance, useDeleteStaffAdvance,
+  useStaffAdvances, useSaveStaffAdvance, useUpdateStaffAdvance, useDeleteStaffAdvance,
   useApprovedPermsByDate, useApprovedPermsByMonth, useApprovedLeavesByMonth,
   useOutsideDutiesByDate, useOutsideDutiesByMonth, useAllOutsideDuties,
   useCreateOutsideDuty, useDecideOutsideDuty,
@@ -1038,12 +1038,15 @@ function StaffAdvancesSection() {
   const { data: staff = [] } = useStaff();
   const { data: advances = [], isLoading } = useStaffAdvances();
   const save   = useSaveStaffAdvance();
+  const update = useUpdateStaffAdvance();
   const remove = useDeleteStaffAdvance();
 
   const today = new Date().toLocaleDateString("en-CA");
   const [form, setForm] = useState({ staff_id: "", advance_date: today, type: "given" as "given" | "repaid", amount: 0, notes: "" });
   const [showForm, setShowForm] = useState(false);
   const [expandedStaff, setExpandedStaff] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({ advance_date: "", type: "given" as "given" | "repaid", amount: 0, notes: "" });
 
   // Build per-staff summary
   const activeStaff = staff.filter(s => s.active);
@@ -1170,16 +1173,74 @@ function StaffAdvancesSection() {
                         </td>
                       </tr>
                       {isExpanded && rows.map(a => (
-                        <tr key={a.id} className="border-b border-line bg-canvas/40 text-xs">
-                          <td className="px-6 py-1.5 text-ink-dim">{a.advance_date} · {a.notes || (a.type === "given" ? "Advance given" : "Repaid")}</td>
-                          <td className="px-3 py-1.5 text-right font-mono text-err">{a.type === "given" ? inr(a.amount) : ""}</td>
-                          <td className="px-3 py-1.5 text-right font-mono text-ok">{a.type === "repaid" ? inr(a.amount) : ""}</td>
-                          <td className="px-3 py-1.5" />
-                          <td className="px-3 py-1.5 text-right">
-                            <button onClick={() => { if (window.confirm("Delete this entry?")) remove.mutate(a.id); }}
-                              className="text-[11px] text-err hover:underline">Del</button>
-                          </td>
-                        </tr>
+                        <Fragment key={a.id}>
+                          <tr className="border-b border-line bg-canvas/40 text-xs">
+                            <td className="px-6 py-1.5 text-ink-dim">{a.advance_date} · {a.notes || (a.type === "given" ? "Advance given" : "Repaid")}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-err">{a.type === "given" ? inr(a.amount) : ""}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-ok">{a.type === "repaid" ? inr(a.amount) : ""}</td>
+                            <td className="px-3 py-1.5" />
+                            <td className="px-3 py-1.5 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => { setEditingId(a.id); setEditForm({ advance_date: a.advance_date, type: a.type, amount: a.amount, notes: a.notes ?? "" }); }}
+                                  className="text-[11px] text-gold hover:underline">Edit</button>
+                                <button onClick={() => { if (window.confirm("Delete this entry?")) remove.mutate(a.id); }}
+                                  className="text-[11px] text-err hover:underline">Del</button>
+                              </div>
+                            </td>
+                          </tr>
+                          {editingId === a.id && (
+                            <tr className="border-b border-line bg-gold/5 text-xs">
+                              <td colSpan={5} className="px-6 py-3">
+                                <form
+                                  onSubmit={async (e) => {
+                                    e.preventDefault();
+                                    await update.mutateAsync({ id: a.id, ...editForm });
+                                    setEditingId(null);
+                                  }}
+                                  className="flex items-end gap-3 flex-wrap">
+                                  <div>
+                                    <label className="block text-[10px] text-ink-dim mb-1">Date</label>
+                                    <input type="date" value={editForm.advance_date}
+                                      onChange={(e) => setEditForm({ ...editForm, advance_date: e.target.value })}
+                                      className="border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-ink-dim mb-1">Type</label>
+                                    <select value={editForm.type}
+                                      onChange={(e) => setEditForm({ ...editForm, type: e.target.value as "given" | "repaid" })}
+                                      className="border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold">
+                                      <option value="given">Given</option>
+                                      <option value="repaid">Repaid</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-ink-dim mb-1">Amount</label>
+                                    <input type="number" step="0.01" value={editForm.amount || ""}
+                                      onChange={(e) => setEditForm({ ...editForm, amount: parseFloat(e.target.value) || 0 })}
+                                      className="border border-line rounded-lg2 px-2 py-1 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-gold" />
+                                  </div>
+                                  <div className="flex-1 min-w-[140px]">
+                                    <label className="block text-[10px] text-ink-dim mb-1">Notes</label>
+                                    <input type="text" value={editForm.notes}
+                                      onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                                      className="w-full border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button type="submit" disabled={update.isPending}
+                                      className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40">
+                                      {update.isPending ? "Saving…" : "Save"}
+                                    </button>
+                                    <button type="button" onClick={() => setEditingId(null)}
+                                      className="border border-line text-xs px-3 py-1.5 rounded-lg2 text-ink-dim">
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </form>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
                       ))}
                     </Fragment>
                   );
