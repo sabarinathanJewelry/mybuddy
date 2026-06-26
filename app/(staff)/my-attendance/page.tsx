@@ -108,6 +108,12 @@ export default function MyAttendancePage() {
   const [canSeeIncentive, setCanSeeIncentive] = useState(false);
   const [canLogKolusu, setCanLogKolusu]       = useState(false);
   const [showGoogleReview, setShowGoogleReview] = useState(false);
+  const [smartView, setSmartView] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return localStorage.getItem("staff_smart_view") !== "classic";
+  });
+  function switchToTab(t: PageTab) { setTab(t); setSmartView(false); localStorage.setItem("staff_smart_view", "classic"); }
+  function switchSmartView(v: boolean) { setSmartView(v); localStorage.setItem("staff_smart_view", v ? "smart" : "classic"); }
   const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
   const [masterSearch, setMasterSearch]       = useState("");
 
@@ -610,8 +616,112 @@ export default function MyAttendancePage() {
         </div>
       )}
 
+      {/* ── Smart Home View ── */}
+      {smartView && (
+        <div className="py-2 space-y-5">
+          {/* Section: My Work */}
+          <div>
+            <p className="text-[11px] font-bold tracking-widest text-ink-dim uppercase mb-2">My Work</p>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { icon: "🕐", label: "Today",    action: () => switchToTab("today") },
+                { icon: "📆", label: "Monthly",  action: () => switchToTab("monthly") },
+                { icon: "📋", label: "Policies", action: () => switchToTab("policies") },
+              ].map(c => (
+                <button key={c.label} onClick={c.action}
+                  className="bg-canvas border border-line rounded-lg2 shadow-soft p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform">
+                  <span className="text-3xl">{c.icon}</span>
+                  <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">{c.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Section: Requests */}
+          <div>
+            <p className="text-[11px] font-bold tracking-widest text-ink-dim uppercase mb-2">Requests</p>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { icon: "📅", label: "Week-offs", action: () => switchToTab("weekoffs") },
+                { icon: "📝", label: "Requests",  action: () => switchToTab("requests") },
+                { icon: "📄", label: "KYC",       action: () => switchToTab("kyc") },
+              ].map(c => (
+                <button key={c.label} onClick={c.action}
+                  className="bg-canvas border border-line rounded-lg2 shadow-soft p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform">
+                  <span className="text-3xl">{c.icon}</span>
+                  <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">{c.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Section: Communication */}
+          <div>
+            <p className="text-[11px] font-bold tracking-widest text-ink-dim uppercase mb-2">Communication</p>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { icon: "💬", label: "Chat",  action: () => switchToTab("chat") },
+                { icon: "✅", label: "Tasks", action: () => switchToTab("tasks") },
+                ...(canSeeIncentive ? [{ icon: "🎯", label: "Incentive", action: () => switchToTab("incentive") }] : []),
+              ].map(c => (
+                <button key={c.label} onClick={c.action}
+                  className="bg-canvas border border-line rounded-lg2 shadow-soft p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform">
+                  <span className="text-3xl">{c.icon}</span>
+                  <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">{c.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Section: Shop Tools */}
+          {(canSeeRepairs || canLogKolusu) && (
+            <div>
+              <p className="text-[11px] font-bold tracking-widest text-ink-dim uppercase mb-2">Shop Tools</p>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  ...(canSeeRepairs  ? [{ icon: "🔧", label: "Repairs",      href: "/my-repairs" }] : []),
+                  ...(canLogKolusu   ? [{ icon: "🏷️", label: "Kolusu Sale",  href: "/kolusu-sale" }] : []),
+                  { icon: "⭐", label: "Review", action: () => setShowGoogleReview(true) },
+                ].map(c => (
+                  "href" in c
+                    ? <a key={c.label} href={c.href}
+                        className="bg-canvas border border-line rounded-lg2 shadow-soft p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform">
+                        <span className="text-3xl">{c.icon}</span>
+                        <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">{c.label}</span>
+                      </a>
+                    : <button key={c.label} onClick={c.action}
+                        className="bg-canvas border border-line rounded-lg2 shadow-soft p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform">
+                        <span className="text-3xl">{c.icon}</span>
+                        <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">{c.label}</span>
+                      </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {!(canSeeRepairs || canLogKolusu) && (
+            <div>
+              <p className="text-[11px] font-bold tracking-widest text-ink-dim uppercase mb-2">Shop Tools</p>
+              <div className="grid grid-cols-3 gap-3">
+                <button onClick={() => setShowGoogleReview(true)}
+                  className="bg-canvas border border-line rounded-lg2 shadow-soft p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform">
+                  <span className="text-3xl">⭐</span>
+                  <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">Review</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="text-center pt-2">
+            <button onClick={() => switchSmartView(false)}
+              className="text-xs text-ink-dim underline underline-offset-2">
+              Switch to classic view
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
-      <div className="flex flex-wrap border-b border-line gap-x-0 gap-y-0">
+      {!smartView && <div className="flex flex-wrap border-b border-line gap-x-0 gap-y-0">
         {([
           { key: "today",     label: "Today" },
           { key: "weekoffs",  label: "Week-offs" },
@@ -1504,6 +1614,16 @@ export default function MyAttendancePage() {
           bioUserId={staff?.bio_user_id ?? null}
           todayStr={todayStr}
         />
+      )}
+
+      {/* Back to smart home */}
+      {!smartView && (
+        <div className="text-center py-4 border-t border-line mt-4">
+          <button onClick={() => switchSmartView(true)}
+            className="text-xs text-ink-dim underline underline-offset-2">
+            Switch to smart view
+          </button>
+        </div>
       )}
 
       {/* ── Google Review full-screen overlay ── */}
