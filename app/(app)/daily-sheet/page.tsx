@@ -371,9 +371,13 @@ function useDaySalesLedger(fromDate: string, toDate: string) {
         const amt = Number(p.amount);
         row.dayPayments += amt;
         if (isNew) {
-          // New order: non-cash modes go to Debit
-          if (p.mode !== "cash" && p.mode !== "advance") {
-            row.payments.push({ note: paymentNote(p.mode, Number(p.metal_wt ?? 0)), amount: amt, mode: p.mode as string });
+          // New order: non-cash modes (including advance) go to Debit
+          if (p.mode !== "cash") {
+            row.payments.push({
+              note: p.mode === "advance" ? "Advance applied" : paymentNote(p.mode, Number(p.metal_wt ?? 0)),
+              amount: amt,
+              mode: p.mode as string,
+            });
           }
         } else {
           // Payment on existing order: non-cash → Debit; credit recalculated below

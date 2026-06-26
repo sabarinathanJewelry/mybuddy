@@ -36,7 +36,8 @@ const NAV = [
   { href: "/reports",      icon: "📈", key: "nav_reports" as const },
   { href: "/attendance",   icon: "🕐", key: "nav_attendance" as const },
   { href: "/goldsmith",    icon: "⚒️",  key: "nav_goldsmith" as const },
-  { href: "/social",       icon: "📲", key: "nav_social" as const },
+  { href: "/social",         icon: "📲", key: "nav_social" as const },
+  { href: "/google-review", icon: "⭐", key: "nav_google_review" as const },
 ];
 
 const ADMIN_NAV = [
