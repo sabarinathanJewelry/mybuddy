@@ -750,10 +750,10 @@ export default function MyAttendancePage() {
             )}
           </button>
         ))}
-      </div>
+      </div>}
 
       {/* ── TODAY TAB ─────────────────────────────────────────────────────────── */}
-      {tab === "today" && (
+      {!smartView && tab === "today" && (
         <div className="space-y-4">
           {/* Today's activity card */}
           <div className="bg-white rounded-xl border border-line shadow-soft p-4">
@@ -917,7 +917,7 @@ export default function MyAttendancePage() {
       )}
 
       {/* ── MONTHLY TAB ───────────────────────────────────────────────────────── */}
-      {tab === "monthly" && (
+      {!smartView && tab === "monthly" && (
         <div className="space-y-4">
           {/* Month nav */}
           <div className="flex items-center gap-2">
@@ -1061,7 +1061,7 @@ export default function MyAttendancePage() {
       )}
 
       {/* ── REQUESTS TAB ──────────────────────────────────────────────────────── */}
-      {tab === "requests" && (
+      {!smartView && tab === "requests" && (
         <div className="space-y-4">
           {/* Permission Requests */}
           <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
@@ -1321,7 +1321,7 @@ export default function MyAttendancePage() {
       )}
 
       {/* ── INCENTIVE TAB ─────────────────────────────────────────────────────── */}
-      {tab === "incentive" && (
+      {!smartView && tab === "incentive" && (
         <div className="space-y-4">
           {(incSheetsLoading || incSheetLoading) && (
             <p className="text-ink-dim text-sm">Loading…</p>
@@ -1384,7 +1384,7 @@ export default function MyAttendancePage() {
       )}
 
       {/* ── CHAT TAB ──────────────────────────────────────────────────────────── */}
-      {tab === "chat" && (
+      {!smartView && tab === "chat" && (
         <div className="flex flex-col gap-3" style={{ height: "65vh" }}>
           {/* Messages area */}
           <div className="flex-1 overflow-y-auto bg-white rounded-xl border border-line shadow-soft p-3 space-y-1 min-h-0">
@@ -1481,12 +1481,12 @@ export default function MyAttendancePage() {
       )}
 
       {/* ── POLICIES TAB ──────────────────────────────────────────────────────── */}
-      {tab === "policies" && <PoliciesTab />}
+      {!smartView && tab === "policies" && <PoliciesTab />}
 
-      {tab === "weekoffs" && <WeekoffsView />}
+      {!smartView && tab === "weekoffs" && <WeekoffsView />}
 
       {/* ── KYC TAB ───────────────────────────────────────────────────────────── */}
-      {tab === "kyc" && (
+      {!smartView && tab === "kyc" && (
         <div className="space-y-4">
           {/* Status banner */}
           {myKyc && (
@@ -1607,7 +1607,7 @@ export default function MyAttendancePage() {
       )}
 
       {/* ── TASKS TAB ─────────────────────────────────────────────────────────── */}
-      {tab === "tasks" && (
+      {!smartView && tab === "tasks" && (
         <StaffTasksTab
           tasks={myTasks}
           staffName={staff?.name ?? ""}
