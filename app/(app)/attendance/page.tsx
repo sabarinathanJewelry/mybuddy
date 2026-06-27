@@ -2450,8 +2450,8 @@ export default function AttendancePage() {
     weekoffs:      "Week-offs",
   };
 
-  // Smart home cards — only for admin/subadmin, only when kiosk is not locked
-  if (showCards && isAdmin && !isLocked) {
+  // Smart home cards — admin/subadmin only; shown regardless of kiosk lock state
+  if (showCards && isAdmin) {
     const CARDS: { icon: string; label: string; tab?: PageTab; href?: string; action?: () => void }[] = [
       { icon: "🕐", label: "Attendance",    tab: "attendance" },
       { icon: "📋", label: "Requests",      tab: "requests" },
@@ -2550,16 +2550,13 @@ export default function AttendancePage() {
     <div className="max-w-5xl mx-auto space-y-5">
       {/* Header */}
       <div className="flex items-center gap-3 flex-wrap">
-        {showCards ? null : (
-          isAdmin && !isLocked
-            ? <button onClick={goAttendanceHome} className="text-sm text-gold font-medium">← Home</button>
-            : <h1 className="text-xl font-bold text-ink">Attendance</h1>
-        )}
-        {!showCards && isAdmin && !isLocked && (
-          <h1 className="text-xl font-bold text-ink capitalize">{tab}</h1>
-        )}
-        {!showCards && (!isAdmin || isLocked) && (
+        {isAdmin ? (
+          <button onClick={goAttendanceHome} className="text-sm text-gold font-medium">← Home</button>
+        ) : (
           <h1 className="text-xl font-bold text-ink">Attendance</h1>
+        )}
+        {isAdmin && (
+          <h1 className="text-xl font-bold text-ink capitalize">{tab}</h1>
         )}
         <div className="flex-1" />
         {tab === "attendance" && (
@@ -2996,7 +2993,7 @@ export default function AttendancePage() {
       {tab === "weekoffs" && <WeekoffsView />}
 
       {/* Back to smart home */}
-      {isAdmin && !isLocked && (
+      {isAdmin && (
         <div className="text-center py-4 border-t border-line mt-4">
           <button onClick={enableAttendanceSmart}
             className="text-xs text-ink-dim underline underline-offset-2">
