@@ -34,6 +34,9 @@ export async function middleware(request: NextRequest) {
   const isStaff    = role === "staff";
   const isSubadmin = role === "subadmin";
 
+  // Public routes — no auth required
+  if (pathname.startsWith("/apply")) return supabaseResponse;
+
   // Unauthenticated → login
   if (!session && pathname !== "/login" && !pathname.startsWith("/api/auth")) {
     return NextResponse.redirect(new URL("/login", request.url));

@@ -48,6 +48,7 @@ const ADMIN_NAV = [
   { href: "/admin/weekoffs",       icon: "📅", key: "nav_weekoff_approvals" as const },
   { href: "/admin/chat",           icon: "💬", key: "nav_chat_mod" as const },
   { href: "/admin/sop",            icon: "📋", key: "nav_sop" as const },
+  { href: "/admin/careers",        icon: "💼", key: "nav_careers" as const },
 ];
 
 function useRepairAlertCount(enabled: boolean) {

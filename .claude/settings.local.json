@@ -27,7 +27,9 @@
       "PowerShell(npm --version)",
       "Bash(findstr supplier_purchase)",
       "Bash(dir \"c:\\\\Users\\\\SABARI STAFF\\\\OneDrive\\\\Documents\\\\GitHub\\\\mybuddy\\\\db\\\\migrations\")",
-      "Bash(grep -v \"//\\\\|data\\\\.\\\\|d\\\\.\\\\|r\\\\.\\\\|item\\\\.\")"
+      "Bash(grep -v \"//\\\\|data\\\\.\\\\|d\\\\.\\\\|r\\\\.\\\\|item\\\\.\")",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(grep -E \"\\\\.\\(ts|tsx|sql\\)$\")"
     ],
     "additionalDirectories": [
       "c:\\Users\\SABARI STAFF\\OneDrive\\Documents\\GitHub\\mybuddy\\app"
