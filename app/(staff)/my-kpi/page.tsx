@@ -102,13 +102,13 @@ export default function MyKpiPage() {
     },
   });
 
-  // My KPI target
+  // My KPI target (weight in grams)
   const { data: myTarget } = useQuery({
     queryKey: ["my-kpi-target", month, myStaff?.id],
     enabled: !!myStaff?.id,
     queryFn: async () => {
-      const { data } = await supabase().from("kpi_targets").select("sales_target").eq("staff_id", myStaff!.id).eq("month", month).maybeSingle();
-      return (data?.sales_target ?? 0) as number;
+      const { data } = await supabase().from("kpi_targets").select("weight_target").eq("staff_id", myStaff!.id).eq("month", month).maybeSingle();
+      return (data?.weight_target ?? 0) as number;
     },
   });
 
@@ -145,7 +145,7 @@ export default function MyKpiPage() {
     : null;
 
   const achievementPct = myTarget && myTarget > 0 && summary
-    ? Math.round((summary.totalSales / myTarget) * 100)
+    ? Math.round((summary.totalNetWt / myTarget) * 100)
     : null;
 
   const visibleBills = showAll ? billRows : billRows.filter(r => r.saleInc > 0);
@@ -223,10 +223,10 @@ export default function MyKpiPage() {
             </div>
 
             <div className="bg-white rounded-xl border border-line p-4 shadow-soft">
-              <p className="text-xs text-ink-dim">Target</p>
+              <p className="text-xs text-ink-dim">Target (Weight)</p>
               {myTarget != null && myTarget > 0 ? (
                 <div className="mt-1">
-                  <p className="text-xl font-bold font-mono">{inr(myTarget)}</p>
+                  <p className="text-xl font-bold font-mono">{myTarget.toFixed(3)}g</p>
                   {achievementPct !== null && (
                     <>
                       <div className="mt-2 h-2 bg-canvas rounded-full overflow-hidden">
@@ -236,7 +236,7 @@ export default function MyKpiPage() {
                         />
                       </div>
                       <p className={clsx("text-xs font-semibold mt-1", achievementPct >= 100 ? "text-ok" : achievementPct >= 70 ? "text-warn" : "text-err")}>
-                        {achievementPct}% achieved
+                        {achievementPct}% — {summary?.totalNetWt.toFixed(3)}g / {myTarget?.toFixed(3)}g
                       </p>
                     </>
                   )}

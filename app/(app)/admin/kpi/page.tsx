@@ -33,20 +33,20 @@ interface Sale {
   salesperson2_id: string | null;
   sale_items: SaleItem[];
 }
-interface KpiTarget { staff_id: string; sales_target: number }
+interface KpiTarget { staff_id: string; weight_target: number }
 interface StaffRow { id: string; bio_user_id: string; name: string; designation: string }
 
 interface StaffKpi {
   staff: StaffRow;
   billsSp1: number;
   billsSp2: number;
-  salesAmt: number;       // weighted: SP1×70% or SP2×30%
-  netWt: number;          // weighted same
-  incentive: number;      // product master calc
+  salesAmt: number;
+  netWt: number;
+  incentive: number;
   presentDays: number;
   totalDays: number;
   lateDays: number;
-  target: number;
+  weightTarget: number;
   achievementPct: number | null;
 }
 
@@ -56,7 +56,6 @@ export default function AdminKpiPage() {
   const [editingTarget, setEditingTarget] = useState<{ staffId: string; value: string } | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // Staff list
   const { data: staffList = [] } = useQuery<StaffRow[]>({
     queryKey: ["staff-list-kpi"],
     queryFn: async () => {
@@ -65,10 +64,8 @@ export default function AdminKpiPage() {
     },
   });
 
-  // Monthly attendance summary (uses useMonthlyAttendanceSummary from attendance/api)
   const { data: attSummary = [] } = useMonthlyAttendanceSummary(month);
 
-  // All sales for the month with nested items
   const { data: sales = [] } = useQuery<Sale[]>({
     queryKey: ["kpi-sales", month],
     queryFn: async () => {
@@ -83,23 +80,25 @@ export default function AdminKpiPage() {
     },
   });
 
-  // KPI targets for the month
   const { data: targets = [] } = useQuery<KpiTarget[]>({
     queryKey: ["kpi-targets", month],
     queryFn: async () => {
-      const { data } = await supabase().from("kpi_targets").select("staff_id, sales_target").eq("month", month);
+      const { data } = await supabase().from("kpi_targets").select("staff_id, weight_target").eq("month", month);
       return (data ?? []) as KpiTarget[];
     },
   });
 
   const saveTarget = useMutation({
     mutationFn: async ({ staffId, value }: { staffId: string; value: string }) => {
-      const amount = parseFloat(value) || 0;
+      const wt = parseFloat(value) || 0;
       const client = supabase();
-      if (amount === 0) {
+      if (wt === 0) {
         await client.from("kpi_targets").delete().eq("staff_id", staffId).eq("month", month);
       } else {
-        await client.from("kpi_targets").upsert({ staff_id: staffId, month, sales_target: amount, updated_at: new Date().toISOString() }, { onConflict: "staff_id,month" });
+        await client.from("kpi_targets").upsert(
+          { staff_id: staffId, month, weight_target: wt, updated_at: new Date().toISOString() },
+          { onConflict: "staff_id,month" }
+        );
       }
     },
     onSuccess: () => {
@@ -113,29 +112,26 @@ export default function AdminKpiPage() {
       const sp1Sales = sales.filter(s => s.salesperson1_id === staff.id);
       const sp2Sales = sales.filter(s => s.salesperson2_id === staff.id);
 
-      let salesAmt = 0;
-      let netWt = 0;
-      let incentive = 0;
+      let salesAmt = 0, netWt = 0, incentive = 0;
 
       for (const sale of sp1Sales) {
-        const hasSp2 = !!sale.salesperson2_id;
-        const share = hasSp2 ? 0.7 : 1.0;
+        const share = sale.salesperson2_id ? 0.7 : 1.0;
         for (const item of sale.sale_items) {
-          salesAmt += item.line_total * share;
-          netWt    += item.net_wt    * share;
+          salesAmt  += item.line_total * share;
+          netWt     += item.net_wt    * share;
           incentive += calcItemIncentive(item.description, item.va_pct, item.net_wt, share);
         }
       }
       for (const sale of sp2Sales) {
         for (const item of sale.sale_items) {
-          salesAmt += item.line_total * 0.3;
-          netWt    += item.net_wt    * 0.3;
+          salesAmt  += item.line_total * 0.3;
+          netWt     += item.net_wt    * 0.3;
           incentive += calcItemIncentive(item.description, item.va_pct, item.net_wt, 0.3);
         }
       }
 
       const att = attSummary.find(a => a.bio_user_id === staff.bio_user_id);
-      const target = targets.find(t => t.staff_id === staff.id)?.sales_target ?? 0;
+      const weightTarget = targets.find(t => t.staff_id === staff.id)?.weight_target ?? 0;
 
       return {
         staff,
@@ -147,20 +143,19 @@ export default function AdminKpiPage() {
         presentDays: att?.present_days ?? 0,
         totalDays:   att?.total_days   ?? 0,
         lateDays:    att?.late_days    ?? 0,
-        target,
-        achievementPct: target > 0 ? (salesAmt / target) * 100 : null,
+        weightTarget,
+        achievementPct: weightTarget > 0 ? (netWt / weightTarget) * 100 : null,
       };
     });
   }, [staffList, sales, attSummary, targets]);
 
   const totals = useMemo(() => ({
-    bills:     kpiRows.reduce((s, r) => s + r.billsSp1 + r.billsSp2, 0),
-    salesAmt:  kpiRows.reduce((s, r) => s + r.salesAmt, 0),
-    incentive: kpiRows.reduce((s, r) => s + r.incentive, 0),
-    staffWithTarget: kpiRows.filter(r => r.target > 0).length,
+    bills:           kpiRows.reduce((s, r) => s + r.billsSp1 + r.billsSp2, 0),
+    netWt:           kpiRows.reduce((s, r) => s + r.netWt, 0),
+    incentive:       kpiRows.reduce((s, r) => s + r.incentive, 0),
+    staffWithTarget: kpiRows.filter(r => r.weightTarget > 0).length,
   }), [kpiRows]);
 
-  // Expand detail: per-sale items for a given staff
   const expandedSales = useMemo(() => {
     if (!expandedId) return [];
     const staff = staffList.find(s => s.id === expandedId);
@@ -191,7 +186,7 @@ export default function AdminKpiPage() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: "Total Bills",        value: totals.bills.toString() },
-          { label: "Total ₹ (weighted)", value: inr(totals.salesAmt) },
+          { label: "Total Wt Sold (wtd)", value: `${totals.netWt.toFixed(3)}g` },
           { label: "Total Incentive",    value: inr(totals.incentive) },
           { label: "Targets Set",        value: `${totals.staffWithTarget} / ${staffList.length}` },
         ].map(c => (
@@ -211,12 +206,12 @@ export default function AdminKpiPage() {
               <th className="text-center px-3 py-2.5">SP1 Bills</th>
               <th className="text-center px-3 py-2.5">SP2 Bills</th>
               <th className="text-right px-3 py-2.5">Sales ₹ (wtd)</th>
-              <th className="text-right px-3 py-2.5">Net Wt</th>
+              <th className="text-right px-3 py-2.5">Net Wt (wtd)</th>
               <th className="text-right px-3 py-2.5">Incentive</th>
               <th className="text-center px-3 py-2.5">Attd%</th>
               <th className="text-center px-3 py-2.5">Late</th>
-              <th className="text-right px-3 py-2.5">Target ₹</th>
-              <th className="text-center px-3 py-2.5">Achievement</th>
+              <th className="text-right px-3 py-2.5">Target (g)</th>
+              <th className="text-center px-3 py-2.5">Wt Achievement</th>
               <th className="px-3 py-2.5 w-12" />
             </tr>
           </thead>
@@ -243,8 +238,8 @@ export default function AdminKpiPage() {
                     <td className="px-3 py-2.5 text-right font-mono text-sm">
                       {row.salesAmt > 0 ? inr(row.salesAmt) : <span className="text-ink-dim">—</span>}
                     </td>
-                    <td className="px-3 py-2.5 text-right font-mono text-xs text-ink-dim">
-                      {row.netWt > 0 ? `${row.netWt.toFixed(2)}g` : "—"}
+                    <td className="px-3 py-2.5 text-right font-mono text-sm font-semibold">
+                      {row.netWt > 0 ? `${row.netWt.toFixed(3)}g` : <span className="text-ink-dim font-normal">—</span>}
                     </td>
                     <td className={clsx("px-3 py-2.5 text-right font-mono font-semibold text-sm", row.incentive > 0 ? "text-ok" : "text-ink-dim")}>
                       {row.incentive > 0 ? inr(row.incentive) : "—"}
@@ -255,39 +250,51 @@ export default function AdminKpiPage() {
                       ) : "—"}
                     </td>
                     <td className="px-3 py-2.5 text-center text-xs">
-                      {row.lateDays > 0 ? <span className={clsx(row.lateDays > 3 ? "text-err font-semibold" : "text-warn")}>{row.lateDays}d</span> : <span className="text-ink-dim">0</span>}
+                      {row.lateDays > 0
+                        ? <span className={clsx(row.lateDays > 3 ? "text-err font-semibold" : "text-warn")}>{row.lateDays}d</span>
+                        : <span className="text-ink-dim">0</span>}
                     </td>
                     <td className="px-3 py-2.5 text-right">
                       {isEditing ? (
                         <div className="flex items-center gap-1 justify-end">
                           <input
-                            type="number" step="1000" min="0"
+                            type="number" step="0.001" min="0"
                             value={editingTarget.value}
                             onChange={e => setEditingTarget(t => t ? { ...t, value: e.target.value } : null)}
-                            onKeyDown={e => { if (e.key === "Enter") saveTarget.mutate({ staffId: row.staff.id, value: editingTarget.value }); if (e.key === "Escape") setEditingTarget(null); }}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") saveTarget.mutate({ staffId: row.staff.id, value: editingTarget.value });
+                              if (e.key === "Escape") setEditingTarget(null);
+                            }}
+                            placeholder="0.000"
                             autoFocus
-                            className={`${inp} w-28 text-right`}
+                            className={`${inp} w-24 text-right`}
                           />
+                          <span className="text-xs text-ink-dim">g</span>
                           <button onClick={() => saveTarget.mutate({ staffId: row.staff.id, value: editingTarget.value })} className="text-xs bg-gold text-white px-2 py-1 rounded-lg2">✓</button>
                           <button onClick={() => setEditingTarget(null)} className="text-xs border border-line px-2 py-1 rounded-lg2">✕</button>
                         </div>
                       ) : (
                         <button
-                          onClick={() => setEditingTarget({ staffId: row.staff.id, value: row.target > 0 ? String(row.target) : "" })}
+                          onClick={() => setEditingTarget({ staffId: row.staff.id, value: row.weightTarget > 0 ? String(row.weightTarget) : "" })}
                           className="text-sm font-mono hover:text-gold transition-colors"
                         >
-                          {row.target > 0 ? inr(row.target) : <span className="text-ink-dim text-xs">Set target</span>}
+                          {row.weightTarget > 0
+                            ? <span>{row.weightTarget.toFixed(3)}g</span>
+                            : <span className="text-ink-dim text-xs">Set target</span>}
                         </button>
                       )}
                     </td>
                     <td className="px-3 py-2.5 text-center">
                       {row.achievementPct !== null ? (
-                        <span className={clsx("text-xs font-semibold px-2 py-0.5 rounded-full",
-                          row.achievementPct >= 100 ? "bg-ok/10 text-ok" :
-                          row.achievementPct >= 70  ? "bg-warn/10 text-warn" : "bg-err/10 text-err"
-                        )}>
-                          {Math.round(row.achievementPct)}%
-                        </span>
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className={clsx("text-xs font-semibold px-2 py-0.5 rounded-full",
+                            row.achievementPct >= 100 ? "bg-ok/10 text-ok" :
+                            row.achievementPct >= 70  ? "bg-warn/10 text-warn" : "bg-err/10 text-err"
+                          )}>
+                            {Math.round(row.achievementPct)}%
+                          </span>
+                          <span className="text-[10px] text-ink-dim">{row.netWt.toFixed(2)}g / {row.weightTarget.toFixed(2)}g</span>
+                        </div>
                       ) : <span className="text-ink-dim text-xs">—</span>}
                     </td>
                     <td className="px-3 py-2.5 text-center">
@@ -298,7 +305,6 @@ export default function AdminKpiPage() {
                     </td>
                   </tr>
 
-                  {/* Expanded sale-item detail */}
                   {isExpanded && (
                     <tr key={`${row.staff.id}-expanded`} className="border-b border-line bg-gold/5">
                       <td colSpan={11} className="px-6 py-3">
@@ -319,10 +325,10 @@ export default function AdminKpiPage() {
                               </thead>
                               <tbody>
                                 {expandedSales.map(sale => {
-                                  const saleNetWt   = sale.sale_items.reduce((s, i) => s + i.net_wt * sale.share, 0);
-                                  const saleAmt     = sale.sale_items.reduce((s, i) => s + i.line_total * sale.share, 0);
-                                  const saleInc     = sale.sale_items.reduce((s, i) => s + calcItemIncentive(i.description, i.va_pct, i.net_wt, sale.share), 0);
-                                  const products    = [...new Set(sale.sale_items.map(i => i.description))].join(", ");
+                                  const saleNetWt = sale.sale_items.reduce((s, i) => s + i.net_wt * sale.share, 0);
+                                  const saleAmt   = sale.sale_items.reduce((s, i) => s + i.line_total * sale.share, 0);
+                                  const saleInc   = sale.sale_items.reduce((s, i) => s + calcItemIncentive(i.description, i.va_pct, i.net_wt, sale.share), 0);
+                                  const products  = [...new Set(sale.sale_items.map(i => i.description))].join(", ");
                                   return (
                                     <tr key={sale.id} className="border-b border-line/50 last:border-0">
                                       <td className="py-1.5 pr-3 font-mono">{sale.bill_no}</td>
@@ -335,7 +341,7 @@ export default function AdminKpiPage() {
                                         </span>
                                       </td>
                                       <td className="py-1.5 pr-3 text-ink-dim truncate max-w-[200px]">{products}</td>
-                                      <td className="py-1.5 pr-3 text-right font-mono">{saleNetWt.toFixed(2)}g</td>
+                                      <td className="py-1.5 pr-3 text-right font-mono font-semibold">{saleNetWt.toFixed(3)}g</td>
                                       <td className="py-1.5 pr-3 text-right font-mono">{inr(saleAmt)}</td>
                                       <td className={clsx("py-1.5 text-right font-mono font-semibold", saleInc > 0 ? "text-ok" : "text-ink-dim")}>
                                         {saleInc > 0 ? inr(saleInc) : "—"}
@@ -361,7 +367,7 @@ export default function AdminKpiPage() {
       </div>
 
       <p className="text-xs text-ink-dim text-center">
-        Sales amounts are weighted: SP1 = 70%, SP2 = 30%. Incentive calculated from product master rates.
+        Weight and sales are weighted: SP1 = 70%, SP2 = 30%. Achievement = net weight sold vs weight target.
       </p>
     </div>
   );
