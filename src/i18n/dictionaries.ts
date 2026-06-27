@@ -46,6 +46,7 @@ const en = {
   nav_my_incentive: "My Incentive",
   nav_sop: "SOPs & Policies",
   nav_careers: "Job Applications",
+  nav_kpi: "KPI Dashboard",
   nav_logout: "Logout",
   nav_info: "Info",
 
@@ -286,6 +287,7 @@ const ta: Partial<typeof en> = {
   nav_my_incentive: "என் ஊக்கத்தொகை",
   nav_sop: "நடைமுறைகள்",
   nav_careers: "வேலை விண்ணப்பங்கள்",
+  nav_kpi: "KPI டாஷ்போர்ட்",
   nav_logout: "வெளியேறு",
   nav_info: "தகவல்",
 

@@ -671,6 +671,11 @@ export default function MyAttendancePage() {
                   <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">{c.label}</span>
                 </button>
               ))}
+              <a href="/my-kpi"
+                className="bg-canvas border border-line rounded-lg2 shadow-soft p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform">
+                <span className="text-3xl">📊</span>
+                <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">My KPI</span>
+              </a>
             </div>
           </div>
 
