@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { authenticator } from "otplib";
+import { generateSecret, generateSync } from "otplib";
 
 export async function POST() {
   try {
@@ -12,8 +12,8 @@ export async function POST() {
     const userId = session.user.id;
     const admin = supabaseAdmin();
 
-    const secret = authenticator.generateSecret(20);
-    const token = authenticator.generate(secret);
+    const secret = generateSecret();
+    const token = generateSync({ secret });
     const epoch = Math.floor(Date.now() / 1000);
     const secondsRemaining = 30 - (epoch % 30);
 

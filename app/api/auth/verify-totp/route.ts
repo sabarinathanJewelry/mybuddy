@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { authenticator } from "otplib";
+import { verifySync } from "otplib";
 
 const COOKIE_MAX_AGE = 90 * 24 * 60 * 60; // 90 days
 
@@ -29,7 +29,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "2FA not set up" }, { status: 404 });
     }
 
-    const isValid = authenticator.check(token.trim(), row.totp_secret);
+    const result = verifySync({ token: token.trim(), secret: row.totp_secret });
+    const isValid = result.valid;
     if (!isValid) {
       return NextResponse.json({ error: "Invalid code" }, { status: 401 });
     }

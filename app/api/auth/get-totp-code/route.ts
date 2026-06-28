@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { authenticator } from "otplib";
+import { generateSync } from "otplib";
 import { cookies } from "next/headers";
 
 export async function GET() {
@@ -26,7 +26,7 @@ export async function GET() {
 
     if (error || !row) return NextResponse.json({ error: "2FA not set up" }, { status: 404 });
 
-    const code = authenticator.generate(row.totp_secret);
+    const code = generateSync({ secret: row.totp_secret });
     const epoch = Math.floor(Date.now() / 1000);
     const secondsRemaining = 30 - (epoch % 30);
 
