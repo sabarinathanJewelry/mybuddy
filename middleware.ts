@@ -42,6 +42,19 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
+  // MFA gate — non-staff users with 2FA enabled must verify on each new device
+  const mfaEnabled = !isStaff && session?.user?.app_metadata?.mfa_enabled === true;
+  const mfaVerified = request.cookies.get("mfa_verified")?.value === session?.user?.id;
+  const isMfaExemptPath =
+    pathname === "/verify-otp" ||
+    pathname === "/login" ||
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/apply");
+
+  if (session && mfaEnabled && !mfaVerified && !isMfaExemptPath) {
+    return NextResponse.redirect(new URL("/verify-otp", request.url));
+  }
+
   // Logged-in staff: only staff-facing routes allowed
   const staffAllowedPaths = ["/my-attendance", "/my-repairs", "/kolusu-sale"];
   if (isStaff && !staffAllowedPaths.includes(pathname) && !pathname.startsWith("/api/")) {
@@ -53,8 +66,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  // Logged-in (non-staff) at /login → dashboard
-  if (session && !isStaff && pathname === "/login") {
+  // Logged-in (non-staff) at /login → dashboard (skip if MFA needed)
+  if (session && !isStaff && pathname === "/login" && (!mfaEnabled || mfaVerified)) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 

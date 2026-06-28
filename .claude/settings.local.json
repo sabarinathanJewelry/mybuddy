@@ -34,5 +34,34 @@
     "additionalDirectories": [
       "c:\\Users\\SABARI STAFF\\OneDrive\\Documents\\GitHub\\mybuddy\\app"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "Write-Output '{\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\",\"additionalContext\":\"REMINDER: If this change adds or modifies a feature, update FEATURES.md\"}}'",
+            "statusMessage": "Checking FEATURES.md reminder"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "$rawInput = [Console]::In.ReadToEnd(); if ($rawInput -match 'git push') { Set-Location 'C:\\Users\\SABARI STAFF\\OneDrive\\Documents\\GitHub\\mybuddy'; npm test; if ($LASTEXITCODE -ne 0) { Write-Output '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Tests failed - fix before pushing\"}}'; exit 2 } }",
+            "statusMessage": "Running tests before push...",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
   }
 }

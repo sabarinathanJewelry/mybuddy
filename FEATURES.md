@@ -26,6 +26,7 @@
 - Old gold/silver exchange handled as payment modes
 - Chit metal / chit bonus payment modes
 - Sale edit with full re-computation
+- Product group search shows cross-metal matches when query has no same-metal results (with metal badge + auto-switches metal on select)
 - Partner account routing for UPI/bank receipts
 
 ### Orders
@@ -225,6 +226,16 @@
 - Profile management (display name, role, access flags)
 - Access flags: `repair_access`, `incentive_access`, `kolusu_access`
 - Role: `admin` / `staff`
+
+### Two-Factor Authentication (2FA)
+- TOTP-based (Google Authenticator-style rotating 6-digit codes, 30s window)
+- Admin enables 2FA at `/admin/security` — secret stored in `user_totp` table
+- After password login, users with 2FA enabled are redirected to `/verify-otp`
+- `/my-security-code` page shows the current rotating code (requires prior MFA verification)
+- Admin opens MyBuddy on their phone → taps Security Code → reads the 6-digit code → types it on the new device
+- Verified devices trusted for 90 days via `mfa_verified` HTTP-only cookie
+- `app_metadata.mfa_enabled` flag (service-role only) gated in middleware — no DB query per request
+- Staff (game-login users) are exempt from 2FA
 
 ### Board Rate
 - Daily gold/silver rate entry

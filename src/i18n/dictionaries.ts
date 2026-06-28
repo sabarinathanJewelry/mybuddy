@@ -47,6 +47,8 @@ const en = {
   nav_sop: "SOPs & Policies",
   nav_careers: "Job Applications",
   nav_kpi: "KPI Dashboard",
+  nav_security: "Security",
+  nav_security_code: "Security Code",
   nav_logout: "Logout",
   nav_info: "Info",
 
@@ -288,6 +290,8 @@ const ta: Partial<typeof en> = {
   nav_sop: "நடைமுறைகள்",
   nav_careers: "வேலை விண்ணப்பங்கள்",
   nav_kpi: "KPI டாஷ்போர்ட்",
+  nav_security: "பாதுகாப்பு",
+  nav_security_code: "பாதுகாப்பு குறியீடு",
   nav_logout: "வெளியேறு",
   nav_info: "தகவல்",
 

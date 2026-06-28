@@ -60,9 +60,13 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const { error: authErr } = await supabase().auth.signInWithPassword({ email, password });
+      const { data, error: authErr } = await supabase().auth.signInWithPassword({ email, password });
       if (authErr) throw authErr;
-      router.replace("/dashboard");
+      if (data.user?.app_metadata?.mfa_enabled) {
+        router.replace("/verify-otp");
+      } else {
+        router.replace("/dashboard");
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
