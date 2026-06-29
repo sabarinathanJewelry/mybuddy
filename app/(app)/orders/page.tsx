@@ -722,13 +722,42 @@ export default function OrdersPage() {
     },
   });
 
-  // ── Status update
+  // ── Status update (pending → ready only; use cancelOrder for cancellation)
   const updateStatus = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
       const { error } = await supabase().from("orders").update({ status }).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["orders"] }),
+  });
+
+  // ── Cancel order + credit all paid advance back to customer balance
+  const cancelOrder = useMutation({
+    mutationFn: async ({ id, orderNo, customerId }: { id: string; orderNo: string; customerId: string | null }) => {
+      const client = supabase();
+      const { error } = await client.from("orders").update({ status: "cancelled" }).eq("id", id);
+      if (error) throw error;
+
+      if (customerId) {
+        const { data: pays } = await client.from("order_payments").select("amount").eq("order_id", id);
+        const total = (pays ?? []).reduce((s, p) => s + Number(p.amount || 0), 0);
+        if (total > 0.01) {
+          await client.from("payments").insert({
+            pay_date: globalDate,
+            direction: "in",
+            mode: "advance",
+            amount: total,
+            customer_id: customerId,
+            is_advance: true,
+            notes: `Cancelled order refund — ${orderNo}`,
+          });
+        }
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["customers"] });
+    },
   });
 
   // ── Update order details
@@ -1571,8 +1600,18 @@ export default function OrdersPage() {
                               🚚 Deliver
                             </button>
                           )}
-                          <button onClick={() => updateStatus.mutate({ id: o.id, status: "cancelled" })}
-                            className="text-sm text-err border border-err/30 px-4 py-1.5 rounded-lg2 hover:bg-err/5 ml-auto">
+                          <button
+                            onClick={() => {
+                              const paidSoFarCancel = isExpanded
+                                ? expandedPayments.reduce((s: number, p: any) => s + Number(p.amount || 0), 0)
+                                : null;
+                              const msg = paidSoFarCancel && paidSoFarCancel > 0.01
+                                ? `Cancel order ${o.order_no}?\n\nThe advance of ${inr(paidSoFarCancel)} will be credited back to the customer's account for use on other orders.`
+                                : `Cancel order ${o.order_no}? Any advance paid will be returned to the customer's account.`;
+                              if (confirm(msg)) cancelOrder.mutate({ id: o.id, orderNo: o.order_no, customerId: o.customer_id ?? null });
+                            }}
+                            disabled={cancelOrder.isPending}
+                            className="text-sm text-err border border-err/30 px-4 py-1.5 rounded-lg2 hover:bg-err/5 ml-auto disabled:opacity-50">
                             Cancel Order
                           </button>
                         </>

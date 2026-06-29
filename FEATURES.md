@@ -33,6 +33,7 @@
 - Order entry with advance payment tracking
 - Delivery → auto-converts to sale (copies order_payments to payments table)
 - Late payment to already-delivered orders: syncs to converted sale's payments
+- Order cancellation auto-refunds advance payments back to customer balance (usable on other orders)
 - Status flow: pending → confirmed → ready → delivered / cancelled
 
 ### Payments
