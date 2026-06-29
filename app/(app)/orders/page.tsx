@@ -38,6 +38,9 @@ interface OrderItemDraft {
   estimated_wt: number;
   amount: number;
   notes: string;
+  diamond_wt: number;
+  diamond_amt: number;
+  certificate_amt: number;
 }
 
 const PAY_MODES: { value: PayMode; label: string }[] = [
@@ -72,7 +75,7 @@ function newPayment(): PaymentDraft {
 }
 
 function newOrderItem(): OrderItemDraft {
-  return { id: crypto.randomUUID(), description: "", qty: 1, metal: "gold_22k", estimated_wt: 0, amount: 0, notes: "" };
+  return { id: crypto.randomUUID(), description: "", qty: 1, metal: "gold_22k", estimated_wt: 0, amount: 0, notes: "", diamond_wt: 0, diamond_amt: 0, certificate_amt: 0 };
 }
 
 // ─── Fan-out helper ─────────────────────────────────────────────────────────
@@ -524,6 +527,9 @@ export default function OrdersPage() {
         estimated_wt: Number(i.estimated_wt) || 0,
         amount: Number(i.amount) || 0,
         notes: i.notes ?? "",
+        diamond_wt: Number(i.diamond_wt) || 0,
+        diamond_amt: Number(i.diamond_amt) || 0,
+        certificate_amt: Number(i.certificate_amt) || 0,
       })));
     } else if (!editOrderId) {
       setEditOrderItems([]);
@@ -618,6 +624,9 @@ export default function OrdersPage() {
             qty: item.qty ?? 1,
             metal: item.metal || null, estimated_wt: item.estimated_wt || 0,
             amount: item.amount || 0, notes: item.notes || null, sort_order: idx,
+            diamond_wt: item.diamond_wt || 0,
+            diamond_amt: item.diamond_amt || 0,
+            certificate_amt: item.certificate_amt || 0,
           }))
         );
       }
@@ -791,6 +800,9 @@ export default function OrdersPage() {
               qty: item.qty ?? 1,
               metal: item.metal || null, estimated_wt: item.estimated_wt || 0,
               amount: item.amount || 0, notes: item.notes || null, sort_order: idx,
+              diamond_wt: item.diamond_wt || 0,
+              diamond_amt: item.diamond_amt || 0,
+              certificate_amt: item.certificate_amt || 0,
             }))
           );
           if (itemErr) throw itemErr;
@@ -1146,11 +1158,48 @@ export default function OrdersPage() {
                     onChange={(e) => setOrderItems((prev) => prev.map((x, i) => i === idx ? { ...x, estimated_wt: parseFloat(e.target.value) || 0 } : x))}
                     className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
                 </div>
+                {item.metal === "other" && (
+                  <div className="col-span-2 sm:col-span-5 grid grid-cols-3 gap-2 border-t border-line pt-2 mt-1">
+                    <div>
+                      <label className="block text-xs text-ink-dim mb-1">Diamond Wt (ct)</label>
+                      <input type="number" step="0.01" value={item.diamond_wt || ""}
+                        onFocus={(e) => e.target.select()} placeholder="0.00"
+                        onChange={(e) => setOrderItems((prev) => prev.map((x, i) => i === idx ? { ...x, diamond_wt: parseFloat(e.target.value) || 0 } : x))}
+                        className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                      {item.diamond_wt > 0 && (
+                        <p className="text-[10px] text-ink-dim mt-0.5">{(item.diamond_wt * 100).toFixed(0)} cents</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-xs text-ink-dim mb-1">Diamond Value (₹)</label>
+                      <input type="number" step="0.01" value={item.diamond_amt || ""}
+                        onFocus={(e) => e.target.select()} placeholder="0"
+                        onChange={(e) => {
+                          const diamond_amt = parseFloat(e.target.value) || 0;
+                          setOrderItems((prev) => prev.map((x, i) => i === idx ? { ...x, diamond_amt, amount: diamond_amt + (x.certificate_amt || 0) } : x));
+                        }}
+                        className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-ink-dim mb-1">Certificate (₹)</label>
+                      <input type="number" step="0.01" value={item.certificate_amt || ""}
+                        onFocus={(e) => e.target.select()} placeholder="0"
+                        onChange={(e) => {
+                          const certificate_amt = parseFloat(e.target.value) || 0;
+                          setOrderItems((prev) => prev.map((x, i) => i === idx ? { ...x, certificate_amt, amount: (x.diamond_amt || 0) + certificate_amt } : x));
+                        }}
+                        className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </div>
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs text-ink-dim mb-1 flex items-center gap-1">
                     Est. Amount (₹)
                     {item.metal === "silver_mpr" && (
                       <span className="bg-ok/10 text-ok text-[10px] px-1.5 py-0.5 rounded font-medium">GST incl.</span>
+                    )}
+                    {item.metal === "other" && (
+                      <span className="text-[10px] text-ink-dim">(auto-filled)</span>
                     )}
                   </label>
                   <div className="flex gap-1">
@@ -1778,8 +1827,44 @@ export default function OrdersPage() {
                                       onChange={e => setEditOrderItems(prev => prev.map((x, i) => i === idx ? { ...x, estimated_wt: parseFloat(e.target.value) || 0 } : x))}
                                       className={inp} />
                                   </div>
+                                  {item.metal === "other" && (
+                                    <div className="col-span-2 sm:col-span-6 grid grid-cols-3 gap-2 border-t border-line pt-2">
+                                      <div>
+                                        <label className="block text-[10px] text-ink-dim mb-0.5">Diamond Wt (ct)</label>
+                                        <input type="number" step="0.01" value={item.diamond_wt || ""}
+                                          onFocus={e => e.target.select()} placeholder="0.00"
+                                          onChange={e => setEditOrderItems(prev => prev.map((x, i) => i === idx ? { ...x, diamond_wt: parseFloat(e.target.value) || 0 } : x))}
+                                          className={inp} />
+                                        {item.diamond_wt > 0 && (
+                                          <p className="text-[10px] text-ink-dim mt-0.5">{(item.diamond_wt * 100).toFixed(0)} cents</p>
+                                        )}
+                                      </div>
+                                      <div>
+                                        <label className="block text-[10px] text-ink-dim mb-0.5">Diamond Value (₹)</label>
+                                        <input type="number" step="0.01" value={item.diamond_amt || ""}
+                                          onFocus={e => e.target.select()} placeholder="0"
+                                          onChange={e => {
+                                            const diamond_amt = parseFloat(e.target.value) || 0;
+                                            setEditOrderItems(prev => prev.map((x, i) => i === idx ? { ...x, diamond_amt, amount: diamond_amt + (x.certificate_amt || 0) } : x));
+                                          }}
+                                          className={inp} />
+                                      </div>
+                                      <div>
+                                        <label className="block text-[10px] text-ink-dim mb-0.5">Certificate (₹)</label>
+                                        <input type="number" step="0.01" value={item.certificate_amt || ""}
+                                          onFocus={e => e.target.select()} placeholder="0"
+                                          onChange={e => {
+                                            const certificate_amt = parseFloat(e.target.value) || 0;
+                                            setEditOrderItems(prev => prev.map((x, i) => i === idx ? { ...x, certificate_amt, amount: (x.diamond_amt || 0) + certificate_amt } : x));
+                                          }}
+                                          className={inp} />
+                                      </div>
+                                    </div>
+                                  )}
                                   <div>
-                                    <label className="block text-[10px] text-ink-dim mb-0.5">Amount (₹)</label>
+                                    <label className="block text-[10px] text-ink-dim mb-0.5">
+                                      Amount (₹){item.metal === "other" && <span className="ml-1 text-ink-dim">(auto)</span>}
+                                    </label>
                                     <div className="flex gap-1">
                                       <input type="number" step="0.01" value={item.amount || ""}
                                         onFocus={e => e.target.select()} placeholder="0"

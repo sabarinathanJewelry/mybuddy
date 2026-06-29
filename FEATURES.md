@@ -34,6 +34,7 @@
 - Delivery → auto-converts to sale (copies order_payments to payments table)
 - Late payment to already-delivered orders: syncs to converted sale's payments
 - Order cancellation auto-refunds advance payments back to customer balance (usable on other orders)
+- Diamond order items (Other / Diamond metal): diamond weight (ct + cents helper), diamond value ₹, certificate amount ₹ — auto-sums to Est. Amount
 - Status flow: pending → confirmed → ready → delivered / cancelled
 
 ### Payments
@@ -285,3 +286,4 @@
 | 109 | `109_job_positions.sql` | Job positions table + seed |
 | 110 | `110_kpi_targets.sql` | KPI weight targets table |
 | 111 | `111_kpi_weight_target.sql` | Rename sales_target → weight_target |
+| 113 | `113_order_items_diamond_fields.sql` | Add diamond_wt, diamond_amt, certificate_amt to order_items |
