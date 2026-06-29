@@ -72,9 +72,6 @@ export default function VerifyOtpPage() {
         <div className="bg-white rounded-xl2 shadow-card p-6 space-y-5">
           <div className="text-center">
             <p className="text-sm text-ink font-medium">Enter the 6-digit code</p>
-            <p className="text-xs text-ink-dim mt-1">
-              Open MyBuddy on your phone and go to Security Code
-            </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
@@ -107,9 +104,6 @@ export default function VerifyOtpPage() {
             </button>
           </form>
 
-          <p className="text-xs text-ink-dim text-center">
-            The code refreshes every 30 seconds. Paste or type all 6 digits.
-          </p>
         </div>
       </div>
     </div>
