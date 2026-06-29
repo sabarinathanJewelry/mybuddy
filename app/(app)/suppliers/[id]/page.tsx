@@ -152,12 +152,13 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
     cash_amt: number; cash_paid_now: number; bill_no: string;
   } | null>(null);
 
-  // Cash balance — opening + cash-mode purchases + cut_rate conversions − actual cash/bank paid
+  // Cash balance — opening + cash-mode purchases + suspense cash bills + cut_rate − paid
   const openingCash = Number(view?.supplier?.opening_balance) || 0;
   const totalPurchased = view?.purchases.reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
   const totalCashPaid = view?.payments.filter((p: any) => ["cash", "bank", "upi"].includes(p.mode) && !(Number(p.metal_wt) > 0)).reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
   const totalCutRateValue = view?.payments.filter((p: any) => p.mode === "cut_rate").reduce((s: number, p: any) => s + (p.amount ?? 0), 0) ?? 0;
-  const cashBalance = openingCash + totalPurchased + totalCutRateValue - totalCashPaid;
+  const totalSuspenseCash = (view?.suspense ?? []).filter((s: any) => (s.supplier_cash_amt || 0) > 0).reduce((acc: number, s: any) => acc + Number(s.supplier_cash_amt || 0), 0);
+  const cashBalance = openingCash + totalPurchased + totalCutRateValue + totalSuspenseCash - totalCashPaid;
 
   // Metal balance — opening grams + confirmed suspense pure wt minus metal sent
   const goldOpeningG = Number(view?.supplier?.gold_opening_g) || 0;
@@ -198,6 +199,9 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
     const rows: { id: string; date: string; type: string; description: string; delta: number }[] = [];
     (view?.purchases ?? []).filter((p: any) => (p.amount ?? 0) > 0).forEach((p: any) => {
       rows.push({ id: `p-${p.id}`, date: p.purchase_date ?? "", type: "Purchase", description: p.description || p.bill_no || "—", delta: Number(p.amount) });
+    });
+    (view?.suspense ?? []).filter((s: any) => (s.supplier_cash_amt || 0) > 0).forEach((s: any) => {
+      rows.push({ id: `sus-${s.id}`, date: s.bill_date ?? "", type: "Suspense", description: `${s.bill_no} — ${s.description || ""}`, delta: Number(s.supplier_cash_amt) });
     });
     (view?.payments ?? []).filter((p: any) => p.mode === "cut_rate").forEach((p: any) => {
       rows.push({ id: `cr-${p.id}`, date: p.pay_date ?? "", type: "Cut Rate", description: p.cut_rate ? `${grams(p.metal_wt)} @ ₹${Number(p.cut_rate).toLocaleString()}/g` : "—", delta: Number(p.amount) });
@@ -331,7 +335,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
             <p className="text-xs text-ink-dim">{t("cash_balance")}</p>
             <p className={`text-xl font-bold ${cashBalance > 0 ? "text-err" : "text-ok"}`}>{inr(cashBalance)}</p>
             <p className="text-xs text-ink-dim/60">
-              Opening {inr(openingCash)} + Purchased {inr(totalPurchased)}{totalCutRateValue > 0 ? ` + Cut ${inr(totalCutRateValue)}` : ""} − Paid {inr(totalCashPaid)}
+              Opening {inr(openingCash)} + Purchased {inr(totalPurchased)}{totalSuspenseCash > 0 ? ` + Suspense ${inr(totalSuspenseCash)}` : ""}{totalCutRateValue > 0 ? ` + Cut ${inr(totalCutRateValue)}` : ""} − Paid {inr(totalCashPaid)}
             </p>
           </div>
           <div>
