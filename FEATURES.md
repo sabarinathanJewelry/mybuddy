@@ -111,7 +111,7 @@
 - Smart home card grid (12 cards) for admin on `/attendance`
 - Daily attendance view: all staff with punch times, late flag, hours worked
 - Monthly attendance summary: present days, late days, OT, leaves, deductions
-- Kiosk mode with bio-user sequence lock; TOTP code required to exit kiosk and restore admin access
+- Kiosk mode with bio-user sequence lock
 - Shop late-opening exceptions (shop_exceptions table)
 
 ### Attendance (Staff)

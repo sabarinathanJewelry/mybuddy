@@ -2291,49 +2291,6 @@ export default function AttendancePage() {
   const isLocked = rawLocked && (hasPerUserSeqs || !!kioskSeq?.length);
   const [tapBuffer, setTapBuffer] = useState<KioskTap[]>([]);
 
-  // TOTP gate on kiosk exit
-  const [kioskTotpPending, setKioskTotpPending] = useState(false);
-  const [kioskTotpDigits, setKioskTotpDigits] = useState(["","","","","",""]);
-  const [kioskTotpError, setKioskTotpError] = useState("");
-  const [kioskTotpLoading, setKioskTotpLoading] = useState(false);
-  const kioskTotpRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  async function requestUnlock() {
-    setKioskTotpDigits(["","","","","",""]);
-    setKioskTotpError("");
-    setKioskTotpPending(true);
-    setTimeout(() => kioskTotpRefs.current[0]?.focus(), 50);
-  }
-
-  async function handleKioskTotpSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const token = kioskTotpDigits.join("");
-    if (token.length < 6) return;
-    setKioskTotpLoading(true);
-    setKioskTotpError("");
-    try {
-      const res = await fetch("/api/auth/verify-totp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-      });
-      if (res.ok || res.status === 404) {
-        // 200 = verified; 404 = 2FA not set up, allow through
-        setKioskTotpPending(false);
-        unlock();
-      } else {
-        const data = await res.json();
-        setKioskTotpError(data.error || "Invalid code");
-        setKioskTotpDigits(["","","","","",""]);
-        setTimeout(() => kioskTotpRefs.current[0]?.focus(), 50);
-      }
-    } catch {
-      setKioskTotpError("Network error");
-    } finally {
-      setKioskTotpLoading(false);
-    }
-  }
-
   // Force attendance tab when locked — but not for admin (they see all tabs)
   useEffect(() => { if (isLocked && !isAdmin) setTab("attendance"); }, [isLocked, isAdmin]);
 
@@ -2380,7 +2337,7 @@ export default function AttendancePage() {
                 .eq("id", session.user.id).single();
               if (newProfile) setProfile(newProfile);
             }
-            requestUnlock();
+            unlock();
           }
         } catch { /* silent */ }
       } else {
@@ -2395,7 +2352,7 @@ export default function AttendancePage() {
     const expected = kioskSeq[step];
     if (expected?.bio_user_id === bio_user_id && expected?.action === action) {
       if (next.length === kioskSeq.length) {
-        requestUnlock();
+        unlock();
         setTapBuffer([]);
       } else {
         setTapBuffer(next);
@@ -2591,41 +2548,6 @@ export default function AttendancePage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-5">
-      {/* Kiosk exit TOTP overlay */}
-      {kioskTotpPending && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-soft p-6 w-full max-w-xs space-y-4">
-            <p className="text-sm font-semibold text-ink text-center">Enter Security Code</p>
-            <form onSubmit={handleKioskTotpSubmit} className="space-y-4">
-              <div className="flex gap-2 justify-center">
-                {kioskTotpDigits.map((d, i) => (
-                  <input key={i}
-                    ref={el => { kioskTotpRefs.current[i] = el; }}
-                    type="text" inputMode="numeric" maxLength={1} value={d}
-                    onChange={e => {
-                      const v = e.target.value.replace(/\D/g,"").slice(-1);
-                      const next = [...kioskTotpDigits]; next[i] = v; setKioskTotpDigits(next);
-                      if (v && i < 5) kioskTotpRefs.current[i+1]?.focus();
-                    }}
-                    onKeyDown={e => { if (e.key === "Backspace" && !d && i > 0) kioskTotpRefs.current[i-1]?.focus(); }}
-                    onPaste={e => {
-                      const p = e.clipboardData.getData("text").replace(/\D/g,"").slice(0,6);
-                      if (p.length === 6) { setKioskTotpDigits(p.split("")); kioskTotpRefs.current[5]?.focus(); }
-                    }}
-                    className="w-10 h-12 border-2 border-line rounded-lg text-center text-xl font-bold focus:outline-none focus:border-gold" />
-                ))}
-              </div>
-              {kioskTotpError && <p className="text-err text-xs text-center">{kioskTotpError}</p>}
-              <button type="submit"
-                disabled={kioskTotpLoading || kioskTotpDigits.join("").length < 6}
-                className="w-full bg-gold text-white text-sm font-semibold py-2.5 rounded-lg2 disabled:opacity-50">
-                {kioskTotpLoading ? "Verifying…" : "Unlock"}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex items-center gap-3 flex-wrap">
         {isAdmin ? (
