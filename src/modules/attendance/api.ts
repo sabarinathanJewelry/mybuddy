@@ -750,40 +750,56 @@ export function useMyMonthlyLeaveCount(monthKey: string) {
       const IST_MS = 5.5 * 3600000;
       const [year, mon] = monthKey.split("-").map(Number);
       const today = new Date(new Date().getTime() + IST_MS);
-      const isCurrentMonth = today.getUTCFullYear() === year && today.getUTCMonth() + 1 === mon;
+      const todayYr = today.getUTCFullYear();
+      const todayMo = today.getUTCMonth() + 1;
+
+      // Future month: no absences yet — don't block week-off planning
+      if (year > todayYr || (year === todayYr && mon > todayMo)) return 0;
+
+      const isCurrentMonth = todayYr === year && todayMo === mon;
       const lastDay = isCurrentMonth ? today.getUTCDate() : new Date(year, mon, 0).getDate();
 
       // Build set of Mon–Sat dates elapsed so far this month
       const workingDates = new Set<string>();
       for (let d = 1; d <= lastDay; d++) {
         const dt = new Date(Date.UTC(year, mon - 1, d));
-        const dow = dt.getUTCDay();
-        if (dow !== 0) { // exclude Sundays
+        if (dt.getUTCDay() !== 0) {
           workingDates.add(`${year}-${String(mon).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
         }
       }
 
-      // Fetch all punch records for this staff this month
       const nextMon = mon === 12 ? `${year + 1}-01` : `${year}-${String(mon + 1).padStart(2, "0")}`;
-      const { data: punches } = await supabase()
-        .from("attendance_logs")
-        .select("punch_time")
-        .eq("bio_user_id", staffRow.bio_user_id)
-        .gte("punch_time", `${monthKey}-01T00:00:00+05:30`)
-        .lt("punch_time",  `${nextMon}-01T00:00:00+05:30`);
 
-      // Build set of dates that have at least one punch
+      // Fetch punches and approved week-off dates in parallel
+      const [punchRes, weekoffRes] = await Promise.all([
+        supabase()
+          .from("attendance_logs")
+          .select("punch_time")
+          .eq("bio_user_id", staffRow.bio_user_id)
+          .gte("punch_time", `${monthKey}-01T00:00:00+05:30`)
+          .lt("punch_time",  `${nextMon}-01T00:00:00+05:30`),
+        supabase()
+          .from("monthly_weekoffs")
+          .select("dates")
+          .eq("user_id", user.id)
+          .eq("month", monthKey)
+          .eq("status", "approved")
+          .maybeSingle(),
+      ]);
+
+      // Dates with at least one punch
       const presentDates = new Set<string>();
-      for (const row of punches ?? []) {
+      for (const row of punchRes.data ?? []) {
         const ist = new Date(new Date(row.punch_time).getTime() + IST_MS);
-        const dateStr = `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, "0")}-${String(ist.getUTCDate()).padStart(2, "0")}`;
-        presentDates.add(dateStr);
+        presentDates.add(`${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, "0")}-${String(ist.getUTCDate()).padStart(2, "0")}`);
       }
 
-      // Absent = working days with no punch
+      // Approved week-off days are not absences
+      const weekoffDates = new Set<string>(weekoffRes.data?.dates ?? []);
+
       let absentCount = 0;
       for (const d of workingDates) {
-        if (!presentDates.has(d)) absentCount++;
+        if (!presentDates.has(d) && !weekoffDates.has(d)) absentCount++;
       }
       return absentCount;
     },
