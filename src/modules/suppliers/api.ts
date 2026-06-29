@@ -108,6 +108,46 @@ export function useConfirmSuspenseVa() {
   });
 }
 
+export function useConfirmSuspenseBatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      items, supplierId, total_cash_amt, cash_paid_now, pay_date,
+    }: {
+      items: Array<{ id: string; gross_wt: number }>;
+      supplierId: string; total_cash_amt: number; cash_paid_now: number; pay_date: string;
+    }) => {
+      const client = supabase();
+      const totalGross = items.reduce((s, i) => s + i.gross_wt, 0);
+
+      // Update each item proportionally by gross weight
+      await Promise.all(items.map((item) => {
+        const proportion = totalGross > 0 ? item.gross_wt / totalGross : 1 / items.length;
+        return client.from("sale_items").update({
+          supplier_confirmed: true,
+          supplier_cash_amt: parseFloat((total_cash_amt * proportion).toFixed(2)),
+        }).eq("id", item.id);
+      }));
+
+      if (cash_paid_now > 0) {
+        const { data: row, error: pe } = await client.from("supplier_payments").insert({
+          supplier_id: supplierId, pay_date, mode: "cash",
+          amount: cash_paid_now,
+          notes: `Batch suspense settlement (${items.length} items)`,
+        }).select().single();
+        if (pe) throw pe;
+        await client.from("cash_ledger").insert({
+          tx_date: pay_date, direction: "out", amount: cash_paid_now,
+          description: "Supplier payment", ref_type: "supplier_payment", ref_id: row.id,
+        });
+      }
+
+      return supplierId;
+    },
+    onSuccess: (supplierId) => qc.invalidateQueries({ queryKey: ["supplier-360", supplierId] }),
+  });
+}
+
 export function useSaveSupplierPurchase() {
   const qc = useQueryClient();
   return useMutation({

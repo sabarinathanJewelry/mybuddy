@@ -2,7 +2,7 @@
 
 import { Fragment, use, useState } from "react";
 import Link from "next/link";
-import { useSupplier360, useSaveSupplierPurchase, useUpdateSupplierPurchase, useDeleteSupplierPurchase, useSaveSupplierPayment, useUpdateSupplierPayment, useDeleteSupplierPayment, useConfirmSuspenseVa, useUpsertSupplier } from "@/modules/suppliers/api";
+import { useSupplier360, useSaveSupplierPurchase, useUpdateSupplierPurchase, useDeleteSupplierPurchase, useSaveSupplierPayment, useUpdateSupplierPayment, useDeleteSupplierPayment, useConfirmSuspenseVa, useConfirmSuspenseBatch, useUpsertSupplier } from "@/modules/suppliers/api";
 import { useGlobalDate } from "@/stores/global-date";
 import { useT } from "@/i18n";
 import { inr, grams, shortDate } from "@/lib/format";
@@ -99,7 +99,12 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const updatePayment = useUpdateSupplierPayment();
   const deletePayment = useDeleteSupplierPayment();
   const confirmVa = useConfirmSuspenseVa();
+  const confirmBatch = useConfirmSuspenseBatch();
   const upsertSupplier = useUpsertSupplier();
+
+  // Multi-select batch settlement
+  const [selectedSuspense, setSelectedSuspense] = useState<Set<string>>(new Set());
+  const [batchForm, setBatchForm] = useState({ total_cash_amt: 0, cash_paid_now: 0 });
 
   const [showEditOpening, setShowEditOpening] = useState(false);
   const [editOpening, setEditOpening] = useState({ opening_balance: 0, gold_opening_g: 0, silver_opening_g: 0, roundoff_digits: 3, roundoff_method: "round" });
@@ -1564,6 +1569,12 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
           <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
             <table className="w-full text-sm">
               <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                <th className="px-3 py-2.5 w-8">
+                  <input type="checkbox"
+                    checked={view?.suspense.length > 0 && selectedSuspense.size === view.suspense.length}
+                    onChange={(e) => setSelectedSuspense(e.target.checked ? new Set(view?.suspense.map((s: any) => s.id)) : new Set())}
+                    className="accent-gold" />
+                </th>
                 <th className="text-left px-4 py-2.5">Bill</th>
                 <th className="text-left px-3 py-2.5">{t("date")}</th>
                 <th className="text-left px-3 py-2.5">Description</th>
@@ -1576,6 +1587,17 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                 {view?.suspense.map((s: any) => (
                   <Fragment key={s.id}>
                     <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
+                      <td className="px-3 py-2.5">
+                        <input type="checkbox"
+                          checked={selectedSuspense.has(s.id)}
+                          onChange={(e) => {
+                            const next = new Set(selectedSuspense);
+                            e.target.checked ? next.add(s.id) : next.delete(s.id);
+                            setSelectedSuspense(next);
+                            if (next.size > 0) setEditingVa(null);
+                          }}
+                          className="accent-gold" />
+                      </td>
                       <td className="px-4 py-2.5 font-mono text-info">{s.bill_no}</td>
                       <td className="px-3 py-2.5 text-ink-dim">{shortDate(s.bill_date)}</td>
                       <td className="px-3 py-2.5">{s.description}</td>
@@ -1609,7 +1631,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                     </tr>
                     {editingVa !== null && editingVa.id === s.id && (
                       <tr className="border-b border-line bg-canvas/50">
-                        <td colSpan={7} className="px-4 py-3">
+                        <td colSpan={8} className="px-4 py-3">
                           <form onSubmit={handleConfirmVa} className="space-y-3">
                             <div className="flex items-end gap-3 flex-wrap">
                               <div>
@@ -1673,10 +1695,78 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                     )}
                   </Fragment>
                 ))}
-                {!view?.suspense.length && <tr><td colSpan={6} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
+                {!view?.suspense.length && <tr><td colSpan={8} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
               </tbody>
             </table>
           </div>
+
+          {/* Batch settlement panel */}
+          {selectedSuspense.size > 0 && (() => {
+            const sel = (view?.suspense ?? []).filter((s: any) => selectedSuspense.has(s.id));
+            const totalGross = sel.reduce((a: number, s: any) => a + (Number(s.gross_wt) || 0), 0);
+            const totalPure  = sel.reduce((a: number, s: any) => a + (Number(s.supplier_pure_wt) || 0), 0);
+            const avgPurity  = totalGross > 0 ? (totalPure / totalGross) * 100 : 0;
+            const balance    = batchForm.total_cash_amt - batchForm.cash_paid_now;
+            return (
+              <div className="bg-white border border-gold/30 rounded-xl shadow-soft px-4 py-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-ink">{selectedSuspense.size} item{selectedSuspense.size > 1 ? "s" : ""} selected</p>
+                  <button onClick={() => setSelectedSuspense(new Set())} className="text-xs text-ink-dim hover:underline">Clear</button>
+                </div>
+                <div className="grid grid-cols-3 gap-4 text-center text-sm bg-canvas rounded-lg2 px-3 py-2">
+                  <div>
+                    <p className="text-xs text-ink-dim mb-0.5">Total Gross</p>
+                    <p className="font-mono font-semibold">{grams(totalGross)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-ink-dim mb-0.5">Total Pure Wt</p>
+                    <p className="font-mono font-semibold text-info">{grams(totalPure)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-ink-dim mb-0.5">Avg Purity</p>
+                    <p className="font-mono font-semibold text-gold">{avgPurity.toFixed(2)}%</p>
+                  </div>
+                </div>
+                <div className="flex items-end gap-3 flex-wrap">
+                  <div>
+                    <label className="text-xs text-ink-dim block mb-1">Total Cash Amount (₹)</label>
+                    <input type="number" step="0.01" value={batchForm.total_cash_amt || ""}
+                      onFocus={(e) => e.target.select()} placeholder="0"
+                      onChange={(e) => setBatchForm(f => ({ ...f, total_cash_amt: parseFloat(e.target.value) || 0 }))}
+                      className="border border-line rounded-lg2 px-2 py-1.5 text-sm w-36 focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-ink-dim block mb-1">Cash Paid Now (₹)</label>
+                    <input type="number" step="0.01" value={batchForm.cash_paid_now || ""}
+                      onFocus={(e) => e.target.select()} placeholder="0"
+                      onChange={(e) => setBatchForm(f => ({ ...f, cash_paid_now: parseFloat(e.target.value) || 0 }))}
+                      className="border border-line rounded-lg2 px-2 py-1.5 text-sm w-36 focus:outline-none focus:ring-1 focus:ring-gold" />
+                  </div>
+                  {batchForm.total_cash_amt > 0 && (
+                    <div>
+                      <label className="text-xs text-ink-dim block mb-1">Balance</label>
+                      <p className={`text-sm font-mono font-semibold ${balance > 0 ? "text-err" : "text-ok"}`}>{inr(balance)}</p>
+                    </div>
+                  )}
+                  <button
+                    disabled={confirmBatch.isPending}
+                    onClick={async () => {
+                      await confirmBatch.mutateAsync({
+                        items: sel.map((s: any) => ({ id: s.id, gross_wt: Number(s.gross_wt) || 0 })),
+                        supplierId: id, total_cash_amt: batchForm.total_cash_amt,
+                        cash_paid_now: batchForm.cash_paid_now, pay_date: globalDate,
+                      });
+                      setSelectedSuspense(new Set());
+                      setBatchForm({ total_cash_amt: 0, cash_paid_now: 0 });
+                    }}
+                    className="ml-auto bg-gold text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-40">
+                    Settle {selectedSuspense.size} Items
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
           {metalOwedG > 0 && (
             <div className="bg-canvas rounded-xl border border-line px-4 py-3 flex justify-between text-sm">
               <span className="text-ink-dim">Total metal owed to supplier</span>

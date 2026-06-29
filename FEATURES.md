@@ -47,6 +47,7 @@
 - Edit opening balance (₹ + gold g + silver g)
 - Supplier detail: purchase history, payments
 - Suspense tab: set cash bill amount + record partial payment in one step; balance shown live; Metal VA% optional alongside
+- Suspense tab: multi-select items with checkboxes → batch settle with total gross, total pure wt, average purity summary + one combined cash payment
 
 ---
 
