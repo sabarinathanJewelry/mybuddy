@@ -1571,7 +1571,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
               <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                 <th className="px-3 py-2.5 w-8">
                   <input type="checkbox"
-                    checked={view?.suspense.length > 0 && selectedSuspense.size === view.suspense.length}
+                    checked={(view?.suspense?.length ?? 0) > 0 && selectedSuspense.size === (view?.suspense?.length ?? 0)}
                     onChange={(e) => setSelectedSuspense(e.target.checked ? new Set(view?.suspense.map((s: any) => s.id)) : new Set())}
                     className="accent-gold" />
                 </th>
