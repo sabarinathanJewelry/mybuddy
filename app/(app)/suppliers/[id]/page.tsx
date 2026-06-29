@@ -461,10 +461,11 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       {/* Purchases */}
       {tab === "purchases" && !isLoading && (
         <div className="space-y-3">
-          <div className="flex gap-4">
+          <div className="flex gap-4 flex-wrap">
             <button onClick={() => { setShowPurchaseForm(!showPurchaseForm); setShowReturnForm(false); setShowAdjForm(false); }} className="text-xs text-gold hover:underline">+ Add Purchase</button>
             <button onClick={() => { setShowReturnForm(!showReturnForm); setShowPurchaseForm(false); setShowAdjForm(false); }} className="text-xs text-ok hover:underline">↩ Return Item</button>
             <button onClick={() => { setShowAdjForm(!showAdjForm); setShowPurchaseForm(false); setShowReturnForm(false); }} className="text-xs text-info hover:underline">± Metal Adjustment</button>
+            <Link href={`/admin/supplier-ledger?supplier=${id}`} className="text-xs text-ink-dim hover:text-ink hover:underline">↑ Import from ERP</Link>
           </div>
 
           {showReturnForm && (

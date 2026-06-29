@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { inr, shortDate } from "@/lib/format";
 
@@ -173,7 +175,8 @@ const inp = "border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none
 
 export default function SupplierLedgerPage() {
   const qc = useQueryClient();
-  const [supplierId, setSupplierId] = useState("");
+  const searchParams = useSearchParams();
+  const [supplierId, setSupplierId] = useState(searchParams.get("supplier") ?? "");
   const [text, setText] = useState("");
   const [parseError, setParseError] = useState<string | null>(null);
   const [payments, setPayments] = useState<LedgerPayment[]>([]);
@@ -279,6 +282,9 @@ export default function SupplierLedgerPage() {
 
   return (
     <div className="p-4 max-w-5xl mx-auto space-y-4">
+      {searchParams.get("supplier") && (
+        <Link href={`/suppliers/${searchParams.get("supplier")}`} className="text-xs text-ink-dim hover:text-ink">← Back to Supplier</Link>
+      )}
       <h1 className="text-xl font-semibold text-ink">Supplier Ledger Import</h1>
 
       {/* Step 1 */}
