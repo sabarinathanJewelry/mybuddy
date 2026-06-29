@@ -244,6 +244,13 @@
 - `app_metadata.mfa_enabled` flag (service-role only) gated in middleware — no DB query per request
 - Staff (game-login users) are exempt from 2FA
 
+### Supplier Ledger Import (`/admin/supplier-ledger`)
+- Select supplier, paste Tally ledger export (tab or comma delimited, auto-detected)
+- Parses PAYMENT and RETAIL PURCHASE / SALE BILL rows; skips OB, Total, CB rows
+- Payments tab: matches each Tally payment against MyBuddy `supplier_payments` by date + amount (±0.5); shows Matched / Not in MyBuddy; "Add Entry" creates a bank-mode `supplier_payments` record in one click
+- Purchases tab: enter rate per gram → auto-computes gross weight; select metal type (22K/18K/24K/silver); "Add" creates a `supplier_purchases` record with computed weight and purity
+- Summary row per tab: total count, matched/added count, total amount
+
 ### Bank Reconciliation (`/admin/bank-recon`)
 - Upload bank statement CSV for any month (auto-detects HDFC, SBI, ICICI, Axis, Kotak formats; handles BOM, tabs, date variants)
 - Matches each bank entry against MyBuddy customer payments and supplier payments (bank/UPI mode only)
