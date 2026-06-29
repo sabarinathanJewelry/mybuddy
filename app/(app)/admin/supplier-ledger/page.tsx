@@ -96,10 +96,10 @@ function parseTallyLedger(text: string): {
 
   for (let i = 0; i < Math.min(10, lines.length); i++) {
     const cols = splitLine(lines[i], sep).map(c =>
-      c.toLowerCase().replace(/[^a-z0-9\s.]/g, "").trim()
+      c.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim()
     );
     const dI = cols.findIndex(c => c === "date");
-    const tI = cols.findIndex(c => c.includes("txn type") || c.includes("txntype") || c === "type");
+    const tI = cols.findIndex(c => c.includes("txn type") || c === "type");
     const drI = cols.findIndex(c => c.includes("amt dr") || c.includes("amount dr") || c === "debit");
     const crI = cols.findIndex(c => c.includes("amt cr") || c.includes("amount cr") || c === "credit");
 
