@@ -83,6 +83,29 @@ export default function ChitsPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows = (payments as any[]) ?? [];
 
+  const deletePayment = useMutation({
+    mutationFn: async (p: any) => {
+      const client = supabase();
+      const balanceField = p.metal_type === "gold" ? "gold_balance_g" : "silver_balance_g";
+      const { data: cust } = await client.from("customers")
+        .select("gold_balance_g, silver_balance_g").eq("id", p.customer_id).single();
+      const current = Number((cust as any)?.[balanceField]) || 0;
+      await client.from("customers")
+        .update({ [balanceField]: parseFloat(Math.max(0, current - Number(p.metal_grams)).toFixed(4)) })
+        .eq("id", p.customer_id);
+      await Promise.allSettled([
+        client.from("cash_ledger").delete().eq("ref_type", "chit_payment").eq("ref_id", p.id),
+        client.from("bank_ledger").delete().eq("ref_type", "chit_payment").eq("ref_id", p.id),
+      ]);
+      const { error } = await client.from("chit_payments").delete().eq("id", p.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["chit_payments"] });
+      qc.invalidateQueries({ queryKey: ["customers"] });
+    },
+  });
+
   const updatePayment = useMutation({
     mutationFn: async ({ id, newAmount }: { id: string; newAmount: number }) => {
       const client = supabase();
@@ -442,8 +465,17 @@ export default function ChitsPage() {
                     <td className="px-3 py-2.5 text-right font-mono text-gold">{Number(p.metal_grams).toFixed(4)}g</td>
                     <td className="px-3 py-2.5 text-ink-dim capitalize">{p.mode === "advance" ? "Advance" : p.mode === "split" ? "Split" : p.mode}</td>
                     <td className="px-3 py-2.5 text-right">
-                      <button onClick={() => startEdit(p)}
-                        className="text-xs text-ink-dim border border-line rounded px-2 py-0.5 hover:border-gold hover:text-gold">Edit</button>
+                      <div className="flex gap-1.5 justify-end">
+                        <button onClick={() => startEdit(p)}
+                          className="text-xs text-ink-dim border border-line rounded px-2 py-0.5 hover:border-gold hover:text-gold">Edit</button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Delete ₹${Number(p.amount).toLocaleString("en-IN")} payment for ${p.customers?.name ?? "this customer"}? This cannot be undone.`))
+                              deletePayment.mutate(p);
+                          }}
+                          disabled={deletePayment.isPending}
+                          className="text-xs text-err border border-err/30 rounded px-2 py-0.5 hover:bg-err/10 disabled:opacity-50">Delete</button>
+                      </div>
                     </td>
                   </tr>
                 );

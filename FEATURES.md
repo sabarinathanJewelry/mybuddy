@@ -58,6 +58,7 @@
 - Cash chit: monthly payment tracking
 - Gold chit: weight-based with board_rate at payment time
 - Chit payment edit (corrects wrong amount, recalculates grams)
+- Chit payment delete (reverses grams from customer balance + clears ledger entries)
 - Chit bonus payments
 
 ### Expenses
