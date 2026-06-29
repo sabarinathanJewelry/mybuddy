@@ -244,6 +244,15 @@
 - `app_metadata.mfa_enabled` flag (service-role only) gated in middleware — no DB query per request
 - Staff (game-login users) are exempt from 2FA
 
+### Bank Reconciliation (`/admin/bank-recon`)
+- Upload bank statement CSV for any month (auto-detects HDFC, SBI, ICICI, Axis, Kotak formats; handles BOM, tabs, date variants)
+- Matches each bank entry against MyBuddy customer payments and supplier payments (bank/UPI mode only)
+- Match types: Exact (single payment = bank amount), Group (multiple UPI payments sum to bank amount), Partial (entries exist but amount differs), No match
+- Ignore button per entry — for UPI batches, personal transfers, or bank fees that don't need a MyBuddy entry
+- Summary: Total / Matched / Unmatched / Ignored counts; Bank vs MyBuddy credit/debit comparison
+- Filter: All | Unmatched | Ignored tabs
+- Statement persists in DB (`bank_statements` + `bank_statement_entries` tables); upload replaces previous month's data
+
 ### Board Rate
 - Daily gold/silver rate entry
 - Used in all sale calculations
