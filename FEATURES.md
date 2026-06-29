@@ -46,6 +46,7 @@
 - Supplier list with search
 - Edit opening balance (₹ + gold g + silver g)
 - Supplier detail: purchase history, payments
+- Suspense tab: set cash bill amount + record partial payment in one step; balance shown live; Metal VA% optional alongside
 
 ---
 
@@ -287,3 +288,4 @@
 | 110 | `110_kpi_targets.sql` | KPI weight targets table |
 | 111 | `111_kpi_weight_target.sql` | Rename sales_target → weight_target |
 | 113 | `113_order_items_diamond_fields.sql` | Add diamond_wt, diamond_amt, certificate_amt to order_items |
+| 114 | `114_suspense_cash_amount.sql` | Add supplier_cash_amt to sale_items + recreate supplier_suspense view |

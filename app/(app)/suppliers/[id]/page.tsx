@@ -141,8 +141,11 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
     setEditingPaymentId(null);
   }
 
-  // Suspense VA% editing
-  const [editingVa, setEditingVa] = useState<{ id: string; gross_wt: number; purity_pct: number; va_pct: number } | null>(null);
+  // Suspense VA% + cash settlement editing
+  const [editingVa, setEditingVa] = useState<{
+    id: string; gross_wt: number; purity_pct: number; va_pct: number;
+    cash_amt: number; cash_paid_now: number; bill_no: string;
+  } | null>(null);
 
   // Cash balance — opening + cash-mode purchases + cut_rate conversions − actual cash/bank paid
   const openingCash = Number(view?.supplier?.opening_balance) || 0;
@@ -300,7 +303,11 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   async function handleConfirmVa(e: React.FormEvent) {
     e.preventDefault();
     if (!editingVa) return;
-    await confirmVa.mutateAsync({ itemId: editingVa.id, supplierId: id, va_pct: editingVa.va_pct });
+    await confirmVa.mutateAsync({
+      itemId: editingVa.id, supplierId: id, va_pct: editingVa.va_pct,
+      cash_amt: editingVa.cash_amt, cash_paid_now: editingVa.cash_paid_now,
+      pay_date: globalDate, bill_no: editingVa.bill_no,
+    });
     setEditingVa(null);
   }
 
@@ -1561,6 +1568,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                 <th className="text-left px-3 py-2.5">{t("date")}</th>
                 <th className="text-left px-3 py-2.5">Description</th>
                 <th className="text-right px-3 py-2.5">Gross</th>
+                <th className="text-right px-3 py-2.5">Cash Total</th>
                 <th className="text-right px-3 py-2.5">Pure Wt Owed</th>
                 <th className="px-3 py-2.5"></th>
               </tr></thead>
@@ -1573,6 +1581,11 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                       <td className="px-3 py-2.5">{s.description}</td>
                       <td className="px-3 py-2.5 text-right">{grams(s.gross_wt ?? 0)}</td>
                       <td className="px-3 py-2.5 text-right">
+                        {s.supplier_cash_amt > 0
+                          ? <span className="font-mono text-ink">{inr(s.supplier_cash_amt)}</span>
+                          : <span className="text-ink-dim">—</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
                         {s.supplier_confirmed
                           ? <span className="text-ok font-mono">{grams(s.supplier_pure_wt ?? 0)}</span>
                           : <span className="text-ink-dim">—</span>}
@@ -1580,50 +1593,79 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                       <td className="px-3 py-2.5 text-right">
                         {!s.supplier_confirmed && (
                           <button
-                            onClick={() => setEditingVa({ id: s.id, gross_wt: s.gross_wt ?? 0, purity_pct: s.purity_pct ?? 92, va_pct: 0 })}
+                            onClick={() => setEditingVa({ id: s.id, gross_wt: s.gross_wt ?? 0, purity_pct: s.purity_pct ?? 92, va_pct: 0, cash_amt: s.supplier_cash_amt ?? 0, cash_paid_now: 0, bill_no: s.bill_no ?? "" })}
                             className="text-xs text-gold hover:underline">
-                            Set VA%
+                            Settle
                           </button>
                         )}
                         {s.supplier_confirmed && (
                           <button
-                            onClick={() => setEditingVa({ id: s.id, gross_wt: s.gross_wt ?? 0, purity_pct: s.purity_pct ?? 92, va_pct: s.supplier_va_pct ?? 0 })}
+                            onClick={() => setEditingVa({ id: s.id, gross_wt: s.gross_wt ?? 0, purity_pct: s.purity_pct ?? 92, va_pct: s.supplier_va_pct ?? 0, cash_amt: s.supplier_cash_amt ?? 0, cash_paid_now: 0, bill_no: s.bill_no ?? "" })}
                             className="text-xs text-ok hover:underline">
-                            ✓ {s.supplier_va_pct}%
+                            ✓ Edit
                           </button>
                         )}
                       </td>
                     </tr>
                     {editingVa !== null && editingVa.id === s.id && (
                       <tr className="border-b border-line bg-canvas/50">
-                        <td colSpan={6} className="px-4 py-3">
-                          <form onSubmit={handleConfirmVa} className="flex items-end gap-3 flex-wrap">
-                            <div>
-                              <label className="text-xs text-ink-dim block mb-1">Gross Wt</label>
-                              <p className="text-sm font-mono">{grams(editingVa.gross_wt)}</p>
+                        <td colSpan={7} className="px-4 py-3">
+                          <form onSubmit={handleConfirmVa} className="space-y-3">
+                            <div className="flex items-end gap-3 flex-wrap">
+                              <div>
+                                <label className="text-xs text-ink-dim block mb-1">Gross Wt</label>
+                                <p className="text-sm font-mono">{grams(editingVa.gross_wt)}</p>
+                              </div>
+                              <div>
+                                <label className="text-xs text-ink-dim block mb-1">Cash Bill Amount (₹)</label>
+                                <input type="number" step="0.01" value={editingVa.cash_amt || ""}
+                                  onFocus={(e) => e.target.select()} placeholder="0"
+                                  onChange={(e) => setEditingVa({ ...editingVa, cash_amt: parseFloat(e.target.value) || 0 })}
+                                  className="border border-line rounded-lg2 px-2 py-1 text-sm w-32 focus:outline-none focus:ring-1 focus:ring-gold"
+                                  autoFocus />
+                              </div>
+                              <div>
+                                <label className="text-xs text-ink-dim block mb-1">Cash Paid Now (₹)</label>
+                                <input type="number" step="0.01" value={editingVa.cash_paid_now || ""}
+                                  onFocus={(e) => e.target.select()} placeholder="0"
+                                  onChange={(e) => setEditingVa({ ...editingVa, cash_paid_now: parseFloat(e.target.value) || 0 })}
+                                  className="border border-line rounded-lg2 px-2 py-1 text-sm w-32 focus:outline-none focus:ring-1 focus:ring-gold" />
+                              </div>
+                              {editingVa.cash_amt > 0 && (
+                                <div>
+                                  <label className="text-xs text-ink-dim block mb-1">Balance</label>
+                                  <p className="text-sm font-mono text-err font-semibold">
+                                    {inr(editingVa.cash_amt - (editingVa.cash_paid_now || 0))}
+                                  </p>
+                                </div>
+                              )}
                             </div>
-                            <div>
-                              <label className="text-xs text-ink-dim block mb-1">Settlement Purity%</label>
-                              <input type="number" step="0.01" value={editingVa.va_pct}
-                                onChange={(e) => setEditingVa({ ...editingVa, va_pct: parseFloat(e.target.value) || 0 })}
-                                className="border border-line rounded-lg2 px-2 py-1 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-gold"
-                                autoFocus />
-                            </div>
-                            <div>
-                              <label className="text-xs text-ink-dim block mb-1">Pure Wt Owed</label>
-                              <p className="text-sm font-mono text-info">
-                                {editingVa.va_pct.toFixed(2)}% = {grams(vaPreview)}
-                              </p>
-                            </div>
-                            <div className="flex gap-2">
-                              <button type="submit" disabled={confirmVa.isPending}
-                                className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40">
-                                Confirm
-                              </button>
-                              <button type="button" onClick={() => setEditingVa(null)}
-                                className="border border-line text-xs px-3 py-1.5 rounded-lg2">
-                                Cancel
-                              </button>
+                            <div className="flex items-end gap-3 flex-wrap border-t border-line pt-3">
+                              <div>
+                                <label className="text-xs text-ink-dim block mb-1">Metal VA% (optional)</label>
+                                <input type="number" step="0.01" value={editingVa.va_pct || ""}
+                                  onFocus={(e) => e.target.select()} placeholder="0"
+                                  onChange={(e) => setEditingVa({ ...editingVa, va_pct: parseFloat(e.target.value) || 0 })}
+                                  className="border border-line rounded-lg2 px-2 py-1 text-sm w-20 focus:outline-none focus:ring-1 focus:ring-gold" />
+                              </div>
+                              {editingVa.va_pct > 0 && (
+                                <div>
+                                  <label className="text-xs text-ink-dim block mb-1">Pure Wt Owed</label>
+                                  <p className="text-sm font-mono text-info">
+                                    {editingVa.va_pct.toFixed(2)}% = {grams(vaPreview)}
+                                  </p>
+                                </div>
+                              )}
+                              <div className="flex gap-2 ml-auto">
+                                <button type="submit" disabled={confirmVa.isPending}
+                                  className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40">
+                                  Confirm
+                                </button>
+                                <button type="button" onClick={() => setEditingVa(null)}
+                                  className="border border-line text-xs px-3 py-1.5 rounded-lg2">
+                                  Cancel
+                                </button>
+                              </div>
                             </div>
                           </form>
                         </td>

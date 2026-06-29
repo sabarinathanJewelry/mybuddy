@@ -72,12 +72,36 @@ export function useSupplier360(id: string) {
 export function useConfirmSuspenseVa() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ itemId, supplierId, va_pct }: { itemId: string; supplierId: string; va_pct: number }) => {
-      const { error } = await supabase()
-        .from("sale_items")
-        .update({ supplier_va_pct: va_pct, supplier_confirmed: true })
-        .eq("id", itemId);
+    mutationFn: async ({
+      itemId, supplierId, va_pct, cash_amt, cash_paid_now, pay_date, bill_no,
+    }: {
+      itemId: string; supplierId: string; va_pct: number;
+      cash_amt?: number; cash_paid_now?: number; pay_date?: string; bill_no?: string;
+    }) => {
+      const client = supabase();
+      const { error } = await client.from("sale_items").update({
+        supplier_va_pct: va_pct || null,
+        supplier_confirmed: true,
+        supplier_cash_amt: cash_amt || 0,
+      }).eq("id", itemId);
       if (error) throw error;
+
+      if (cash_paid_now && cash_paid_now > 0) {
+        const { data: row, error: pe } = await client.from("supplier_payments").insert({
+          supplier_id: supplierId,
+          pay_date: pay_date ?? new Date().toISOString().slice(0, 10),
+          mode: "cash",
+          amount: cash_paid_now,
+          notes: bill_no ? `Suspense payment — ${bill_no}` : "Suspense payment",
+        }).select().single();
+        if (pe) throw pe;
+        await client.from("cash_ledger").insert({
+          tx_date: pay_date ?? new Date().toISOString().slice(0, 10),
+          direction: "out", amount: cash_paid_now,
+          description: "Supplier payment", ref_type: "supplier_payment", ref_id: row.id,
+        });
+      }
+
       return supplierId;
     },
     onSuccess: (supplierId) => qc.invalidateQueries({ queryKey: ["supplier-360", supplierId] }),
