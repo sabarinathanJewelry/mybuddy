@@ -52,7 +52,7 @@ export default function SecurityPage() {
       const verifyRes = await fetch("/api/auth/verify-totp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: data.code }),
+        body: JSON.stringify({ token: data.code, trust: true }),
       });
       if (!verifyRes.ok) {
         // Verification failed (code might have just expired — very rare)
@@ -180,7 +180,8 @@ export default function SecurityPage() {
           <li>After entering your password on a new device, you will be asked for a 6-digit code</li>
           <li>Open MyBuddy on your already-logged-in phone and tap Security Code in the menu</li>
           <li>Enter the code shown — it changes every 30 seconds</li>
-          <li>Once verified, the new device is trusted for 90 days</li>
+          <li>Once verified, that session is trusted until the browser is closed — you will be asked again next login</li>
+          <li>The device you used to enable 2FA (your phone) is permanently trusted and never asked for a code</li>
         </ul>
       </div>
     </div>

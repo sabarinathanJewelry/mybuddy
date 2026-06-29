@@ -239,7 +239,8 @@
 - After password login, users with 2FA enabled are redirected to `/verify-otp`
 - `/my-security-code` page shows the current rotating code (requires prior MFA verification)
 - Admin opens MyBuddy on their phone → taps Security Code → reads the 6-digit code → types it on the new device
-- Verified devices trusted for 90 days via `mfa_verified` HTTP-only cookie
+- Setup device (phone) permanently trusted via 1-year `mfa_verified` cookie (`trust: true` sent during setup)
+- PC logins get a session-only cookie (no `maxAge`) — cleared when browser closes, TOTP asked every login
 - `app_metadata.mfa_enabled` flag (service-role only) gated in middleware — no DB query per request
 - Staff (game-login users) are exempt from 2FA
 

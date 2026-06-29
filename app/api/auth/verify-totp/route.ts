@@ -7,7 +7,7 @@ const COOKIE_MAX_AGE = 90 * 24 * 60 * 60; // 90 days
 
 export async function POST(req: Request) {
   try {
-    const { token } = await req.json();
+    const { token, trust } = await req.json();
     if (!token || typeof token !== "string") {
       return NextResponse.json({ error: "Missing token" }, { status: 400 });
     }
@@ -36,13 +36,16 @@ export async function POST(req: Request) {
     }
 
     const res = NextResponse.json({ ok: true });
-    res.cookies.set("mfa_verified", userId, {
+    const cookieOptions: Parameters<typeof res.cookies.set>[2] = {
       httpOnly: true,
       sameSite: "strict",
-      maxAge: COOKIE_MAX_AGE,
       path: "/",
       secure: process.env.NODE_ENV === "production",
-    });
+      // trust=true (setup device) → 1-year permanent cookie
+      // no trust (PC login) → session cookie, cleared when browser closes
+      ...(trust ? { maxAge: COOKIE_MAX_AGE } : {}),
+    };
+    res.cookies.set("mfa_verified", userId, cookieOptions);
     return res;
   } catch (e) {
     console.error("verify-totp", e);
