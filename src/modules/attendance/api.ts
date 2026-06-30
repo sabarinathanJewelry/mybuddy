@@ -111,6 +111,8 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
   return useQuery<AttendanceEntry[]>({
     queryKey: ["attendance", date, activeOnly],
     enabled: !!date,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10000),
     queryFn: async () => {
       const client = supabase();
 
@@ -140,7 +142,8 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
           .maybeSingle(),
       ]);
 
-      if (logsRes.error) throw logsRes.error;
+      if (logsRes.error)  throw logsRes.error;
+      if (staffRes.error) throw staffRes.error;
 
       const logs = logsRes.data ?? [];
       const staff: StaffMember[] = (staffRes.data ?? []) as any;

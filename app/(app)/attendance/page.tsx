@@ -2363,7 +2363,7 @@ export default function AttendancePage() {
   }
 
   const qc = useQueryClient();
-  const { data = [], isLoading, refetch } = useAttendanceByDate(date, activeOnly);
+  const { data = [], isLoading, isError, refetch, isFetching: isAttFetching } = useAttendanceByDate(date, activeOnly);
   const { data: leavesByDate = [] }       = useLeavesByDate(date);
   const { data: dailyPerms = [] }         = useApprovedPermsByDate(date);
   const { data: dailyDuties = [] }        = useOutsideDutiesByDate(date);
@@ -2747,10 +2747,29 @@ export default function AttendancePage() {
 
           {isLoading ? (
             <p className="text-ink-dim text-sm">Loading…</p>
+          ) : isError ? (
+            <div className="bg-white rounded-xl border border-err/30 p-10 text-center shadow-soft space-y-3">
+              <p className="font-medium text-err">Failed to load staff records</p>
+              <p className="text-xs text-ink-dim">Network error or server timeout. Try refreshing.</p>
+              <button
+                onClick={() => refetch()}
+                disabled={isAttFetching}
+                className="px-4 py-1.5 bg-gold text-white text-sm rounded-lg2 disabled:opacity-40"
+              >
+                {isAttFetching ? "Retrying…" : "Retry"}
+              </button>
+            </div>
           ) : data.length === 0 ? (
-            <div className="bg-white rounded-xl border border-line p-10 text-center text-ink-dim shadow-soft">
+            <div className="bg-white rounded-xl border border-line p-10 text-center text-ink-dim shadow-soft space-y-3">
               <p className="font-medium">No staff records found</p>
-              <p className="text-xs mt-1">Run migrations 025–029 in Supabase, then sync the device.</p>
+              <p className="text-xs">Run migrations 025–029 in Supabase, then sync the device.</p>
+              <button
+                onClick={() => refetch()}
+                disabled={isAttFetching}
+                className="px-4 py-1.5 bg-gold text-white text-sm rounded-lg2 disabled:opacity-40"
+              >
+                {isAttFetching ? "Loading…" : "Retry"}
+              </button>
             </div>
           ) : (
             <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
