@@ -413,7 +413,7 @@ function useMonthExpenses() {
       const ms = monthStart();
       const me = monthStart(1);
       const { data } = await supabase().from("expenses").select("category, amount")
-        .gte("expense_date", ms).lt("expense_date", me);
+        .gte("exp_date", ms).lt("exp_date", me);
       const total = (data ?? []).reduce((s, e: any) => s + (e.amount ?? 0), 0);
       const bycat = new Map<string, number>();
       for (const e of (data ?? []) as any[]) {
@@ -425,6 +425,85 @@ function useMonthExpenses() {
         categories: Array.from(bycat.entries()).sort((a, b) => b[1] - a[1]).slice(0, 6)
           .map(([cat, amount]) => ({ cat, amount, pct: total > 0 ? Math.round((amount / total) * 100) : 0 })),
       };
+    },
+  });
+}
+
+// 8-month supplier payment trend: bank transfers + cut-rate (old gold dispatched)
+function useSupplierPaymentsTrend() {
+  return useQuery({
+    queryKey: ["adash-sup-pay", monthKey(-7)],
+    staleTime: 10 * 60 * 1000,
+    queryFn: async () => {
+      const from = monthStart(-7);
+      const { data } = await supabase().from("supplier_payments")
+        .select("pay_date, mode, amount, metal_wt")
+        .gte("pay_date", from)
+        .order("pay_date");
+      const map = new Map<string, { bank: number; cutRate: number; cutRateWt: number }>();
+      for (let i = -7; i <= 0; i++) {
+        const k = monthStart(i).slice(0, 7);
+        map.set(k, { bank: 0, cutRate: 0, cutRateWt: 0 });
+      }
+      for (const p of (data ?? []) as any[]) {
+        const k = (p.pay_date as string).slice(0, 7);
+        if (!map.has(k)) continue;
+        const row = map.get(k)!;
+        if (p.mode === "bank" || p.mode === "upi") {
+          row.bank += p.amount ?? 0;
+        } else if (p.mode === "cut_rate") {
+          row.cutRate  += p.amount    ?? 0;
+          row.cutRateWt += p.metal_wt ?? 0;
+        }
+      }
+      return Array.from(map.entries()).map(([key, v]) => ({
+        label: new Date(key + "-01").toLocaleString("en-IN", { month: "short" }),
+        ...v,
+      }));
+    },
+  });
+}
+
+// 8-month weighted-average rate per metal (gold 22K + silver)
+function useAvgMetalRates() {
+  return useQuery({
+    queryKey: ["adash-rates", monthKey(-7)],
+    staleTime: 10 * 60 * 1000,
+    queryFn: async () => {
+      const from = monthStart(-7);
+      const { data } = await supabase().from("sale_items")
+        .select("metal, rate, gross_wt, sales!inner(bill_date, status)")
+        .gte("sales.bill_date", from)
+        .eq("sales.status", "confirmed")
+        .in("metal", ["gold_22k", "gold_18k", "silver", "silver_pure"]);
+      // Accumulate per month per metal: sum(rate*gross_wt) and sum(gross_wt)
+      type Acc = { rateWt: number; wt: number };
+      const map = new Map<string, { gold_22k: Acc; gold_18k: Acc; silver: Acc }>();
+      for (let i = -7; i <= 0; i++) {
+        const k = monthStart(i).slice(0, 7);
+        map.set(k, {
+          gold_22k: { rateWt: 0, wt: 0 },
+          gold_18k: { rateWt: 0, wt: 0 },
+          silver:   { rateWt: 0, wt: 0 },
+        });
+      }
+      for (const item of (data ?? []) as any[]) {
+        const k = (item.sales?.bill_date as string)?.slice(0, 7);
+        if (!map.has(k)) continue;
+        const row = map.get(k)!;
+        const wt = item.gross_wt ?? 0;
+        const rv = (item.rate ?? 0) * wt;
+        if (item.metal === "gold_22k") { row.gold_22k.rateWt += rv; row.gold_22k.wt += wt; }
+        else if (item.metal === "gold_18k") { row.gold_18k.rateWt += rv; row.gold_18k.wt += wt; }
+        else if (item.metal === "silver" || item.metal === "silver_pure") { row.silver.rateWt += rv; row.silver.wt += wt; }
+      }
+      const avg = (a: Acc) => a.wt > 0 ? Math.round(a.rateWt / a.wt) : null;
+      return Array.from(map.entries()).map(([key, v]) => ({
+        label: new Date(key + "-01").toLocaleString("en-IN", { month: "short" }),
+        gold22k: avg(v.gold_22k),
+        gold18k: avg(v.gold_18k),
+        silver:  avg(v.silver),
+      }));
     },
   });
 }
@@ -712,9 +791,11 @@ function InventoryTab() {
 const EXP_COLORS = [C.blue, C.green, C.orange, C.red, C.purple, C.gray];
 
 function DeepTab() {
-  const { data: mon }    = useMonthStats(0);
-  const { data: exp }    = useMonthExpenses();
-  const { data: topSale} = useTodayTopSales();
+  const { data: mon }     = useMonthStats(0);
+  const { data: exp }     = useMonthExpenses();
+  const { data: topSale } = useTodayTopSales();
+  const { data: supPay }  = useSupplierPaymentsTrend();
+  const { data: rates }   = useAvgMetalRates();
 
   return (
     <div className="space-y-5">
@@ -789,11 +870,11 @@ function DeepTab() {
       <Card title="Metal Performance — This Month">
         <div className="grid grid-cols-3 gap-x-8 gap-y-3">
           {[
-            { label: "Gold Gross Wt", value: grams(mon?.goldWt ?? 0) },
-            { label: "Silver Gross Wt", value: grams(mon?.silverWt ?? 0) },
-            { label: "GST %", value: mon?.revenue ? `${((mon.gst / mon.revenue) * 100).toFixed(1)}%` : "—" },
-            { label: "Month Bills", value: String(mon?.bills ?? 0) },
-            { label: "Avg Bill Value", value: mon?.bills ? inr(mon.revenue / mon.bills) : "—" },
+            { label: "Gold Gross Wt",     value: grams(mon?.goldWt ?? 0) },
+            { label: "Silver Gross Wt",   value: grams(mon?.silverWt ?? 0) },
+            { label: "GST %",             value: mon?.revenue ? `${((mon.gst / mon.revenue) * 100).toFixed(1)}%` : "—" },
+            { label: "Month Bills",       value: String(mon?.bills ?? 0) },
+            { label: "Avg Bill Value",    value: mon?.bills ? inr(mon.revenue / mon.bills) : "—" },
             { label: "Revenue excl. GST", value: inr((mon?.revenue ?? 0) - (mon?.gst ?? 0)) },
           ].map((r) => (
             <div key={r.label} className="border-b border-line pb-3">
@@ -802,6 +883,83 @@ function DeepTab() {
             </div>
           ))}
         </div>
+      </Card>
+
+      {/* Supplier payments trend */}
+      <Card title="Supplier Payments — Monthly (8 months)">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-ink-dim border-b border-line">
+                <th className="pb-2 font-medium">Month</th>
+                <th className="pb-2 font-medium text-right">Bank / UPI Transfer</th>
+                <th className="pb-2 font-medium text-right">Old Gold (Cut Rate ₹)</th>
+                <th className="pb-2 font-medium text-right">Old Gold Wt</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {(supPay ?? []).map((row, i) => (
+                <tr key={i} className="hover:bg-slate-50">
+                  <td className="py-2.5 font-medium text-ink">{row.label}</td>
+                  <td className="py-2.5 text-right text-ink">{row.bank > 0 ? inr(row.bank) : <span className="text-ink-dim">—</span>}</td>
+                  <td className="py-2.5 text-right" style={{ color: row.cutRate > 0 ? C.gold : undefined }}>
+                    {row.cutRate > 0 ? inr(row.cutRate) : <span className="text-ink-dim">—</span>}
+                  </td>
+                  <td className="py-2.5 text-right text-ink-dim">
+                    {row.cutRateWt > 0 ? grams(row.cutRateWt) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="border-t-2 border-line">
+              <tr>
+                <td className="pt-2.5 font-semibold text-ink text-xs uppercase tracking-wide">Total</td>
+                <td className="pt-2.5 text-right font-semibold text-ink">
+                  {inr((supPay ?? []).reduce((s, r) => s + r.bank, 0))}
+                </td>
+                <td className="pt-2.5 text-right font-semibold" style={{ color: C.gold }}>
+                  {inr((supPay ?? []).reduce((s, r) => s + r.cutRate, 0))}
+                </td>
+                <td className="pt-2.5 text-right font-semibold text-ink">
+                  {grams((supPay ?? []).reduce((s, r) => s + r.cutRateWt, 0))}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </Card>
+
+      {/* Average metal rates trend */}
+      <Card title="Avg Sale Rate per Gram — Monthly (weighted)">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-ink-dim border-b border-line">
+                <th className="pb-2 font-medium">Month</th>
+                <th className="pb-2 font-medium text-right" style={{ color: C.gold }}>Gold 22K (₹/g)</th>
+                <th className="pb-2 font-medium text-right" style={{ color: "#D4AF37" }}>Gold 18K (₹/g)</th>
+                <th className="pb-2 font-medium text-right" style={{ color: C.gray }}>Silver (₹/g)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {(rates ?? []).map((row, i) => (
+                <tr key={i} className="hover:bg-slate-50">
+                  <td className="py-2.5 font-medium text-ink">{row.label}</td>
+                  <td className="py-2.5 text-right font-mono">
+                    {row.gold22k != null ? <span style={{ color: C.gold }}>{row.gold22k.toLocaleString("en-IN")}</span> : <span className="text-ink-dim">—</span>}
+                  </td>
+                  <td className="py-2.5 text-right font-mono">
+                    {row.gold18k != null ? <span style={{ color: "#D4AF37" }}>{row.gold18k.toLocaleString("en-IN")}</span> : <span className="text-ink-dim">—</span>}
+                  </td>
+                  <td className="py-2.5 text-right font-mono">
+                    {row.silver != null ? <span style={{ color: C.gray }}>{row.silver.toLocaleString("en-IN")}</span> : <span className="text-ink-dim">—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[11px] text-ink-dim">Weighted average: Σ(rate × gross wt) ÷ Σ(gross wt) per month from confirmed sales.</p>
       </Card>
     </div>
   );
