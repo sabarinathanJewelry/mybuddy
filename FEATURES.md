@@ -223,6 +223,7 @@
 - Product Mix: items by description per metal type
 - Expenses by Category: monthly expense breakdown
 - Metal Flow reports
+- Sales Breakdown: grams and revenue split by source — Ready Stock (shelf inventory) / Order Delivery (converted from orders) / From Suspense (supplier suspense items); shown per metal (gold/silver) with gross wt, net wt, item count, and revenue per bucket
 
 ---
 

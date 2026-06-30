@@ -30,12 +30,27 @@ function usePnlItems(from: string, to: string) {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("sale_items")
-        .select("metal, gross_wt, net_wt, pure_wt, rate, va_pct, making_amt, stone_amt, diamond_amt, gst_pct, line_total, sales!inner(bill_date, status, bill_no)")
+        .select("metal, gross_wt, net_wt, pure_wt, rate, va_pct, making_amt, stone_amt, diamond_amt, gst_pct, line_total, is_suspense, sales!inner(id, bill_date, status, bill_no)")
         .gte("sales.bill_date", from)
         .lte("sales.bill_date", to)
         .eq("sales.status", "confirmed");
       if (error) throw error;
       return (data ?? []) as any[];
+    },
+  });
+}
+
+// All sale_ids that came from an order delivery — checked against actual sale bill_date via usePnlItems
+function useOrderSaleIds() {
+  return useQuery({
+    queryKey: ["order-sale-ids"],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data } = await supabase()
+        .from("orders")
+        .select("sale_id")
+        .not("sale_id", "is", null);
+      return new Set<string>((data ?? []).map((o: any) => o.sale_id).filter(Boolean));
     },
   });
 }
@@ -609,6 +624,7 @@ export default function ReportsPage() {
   const { data: metalDispatches = [] }                              = useMetalDispatches(range.from, range.to);
   const { data: bullionSells = [] }                                 = useBullionSells(range.from, range.to);
   const { data: ordersReport = [] }                                 = useOrdersReport(range.from, range.to);
+  const { data: orderSaleIds = new Set<string>() }                  = useOrderSaleIds();
 
   const isLoading = loadingItems || loadingPurchases || loadingExpenses;
 
@@ -630,6 +646,23 @@ export default function ReportsPage() {
   const silver = metalSection(items, SILVER_METALS);
   const mprItems = items.filter(i => i.metal === "silver_mpr");
   const mprRevenue = mprItems.reduce((s, i) => s + Number(i.line_total||0), 0);
+
+  // Sales source breakdown: ready stock vs order delivery vs suspense
+  function sourceBucket(metals: string[]) {
+    const filtered = (items as any[]).filter(i => metals.includes(i.metal));
+    const sum = (arr: any[]) => ({
+      count:   arr.length,
+      grossWt: arr.reduce((s, i) => s + Number(i.gross_wt || 0), 0),
+      netWt:   arr.reduce((s, i) => s + Number(i.net_wt   || 0), 0),
+      revenue: arr.reduce((s, i) => s + Number(i.line_total || 0), 0),
+    });
+    const suspense     = filtered.filter(i => i.is_suspense);
+    const orderDel     = filtered.filter(i => !i.is_suspense && orderSaleIds.has(i.sales?.id));
+    const readyStock   = filtered.filter(i => !i.is_suspense && !orderSaleIds.has(i.sales?.id));
+    return { readyStock: sum(readyStock), orderDel: sum(orderDel), suspense: sum(suspense) };
+  }
+  const goldBreakdown   = sourceBucket(GOLD_METALS);
+  const silverBreakdown = sourceBucket(SILVER_METALS);
 
   const goldPurchases   = purchaseSection(purchases, GOLD_METALS);
   const silverPurchases = purchaseSection(purchases, SILVER_METALS);
@@ -768,6 +801,75 @@ export default function ReportsPage() {
           {/* Silver section */}
           {silver.count > 0 && (
             <MetalCard title="Silver (Standard + Pure)" color="text-ink-mid bg-canvas" data={silver} />
+          )}
+
+          {/* Sales source breakdown */}
+          {items.length > 0 && (
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+              <div className="px-4 py-2.5 border-b border-line font-semibold text-sm bg-canvas/50">
+                Sales Breakdown — Source of Items Sold
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-ink-dim border-b border-line bg-canvas">
+                    <th className="text-left px-4 py-2">Metal</th>
+                    <th className="text-right px-3 py-2">Ready Stock</th>
+                    <th className="text-right px-3 py-2">Order Delivery</th>
+                    <th className="text-right px-3 py-2">From Suspense</th>
+                    <th className="text-right px-4 py-2">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {([
+                    { label: "Gold — Gross Wt",   gB: goldBreakdown,   sB: silverBreakdown, field: "grossWt" as const, fmt: grams,  metal: "gold"   },
+                    { label: "Gold — Net Wt",     gB: goldBreakdown,   sB: silverBreakdown, field: "netWt"   as const, fmt: grams,  metal: "gold"   },
+                    { label: "Gold — Items",       gB: goldBreakdown,   sB: silverBreakdown, field: "count"   as const, fmt: (n: number) => String(n), metal: "gold" },
+                    { label: "Silver — Gross Wt", gB: silverBreakdown, sB: silverBreakdown, field: "grossWt" as const, fmt: grams,  metal: "silver" },
+                    { label: "Silver — Net Wt",   gB: silverBreakdown, sB: silverBreakdown, field: "netWt"   as const, fmt: grams,  metal: "silver" },
+                    { label: "Silver — Items",     gB: silverBreakdown, sB: silverBreakdown, field: "count"   as const, fmt: (n: number) => String(n), metal: "silver" },
+                  ] as const).map(({ label, gB, field, fmt, metal }) => {
+                    const bk = metal === "gold" ? goldBreakdown : silverBreakdown;
+                    const rs = bk.readyStock[field];
+                    const od = bk.orderDel[field];
+                    const sp = bk.suspense[field];
+                    const total = (rs as number) + (od as number) + (sp as number);
+                    if (total === 0) return null;
+                    const isGold = metal === "gold";
+                    return (
+                      <tr key={label} className="border-b border-line/50 last:border-0 hover:bg-canvas/30">
+                        <td className={clsx("px-4 py-2.5 font-medium text-xs", isGold ? "text-gold" : "text-ink-mid")}>{label}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-xs">
+                          {(rs as number) > 0 ? fmt(rs as number) : <span className="text-ink-dim">—</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono text-xs text-info">
+                          {(od as number) > 0 ? fmt(od as number) : <span className="text-ink-dim">—</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono text-xs text-warn">
+                          {(sp as number) > 0 ? fmt(sp as number) : <span className="text-ink-dim">—</span>}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono text-xs font-semibold">
+                          {fmt(total as number)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-line bg-canvas/50 text-xs font-semibold">
+                    <td className="px-4 py-2.5">Revenue (excl GST)</td>
+                    <td className="px-3 py-2.5 text-right font-mono">{inr(goldBreakdown.readyStock.revenue + silverBreakdown.readyStock.revenue)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-info">{inr(goldBreakdown.orderDel.revenue + silverBreakdown.orderDel.revenue)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-warn">{inr(goldBreakdown.suspense.revenue + silverBreakdown.suspense.revenue)}</td>
+                    <td className="px-4 py-2.5 text-right font-mono">{inr(gold.revenueExGst + silver.revenueExGst)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+              <div className="px-4 py-2 border-t border-line bg-canvas/30 flex gap-6 text-[11px] text-ink-dim">
+                <span><span className="font-medium text-ink">Ready Stock</span> — sold from shelf inventory</span>
+                <span><span className="font-medium text-info">Order Delivery</span> — converted from customer orders</span>
+                <span><span className="font-medium text-warn">Suspense</span> — items received from supplier on suspense</span>
+              </div>
+            </div>
           )}
 
           {/* Silver MPR */}
