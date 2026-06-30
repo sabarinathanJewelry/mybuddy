@@ -605,7 +605,7 @@ function SalesTab() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card title="Daily Sales — This Month">
           {(daily ?? []).length >= 2
-            ? <LineChart data={daily} color={C.green} h={160} />
+            ? <LineChart data={daily!} color={C.green} h={160} />
             : <p className="text-ink-dim text-sm text-center py-8">Not enough data yet</p>}
         </Card>
         <Card title="Top Customers This Month">
