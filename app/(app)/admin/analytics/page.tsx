@@ -439,6 +439,80 @@ function useMonthExpenses() {
   });
 }
 
+// Full purchase-vs-sales profit analysis for current month
+function useProfitAnalysis() {
+  return useQuery({
+    queryKey: ["adash-profit", monthKey()],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const ms = monthStart();
+      const me = monthStart(1);
+      const [purchRes, payRes, itemsRes, expRes] = await Promise.all([
+        supabase().from("supplier_purchases")
+          .select("metal, gross_wt, purity_pct")
+          .gte("purchase_date", ms).lt("purchase_date", me),
+        supabase().from("supplier_payments")
+          .select("mode, amount, metal_wt")
+          .gte("pay_date", ms).lt("pay_date", me),
+        supabase().from("sale_items")
+          .select("metal, gross_wt, net_wt, line_total, gst_pct, sales!inner(bill_date, status)")
+          .gte("sales.bill_date", ms).lt("sales.bill_date", me).eq("sales.status", "confirmed"),
+        supabase().from("expenses").select("amount")
+          .gte("exp_date", ms).lt("exp_date", me),
+      ]);
+
+      const purchases = (purchRes.data ?? []) as any[];
+      const payments  = (payRes.data  ?? []) as any[];
+      const items     = (itemsRes.data ?? []) as any[];
+      const expenses  = (expRes.data  ?? []) as any[];
+
+      // Metal purchased from suppliers
+      const gPurch = purchases.filter(p => (p.metal as string)?.startsWith("gold"));
+      const sPurch = purchases.filter(p => (p.metal as string)?.startsWith("silver"));
+      const goldBoughtGross   = gPurch.reduce((s, p) => s + (p.gross_wt ?? 0), 0);
+      const goldBoughtPure    = gPurch.reduce((s, p) => s + (p.gross_wt ?? 0) * ((p.purity_pct ?? 91.6) / 100), 0);
+      const silverBoughtGross = sPurch.reduce((s, p) => s + (p.gross_wt ?? 0), 0);
+      const silverBoughtPure  = sPurch.reduce((s, p) => s + (p.gross_wt ?? 0) * ((p.purity_pct ?? 92.5) / 100), 0);
+
+      // Supplier payments this month
+      const bankPay = payments.filter(p => p.mode === "bank" || p.mode === "upi");
+      const cutPay  = payments.filter(p => p.mode === "cut_rate");
+      const bankAmt  = bankPay.reduce((s, p) => s + (p.amount ?? 0), 0);
+      const cutAmt   = cutPay.reduce((s, p) => s + (p.amount ?? 0), 0);
+      const cutWt    = cutPay.reduce((s, p) => s + (p.metal_wt ?? 0), 0);
+      const totalCost = bankAmt + cutAmt;
+
+      // Sales this month
+      const gSold = items.filter(i => (i.metal as string)?.startsWith("gold"));
+      const sSold = items.filter(i => (i.metal as string)?.startsWith("silver"));
+      const goldSoldGross   = gSold.reduce((s, i) => s + (i.gross_wt ?? 0), 0);
+      const goldSoldNet     = gSold.reduce((s, i) => s + (i.net_wt   ?? 0), 0);
+      const silverSoldGross = sSold.reduce((s, i) => s + (i.gross_wt ?? 0), 0);
+      const silverSoldNet   = sSold.reduce((s, i) => s + (i.net_wt   ?? 0), 0);
+
+      // Revenue
+      const totalRevenue   = items.reduce((s, i) => s + (i.line_total ?? 0), 0);
+      const totalGST       = items.reduce((s, i) => i.gst_pct > 0 ? s + i.line_total * 3 / 103 : s, 0);
+      const revenueExclGST = totalRevenue - totalGST;
+
+      // Profit
+      const totalExpenses = expenses.reduce((s, e: any) => s + (e.amount ?? 0), 0);
+      const grossProfit   = revenueExclGST - totalCost;
+      const netProfit     = grossProfit - totalExpenses;
+      const gpPct = revenueExclGST > 0 ? (grossProfit / revenueExclGST) * 100 : 0;
+      const npPct = revenueExclGST > 0 ? (netProfit  / revenueExclGST) * 100 : 0;
+
+      return {
+        goldBoughtGross, goldBoughtPure, silverBoughtGross, silverBoughtPure,
+        goldSoldGross, goldSoldNet, silverSoldGross, silverSoldNet,
+        bankAmt, cutAmt, cutWt, totalCost,
+        revenueExclGST, totalGST, totalRevenue,
+        grossProfit, netProfit, totalExpenses, gpPct, npPct,
+      };
+    },
+  });
+}
+
 // 8-month supplier payment trend: bank transfers + cut-rate (old gold dispatched)
 function useSupplierPaymentsTrend() {
   return useQuery({
@@ -844,6 +918,7 @@ function DeepTab() {
   const { data: topSale } = useTodayTopSales();
   const { data: supPay }  = useSupplierPaymentsTrend();
   const { data: rates }   = useAvgMetalRates();
+  const { data: pa }      = useProfitAnalysis();
 
   return (
     <div className="space-y-5">
@@ -1008,6 +1083,74 @@ function DeepTab() {
           </table>
         </div>
         <p className="text-[11px] text-ink-dim">Weighted average: Σ(rate × gross wt) ÷ Σ(gross wt) per month from confirmed sales.</p>
+      </Card>
+
+      {/* Purchase vs Sales — GP / NP */}
+      <Card title="Purchase vs Sales — Profit Analysis (This Month)">
+        {/* Metal weight comparison */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-ink-dim border-b border-line">
+                <th className="pb-2 font-medium">Metal</th>
+                <th className="pb-2 font-medium text-right">Bought Gross</th>
+                <th className="pb-2 font-medium text-right">Bought Pure</th>
+                <th className="pb-2 font-medium text-right">Sold Gross</th>
+                <th className="pb-2 font-medium text-right">Sold Net</th>
+                <th className="pb-2 font-medium text-right">Diff (Gross)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              <tr className="hover:bg-slate-50">
+                <td className="py-2.5 font-medium" style={{ color: C.gold }}>Gold</td>
+                <td className="py-2.5 text-right text-ink">{grams(pa?.goldBoughtGross ?? 0)}</td>
+                <td className="py-2.5 text-right text-ink-dim">{grams(pa?.goldBoughtPure ?? 0)}</td>
+                <td className="py-2.5 text-right text-ink">{grams(pa?.goldSoldGross ?? 0)}</td>
+                <td className="py-2.5 text-right text-ink-dim">{grams(pa?.goldSoldNet ?? 0)}</td>
+                <td className="py-2.5 text-right font-medium">
+                  {(() => { const d = (pa?.goldBoughtGross ?? 0) - (pa?.goldSoldGross ?? 0); return <span style={{ color: d >= 0 ? C.green : C.red }}>{d >= 0 ? "+" : ""}{grams(d)}</span>; })()}
+                </td>
+              </tr>
+              <tr className="hover:bg-slate-50">
+                <td className="py-2.5 font-medium text-ink-dim">Silver</td>
+                <td className="py-2.5 text-right text-ink">{grams(pa?.silverBoughtGross ?? 0)}</td>
+                <td className="py-2.5 text-right text-ink-dim">{grams(pa?.silverBoughtPure ?? 0)}</td>
+                <td className="py-2.5 text-right text-ink">{grams(pa?.silverSoldGross ?? 0)}</td>
+                <td className="py-2.5 text-right text-ink-dim">{grams(pa?.silverSoldNet ?? 0)}</td>
+                <td className="py-2.5 text-right font-medium">
+                  {(() => { const d = (pa?.silverBoughtGross ?? 0) - (pa?.silverSoldGross ?? 0); return <span style={{ color: d >= 0 ? C.green : C.red }}>{d >= 0 ? "+" : ""}{grams(d)}</span>; })()}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* P&L waterfall */}
+        <div className="border-t border-line pt-4 space-y-0">
+          {[
+            { label: "Revenue (excl GST)",             value: pa?.revenueExclGST ?? 0,    sign: 1,  bold: false, color: C.blue   },
+            { label: "GST Collected",                  value: pa?.totalGST ?? 0,           sign: 1,  bold: false, color: C.gray   },
+            { label: "Bank / UPI to Suppliers",        value: pa?.bankAmt ?? 0,             sign: -1, bold: false, color: C.red    },
+            { label: `Old Gold Cut Rate (${grams(pa?.cutWt ?? 0)})`, value: pa?.cutAmt ?? 0, sign: -1, bold: false, color: C.orange },
+            { label: "Gross Profit",                   value: pa?.grossProfit ?? 0,         sign: 1,  bold: true,  color: (pa?.grossProfit ?? 0) >= 0 ? C.green : C.red },
+            { label: "Month Expenses",                 value: pa?.totalExpenses ?? 0,       sign: -1, bold: false, color: C.red    },
+            { label: "Net Profit",                     value: pa?.netProfit ?? 0,           sign: 1,  bold: true,  color: (pa?.netProfit ?? 0) >= 0 ? C.green : C.red },
+          ].map((row, i) => (
+            <div key={i} className={`flex justify-between items-center py-2 ${row.bold ? "border-t border-line mt-1" : ""}`}>
+              <span className={`text-sm ${row.bold ? "font-semibold text-ink" : "text-ink-dim"}`}>{row.label}</span>
+              <div className="text-right">
+                <span className={`text-sm font-${row.bold ? "bold" : "medium"}`} style={{ color: row.color }}>
+                  {row.sign === -1 ? "− " : ""}{inr(Math.abs(row.value))}
+                </span>
+                {row.bold && pa && (
+                  <span className="ml-2 text-xs text-ink-dim">
+                    {row.label.startsWith("Gross") ? `${pa.gpPct.toFixed(1)}% GP` : `${pa.npPct.toFixed(1)}% NP`}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       </Card>
     </div>
   );

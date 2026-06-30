@@ -232,7 +232,7 @@
 - **Overview**: Today's bills + revenue, month revenue vs last month (donut), 8-month revenue trend (smooth bezier line chart), recent transactions table, payment method mix (donut)
 - **Sales Analysis**: Month selector, per-metal revenue/weight/count cards, daily sales line chart, top customers bar chart
 - **Inventory**: Gold and Silver source mix donuts separately (Ready Stock / Order Delivery / From Suspense per metal), KPI cards per source, top products table by revenue
-- **Deep Analytics**: Month revenue / GST collected / expenses KPI cards, today's top 5 sales, expense breakdown by category, metal performance summary grid, 8-month supplier payments table (bank/UPI vs old-gold cut-rate with weight), 8-month weighted-average sale rate table (Gold 22K / 18K / Silver ₹/g)
+- **Deep Analytics**: Month revenue / GST collected / expenses KPI cards, today's top 5 sales, expense breakdown by category, metal performance summary grid, 8-month supplier payments table (bank/UPI vs old-gold cut-rate with weight), 8-month weighted-average sale rate table (Gold 22K / 18K / Silver ₹/g), Purchase vs Sales Profit Analysis: metal weight bought vs sold (gold + silver gross/pure/net), waterfall P&L showing revenue excl GST → bank payments → cut-rate old gold → Gross Profit (GP%) → expenses → Net Profit (NP%)
 
 ---
 
