@@ -390,17 +390,27 @@ function useSourceBreakdown() {
         .select("metal, gross_wt, net_wt, line_total, is_suspense, sales!inner(id, order_id, bill_date, status)")
         .gte("sales.bill_date", ms).lt("sales.bill_date", me).eq("sales.status", "confirmed");
       const items = (data ?? []) as any[];
-      const sum = (arr: any[]) => arr.reduce((acc, i) => ({
-        count: acc.count + 1,
+      const zero = () => ({ count: 0, grossWt: 0, netWt: 0, revenue: 0 });
+      const add = (acc: ReturnType<typeof zero>, i: any) => ({
+        count:   acc.count + 1,
         grossWt: acc.grossWt + (i.gross_wt ?? 0),
-        netWt: acc.netWt + (i.net_wt ?? 0),
-        revenue: acc.revenue + (i.line_total ?? 0),
-      }), { count: 0, grossWt: 0, netWt: 0, revenue: 0 });
-      return {
-        ready:    sum(items.filter((i) => !i.is_suspense && !i.sales?.order_id)),
-        order:    sum(items.filter((i) => !i.is_suspense &&  i.sales?.order_id)),
-        suspense: sum(items.filter((i) =>  i.is_suspense)),
+        netWt:   acc.netWt   + (i.net_wt   ?? 0),
+        revenue: acc.revenue  + (i.line_total ?? 0),
+      });
+      const result = {
+        gold:   { ready: zero(), order: zero(), suspense: zero() },
+        silver: { ready: zero(), order: zero(), suspense: zero() },
+        all:    { ready: zero(), order: zero(), suspense: zero() },
       };
+      for (const i of items) {
+        const isGold   = (i.metal as string)?.startsWith("gold");
+        const isSilver = (i.metal as string)?.startsWith("silver");
+        const bucket   = i.is_suspense ? "suspense" : i.sales?.order_id ? "order" : "ready";
+        result.all[bucket] = add(result.all[bucket], i);
+        if (isGold)   result.gold[bucket]   = add(result.gold[bucket], i);
+        if (isSilver) result.silver[bucket] = add(result.silver[bucket], i);
+      }
+      return result;
     },
   });
 }
@@ -706,43 +716,81 @@ function InventoryTab() {
   const { data: src }  = useSourceBreakdown();
   const { data: prod } = useTopProducts();
 
-  const srcTotal = (src?.ready.revenue ?? 0) + (src?.order.revenue ?? 0) + (src?.suspense.revenue ?? 0);
+  const srcTotal = (src?.all.ready.revenue ?? 0) + (src?.all.order.revenue ?? 0) + (src?.all.suspense.revenue ?? 0);
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <KpiCard label="Ready Stock Sales" value={inr(src?.ready.revenue ?? 0)}
-          sub={`${src?.ready.count ?? 0} items · ${grams(src?.ready.netWt ?? 0)}`} icon="🏪" ibg="#F0FDF4" />
-        <KpiCard label="Order Deliveries"  value={inr(src?.order.revenue ?? 0)}
-          sub={`${src?.order.count ?? 0} items · ${grams(src?.order.netWt ?? 0)}`} icon="📦" ibg="#EFF6FF" />
-        <KpiCard label="From Suspense"     value={inr(src?.suspense.revenue ?? 0)}
-          sub={`${src?.suspense.count ?? 0} items · ${grams(src?.suspense.netWt ?? 0)}`} icon="🔄" ibg="#FFF7ED" />
+        <KpiCard label="Ready Stock Sales" value={inr(src?.all.ready.revenue ?? 0)}
+          sub={`${src?.all.ready.count ?? 0} items · ${grams(src?.all.ready.netWt ?? 0)}`} icon="🏪" ibg="#F0FDF4" />
+        <KpiCard label="Order Deliveries"  value={inr(src?.all.order.revenue ?? 0)}
+          sub={`${src?.all.order.count ?? 0} items · ${grams(src?.all.order.netWt ?? 0)}`} icon="📦" ibg="#EFF6FF" />
+        <KpiCard label="From Suspense"     value={inr(src?.all.suspense.revenue ?? 0)}
+          sub={`${src?.all.suspense.count ?? 0} items · ${grams(src?.all.suspense.netWt ?? 0)}`} icon="🔄" ibg="#FFF7ED" />
         <KpiCard label="Total Month Sales" value={inr(srcTotal)} sub="all sources" icon="💹" ibg="#F5F3FF" />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card title="Source Mix">
+        {/* Gold source mix */}
+        <Card title="Gold — Source Mix">
           <div className="flex flex-col items-center gap-4">
             <Donut
               segs={[
-                { value: src?.ready.revenue    ?? 0, color: C.green  },
-                { value: src?.order.revenue    ?? 0, color: C.blue   },
-                { value: src?.suspense.revenue ?? 0, color: C.orange },
+                { value: src?.gold.ready.netWt    ?? 0, color: C.green  },
+                { value: src?.gold.order.netWt    ?? 0, color: C.blue   },
+                { value: src?.gold.suspense.netWt ?? 0, color: C.orange },
               ]}
-              label={inr(srcTotal)} sub="this month" size={148} sw={20}
+              label={grams((src?.gold.ready.netWt ?? 0) + (src?.gold.order.netWt ?? 0) + (src?.gold.suspense.netWt ?? 0))}
+              sub="net wt sold" size={132} sw={18}
             />
             <div className="w-full space-y-2 text-sm">
-              {[
-                { label: "Ready Stock",    color: C.green,  v: src?.ready },
-                { label: "Order Delivery", color: C.blue,   v: src?.order },
-                { label: "From Suspense",  color: C.orange, v: src?.suspense },
-              ].map((row) => (
-                <div key={row.label} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: row.color }} />
-                    <span className="text-ink-dim">{row.label}</span>
+              {([
+                { label: "Ready Stock",    color: C.green,  v: src?.gold.ready },
+                { label: "Order Delivery", color: C.blue,   v: src?.gold.order },
+                { label: "From Suspense",  color: C.orange, v: src?.gold.suspense },
+              ] as const).map((row) => (
+                <div key={row.label} className="space-y-0.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: row.color }} />
+                      <span className="text-ink-dim text-xs">{row.label}</span>
+                    </div>
+                    <span className="font-medium text-ink text-xs">{grams(row.v?.netWt ?? 0)}</span>
                   </div>
-                  <span className="font-medium text-ink">{grams(row.v?.netWt ?? 0)}</span>
+                  <div className="text-[11px] text-ink-dim text-right">{inr(row.v?.revenue ?? 0)} · {row.v?.count ?? 0} items</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+
+        {/* Silver source mix */}
+        <Card title="Silver — Source Mix">
+          <div className="flex flex-col items-center gap-4">
+            <Donut
+              segs={[
+                { value: src?.silver.ready.netWt    ?? 0, color: C.green  },
+                { value: src?.silver.order.netWt    ?? 0, color: C.blue   },
+                { value: src?.silver.suspense.netWt ?? 0, color: C.orange },
+              ]}
+              label={grams((src?.silver.ready.netWt ?? 0) + (src?.silver.order.netWt ?? 0) + (src?.silver.suspense.netWt ?? 0))}
+              sub="net wt sold" size={132} sw={18}
+            />
+            <div className="w-full space-y-2 text-sm">
+              {([
+                { label: "Ready Stock",    color: C.green,  v: src?.silver.ready },
+                { label: "Order Delivery", color: C.blue,   v: src?.silver.order },
+                { label: "From Suspense",  color: C.orange, v: src?.silver.suspense },
+              ] as const).map((row) => (
+                <div key={row.label} className="space-y-0.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: row.color }} />
+                      <span className="text-ink-dim text-xs">{row.label}</span>
+                    </div>
+                    <span className="font-medium text-ink text-xs">{grams(row.v?.netWt ?? 0)}</span>
+                  </div>
+                  <div className="text-[11px] text-ink-dim text-right">{inr(row.v?.revenue ?? 0)} · {row.v?.count ?? 0} items</div>
                 </div>
               ))}
             </div>
