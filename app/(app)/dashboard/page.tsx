@@ -23,6 +23,7 @@ const SECTIONS: Section[] = [
   {
     title: "Finance & Reports",
     cards: [
+      { icon: "📊", label: "Analytics",    href: "/admin/analytics" },
       { icon: "📋", label: "Daily Sheet",  href: "/daily-sheet" },
       { icon: "📒", label: "Ledger",       href: "/ledger" },
       { icon: "📈", label: "Reports",      href: "/reports" },
