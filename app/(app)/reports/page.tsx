@@ -30,7 +30,7 @@ function usePnlItems(from: string, to: string) {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("sale_items")
-        .select("metal, gross_wt, net_wt, pure_wt, rate, va_pct, making_amt, stone_amt, diamond_amt, gst_pct, line_total, is_suspense, sales!inner(id, bill_date, status, bill_no)")
+        .select("metal, gross_wt, net_wt, pure_wt, rate, va_pct, making_amt, stone_amt, diamond_amt, gst_pct, line_total, is_suspense, sales!inner(id, order_id, bill_date, status, bill_no)")
         .gte("sales.bill_date", from)
         .lte("sales.bill_date", to)
         .eq("sales.status", "confirmed");
@@ -40,20 +40,6 @@ function usePnlItems(from: string, to: string) {
   });
 }
 
-// All sale_ids that came from an order delivery — checked against actual sale bill_date via usePnlItems
-function useOrderSaleIds() {
-  return useQuery({
-    queryKey: ["order-sale-ids"],
-    staleTime: 5 * 60 * 1000,
-    queryFn: async () => {
-      const { data } = await supabase()
-        .from("orders")
-        .select("sale_id")
-        .not("sale_id", "is", null);
-      return new Set<string>((data ?? []).map((o: any) => o.sale_id).filter(Boolean));
-    },
-  });
-}
 
 function usePnlPurchases(from: string, to: string) {
   return useQuery({
@@ -624,7 +610,6 @@ export default function ReportsPage() {
   const { data: metalDispatches = [] }                              = useMetalDispatches(range.from, range.to);
   const { data: bullionSells = [] }                                 = useBullionSells(range.from, range.to);
   const { data: ordersReport = [] }                                 = useOrdersReport(range.from, range.to);
-  const { data: orderSaleIds = new Set<string>() }                  = useOrderSaleIds();
 
   const isLoading = loadingItems || loadingPurchases || loadingExpenses;
 
@@ -656,9 +641,9 @@ export default function ReportsPage() {
       netWt:   arr.reduce((s, i) => s + Number(i.net_wt   || 0), 0),
       revenue: arr.reduce((s, i) => s + Number(i.line_total || 0), 0),
     });
-    const suspense     = filtered.filter(i => i.is_suspense);
-    const orderDel     = filtered.filter(i => !i.is_suspense && orderSaleIds.has(i.sales?.id));
-    const readyStock   = filtered.filter(i => !i.is_suspense && !orderSaleIds.has(i.sales?.id));
+    const suspense   = filtered.filter(i => i.is_suspense);
+    const orderDel   = filtered.filter(i => !i.is_suspense && !!i.sales?.order_id);
+    const readyStock = filtered.filter(i => !i.is_suspense && !i.sales?.order_id);
     return { readyStock: sum(readyStock), orderDel: sum(orderDel), suspense: sum(suspense) };
   }
   const goldBreakdown   = sourceBucket(GOLD_METALS);
