@@ -273,6 +273,7 @@
 ### Board Rate
 - Daily gold/silver rate entry
 - Used in all sale calculations
+- Market Rate Comparison: "Fetch Rates" button pulls live Madurai gold rates (22K/24K) and silver ₹/g from goodreturns.in via a server-side API route (`/api/market-rates`); compares last 10 days against your stored rates; highlights Match / diff / Missing; "Use" / "Update" loads market rate into edit form (18K auto-set to 75% of 24K) — review and save to apply
 
 ### Walk-ins
 - Walk-in customer log
