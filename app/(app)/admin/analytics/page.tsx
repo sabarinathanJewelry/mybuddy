@@ -422,12 +422,12 @@ function useMonthExpenses() {
     queryFn: async () => {
       const ms = monthStart();
       const me = monthStart(1);
-      const { data } = await supabase().from("expenses").select("category, amount")
+      const { data } = await supabase().from("expenses").select("amount, categories(name)")
         .gte("exp_date", ms).lt("exp_date", me);
       const total = (data ?? []).reduce((s, e: any) => s + (e.amount ?? 0), 0);
       const bycat = new Map<string, number>();
       for (const e of (data ?? []) as any[]) {
-        const cat = e.category ?? "Other";
+        const cat = (e.categories as any)?.name ?? "Uncategorised";
         bycat.set(cat, (bycat.get(cat) ?? 0) + (e.amount ?? 0));
       }
       return {
