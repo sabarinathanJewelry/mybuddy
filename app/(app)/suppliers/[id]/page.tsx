@@ -93,7 +93,9 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
     const base_pure      = parseFloat((net_wt * ep.purity_pct / 100).toFixed(4));
     const pure_wt        = roundPure(base_pure + stone_gold_g + charges_rs_g + ep.charges_g);
     const amount         = ep.is_metal_balance ? parseFloat((cash_extras + (ep.mc_rs || 0)).toFixed(2)) : ep.amount;
-    await updatePurchase.mutateAsync({ id: editingPurchaseId, supplierId: id, data: { ...ep, pure_wt, amount } });
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { mc_rs: _mc, ...epData } = ep;
+    await updatePurchase.mutateAsync({ id: editingPurchaseId, supplierId: id, data: { ...epData, pure_wt, amount } });
     setEditingPurchaseId(null);
   }
   const savePayment = useSaveSupplierPayment();
