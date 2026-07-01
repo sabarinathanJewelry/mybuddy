@@ -2433,6 +2433,29 @@ export default function AttendancePage() {
           </div>
         </div>
 
+        {/* ERP quick links */}
+        <div>
+          <p className="text-[11px] font-bold tracking-widest text-ink-dim uppercase mb-2">Finance & Inventory</p>
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+            {([
+              { icon: "🧾", label: "Sales",       href: "/sales" },
+              { icon: "📋", label: "Daily Sheet", href: "/daily-sheet" },
+              { icon: "📊", label: "Board Rate",  href: "/board-rate" },
+              { icon: "🏅", label: "Gold Stock",  href: "/gold-stock" },
+              { icon: "🪬", label: "Kolusu",      href: "/kolusu" },
+              { icon: "📈", label: "Analytics",   href: "/admin/analytics" },
+              { icon: "📦", label: "Orders",      href: "/orders" },
+              { icon: "🏠", label: "All ERP",     href: "/dashboard" },
+            ] as { icon: string; label: string; href: string }[]).map(c => (
+              <a key={c.href} href={c.href}
+                className="bg-canvas border border-line rounded-lg2 shadow-soft p-4 flex flex-col items-center gap-2 hover:border-gold/50 active:scale-95 transition-all">
+                <span className="text-3xl">{c.icon}</span>
+                <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">{c.label}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+
         {/* Google Review overlay */}
         {showReview && (
           <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white cursor-pointer"

@@ -117,7 +117,7 @@
 ## Attendance & HR
 
 ### Attendance (Admin)
-- Smart home card grid (12 cards) for admin on `/attendance`
+- Smart home card grid (12 cards) for admin on `/attendance`; second section "Finance & Inventory" with 8 ERP quick-link cards (Sales, Daily Sheet, Board Rate, Gold Stock, Kolusu, Analytics, Orders, All ERP)
 - Daily attendance view: all staff with punch times, late flag, hours worked
 - Monthly attendance summary: present days, late days, OT, leaves, deductions
 - Kiosk mode with bio-user sequence lock
