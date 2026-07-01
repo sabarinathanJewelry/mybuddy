@@ -119,6 +119,39 @@ function useRecordSale() {
   });
 }
 
+function useRecordReturn() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (d: { box_id: string; tx_date: string; qty: number; raw_wt_g: number; cover_wt_g: number; bill_no?: string; notes?: string }) => {
+      const client = supabase();
+      const total_wt_g = parseFloat((d.raw_wt_g + d.cover_wt_g).toFixed(3));
+      const { error: txErr } = await client.from("kolusu_transactions").insert({
+        tx_date: d.tx_date,
+        box_id: d.box_id,
+        qty_change: d.qty,
+        raw_wt_g: d.raw_wt_g,
+        cover_wt_g: d.cover_wt_g,
+        total_wt_g,
+        bill_no: d.bill_no || null,
+        notes: d.notes ? `RETURN: ${d.notes}` : "RETURN",
+      });
+      if (txErr) throw txErr;
+      const { data: box, error: fetchErr } = await client.from("kolusu_boxes").select("current_gross_wt_g, current_qty").eq("id", d.box_id).single();
+      if (fetchErr) throw fetchErr;
+      const { error: updErr } = await client.from("kolusu_boxes").update({
+        current_gross_wt_g: parseFloat((box.current_gross_wt_g + total_wt_g).toFixed(3)),
+        current_qty: box.current_qty + d.qty,
+        updated_at: new Date().toISOString(),
+      }).eq("id", d.box_id);
+      if (updErr) throw updErr;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["kolusu_boxes"] });
+      qc.invalidateQueries({ queryKey: ["kolusu_transactions"] });
+    },
+  });
+}
+
 function useRestock() {
   const qc = useQueryClient();
   return useMutation({
@@ -207,6 +240,7 @@ export default function KolusuPage() {
   const { data: transactions } = useKolusuTransactions();
   const addBox = useAddBox();
   const recordSale = useRecordSale();
+  const recordReturn = useRecordReturn();
   const restock = useRestock();
   const updateRestockDate = useUpdateRestockDate();
   const { data: pendingSales = [], isLoading: pendingLoading } = usePendingSales();
@@ -441,6 +475,11 @@ export default function KolusuPage() {
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["kolusu_pending_sales"] }),
   });
+
+  // Return form state
+  const [returnBoxId, setReturnBoxId] = useState<string | null>(null);
+  const [returnForm, setReturnForm] = useState({ tx_date: globalDate, qty: 1, raw_wt_g: 0, cover_per_piece: 1.3, bill_no: "", notes: "" });
+  const returnCoverTotal = parseFloat((returnForm.qty * returnForm.cover_per_piece).toFixed(3));
 
   // Sale form state (per box inline)
   const [saleBoxId, setSaleBoxId] = useState<string | null>(null);
@@ -698,6 +737,7 @@ export default function KolusuPage() {
                           </button>
                           <button onClick={() => {
                             setSaleBoxId(null);
+                            setReturnBoxId(null);
                             setRestockBoxId(restockBoxId === box.id ? null : box.id);
                             setRestockForm({ tx_date: globalDate, qty: 0, gross_wt_g: 0, bill_no: "", notes: "" });
                           }}
@@ -707,6 +747,17 @@ export default function KolusuPage() {
                           <button onClick={() => {
                             setSaleBoxId(null);
                             setRestockBoxId(null);
+                            setEditBoxId(null);
+                            setReturnBoxId(returnBoxId === box.id ? null : box.id);
+                            setReturnForm({ tx_date: globalDate, qty: 1, raw_wt_g: 0, cover_per_piece: 1.3, bill_no: "", notes: "" });
+                          }}
+                            className="text-xs bg-info/80 text-white px-2 py-1 rounded-lg2 hover:opacity-80">
+                            Return
+                          </button>
+                          <button onClick={() => {
+                            setSaleBoxId(null);
+                            setRestockBoxId(null);
+                            setReturnBoxId(null);
                             setEditBoxId(editBoxId === box.id ? null : box.id);
                             setEditForm({ gross_wt_g: box.current_gross_wt_g, qty: box.current_qty, reason: "" });
                           }}
@@ -765,6 +816,87 @@ export default function KolusuPage() {
                                 className="border border-line text-xs px-4 py-1.5 rounded-lg2">Cancel</button>
                             </div>
                           </form>
+                        </td>
+                      </tr>
+                    )}
+                    {returnBoxId === box.id && (
+                      <tr className="border-b border-line bg-info/5">
+                        <td colSpan={7} className="px-4 py-4">
+                          <div className="space-y-3">
+                            <p className="text-xs font-semibold text-info uppercase tracking-wide">Return to {box.box_no} — {[box.color, box.size].filter(Boolean).join(" / ")}</p>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                              <div>
+                                <label className="text-xs text-ink-dim block mb-1">Date</label>
+                                <input type="date" value={returnForm.tx_date}
+                                  onChange={e => setReturnForm(f => ({ ...f, tx_date: e.target.value }))}
+                                  className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold w-full" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-ink-dim block mb-1">Qty Returned *</label>
+                                <input type="number" step="1" min="1" value={returnForm.qty || ""}
+                                  onChange={e => setReturnForm(f => ({ ...f, qty: parseInt(e.target.value) || 1 }))}
+                                  className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold w-full"
+                                  autoFocus />
+                              </div>
+                              <div>
+                                <label className="text-xs text-ink-dim block mb-1">Kolusu Weight (g) *</label>
+                                <input type="number" step="0.001" min="0" value={returnForm.raw_wt_g || ""}
+                                  onChange={e => setReturnForm(f => ({ ...f, raw_wt_g: parseFloat(e.target.value) || 0 }))}
+                                  className="border border-line rounded-lg2 px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-gold w-full" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-ink-dim block mb-1">Cover / piece (g)</label>
+                                <input type="number" step="0.1" min="0" value={returnForm.cover_per_piece || ""}
+                                  onChange={e => setReturnForm(f => ({ ...f, cover_per_piece: parseFloat(e.target.value) || 0 }))}
+                                  className="border border-line rounded-lg2 px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-gold w-full" />
+                              </div>
+                              <div>
+                                <label className="text-xs text-ink-dim block mb-1">Bill No</label>
+                                <input type="text" value={returnForm.bill_no}
+                                  onChange={e => setReturnForm(f => ({ ...f, bill_no: e.target.value }))}
+                                  placeholder="Optional"
+                                  className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold w-full" />
+                              </div>
+                              <div className="sm:col-span-2">
+                                <label className="text-xs text-ink-dim block mb-1">Notes</label>
+                                <input type="text" value={returnForm.notes}
+                                  onChange={e => setReturnForm(f => ({ ...f, notes: e.target.value }))}
+                                  placeholder="Optional"
+                                  className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold w-full" />
+                              </div>
+                            </div>
+                            {returnForm.raw_wt_g > 0 && (
+                              <div className="text-xs text-ink-dim bg-white rounded-lg px-3 py-2 border border-line">
+                                Cover total: <strong>{grams(returnCoverTotal)}</strong> ({returnForm.qty} × {returnForm.cover_per_piece}g)
+                                {" · "}Total returned: <strong className="text-info">{grams(parseFloat((returnForm.raw_wt_g + returnCoverTotal).toFixed(3)))}</strong>
+                                {" · "}New gross: <strong className="text-ok">{grams(parseFloat((box.current_gross_wt_g + returnForm.raw_wt_g + returnCoverTotal).toFixed(3)))}</strong>
+                                {" · "}New qty: <strong className="text-ok">{box.current_qty + returnForm.qty}</strong>
+                              </div>
+                            )}
+                            {recordReturn.isError && <p className="text-xs text-err">{(recordReturn.error as Error).message}</p>}
+                            <div className="flex gap-2">
+                              <button
+                                disabled={recordReturn.isPending || returnForm.raw_wt_g <= 0}
+                                onClick={async () => {
+                                  await recordReturn.mutateAsync({
+                                    box_id: box.id,
+                                    tx_date: returnForm.tx_date,
+                                    qty: returnForm.qty,
+                                    raw_wt_g: returnForm.raw_wt_g,
+                                    cover_wt_g: returnCoverTotal,
+                                    bill_no: returnForm.bill_no,
+                                    notes: returnForm.notes,
+                                  });
+                                  setReturnBoxId(null);
+                                  setReturnForm({ tx_date: globalDate, qty: 1, raw_wt_g: 0, cover_per_piece: 1.3, bill_no: "", notes: "" });
+                                }}
+                                className="bg-info text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                                {recordReturn.isPending ? "Saving…" : "Confirm Return"}
+                              </button>
+                              <button onClick={() => setReturnBoxId(null)}
+                                className="border border-line text-xs px-4 py-1.5 rounded-lg2 text-ink-dim">Cancel</button>
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     )}
@@ -1013,7 +1145,8 @@ export default function KolusuPage() {
             </thead>
             <tbody>
               {transactions?.map((tx) => {
-                const isRestock = tx.qty_change > 0;
+                const isReturn = tx.qty_change > 0 && (tx.notes === "RETURN" || tx.notes?.startsWith("RETURN:"));
+                const isRestock = tx.qty_change > 0 && !isReturn;
                 const isCorrection = tx.qty_change === 0 && tx.notes?.startsWith("CORRECTION:");
                 const isTransferring = transferTxId === tx.id;
                 // Parse correction note: "CORRECTION: gross Xg → Yg | qty A → B | reason"
@@ -1033,31 +1166,36 @@ export default function KolusuPage() {
                   <Fragment key={tx.id}>
                     <tr className={clsx("border-b border-line last:border-0 hover:bg-canvas/50",
                       isRestock && "bg-ok/5",
+                      isReturn && "bg-info/5",
                       isCorrection && "bg-warn/5",
                       isTransferring && "bg-warn/5")}>
                       <td className="px-4 py-2.5 text-ink-dim">{shortDate(tx.tx_date)}</td>
                       <td className="px-3 py-2.5 font-mono text-info">{tx.kolusu_boxes?.box_no ?? "—"}</td>
                       <td className={clsx("px-3 py-2.5 text-right font-semibold",
-                        isCorrection ? "text-warn" : isRestock ? "text-ok" : "text-err")}>
-                        {isCorrection ? "edit" : isRestock ? `+${tx.qty_change}` : tx.qty_change}
+                        isCorrection ? "text-warn" : isReturn ? "text-info" : isRestock ? "text-ok" : "text-err")}>
+                        {isCorrection ? "edit" : (isRestock || isReturn) ? `+${tx.qty_change}` : tx.qty_change}
                       </td>
                       <td className="px-3 py-2.5 text-right font-mono">{isCorrection ? "—" : grams(tx.raw_wt_g)}</td>
                       <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{isCorrection || isRestock ? "—" : grams(tx.cover_wt_g)}</td>
                       <td className={clsx("px-3 py-2.5 text-right font-mono font-semibold",
-                        isCorrection ? "text-warn" : isRestock ? "text-ok" : "text-err")}>
-                        {isCorrection ? "—" : isRestock ? `+${grams(tx.total_wt_g)}` : grams(tx.total_wt_g)}
+                        isCorrection ? "text-warn" : isReturn ? "text-info" : isRestock ? "text-ok" : "text-err")}>
+                        {isCorrection ? "—" : (isRestock || isReturn) ? `+${grams(tx.total_wt_g)}` : grams(tx.total_wt_g)}
                       </td>
                       <td className="px-3 py-2.5 text-xs">
                         {isCorrection ? correctionDisplay : (
                           <>
                             {tx.bill_no && <span className="mr-1 text-ink-dim">{tx.bill_no}</span>}
                             {isRestock && <span className="text-ok font-medium">Restock</span>}
-                            {tx.notes && !isRestock && <span className="text-ink-dim">{tx.notes}</span>}
+                            {isReturn && <span className="text-info font-medium">Return</span>}
+                            {tx.notes && !isRestock && !isReturn && <span className="text-ink-dim">{tx.notes}</span>}
+                            {isReturn && tx.notes && tx.notes !== "RETURN" && (
+                              <span className="text-ink-dim ml-1">{tx.notes.replace("RETURN:", "").trim()}</span>
+                            )}
                           </>
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-right">
-                        {!isRestock && !isCorrection && (
+                        {!isRestock && !isReturn && !isCorrection && (
                           <div className="flex items-center justify-end gap-1">
                             <button
                               onClick={() => {
