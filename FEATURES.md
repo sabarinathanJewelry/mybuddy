@@ -109,7 +109,8 @@
 - **Rename Category**: pencil icon (✎) next to category name in entry panel; renames across ALL dates and stock types globally; shows confirm dialog before applying
 - **Delete Category**: "Delete category" link appears in the entry panel only when the category has NO stock entries for today (both vault and outer); clicking deletes all DB entries for that category globally AND hides it from the grid via localStorage (so preset categories like "Gold Kolusu" also disappear); hidden when any stock exists (safety guard); a "Restore all" link appears when categories are hidden
 - **Custom Order Reserved (Vault)**: "Custom Order Reserved" section in vault entry form; supports multiple reservations per category — each with weight, optional qty, and customer/order reference; list shows all reservations with × to remove; total reserved and available-for-sale shown live; tile shows total reserved in orange; summary table has Reserved column; data stored as JSON in reserved_notes
-- Header shows grand total (vault + outer combined) in gold next to the page title; breakdown shows Vault and Outer on separate lines each with tagged weight (blue) and bulk weight (green) segments; Reserved shown in orange on the Vault line when reservations exist
+- Header shows grand total in gold; page title is in Tamil (தங்க சரக்கு); Vault/Outer tabs show Tamil (வால்ட் / வெளி சரக்கு); legend and summary table headers are bilingual Tamil/English; breakdown shows tagged and bulk segments per stock type
+- **Print All Stock**: "அச்சிடு / Print" button in header opens a full Tamil stock report — shop header, grand total summary, Vault table (category, tagged weight, qty, bulk, reserved) and Outer table, bilingual headers, signature lines; `window.print()` shows only the report
 - Migration 117: `gold_stock_entries` table; Migration 118: reserved columns; Migration 119: `untagged_weight_g` column
 
 ### Kolusu (Anklet Stock)

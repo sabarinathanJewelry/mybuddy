@@ -257,6 +257,7 @@ export default function GoldStockPage() {
 
   // Period report
   const [showPeriod, setShowPeriod] = useState(false);
+  const [showPrint, setShowPrint] = useState(false);
   const [periodFrom, setPeriodFrom] = useState("");
   const [periodTo, setPeriodTo] = useState(today);
 
@@ -478,7 +479,8 @@ export default function GoldStockPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-ink">
-            Gold Stock
+            தங்க சரக்கு
+            <span className="ml-1.5 text-sm font-normal text-ink-dim">Gold Stock</span>
             <span className="ml-2 text-base font-mono text-gold">{grams(grandTotal)}</span>
           </h1>
           <div className="text-xs text-ink-dim mt-0.5 space-y-0.5">
@@ -498,6 +500,10 @@ export default function GoldStockPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => setShowPrint(true)} disabled={entries.length === 0}
+            className="text-xs px-3 py-1.5 rounded-lg2 border font-medium border-line text-ink-dim hover:text-ink disabled:opacity-40 transition-colors">
+            அச்சிடு / Print
+          </button>
           <button onClick={() => setShowPeriod(v => !v)}
             className={clsx("text-xs px-3 py-1.5 rounded-lg2 border font-medium transition-colors",
               showPeriod ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:text-ink")}>
@@ -548,17 +554,17 @@ export default function GoldStockPage() {
       <div className="flex border border-line rounded-lg2 overflow-hidden text-sm font-medium">
         {(["vault", "outer"] as StockType[]).map(t => (
           <button key={t} onClick={() => { setStockType(t); setActiveCategory(null); setWeights([]); setWeightInput(""); clearModes(); }}
-            className={clsx("flex-1 py-2 capitalize transition-colors", stockType === t ? "bg-gold text-white" : "text-ink-dim hover:text-ink")}>
-            {t === "vault" ? "Vault Stock" : "Outer Stock"}
+            className={clsx("flex-1 py-2 transition-colors", stockType === t ? "bg-gold text-white" : "text-ink-dim hover:text-ink")}>
+            {t === "vault" ? <span>வால்ட் <span className="text-xs font-normal opacity-75">Vault</span></span> : <span>வெளி சரக்கு <span className="text-xs font-normal opacity-75">Outer</span></span>}
           </button>
         ))}
       </div>
 
       {/* ── Legend ── */}
       <div className="flex items-center gap-4 text-[11px] text-ink-dim flex-wrap">
-        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-info/60"></span> Tagged (with qty)</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-ok/60"></span> Untagged (weight only)</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-warn/50"></span> Has reserved (custom order)</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-info/60"></span> குறியிடப்பட்டது <span className="text-ink-dim/50">(Tagged)</span></span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-ok/60"></span> தொகுதி எடை <span className="text-ink-dim/50">(Bulk/Untagged)</span></span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-warn/50"></span> ஒதுக்கிடு <span className="text-ink-dim/50">(Reserved)</span></span>
       </div>
 
       {/* ── Category grid ── */}
@@ -1010,12 +1016,12 @@ export default function GoldStockPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-ink-dim border-b border-line">
-                <th className="text-left px-4 py-2">Category</th>
-                <th className="text-left px-4 py-2">Type</th>
-                <th className="text-right px-3 py-2">Weight</th>
-                <th className="text-right px-3 py-2">Qty</th>
-                {stockType === "vault" && <th className="text-right px-3 py-2 text-warn/70">Reserved</th>}
-                <th className="text-left px-4 py-2">Notes</th>
+                <th className="text-left px-4 py-2">வகை <span className="font-normal opacity-60">Category</span></th>
+                <th className="text-left px-4 py-2">வகை <span className="font-normal opacity-60">Type</span></th>
+                <th className="text-right px-3 py-2">எடை <span className="font-normal opacity-60">Weight</span></th>
+                <th className="text-right px-3 py-2">எண் <span className="font-normal opacity-60">Qty</span></th>
+                {stockType === "vault" && <th className="text-right px-3 py-2 text-warn/70">ஒதுக்கிடு <span className="font-normal opacity-60">Reserved</span></th>}
+                <th className="text-left px-4 py-2">குறிப்பு <span className="font-normal opacity-60">Notes</span></th>
               </tr>
             </thead>
             <tbody>
@@ -1058,8 +1064,167 @@ export default function GoldStockPage() {
 
       {entries.length === 0 && !activeCategory && (
         <div className="bg-white border border-line rounded-xl p-8 text-center text-ink-dim shadow-soft text-sm">
-          No stock entered for {shortDate(date)}. Click a category above to start.
+          {shortDate(date)} அன்று சரக்கு இல்லை. மேலே ஒரு வகையை கிளிக் செய்யுங்கள்.
         </div>
+      )}
+
+      {/* ── Tamil Print Overlay ── */}
+      {showPrint && (
+        <>
+          <style>{`
+            @media print {
+              body * { visibility: hidden; }
+              #gold-stock-print, #gold-stock-print * { visibility: visible; }
+              #gold-stock-print { position: fixed; top: 0; left: 0; width: 100%; padding: 20px; box-sizing: border-box; font-family: Arial, sans-serif; }
+            }
+          `}</style>
+
+          <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-4 overflow-y-auto">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl my-4">
+              {/* Actions */}
+              <div className="flex items-center justify-between px-5 py-3 border-b border-line sticky top-0 bg-white rounded-t-xl z-10">
+                <span className="text-sm font-semibold text-ink">தங்க சரக்கு அறிக்கை / Gold Stock Report</span>
+                <div className="flex gap-2">
+                  <button onClick={() => window.print()}
+                    className="bg-gold text-white text-xs px-4 py-1.5 rounded-lg2 font-medium">அச்சிடு / Print</button>
+                  <button onClick={() => setShowPrint(false)}
+                    className="border border-line text-xs px-3 py-1.5 rounded-lg2 text-ink-dim">மூடு</button>
+                </div>
+              </div>
+
+              {/* Receipt */}
+              <div id="gold-stock-print" className="p-6 text-[13px] leading-relaxed">
+
+                {/* Shop header */}
+                <div className="text-center border-b-2 border-gray-800 pb-3 mb-4">
+                  <p className="text-lg font-bold text-gray-900">சபரிநாதன் நகைக்கடை</p>
+                  <p className="text-xs text-gray-500">Sabarinathan Jewellery</p>
+                  <p className="text-sm font-semibold mt-1 text-gray-800">தங்க சரக்கு நிலை அறிக்கை</p>
+                  <p className="text-[11px] text-gray-500">Gold Stock Report</p>
+                  <p className="text-xs text-gray-600 mt-1">தேதி / Date: <strong>{shortDate(date)}</strong></p>
+                </div>
+
+                {/* Grand totals */}
+                <div className="grid grid-cols-3 gap-3 mb-5 text-center">
+                  {[
+                    ["மொத்தம்", "Grand Total", grams(grandTotal)],
+                    ["வால்ட்", "Vault", grams(vaultTotal)],
+                    ["வெளி", "Outer", grams(outerTotal)],
+                  ].map(([ta, en, val]) => (
+                    <div key={ta} className="border border-gray-300 rounded px-2 py-2">
+                      <p className="text-[10px] text-gray-500">{ta} / {en}</p>
+                      <p className="font-bold text-gray-900 font-mono">{val}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Vault section */}
+                {entries.some(e => e.stock_type === "vault") && (
+                  <div className="mb-5">
+                    <div className="bg-gray-100 px-3 py-1.5 rounded mb-2 flex justify-between items-center">
+                      <span className="font-bold text-gray-800 text-sm">வால்ட் சரக்கு <span className="font-normal text-gray-500 text-xs">Vault Stock</span></span>
+                      <span className="font-mono font-semibold text-sm">{grams(vaultTotal)}</span>
+                    </div>
+                    <table className="w-full text-[11px] border-collapse">
+                      <thead>
+                        <tr className="border-b border-gray-300 text-gray-500">
+                          <th className="text-left py-1.5 pr-2">#</th>
+                          <th className="text-left py-1.5 pr-2">வகை / Category</th>
+                          <th className="text-right py-1.5 pr-2">குறி. எடை / Tagged</th>
+                          <th className="text-right py-1.5 pr-2">எண் / Qty</th>
+                          <th className="text-right py-1.5 pr-2">தொகுதி / Bulk</th>
+                          <th className="text-right py-1.5">ஒதுக்கு / Res.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allCategories.filter(c => entries.some(e => e.stock_type === "vault" && e.category === c)).map((cat, i) => {
+                          const e = entries.find(e => e.stock_type === "vault" && e.category === cat)!;
+                          return (
+                            <tr key={cat} className="border-b border-gray-100 last:border-0">
+                              <td className="py-1.5 pr-2 text-gray-400">{i + 1}</td>
+                              <td className="py-1.5 pr-2 font-semibold text-gray-900">{cat}</td>
+                              <td className="py-1.5 pr-2 text-right font-mono">{Number(e.total_weight_g) > 0 ? grams(e.total_weight_g) : "—"}</td>
+                              <td className="py-1.5 pr-2 text-right">{e.qty != null ? `${e.qty}` : "—"}</td>
+                              <td className="py-1.5 pr-2 text-right font-mono">{Number(e.untagged_weight_g) > 0 ? grams(e.untagged_weight_g) : "—"}</td>
+                              <td className="py-1.5 text-right font-mono">{Number(e.reserved_weight_g) > 0 ? grams(e.reserved_weight_g) : "—"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-gray-400 font-semibold">
+                          <td colSpan={2} className="py-1.5 pr-2">வால்ட் மொத்தம் / Vault Total</td>
+                          <td className="py-1.5 pr-2 text-right font-mono">{grams(vaultTagged)}</td>
+                          <td className="py-1.5 pr-2 text-right">{entries.filter(e => e.stock_type === "vault" && e.qty != null).reduce((s, e) => s + (e.qty ?? 0), 0)}</td>
+                          <td className="py-1.5 pr-2 text-right font-mono">{grams(vaultBulk)}</td>
+                          <td className="py-1.5 text-right font-mono">{reservedTotal > 0 ? grams(reservedTotal) : "—"}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+
+                {/* Outer section */}
+                {entries.some(e => e.stock_type === "outer") && (
+                  <div className="mb-5">
+                    <div className="bg-gray-100 px-3 py-1.5 rounded mb-2 flex justify-between items-center">
+                      <span className="font-bold text-gray-800 text-sm">வெளி சரக்கு <span className="font-normal text-gray-500 text-xs">Outer Stock</span></span>
+                      <span className="font-mono font-semibold text-sm">{grams(outerTotal)}</span>
+                    </div>
+                    <table className="w-full text-[11px] border-collapse">
+                      <thead>
+                        <tr className="border-b border-gray-300 text-gray-500">
+                          <th className="text-left py-1.5 pr-2">#</th>
+                          <th className="text-left py-1.5 pr-2">வகை / Category</th>
+                          <th className="text-right py-1.5 pr-2">குறி. எடை / Tagged</th>
+                          <th className="text-right py-1.5 pr-2">எண் / Qty</th>
+                          <th className="text-right py-1.5">தொகுதி / Bulk</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allCategories.filter(c => entries.some(e => e.stock_type === "outer" && e.category === c)).map((cat, i) => {
+                          const e = entries.find(e => e.stock_type === "outer" && e.category === cat)!;
+                          return (
+                            <tr key={cat} className="border-b border-gray-100 last:border-0">
+                              <td className="py-1.5 pr-2 text-gray-400">{i + 1}</td>
+                              <td className="py-1.5 pr-2 font-semibold text-gray-900">{cat}</td>
+                              <td className="py-1.5 pr-2 text-right font-mono">{Number(e.total_weight_g) > 0 ? grams(e.total_weight_g) : "—"}</td>
+                              <td className="py-1.5 pr-2 text-right">{e.qty != null ? `${e.qty}` : "—"}</td>
+                              <td className="py-1.5 text-right font-mono">{Number(e.untagged_weight_g) > 0 ? grams(e.untagged_weight_g) : "—"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-gray-400 font-semibold">
+                          <td colSpan={2} className="py-1.5 pr-2">வெளி மொத்தம் / Outer Total</td>
+                          <td className="py-1.5 pr-2 text-right font-mono">{grams(outerTagged)}</td>
+                          <td className="py-1.5 pr-2 text-right">{entries.filter(e => e.stock_type === "outer" && e.qty != null).reduce((s, e) => s + (e.qty ?? 0), 0)}</td>
+                          <td className="py-1.5 text-right font-mono">{grams(outerBulk)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+
+                {/* Signature */}
+                <div className="grid grid-cols-2 gap-6 mt-6 pt-4 border-t border-gray-300">
+                  <div className="text-center">
+                    <div className="border-b border-gray-400 h-8 mb-1"></div>
+                    <p className="text-[10px] text-gray-600">தயாரித்தவர் கையொப்பம்</p>
+                    <p className="text-[9px] text-gray-400">Prepared By</p>
+                  </div>
+                  <div className="text-center">
+                    <div className="border-b border-gray-400 h-8 mb-1"></div>
+                    <p className="text-[10px] text-gray-600">கடை கையொப்பம்</p>
+                    <p className="text-[9px] text-gray-400">Authorised Signature</p>
+                  </div>
+                </div>
+                <p className="text-center text-[10px] text-gray-400 mt-4">சபரிநாதன் நகைக்கடை — Sabarinathan Jewellery</p>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
