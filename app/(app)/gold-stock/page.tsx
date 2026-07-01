@@ -86,6 +86,8 @@ export default function GoldStockPage() {
   const entryMap = new Map(entries.map(e => [`${e.stock_type}:${e.category}`, e]));
 
   const runningTotal = weights.reduce((s, w) => s + w, 0);
+  const pendingW = parseFloat(weightInput) || 0;
+  const effectiveTotal = runningTotal + (pendingW > 0 ? pendingW : 0);
 
   function selectCategory(cat: string) {
     if (activeCategory === cat) {
@@ -123,13 +125,16 @@ export default function GoldStockPage() {
   }
 
   async function handleSave() {
-    if (!activeCategory || runningTotal <= 0) return;
+    if (!activeCategory || effectiveTotal <= 0) return;
+    const finalWeights = pendingW > 0 ? [...weights, pendingW] : weights;
+    const total = parseFloat(finalWeights.reduce((s, w) => s + w, 0).toFixed(3));
+    const autoQty = finalWeights.length;
     await upsert.mutateAsync({
       entry_date: date,
       stock_type: stockType,
       category: activeCategory,
-      total_weight_g: parseFloat(runningTotal.toFixed(3)),
-      qty: stockType === "outer" && qty ? parseInt(qty) : null,
+      total_weight_g: total,
+      qty: qty ? parseInt(qty) : (autoQty > 0 ? autoQty : null),
       notes: notes.trim() || "",
     });
     setActiveCategory(null);
@@ -195,8 +200,8 @@ export default function GoldStockPage() {
             <h2 className="font-semibold text-ink">{activeCategory}
               <span className="ml-2 text-xs font-normal text-ink-dim capitalize">{stockType}</span>
             </h2>
-            {weights.length > 0 && (
-              <span className="text-sm font-bold text-gold font-mono">{grams(runningTotal)}</span>
+            {effectiveTotal > 0 && (
+              <span className="text-sm font-bold text-gold font-mono">{grams(effectiveTotal)}</span>
             )}
           </div>
 
@@ -239,34 +244,31 @@ export default function GoldStockPage() {
             </button>
           </div>
 
-          {/* Outer stock qty */}
-          {stockType === "outer" && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-ink-dim mb-1">Quantity (pieces) *</label>
-                <input type="number" step="1" min="0" value={qty}
-                  onChange={e => setQty(e.target.value)}
-                  placeholder="e.g. 5"
-                  className={inp} />
-              </div>
-              <div>
-                <label className="block text-xs text-ink-dim mb-1">Notes</label>
-                <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional" className={inp} />
-              </div>
+          {/* Qty + Notes — both stock types */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-ink-dim mb-1">
+                Quantity (pieces){stockType === "outer" ? " *" : ""}
+                {!qty && weights.length > 0 && (
+                  <span className="ml-1 text-ink-dim/60">auto: {weights.length + (pendingW > 0 ? 1 : 0)}</span>
+                )}
+              </label>
+              <input type="number" step="1" min="0" value={qty}
+                onChange={e => setQty(e.target.value)}
+                placeholder={stockType === "outer" ? "Required" : "Optional"}
+                className={inp} />
             </div>
-          )}
-          {stockType === "vault" && (
             <div>
               <label className="block text-xs text-ink-dim mb-1">Notes</label>
               <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Optional" className={inp} />
             </div>
-          )}
+          </div>
 
           {upsert.isError && <p className="text-xs text-err">{(upsert.error as Error).message}</p>}
 
           <div className="flex gap-2">
             <button
-              disabled={upsert.isPending || runningTotal <= 0 || (stockType === "outer" && !qty)}
+              disabled={upsert.isPending || effectiveTotal <= 0 || (stockType === "outer" && !qty && weights.length === 0 && pendingW <= 0)}
               onClick={handleSave}
               className="bg-gold text-white text-sm font-medium px-6 py-2 rounded-lg2 disabled:opacity-50 hover:opacity-90">
               {upsert.isPending ? "Saving…" : entryMap.has(`${stockType}:${activeCategory}`) ? "Update" : "Save"}

@@ -98,7 +98,8 @@
 ### Gold Stock (`/gold-stock`)
 - Date-based stock entry for gold items across 12 categories: 75KDM, Bangle, Bracelet, Chain, Diamond, Dollar, Gold Kolusu, Malaim, Necklace, Ring, Stud, Thali
 - Two stock types: **Vault** (weight only) and **Outer** (weight + quantity)
-- Multi-weight accumulator: enter individual piece weights one by one (press Enter or + Add), running total shown; delete any entry from the list
+- Multi-weight accumulator: enter individual piece weights one by one (press Enter or + Add), running total shown; delete any entry from the list; pending input auto-included on Save (no need to press Enter first)
+- Quantity field on both Vault and Outer stock: required for Outer, optional for Vault (for tagged/scanned items); auto-filled from number of weight entries if not manually set
 - Saves per date/type/category (upsert) — re-clicking a category loads existing values
 - Summary table shows all entered categories for the day with totals
 - Migration 117: `gold_stock_entries` table
