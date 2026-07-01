@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, KeyboardEvent, useMemo } from "react";
+import { useState, useRef, KeyboardEvent, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { grams, shortDate } from "@/lib/format";
@@ -289,14 +289,29 @@ export default function GoldStockPage() {
   const rename = useRenameCategory();
   const deleteCategory = useDeleteCategory();
 
+  const [hiddenCategories, setHiddenCategories] = useState<string[]>([]);
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem("gold_stock_hidden_cats");
+      if (s) setHiddenCategories(JSON.parse(s));
+    } catch {}
+  }, []);
+
+  function hideCategory(cat: string) {
+    const next = [...hiddenCategories, cat];
+    setHiddenCategories(next);
+    localStorage.setItem("gold_stock_hidden_cats", JSON.stringify(next));
+  }
+
   const entriesForType = entries.filter(e => e.stock_type === stockType);
   const entryMap = new Map(entries.map(e => [`${e.stock_type}:${e.category}`, e]));
   const hasAnyEntryToday = (cat: string) => entries.some(e => e.category === cat);
 
   const allCategories = useMemo(() => {
     const saved = entries.map(e => e.category);
-    return Array.from(new Set([...PRESET_CATEGORIES, ...saved]));
-  }, [entries]);
+    return Array.from(new Set([...PRESET_CATEGORIES, ...saved]))
+      .filter(c => !hiddenCategories.includes(c));
+  }, [entries, hiddenCategories]);
 
   const runningTotal = weights.reduce((s, w) => s + w, 0);
   const pendingW = parseFloat(weightInput) || 0;
@@ -500,6 +515,16 @@ export default function GoldStockPage() {
       )}
       {showPeriod && periodFrom && periodTo && periodFrom !== periodTo && (
         <PeriodReport fromDate={periodFrom} toDate={periodTo} />
+      )}
+
+      {hiddenCategories.length > 0 && (
+        <div className="text-[11px] text-ink-dim/60 text-right">
+          {hiddenCategories.length} categor{hiddenCategories.length === 1 ? "y" : "ies"} hidden —{" "}
+          <button className="underline hover:text-ink-dim" onClick={() => {
+            setHiddenCategories([]);
+            localStorage.removeItem("gold_stock_hidden_cats");
+          }}>Restore all</button>
+        </div>
       )}
 
       <hr className="border-line" />
@@ -942,8 +967,9 @@ export default function GoldStockPage() {
                   <button
                     disabled={deleteCategory.isPending}
                     onClick={async () => {
-                      if (!window.confirm(`Delete category "${activeCategory}" and all its entries across all dates? This cannot be undone.`)) return;
+                      if (!window.confirm(`Remove "${activeCategory}" from the category list? Any stored entries for this category will also be deleted.`)) return;
                       await deleteCategory.mutateAsync(activeCategory!);
+                      hideCategory(activeCategory!);
                       setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes(""); setUntaggedInput(""); clearModes();
                     }}
                     className="ml-auto text-xs text-err hover:underline disabled:opacity-40">Delete category</button>
