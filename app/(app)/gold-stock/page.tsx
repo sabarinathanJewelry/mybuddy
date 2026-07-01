@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { grams, shortDate } from "@/lib/format";
 import { clsx } from "clsx";
+import { useLangStore } from "@/stores/lang";
 
 const PRESET_CATEGORIES = [
   "75KDM", "Bangle", "Bracelet", "Chain", "Diamond", "Dollar",
@@ -234,9 +235,138 @@ function PeriodReport({ fromDate, toDate }: { fromDate: string; toDate: string }
   );
 }
 
+// ── Print HTML builder ────────────────────────────────────────────────────────
+
+function buildPrintHTML(p: {
+  date: string; isTa: boolean;
+  grandTotal: number; vaultTotal: number; outerTotal: number;
+  vaultTagged: number; vaultBulk: number;
+  outerTagged: number; outerBulk: number;
+  reservedTotal: number;
+  entries: StockEntry[]; allCategories: string[];
+}): string {
+  const g = (n: number) => `${Number(n).toFixed(3)}g`;
+  const ta = p.isTa;
+  const shopTa = "சபரிநாதன் நகைக்கடை";
+  const shopEn = "Sabarinathan Jewellery";
+  const title = ta ? "தங்க சரக்கு நிலை அறிக்கை" : "Gold Stock Report";
+
+  const vaultCats = p.allCategories.filter(c => p.entries.some(e => e.stock_type === "vault" && e.category === c));
+  const outerCats = p.allCategories.filter(c => p.entries.some(e => e.stock_type === "outer" && e.category === c));
+  const vaultQtyTot = p.entries.filter(e => e.stock_type === "vault" && e.qty != null).reduce((s, e) => s + (e.qty ?? 0), 0);
+  const outerQtyTot = p.entries.filter(e => e.stock_type === "outer" && e.qty != null).reduce((s, e) => s + (e.qty ?? 0), 0);
+
+  const rows = (cats: string[], type: "vault" | "outer", extraCol: boolean) => cats.map((cat, i) => {
+    const e = p.entries.find(x => x.stock_type === type && x.category === cat)!;
+    return `<tr>
+      <td>${i + 1}</td>
+      <td><b>${cat}</b></td>
+      <td class="r">${Number(e.total_weight_g) > 0 ? g(Number(e.total_weight_g)) : "—"}</td>
+      <td class="r">${e.qty != null ? e.qty : "—"}</td>
+      <td class="r">${Number(e.untagged_weight_g) > 0 ? g(Number(e.untagged_weight_g)) : "—"}</td>
+      ${extraCol ? `<td class="r">${Number(e.reserved_weight_g) > 0 ? g(Number(e.reserved_weight_g)) : "—"}</td>` : ""}
+    </tr>`;
+  }).join("");
+
+  const section = (type: "vault" | "outer", cats: string[], total: number, tagged: number, bulk: number, qtyTot: number) => {
+    if (!cats.length) return "";
+    const label = type === "vault" ? (ta ? "வால்ட் சரக்கு" : "Vault Stock") : (ta ? "வெளி சரக்கு" : "Outer Stock");
+    const totLabel = type === "vault" ? (ta ? "வால்ட் மொத்தம்" : "Vault Total") : (ta ? "வெளி மொத்தம்" : "Outer Total");
+    const isVault = type === "vault";
+    return `
+      <h2>${label} — ${g(total)}</h2>
+      <table>
+        <thead><tr>
+          <th>#</th>
+          <th>${ta ? "வகை" : "Category"}</th>
+          <th class="r">${ta ? "குறி.எடை" : "Tagged Wt"}</th>
+          <th class="r">${ta ? "எண்" : "Qty"}</th>
+          <th class="r">${ta ? "தொகுதி" : "Bulk Wt"}</th>
+          ${isVault ? `<th class="r">${ta ? "ஒதுக்கிடு" : "Reserved"}</th>` : ""}
+        </tr></thead>
+        <tbody>${rows(cats, type, isVault)}</tbody>
+        <tfoot><tr>
+          <td colspan="2">${totLabel}</td>
+          <td class="r">${g(tagged)}</td>
+          <td class="r">${qtyTot}</td>
+          <td class="r">${g(bulk)}</td>
+          ${isVault ? `<td class="r">${p.reservedTotal > 0 ? g(p.reservedTotal) : "—"}</td>` : ""}
+        </tr></tfoot>
+      </table>`;
+  };
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
+  <style>
+    @page{margin:15mm}
+    body{font-family:Arial,sans-serif;font-size:12px;color:#111;margin:0;padding:0}
+    .hdr{text-align:center;border-bottom:2px solid #333;padding-bottom:10px;margin-bottom:14px}
+    .hdr h1{font-size:17px;margin:0 0 2px}
+    .hdr .sub{font-size:10px;color:#666}
+    .hdr .t{font-size:14px;font-weight:700;margin-top:6px}
+    .totals{display:flex;gap:10px;margin-bottom:14px}
+    .tbox{flex:1;border:1px solid #ccc;border-radius:4px;padding:6px;text-align:center}
+    .tbox .v{font-weight:700;font-size:14px;font-family:monospace}
+    .tbox .l{font-size:10px;color:#666}
+    h2{font-size:13px;background:#f0f0f0;padding:6px 8px;margin:14px 0 6px;border-radius:3px}
+    table{width:100%;border-collapse:collapse;margin-bottom:6px}
+    thead{display:table-header-group}
+    th{background:#e8e8e8;text-align:left;padding:5px 8px;font-size:11px;border-bottom:1px solid #bbb}
+    td{padding:4px 8px;border-bottom:1px solid #eee;font-size:11px;vertical-align:top}
+    tr{break-inside:avoid}
+    tfoot td{border-top:2px solid #999;font-weight:700;background:#fafafa}
+    .r{text-align:right;font-family:monospace}
+    .sigs{display:flex;gap:40px;margin-top:24px;padding-top:12px;border-top:1px solid #ccc}
+    .sig{flex:1;text-align:center}
+    .sl{border-bottom:1px solid #555;height:30px;margin-bottom:4px}
+    .ft{text-align:center;font-size:10px;color:#999;margin-top:12px}
+  </style></head><body>
+  <div class="hdr">
+    <h1>${shopTa}</h1>
+    <div class="sub">${shopEn}</div>
+    <div class="t">${title}</div>
+    <div class="sub">${ta ? "தேதி" : "Date"}: ${p.date.split("-").reverse().join("-")}</div>
+  </div>
+  <div class="totals">
+    <div class="tbox"><div class="l">${ta ? "மொத்தம்" : "Grand Total"}</div><div class="v">${g(p.grandTotal)}</div></div>
+    <div class="tbox"><div class="l">${ta ? "வால்ட்" : "Vault"}</div><div class="v">${g(p.vaultTotal)}</div></div>
+    <div class="tbox"><div class="l">${ta ? "வெளி" : "Outer"}</div><div class="v">${g(p.outerTotal)}</div></div>
+    ${p.reservedTotal > 0 ? `<div class="tbox"><div class="l">${ta ? "ஒதுக்கிடு" : "Reserved"}</div><div class="v">${g(p.reservedTotal)}</div></div>` : ""}
+  </div>
+  ${section("vault", vaultCats, p.vaultTotal, p.vaultTagged, p.vaultBulk, vaultQtyTot)}
+  ${section("outer", outerCats, p.outerTotal, p.outerTagged, p.outerBulk, outerQtyTot)}
+  <div class="sigs">
+    <div class="sig"><div class="sl"></div><div>${ta ? "தயாரித்தவர் கையொப்பம்" : "Prepared By"}</div></div>
+    <div class="sig"><div class="sl"></div><div>${ta ? "கடை கையொப்பம்" : "Authorised Signature"}</div></div>
+  </div>
+  <div class="ft">${shopTa} — ${shopEn}</div>
+</body></html>`;
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function GoldStockPage() {
+  const { lang } = useLangStore();
+  const ta = lang === "ta";
+
+  const T = {
+    title:       ta ? "தங்க சரக்கு"          : "Gold Stock",
+    vault:       ta ? "வால்ட் / Vault Stock"  : "Vault Stock",
+    outer:       ta ? "வெளி / Outer Stock"    : "Outer Stock",
+    tagged:      ta ? "குறியிடப்பட்டது"       : "Tagged (with qty)",
+    bulk:        ta ? "தொகுதி எடை"           : "Bulk / Untagged",
+    reserved:    ta ? "ஒதுக்கிடு"            : "Reserved (custom order)",
+    category:    ta ? "வகை"                   : "Category",
+    type:        ta ? "வகை"                   : "Type",
+    weight:      ta ? "எடை"                   : "Weight",
+    qty:         ta ? "எண்"                   : "Qty",
+    notes:       ta ? "குறிப்பு"              : "Notes",
+    print:       ta ? "அச்சிடு"              : "Print",
+    period:      ta ? "கால அறிக்கை"          : "Period Report",
+    custom:      ta ? "+ தனிப்பயன்"           : "+ Custom",
+    customHint:  ta ? "நாணயம், கட்டி…"       : "Coin, Bar…",
+    noData:      ta ? `${shortDate(new Date().toISOString().slice(0,10))} அன்று சரக்கு இல்லை. மேலே ஒரு வகையை தேர்வு செய்யுங்கள்.` : "No stock entered. Click a category above to start.",
+  };
+
   const today = new Date().toISOString().slice(0, 10);
   const [date, setDate] = useState(today);
   const [stockType, setStockType] = useState<StockType>("vault");
@@ -257,7 +387,6 @@ export default function GoldStockPage() {
 
   // Period report
   const [showPeriod, setShowPeriod] = useState(false);
-  const [showPrint, setShowPrint] = useState(false);
   const [periodFrom, setPeriodFrom] = useState("");
   const [periodTo, setPeriodTo] = useState(today);
 
@@ -479,8 +608,7 @@ export default function GoldStockPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-ink">
-            தங்க சரக்கு
-            <span className="ml-1.5 text-sm font-normal text-ink-dim">Gold Stock</span>
+            {T.title}
             <span className="ml-2 text-base font-mono text-gold">{grams(grandTotal)}</span>
           </h1>
           <div className="text-xs text-ink-dim mt-0.5 space-y-0.5">
@@ -500,14 +628,22 @@ export default function GoldStockPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowPrint(true)} disabled={entries.length === 0}
+          <button
+            disabled={entries.length === 0}
+            onClick={() => {
+              const win = window.open("", "_blank");
+              if (!win) { alert("Please allow popups for printing"); return; }
+              win.document.write(buildPrintHTML({ date, isTa: ta, grandTotal, vaultTotal, outerTotal, vaultTagged, vaultBulk, outerTagged, outerBulk, reservedTotal, entries, allCategories }));
+              win.document.close();
+              setTimeout(() => { win.focus(); win.print(); }, 300);
+            }}
             className="text-xs px-3 py-1.5 rounded-lg2 border font-medium border-line text-ink-dim hover:text-ink disabled:opacity-40 transition-colors">
-            அச்சிடு / Print
+            {T.print}
           </button>
           <button onClick={() => setShowPeriod(v => !v)}
             className={clsx("text-xs px-3 py-1.5 rounded-lg2 border font-medium transition-colors",
               showPeriod ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:text-ink")}>
-            Period Report
+            {T.period}
           </button>
           <input type="date" value={date} onChange={e => { setDate(e.target.value); setActiveCategory(null); setWeights([]); clearModes(); }}
             className="border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
@@ -555,16 +691,16 @@ export default function GoldStockPage() {
         {(["vault", "outer"] as StockType[]).map(t => (
           <button key={t} onClick={() => { setStockType(t); setActiveCategory(null); setWeights([]); setWeightInput(""); clearModes(); }}
             className={clsx("flex-1 py-2 transition-colors", stockType === t ? "bg-gold text-white" : "text-ink-dim hover:text-ink")}>
-            {t === "vault" ? "வால்ட் / Vault Stock" : "வெளி / Outer Stock"}
+            {t === "vault" ? T.vault : T.outer}
           </button>
         ))}
       </div>
 
       {/* ── Legend ── */}
       <div className="flex items-center gap-4 text-[11px] text-ink-dim flex-wrap">
-        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-info/60"></span> குறியிடப்பட்டது <span className="text-ink-dim/50">(Tagged)</span></span>
-        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-ok/60"></span> தொகுதி எடை <span className="text-ink-dim/50">(Bulk/Untagged)</span></span>
-        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-warn/50"></span> ஒதுக்கிடு <span className="text-ink-dim/50">(Reserved)</span></span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-info/60"></span> {T.tagged}</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-ok/60"></span> {T.bulk}</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-full bg-warn/50"></span> {T.reserved}</span>
       </div>
 
       {/* ── Category grid ── */}
@@ -630,8 +766,8 @@ export default function GoldStockPage() {
         ) : (
           <button onClick={() => { setShowCustomInput(true); setTimeout(() => customRef.current?.focus(), 50); }}
             className="rounded-xl border border-dashed border-line px-3 py-2.5 text-left hover:border-gold transition-all">
-            <p className="text-xs font-semibold text-ink-dim">+ Custom</p>
-            <p className="text-[11px] text-ink-dim/60 mt-0.5">Coin, Bar…</p>
+            <p className="text-xs font-semibold text-ink-dim">{T.custom}</p>
+            <p className="text-[11px] text-ink-dim/60 mt-0.5">{T.customHint}</p>
           </button>
         )}
       </div>
@@ -1016,12 +1152,12 @@ export default function GoldStockPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-ink-dim border-b border-line">
-                <th className="text-left px-4 py-2">வகை <span className="font-normal opacity-60">Category</span></th>
-                <th className="text-left px-4 py-2">வகை <span className="font-normal opacity-60">Type</span></th>
-                <th className="text-right px-3 py-2">எடை <span className="font-normal opacity-60">Weight</span></th>
-                <th className="text-right px-3 py-2">எண் <span className="font-normal opacity-60">Qty</span></th>
-                {stockType === "vault" && <th className="text-right px-3 py-2 text-warn/70">ஒதுக்கிடு <span className="font-normal opacity-60">Reserved</span></th>}
-                <th className="text-left px-4 py-2">குறிப்பு <span className="font-normal opacity-60">Notes</span></th>
+                <th className="text-left px-4 py-2">{T.category}</th>
+                <th className="text-left px-4 py-2">{T.type}</th>
+                <th className="text-right px-3 py-2">{T.weight}</th>
+                <th className="text-right px-3 py-2">{T.qty}</th>
+                {stockType === "vault" && <th className="text-right px-3 py-2 text-warn/70">{ta ? "ஒதுக்கிடு" : "Reserved"}</th>}
+                <th className="text-left px-4 py-2">{T.notes}</th>
               </tr>
             </thead>
             <tbody>
@@ -1064,172 +1200,8 @@ export default function GoldStockPage() {
 
       {entries.length === 0 && !activeCategory && (
         <div className="bg-white border border-line rounded-xl p-8 text-center text-ink-dim shadow-soft text-sm">
-          {shortDate(date)} அன்று சரக்கு இல்லை. மேலே ஒரு வகையை கிளிக் செய்யுங்கள்.
+          {T.noData}
         </div>
-      )}
-
-      {/* ── Tamil Print Overlay ── */}
-      {showPrint && (
-        <>
-          <style>{`
-            @page { margin: 15mm; }
-            @media print {
-              body * { visibility: hidden; }
-              #gold-stock-print, #gold-stock-print * { visibility: visible; }
-              #gold-stock-print { position: absolute; top: 0; left: 0; width: 100%; font-family: Arial, sans-serif; }
-              #gold-stock-print table { break-inside: auto; }
-              #gold-stock-print tr { break-inside: avoid; }
-              #gold-stock-print thead { display: table-header-group; }
-              #gold-stock-print .section-block { break-inside: avoid-page; }
-            }
-          `}</style>
-
-          <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center p-4 overflow-y-auto">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl my-4">
-              {/* Actions */}
-              <div className="flex items-center justify-between px-5 py-3 border-b border-line sticky top-0 bg-white rounded-t-xl z-10">
-                <span className="text-sm font-semibold text-ink">தங்க சரக்கு அறிக்கை / Gold Stock Report</span>
-                <div className="flex gap-2">
-                  <button onClick={() => window.print()}
-                    className="bg-gold text-white text-xs px-4 py-1.5 rounded-lg2 font-medium">அச்சிடு / Print</button>
-                  <button onClick={() => setShowPrint(false)}
-                    className="border border-line text-xs px-3 py-1.5 rounded-lg2 text-ink-dim">மூடு</button>
-                </div>
-              </div>
-
-              {/* Receipt */}
-              <div id="gold-stock-print" className="p-6 text-[13px] leading-relaxed">
-
-                {/* Shop header */}
-                <div className="text-center border-b-2 border-gray-800 pb-3 mb-4">
-                  <p className="text-lg font-bold text-gray-900">சபரிநாதன் நகைக்கடை</p>
-                  <p className="text-xs text-gray-500">Sabarinathan Jewellery</p>
-                  <p className="text-sm font-semibold mt-1 text-gray-800">தங்க சரக்கு நிலை அறிக்கை</p>
-                  <p className="text-[11px] text-gray-500">Gold Stock Report</p>
-                  <p className="text-xs text-gray-600 mt-1">தேதி / Date: <strong>{shortDate(date)}</strong></p>
-                </div>
-
-                {/* Grand totals */}
-                <div className="grid grid-cols-3 gap-3 mb-5 text-center">
-                  {[
-                    ["மொத்தம்", "Grand Total", grams(grandTotal)],
-                    ["வால்ட்", "Vault", grams(vaultTotal)],
-                    ["வெளி", "Outer", grams(outerTotal)],
-                  ].map(([ta, en, val]) => (
-                    <div key={ta} className="border border-gray-300 rounded px-2 py-2">
-                      <p className="text-[10px] text-gray-500">{ta} / {en}</p>
-                      <p className="font-bold text-gray-900 font-mono">{val}</p>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Vault section */}
-                {entries.some(e => e.stock_type === "vault") && (
-                  <div className="section-block mb-5">
-                    <div className="bg-gray-100 px-3 py-1.5 rounded mb-2 flex justify-between items-center">
-                      <span className="font-bold text-gray-800 text-sm">வால்ட் சரக்கு <span className="font-normal text-gray-500 text-xs">Vault Stock</span></span>
-                      <span className="font-mono font-semibold text-sm">{grams(vaultTotal)}</span>
-                    </div>
-                    <table className="w-full text-[11px] border-collapse">
-                      <thead>
-                        <tr className="border-b border-gray-300 text-gray-500">
-                          <th className="text-left py-1.5 pr-2">#</th>
-                          <th className="text-left py-1.5 pr-2">வகை / Category</th>
-                          <th className="text-right py-1.5 pr-2">குறி. எடை / Tagged</th>
-                          <th className="text-right py-1.5 pr-2">எண் / Qty</th>
-                          <th className="text-right py-1.5 pr-2">தொகுதி / Bulk</th>
-                          <th className="text-right py-1.5">ஒதுக்கு / Res.</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {allCategories.filter(c => entries.some(e => e.stock_type === "vault" && e.category === c)).map((cat, i) => {
-                          const e = entries.find(e => e.stock_type === "vault" && e.category === cat)!;
-                          return (
-                            <tr key={cat} className="border-b border-gray-100 last:border-0">
-                              <td className="py-1.5 pr-2 text-gray-400">{i + 1}</td>
-                              <td className="py-1.5 pr-2 font-semibold text-gray-900">{cat}</td>
-                              <td className="py-1.5 pr-2 text-right font-mono">{Number(e.total_weight_g) > 0 ? grams(e.total_weight_g) : "—"}</td>
-                              <td className="py-1.5 pr-2 text-right">{e.qty != null ? `${e.qty}` : "—"}</td>
-                              <td className="py-1.5 pr-2 text-right font-mono">{Number(e.untagged_weight_g) > 0 ? grams(e.untagged_weight_g) : "—"}</td>
-                              <td className="py-1.5 text-right font-mono">{Number(e.reserved_weight_g) > 0 ? grams(e.reserved_weight_g) : "—"}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr className="border-t-2 border-gray-400 font-semibold">
-                          <td colSpan={2} className="py-1.5 pr-2">வால்ட் மொத்தம் / Vault Total</td>
-                          <td className="py-1.5 pr-2 text-right font-mono">{grams(vaultTagged)}</td>
-                          <td className="py-1.5 pr-2 text-right">{entries.filter(e => e.stock_type === "vault" && e.qty != null).reduce((s, e) => s + (e.qty ?? 0), 0)}</td>
-                          <td className="py-1.5 pr-2 text-right font-mono">{grams(vaultBulk)}</td>
-                          <td className="py-1.5 text-right font-mono">{reservedTotal > 0 ? grams(reservedTotal) : "—"}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                )}
-
-                {/* Outer section */}
-                {entries.some(e => e.stock_type === "outer") && (
-                  <div className="section-block mb-5">
-                    <div className="bg-gray-100 px-3 py-1.5 rounded mb-2 flex justify-between items-center">
-                      <span className="font-bold text-gray-800 text-sm">வெளி சரக்கு <span className="font-normal text-gray-500 text-xs">Outer Stock</span></span>
-                      <span className="font-mono font-semibold text-sm">{grams(outerTotal)}</span>
-                    </div>
-                    <table className="w-full text-[11px] border-collapse">
-                      <thead>
-                        <tr className="border-b border-gray-300 text-gray-500">
-                          <th className="text-left py-1.5 pr-2">#</th>
-                          <th className="text-left py-1.5 pr-2">வகை / Category</th>
-                          <th className="text-right py-1.5 pr-2">குறி. எடை / Tagged</th>
-                          <th className="text-right py-1.5 pr-2">எண் / Qty</th>
-                          <th className="text-right py-1.5">தொகுதி / Bulk</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {allCategories.filter(c => entries.some(e => e.stock_type === "outer" && e.category === c)).map((cat, i) => {
-                          const e = entries.find(e => e.stock_type === "outer" && e.category === cat)!;
-                          return (
-                            <tr key={cat} className="border-b border-gray-100 last:border-0">
-                              <td className="py-1.5 pr-2 text-gray-400">{i + 1}</td>
-                              <td className="py-1.5 pr-2 font-semibold text-gray-900">{cat}</td>
-                              <td className="py-1.5 pr-2 text-right font-mono">{Number(e.total_weight_g) > 0 ? grams(e.total_weight_g) : "—"}</td>
-                              <td className="py-1.5 pr-2 text-right">{e.qty != null ? `${e.qty}` : "—"}</td>
-                              <td className="py-1.5 text-right font-mono">{Number(e.untagged_weight_g) > 0 ? grams(e.untagged_weight_g) : "—"}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      <tfoot>
-                        <tr className="border-t-2 border-gray-400 font-semibold">
-                          <td colSpan={2} className="py-1.5 pr-2">வெளி மொத்தம் / Outer Total</td>
-                          <td className="py-1.5 pr-2 text-right font-mono">{grams(outerTagged)}</td>
-                          <td className="py-1.5 pr-2 text-right">{entries.filter(e => e.stock_type === "outer" && e.qty != null).reduce((s, e) => s + (e.qty ?? 0), 0)}</td>
-                          <td className="py-1.5 text-right font-mono">{grams(outerBulk)}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                )}
-
-                {/* Signature */}
-                <div className="grid grid-cols-2 gap-6 mt-6 pt-4 border-t border-gray-300">
-                  <div className="text-center">
-                    <div className="border-b border-gray-400 h-8 mb-1"></div>
-                    <p className="text-[10px] text-gray-600">தயாரித்தவர் கையொப்பம்</p>
-                    <p className="text-[9px] text-gray-400">Prepared By</p>
-                  </div>
-                  <div className="text-center">
-                    <div className="border-b border-gray-400 h-8 mb-1"></div>
-                    <p className="text-[10px] text-gray-600">கடை கையொப்பம்</p>
-                    <p className="text-[9px] text-gray-400">Authorised Signature</p>
-                  </div>
-                </div>
-                <p className="text-center text-[10px] text-gray-400 mt-4">சபரிநாதன் நகைக்கடை — Sabarinathan Jewellery</p>
-              </div>
-            </div>
-          </div>
-        </>
       )}
     </div>
   );
