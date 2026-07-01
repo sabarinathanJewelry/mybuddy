@@ -2,6 +2,7 @@
   "name": "MyBuddy – Jewellery ERP",
   "short_name": "MyBuddy",
   "description": "Sabarinathan Jewellery — Sales, inventory, staff, and finance management",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
