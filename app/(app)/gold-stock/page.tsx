@@ -455,8 +455,12 @@ export default function GoldStockPage() {
     clearModes();
   }
 
-  const vaultTotal = entries.filter(e => e.stock_type === "vault").reduce((s, e) => s + Number(e.total_weight_g) + Number(e.untagged_weight_g), 0);
-  const outerTotal = entries.filter(e => e.stock_type === "outer").reduce((s, e) => s + Number(e.total_weight_g) + Number(e.untagged_weight_g), 0);
+  const vaultTagged = entries.filter(e => e.stock_type === "vault" && e.qty != null).reduce((s, e) => s + Number(e.total_weight_g), 0);
+  const vaultBulk   = entries.filter(e => e.stock_type === "vault").reduce((s, e) => s + (e.qty == null ? Number(e.total_weight_g) : 0) + Number(e.untagged_weight_g), 0);
+  const outerTagged = entries.filter(e => e.stock_type === "outer" && e.qty != null).reduce((s, e) => s + Number(e.total_weight_g), 0);
+  const outerBulk   = entries.filter(e => e.stock_type === "outer").reduce((s, e) => s + (e.qty == null ? Number(e.total_weight_g) : 0) + Number(e.untagged_weight_g), 0);
+  const vaultTotal = vaultTagged + vaultBulk;
+  const outerTotal = outerTagged + outerBulk;
   const reservedTotal = entries.filter(e => e.stock_type === "vault").reduce((s, e) => s + Number(e.reserved_weight_g), 0);
   const grandTotal = vaultTotal + outerTotal;
 
@@ -477,10 +481,21 @@ export default function GoldStockPage() {
             Gold Stock
             <span className="ml-2 text-base font-mono text-gold">{grams(grandTotal)}</span>
           </h1>
-          <p className="text-xs text-ink-dim mt-0.5">
-            Vault: {grams(vaultTotal)} &nbsp;·&nbsp; Outer: {grams(outerTotal)}
-            {reservedTotal > 0 && <span className="text-warn"> &nbsp;·&nbsp; Reserved: {grams(reservedTotal)}</span>}
-          </p>
+          <div className="text-xs text-ink-dim mt-0.5 space-y-0.5">
+            <p>
+              <span className="font-medium">Vault</span> {grams(vaultTotal)}
+              {vaultTagged > 0 && <span className="text-info ml-1.5">{grams(vaultTagged)} tagged</span>}
+              {vaultTagged > 0 && vaultBulk > 0 && <span className="mx-0.5">·</span>}
+              {vaultBulk > 0 && <span className="text-ok">{vaultTagged > 0 ? "" : " "}{grams(vaultBulk)} bulk</span>}
+              {reservedTotal > 0 && <span className="text-warn ml-1.5">· {grams(reservedTotal)} reserved</span>}
+            </p>
+            <p>
+              <span className="font-medium">Outer</span> {grams(outerTotal)}
+              {outerTagged > 0 && <span className="text-info ml-1.5">{grams(outerTagged)} tagged</span>}
+              {outerTagged > 0 && outerBulk > 0 && <span className="mx-0.5">·</span>}
+              {outerBulk > 0 && <span className="text-ok">{outerTagged > 0 ? "" : " "}{grams(outerBulk)} bulk</span>}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowPeriod(v => !v)}
