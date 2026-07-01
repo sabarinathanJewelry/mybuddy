@@ -1650,7 +1650,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                     )}
                     {metalLedger.map((row) => {
                       const dispatchId = row.id.startsWith("d-") ? row.id.slice(2) : null;
-                      const isEditingThis = editingDispatchId === dispatchId;
+                      const isEditingThis = dispatchId !== null && editingDispatchId === dispatchId;
                       const dispatchRaw = dispatchId ? view?.dispatches?.find((d: any) => d.id === dispatchId) : null;
                       return (
                       <Fragment key={row.id}>
