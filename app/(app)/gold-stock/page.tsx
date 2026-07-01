@@ -442,6 +442,8 @@ export default function GoldStockPage() {
 
   const vaultTotal = entries.filter(e => e.stock_type === "vault").reduce((s, e) => s + Number(e.total_weight_g) + Number(e.untagged_weight_g), 0);
   const outerTotal = entries.filter(e => e.stock_type === "outer").reduce((s, e) => s + Number(e.total_weight_g) + Number(e.untagged_weight_g), 0);
+  const reservedTotal = entries.filter(e => e.stock_type === "vault").reduce((s, e) => s + Number(e.reserved_weight_g), 0);
+  const grandTotal = vaultTotal + outerTotal;
 
   const transferSrc = activeCategory
     ? (transferDir === "to_outer" ? entryMap.get(`vault:${activeCategory}`) : entryMap.get(`outer:${activeCategory}`))
@@ -456,8 +458,14 @@ export default function GoldStockPage() {
       {/* ── Header ── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-ink">Gold Stock</h1>
-          <p className="text-xs text-ink-dim mt-0.5">Vault: {grams(vaultTotal)} &nbsp;·&nbsp; Outer: {grams(outerTotal)}</p>
+          <h1 className="text-xl font-bold text-ink">
+            Gold Stock
+            <span className="ml-2 text-base font-mono text-gold">{grams(grandTotal)}</span>
+          </h1>
+          <p className="text-xs text-ink-dim mt-0.5">
+            Vault: {grams(vaultTotal)} &nbsp;·&nbsp; Outer: {grams(outerTotal)}
+            {reservedTotal > 0 && <span className="text-warn"> &nbsp;·&nbsp; Reserved: {grams(reservedTotal)}</span>}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowPeriod(v => !v)}
