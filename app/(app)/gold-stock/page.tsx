@@ -223,6 +223,11 @@ export default function GoldStockPage() {
   const [notes, setNotes] = useState("");
   const weightRef = useRef<HTMLInputElement>(null);
 
+  // Sold mode — reduce existing stock by entered amount
+  const [soldMode, setSoldMode] = useState(false);
+  const [soldWeightInput, setSoldWeightInput] = useState("");
+  const [soldQtyInput, setSoldQtyInput] = useState("");
+
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customCatInput, setCustomCatInput] = useState("");
   const customRef = useRef<HTMLInputElement>(null);
@@ -251,10 +256,12 @@ export default function GoldStockPage() {
   function selectCategory(cat: string) {
     if (activeCategory === cat) {
       setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes("");
+      setSoldMode(false); setSoldWeightInput(""); setSoldQtyInput("");
       return;
     }
     setActiveCategory(cat);
     setWeightInput(""); setNotes("");
+    setSoldMode(false); setSoldWeightInput(""); setSoldQtyInput("");
     const existing = entryMap.get(`${stockType}:${cat}`);
     if (existing) {
       setWeights([existing.total_weight_g]);
@@ -263,6 +270,29 @@ export default function GoldStockPage() {
       setWeights([]); setQty("");
     }
     setTimeout(() => weightRef.current?.focus(), 50);
+  }
+
+  async function handleReduceSold() {
+    if (!activeCategory) return;
+    const existing = entryMap.get(`${stockType}:${activeCategory}`);
+    if (!existing) return;
+    const soldWt = parseFloat(soldWeightInput) || 0;
+    const soldQty = parseInt(soldQtyInput) || 0;
+    if (soldWt <= 0 && soldQty <= 0) return;
+    const newWt = parseFloat((Number(existing.total_weight_g) - soldWt).toFixed(3));
+    const newQty = existing.qty != null ? existing.qty - soldQty : null;
+    if (newWt < 0) { alert("Sold weight cannot exceed current stock weight"); return; }
+    if (newQty != null && newQty < 0) { alert("Sold qty cannot exceed current stock qty"); return; }
+    await upsert.mutateAsync({
+      entry_date: date,
+      stock_type: stockType,
+      category: activeCategory,
+      total_weight_g: newWt,
+      qty: newQty,
+      notes: existing.notes || "",
+    });
+    setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes("");
+    setSoldMode(false); setSoldWeightInput(""); setSoldQtyInput("");
   }
 
   function addWeight() {
@@ -438,14 +468,83 @@ export default function GoldStockPage() {
       {/* Weight entry panel */}
       {activeCategory && (
         <div className="bg-white border border-gold/30 rounded-xl p-5 shadow-soft space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <h2 className="font-semibold text-ink">{activeCategory}
               <span className="ml-2 text-xs font-normal text-ink-dim capitalize">{stockType}</span>
             </h2>
-            {effectiveTotal > 0 && (
-              <span className="text-sm font-bold text-gold font-mono">{grams(effectiveTotal)}</span>
-            )}
+            <div className="flex items-center gap-2">
+              {effectiveTotal > 0 && !soldMode && (
+                <span className="text-sm font-bold text-gold font-mono">{grams(effectiveTotal)}</span>
+              )}
+              {entryMap.has(`${stockType}:${activeCategory}`) && (
+                <button
+                  onClick={() => { setSoldMode(v => !v); setSoldWeightInput(""); setSoldQtyInput(""); }}
+                  className={clsx("text-xs px-3 py-1 rounded-lg2 border font-medium transition-colors",
+                    soldMode ? "bg-warn/20 border-warn text-warn" : "border-line text-ink-dim hover:border-warn hover:text-warn")}>
+                  {soldMode ? "Cancel Sold" : "Record Sold"}
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Sold mode form */}
+          {soldMode && (() => {
+            const existing = entryMap.get(`${stockType}:${activeCategory}`)!;
+            const soldWt = parseFloat(soldWeightInput) || 0;
+            const soldQty = parseInt(soldQtyInput) || 0;
+            const afterWt = parseFloat((Number(existing.total_weight_g) - soldWt).toFixed(3));
+            const afterQty = existing.qty != null ? existing.qty - soldQty : null;
+            return (
+              <div className="space-y-3">
+                <div className="bg-canvas rounded-lg2 px-3 py-2 text-xs text-ink-dim">
+                  Current stock: <span className="font-mono text-ink font-semibold">{grams(existing.total_weight_g)}</span>
+                  {existing.qty != null && <span className="ml-2 text-info font-semibold">{existing.qty}pc</span>}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Sold weight (g)</label>
+                    <input type="number" step="0.001" min="0" value={soldWeightInput}
+                      onChange={e => setSoldWeightInput(e.target.value)}
+                      placeholder="e.g. 5.234"
+                      autoFocus
+                      className={clsx(inp, "font-mono")} />
+                  </div>
+                  {existing.qty != null && (
+                    <div>
+                      <label className="block text-xs text-ink-dim mb-1">Sold qty (pieces)</label>
+                      <input type="number" step="1" min="0" value={soldQtyInput}
+                        onChange={e => setSoldQtyInput(e.target.value)}
+                        placeholder="e.g. 2"
+                        className={inp} />
+                    </div>
+                  )}
+                </div>
+                {(soldWt > 0 || soldQty > 0) && (
+                  <div className="bg-warn/5 border border-warn/30 rounded-lg2 px-3 py-2 text-xs">
+                    After reduction:&nbsp;
+                    <span className={clsx("font-mono font-semibold", afterWt < 0 ? "text-err" : "text-ok")}>{grams(Math.max(afterWt, 0))}</span>
+                    {afterQty != null && <span className={clsx("ml-2 font-semibold", afterQty < 0 ? "text-err" : "text-info")}>{Math.max(afterQty, 0)}pc</span>}
+                  </div>
+                )}
+                {upsert.isError && <p className="text-xs text-err">{(upsert.error as Error).message}</p>}
+                <div className="flex gap-2">
+                  <button
+                    disabled={upsert.isPending || (soldWt <= 0 && soldQty <= 0) || afterWt < 0 || (afterQty != null && afterQty < 0)}
+                    onClick={handleReduceSold}
+                    className="bg-warn text-white text-sm font-medium px-6 py-2 rounded-lg2 disabled:opacity-50 hover:opacity-90">
+                    {upsert.isPending ? "Saving…" : "Apply Reduction"}
+                  </button>
+                  <button onClick={() => { setSoldMode(false); setSoldWeightInput(""); setSoldQtyInput(""); }}
+                    className="border border-line text-sm px-4 py-2 rounded-lg2 text-ink-dim hover:text-ink">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Normal entry — hidden when in sold mode */}
+          {!soldMode && <>
 
           {/* Weight list */}
           {weights.length > 0 && (
@@ -534,6 +633,8 @@ export default function GoldStockPage() {
               </button>
             )}
           </div>
+
+          </>}
         </div>
       )}
 

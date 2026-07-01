@@ -103,6 +103,7 @@
 - Saves per date/type/category (upsert) — re-clicking a category loads existing values
 - Summary table: shows Tagged/Untagged badge, weight, qty, notes per category
 - **Period Report**: click "Period Report" button, set Opening date + Closing date; comparison table shows Opening weight → Closing weight → Sold (= Opening − Closing) per category; tagged items also show qty sold; footer totals; vault/outer tab selector inside report
+- **Record Sold / Reduce**: click any entered category tile → "Record Sold" button appears in panel header; enter sold weight (and sold qty for tagged items); shows live preview of stock after reduction; "Apply Reduction" saves the reduced entry directly
 - Migration 117: `gold_stock_entries` table
 
 ### Kolusu (Anklet Stock)
