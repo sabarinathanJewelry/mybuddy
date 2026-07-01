@@ -252,7 +252,7 @@
 4-tab business intelligence dashboard with SVG charts (no external chart library):
 
 - **Overview**: Today's bills + revenue, month revenue vs last month (donut), 8-month revenue trend (smooth bezier line chart), recent transactions table, payment method mix (donut)
-- **Sales Analysis**: Month selector, per-metal revenue/weight/count cards, daily sales line chart, top customers bar chart
+- **Sales Analysis**: Month picker — click the month label to open a native date picker, or use ← → arrows; all panels (metal cards, daily sales chart, top customers, expenses) update together for the selected month; **bug fix**: daily sales and top customers previously always showed current month regardless of month selector; now correctly follow the selected month; **Expenses panel**: shows per-category expense breakdown with bars and total, plus expense-to-revenue ratio for the selected month
 - **Inventory**: Gold and Silver source mix donuts separately (Ready Stock / Order Delivery / From Suspense per metal), KPI cards per source, top products table by revenue
 - **Deep Analytics**: Month revenue / GST collected / expenses KPI cards, today's top 5 sales, expense breakdown by category, metal performance summary grid, 8-month supplier payments table (bank/UPI vs old-gold cut-rate with weight), 8-month weighted-average sale rate table (Gold 22K / 18K / Silver ₹/g), Purchase vs Sales Profit Analysis: metal weight bought vs sold (gold + silver gross/pure/net), waterfall P&L showing revenue excl GST → bank payments → cut-rate old gold → Gross Profit (GP%) → expenses → Net Profit (NP%)
 

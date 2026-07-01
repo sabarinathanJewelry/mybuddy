@@ -14,6 +14,12 @@ const monthStart = (offset = 0) => {
   return isoDate(new Date(d.getFullYear(), d.getMonth() + offset, 1));
 };
 const monthKey = (offset = 0) => monthStart(offset).slice(0, 7);
+const ymToRange = (ym: string) => {
+  const ms = ym + "-01";
+  const d = new Date(ms);
+  d.setMonth(d.getMonth() + 1);
+  return { ms, me: isoDate(d) };
+};
 
 // ── Chart colors ──────────────────────────────────────────────────────────────
 const C = {
@@ -292,11 +298,10 @@ function useRecentSales() {
   });
 }
 
-function useSalesByMetal(offset = 0) {
-  const ms = monthStart(offset);
-  const me = monthStart(offset + 1);
+function useSalesByMetal(ym = monthKey()) {
+  const { ms, me } = ymToRange(ym);
   return useQuery({
-    queryKey: ["adash-metal", monthKey(offset)],
+    queryKey: ["adash-metal", ym],
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       const { data } = await supabase().from("sale_items")
@@ -316,13 +321,12 @@ function useSalesByMetal(offset = 0) {
   });
 }
 
-function useDailySales() {
+function useDailySales(ym = monthKey()) {
+  const { ms, me } = ymToRange(ym);
   return useQuery({
-    queryKey: ["adash-daily", monthKey()],
+    queryKey: ["adash-daily", ym],
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const ms = monthStart();
-      const me = monthStart(1);
       const { data } = await supabase().from("sales").select("bill_date, bill_total")
         .gte("bill_date", ms).lt("bill_date", me).eq("status", "confirmed").order("bill_date");
       const map = new Map<string, number>();
@@ -337,13 +341,12 @@ function useDailySales() {
   });
 }
 
-function useTopCustomers() {
+function useTopCustomers(ym = monthKey()) {
+  const { ms, me } = ymToRange(ym);
   return useQuery({
-    queryKey: ["adash-top-cust", monthKey()],
+    queryKey: ["adash-top-cust", ym],
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const ms = monthStart();
-      const me = monthStart(1);
       const { data } = await supabase().from("sales").select("bill_total, customers(name)")
         .gte("bill_date", ms).lt("bill_date", me).eq("status", "confirmed");
       const map = new Map<string, number>();
@@ -415,13 +418,12 @@ function useSourceBreakdown() {
   });
 }
 
-function useMonthExpenses() {
+function useMonthExpenses(ym = monthKey()) {
+  const { ms, me } = ymToRange(ym);
   return useQuery({
-    queryKey: ["adash-exp", monthKey()],
+    queryKey: ["adash-exp", ym],
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const ms = monthStart();
-      const me = monthStart(1);
       const { data } = await supabase().from("expenses").select("amount, categories(name)")
         .gte("exp_date", ms).lt("exp_date", me);
       const total = (data ?? []).reduce((s, e: any) => s + (e.amount ?? 0), 0);
@@ -723,29 +725,52 @@ function OverviewTab() {
 }
 
 // ── Tab: Sales Analysis ───────────────────────────────────────────────────────
-function SalesTab() {
-  const [offset, setOffset] = useState(0);
-  const { data: byMetal } = useSalesByMetal(offset);
-  const { data: daily }   = useDailySales();
-  const { data: topCust } = useTopCustomers();
+const EXP_COLORS_SALES = [C.red, C.orange, C.purple, C.blue, C.green, C.gray];
 
-  const metals = Object.entries(byMetal ?? {}).sort((a, b) => b[1].revenue - a[1].revenue);
+function SalesTab() {
+  const [selYM, setSelYM] = useState(monthKey());
+  const { data: byMetal } = useSalesByMetal(selYM);
+  const { data: daily }   = useDailySales(selYM);
+  const { data: topCust } = useTopCustomers(selYM);
+  const { data: exp }     = useMonthExpenses(selYM);
+
+  const metals   = Object.entries(byMetal ?? {}).sort((a, b) => b[1].revenue - a[1].revenue);
   const totalRev = metals.reduce((s, [, v]) => s + v.revenue, 0);
   const maxCust  = Math.max(...(topCust ?? []).map((c) => c.amount), 1);
+  const maxYM    = monthKey();
 
-  const curMonth = new Date(new Date().getFullYear(), new Date().getMonth() + offset, 1)
-    .toLocaleString("en-IN", { month: "long", year: "numeric" });
+  const shiftYM = (dir: -1 | 1) => {
+    const d = new Date(selYM + "-01");
+    d.setMonth(d.getMonth() + dir);
+    const next = d.toISOString().slice(0, 7);
+    if (next <= maxYM) setSelYM(next);
+  };
+
+  const monthLabel = new Date(selYM + "-01").toLocaleString("en-IN", { month: "long", year: "numeric" });
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-3">
-        <button onClick={() => setOffset((o) => o - 1)}
+      {/* Month picker */}
+      <div className="flex items-center gap-2">
+        <button onClick={() => shiftYM(-1)}
           className="px-3 py-1.5 text-sm border border-line rounded-lg2 text-ink-dim hover:bg-slate-50">←</button>
-        <span className="font-semibold text-ink min-w-[160px] text-center">{curMonth}</span>
-        <button onClick={() => setOffset((o) => Math.min(o + 1, 0))} disabled={offset >= 0}
+        <div className="relative">
+          <input
+            type="month"
+            value={selYM}
+            max={maxYM}
+            onChange={(e) => e.target.value && setSelYM(e.target.value)}
+            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+          />
+          <span className="px-4 py-1.5 text-sm font-semibold text-ink border border-line rounded-lg2 bg-white inline-block min-w-[160px] text-center cursor-pointer select-none">
+            {monthLabel}
+          </span>
+        </div>
+        <button onClick={() => shiftYM(1)} disabled={selYM >= maxYM}
           className="px-3 py-1.5 text-sm border border-line rounded-lg2 text-ink-dim hover:bg-slate-50 disabled:opacity-40">→</button>
       </div>
 
+      {/* Sales by metal */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {metals.slice(0, 6).map(([metal, s]) => (
           <div key={metal} className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-1.5">
@@ -765,13 +790,14 @@ function SalesTab() {
         )}
       </div>
 
+      {/* Daily sales + top customers */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card title="Daily Sales — This Month">
+        <Card title={`Daily Sales — ${monthLabel}`}>
           {(daily ?? []).length >= 2
             ? <LineChart data={daily!} color={C.green} h={160} />
             : <p className="text-ink-dim text-sm text-center py-8">Not enough data yet</p>}
         </Card>
-        <Card title="Top Customers This Month">
+        <Card title={`Top Customers — ${monthLabel}`}>
           <div className="space-y-3">
             {(topCust ?? []).map((c, i) => (
               <HBar key={i} label={c.name} value={c.amount} max={maxCust}
@@ -781,6 +807,39 @@ function SalesTab() {
           </div>
         </Card>
       </div>
+
+      {/* Expenses */}
+      <Card title={`Expenses — ${monthLabel}`}>
+        {(exp?.categories ?? []).length > 0 ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 pb-3 border-b border-line">
+              {exp!.categories.map((c, i) => (
+                <div key={c.cat} className="space-y-1">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-ink truncate">{c.cat}</span>
+                    <span className="text-ink-dim shrink-0 ml-1 text-xs">{c.pct}%</span>
+                  </div>
+                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${c.pct}%`, background: EXP_COLORS_SALES[i] ?? C.gray }} />
+                  </div>
+                  <p className="text-xs font-medium text-ink-dim">{inr(c.amount)}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-between text-sm font-semibold">
+              <span className="text-ink">Total Expenses</span>
+              <span className="text-err">{inr(exp?.total ?? 0)}</span>
+            </div>
+            {totalRev > 0 && (
+              <p className="text-xs text-ink-dim">
+                Expenses are {((exp!.total / totalRev) * 100).toFixed(1)}% of sales revenue this month
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-ink-dim text-sm text-center py-6">No expenses recorded this month</p>
+        )}
+      </Card>
     </div>
   );
 }
