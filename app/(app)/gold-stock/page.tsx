@@ -80,6 +80,20 @@ function useDeleteStock() {
   });
 }
 
+function useRenameCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ oldName, newName }: { oldName: string; newName: string }) => {
+      const { error } = await supabase()
+        .from("gold_stock_entries")
+        .update({ category: newName })
+        .eq("category", oldName);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["gold_stock"] }),
+  });
+}
+
 // ── Period Report ────────────────────────────────────────────────────────────
 
 function PeriodReport({ fromDate, toDate }: { fromDate: string; toDate: string }) {
@@ -228,6 +242,17 @@ export default function GoldStockPage() {
   const [soldWeightInput, setSoldWeightInput] = useState("");
   const [soldQtyInput, setSoldQtyInput] = useState("");
 
+  // Transfer mode — move weight/qty from vault → outer
+  const [transferMode, setTransferMode] = useState(false);
+  const [transferWeightInput, setTransferWeightInput] = useState("");
+  const [transferQtyInput, setTransferQtyInput] = useState("");
+
+  // Rename mode — rename a category across all entries
+  const [renameMode, setRenameMode] = useState(false);
+  const [renameInput, setRenameInput] = useState("");
+
+  const rename = useRenameCategory();
+
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customCatInput, setCustomCatInput] = useState("");
   const customRef = useRef<HTMLInputElement>(null);
@@ -253,15 +278,21 @@ export default function GoldStockPage() {
   const pendingW = parseFloat(weightInput) || 0;
   const effectiveTotal = runningTotal + (pendingW > 0 ? pendingW : 0);
 
+  function clearModes() {
+    setSoldMode(false); setSoldWeightInput(""); setSoldQtyInput("");
+    setTransferMode(false); setTransferWeightInput(""); setTransferQtyInput("");
+    setRenameMode(false); setRenameInput("");
+  }
+
   function selectCategory(cat: string) {
     if (activeCategory === cat) {
       setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes("");
-      setSoldMode(false); setSoldWeightInput(""); setSoldQtyInput("");
+      clearModes();
       return;
     }
     setActiveCategory(cat);
     setWeightInput(""); setNotes("");
-    setSoldMode(false); setSoldWeightInput(""); setSoldQtyInput("");
+    clearModes();
     const existing = entryMap.get(`${stockType}:${cat}`);
     if (existing) {
       setWeights([existing.total_weight_g]);
@@ -270,6 +301,37 @@ export default function GoldStockPage() {
       setWeights([]); setQty("");
     }
     setTimeout(() => weightRef.current?.focus(), 50);
+  }
+
+  async function handleTransfer() {
+    if (!activeCategory || stockType !== "vault") return;
+    const vault = entryMap.get(`vault:${activeCategory}`);
+    if (!vault) return;
+    const tWt = parseFloat(transferWeightInput) || 0;
+    const tQty = parseInt(transferQtyInput) || 0;
+    if (tWt <= 0) return;
+    if (tWt > Number(vault.total_weight_g)) { alert("Transfer weight cannot exceed vault stock"); return; }
+    if (vault.qty != null && tQty > vault.qty) { alert("Transfer qty cannot exceed vault qty"); return; }
+
+    const outerExisting = entryMap.get(`outer:${activeCategory}`);
+    const newVaultWt = parseFloat((Number(vault.total_weight_g) - tWt).toFixed(3));
+    const newVaultQty = vault.qty != null ? vault.qty - tQty : null;
+    const newOuterWt = parseFloat((Number(outerExisting?.total_weight_g ?? 0) + tWt).toFixed(3));
+    const newOuterQty = outerExisting?.qty != null ? outerExisting.qty + tQty : (tQty > 0 ? tQty : null);
+
+    await upsert.mutateAsync({ entry_date: date, stock_type: "vault", category: activeCategory, total_weight_g: newVaultWt, qty: newVaultQty, notes: vault.notes || "" });
+    await upsert.mutateAsync({ entry_date: date, stock_type: "outer", category: activeCategory, total_weight_g: newOuterWt, qty: newOuterQty, notes: outerExisting?.notes || "" });
+
+    setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes("");
+    clearModes();
+  }
+
+  async function handleRename() {
+    if (!activeCategory || !renameInput.trim() || renameInput.trim() === activeCategory) return;
+    if (!window.confirm(`Rename "${activeCategory}" → "${renameInput.trim()}" across ALL dates? This cannot be undone.`)) return;
+    await rename.mutateAsync({ oldName: activeCategory, newName: renameInput.trim() });
+    setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes("");
+    clearModes();
   }
 
   async function handleReduceSold() {
@@ -469,20 +531,52 @@ export default function GoldStockPage() {
       {activeCategory && (
         <div className="bg-white border border-gold/30 rounded-xl p-5 shadow-soft space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <h2 className="font-semibold text-ink">{activeCategory}
-              <span className="ml-2 text-xs font-normal text-ink-dim capitalize">{stockType}</span>
-            </h2>
-            <div className="flex items-center gap-2">
-              {effectiveTotal > 0 && !soldMode && (
+            {renameMode ? (
+              <div className="flex items-center gap-2 flex-1">
+                <input
+                  value={renameInput}
+                  onChange={e => setRenameInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") handleRename(); if (e.key === "Escape") { setRenameMode(false); setRenameInput(""); } }}
+                  autoFocus
+                  className="border border-gold rounded-lg2 px-2 py-1 text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-gold flex-1 max-w-[180px]"
+                />
+                <button onClick={handleRename} disabled={rename.isPending || !renameInput.trim() || renameInput.trim() === activeCategory}
+                  className="text-xs bg-gold text-white px-3 py-1 rounded-lg2 disabled:opacity-40">
+                  {rename.isPending ? "Saving…" : "Rename"}
+                </button>
+                <button onClick={() => { setRenameMode(false); setRenameInput(""); }} className="text-xs text-ink-dim hover:text-ink">Cancel</button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <h2 className="font-semibold text-ink">{activeCategory}
+                  <span className="ml-2 text-xs font-normal text-ink-dim capitalize">{stockType}</span>
+                </h2>
+                <button onClick={() => { clearModes(); setRenameMode(true); setRenameInput(activeCategory!); }}
+                  title="Rename category"
+                  className="text-ink-dim/50 hover:text-gold transition-colors text-xs px-1">✎</button>
+              </div>
+            )}
+            <div className="flex items-center gap-2 flex-wrap">
+              {effectiveTotal > 0 && !soldMode && !transferMode && (
                 <span className="text-sm font-bold text-gold font-mono">{grams(effectiveTotal)}</span>
               )}
-              {entryMap.has(`${stockType}:${activeCategory}`) && (
-                <button
-                  onClick={() => { setSoldMode(v => !v); setSoldWeightInput(""); setSoldQtyInput(""); }}
-                  className={clsx("text-xs px-3 py-1 rounded-lg2 border font-medium transition-colors",
-                    soldMode ? "bg-warn/20 border-warn text-warn" : "border-line text-ink-dim hover:border-warn hover:text-warn")}>
-                  {soldMode ? "Cancel Sold" : "Record Sold"}
-                </button>
+              {entryMap.has(`${stockType}:${activeCategory}`) && !renameMode && (
+                <>
+                  {stockType === "vault" && (
+                    <button
+                      onClick={() => { clearModes(); setTransferMode(v => !v); }}
+                      className={clsx("text-xs px-3 py-1 rounded-lg2 border font-medium transition-colors",
+                        transferMode ? "bg-info/20 border-info text-info" : "border-line text-ink-dim hover:border-info hover:text-info")}>
+                      {transferMode ? "Cancel" : "→ Outer"}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => { clearModes(); setSoldMode(v => !v); }}
+                    className={clsx("text-xs px-3 py-1 rounded-lg2 border font-medium transition-colors",
+                      soldMode ? "bg-warn/20 border-warn text-warn" : "border-line text-ink-dim hover:border-warn hover:text-warn")}>
+                    {soldMode ? "Cancel" : "Record Sold"}
+                  </button>
+                </>
               )}
             </div>
           </div>
@@ -543,8 +637,80 @@ export default function GoldStockPage() {
             );
           })()}
 
-          {/* Normal entry — hidden when in sold mode */}
-          {!soldMode && <>
+          {/* Transfer mode — vault → outer */}
+          {transferMode && stockType === "vault" && (() => {
+            const vault = entryMap.get(`vault:${activeCategory}`)!;
+            const outer = entryMap.get(`outer:${activeCategory}`);
+            const tWt = parseFloat(transferWeightInput) || 0;
+            const tQty = parseInt(transferQtyInput) || 0;
+            const afterVaultWt = parseFloat((Number(vault.total_weight_g) - tWt).toFixed(3));
+            const afterOuterWt = parseFloat((Number(outer?.total_weight_g ?? 0) + tWt).toFixed(3));
+            const afterVaultQty = vault.qty != null ? vault.qty - tQty : null;
+            const afterOuterQty = outer?.qty != null ? outer.qty + tQty : (tQty > 0 ? tQty : null);
+            const invalid = tWt <= 0 || afterVaultWt < 0 || (vault.qty != null && afterVaultQty != null && afterVaultQty < 0);
+            return (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-canvas rounded-lg2 px-3 py-2">
+                    <p className="text-ink-dim mb-0.5">Vault (current)</p>
+                    <p className="font-mono font-semibold text-ink">{grams(vault.total_weight_g)}{vault.qty != null ? ` · ${vault.qty}pc` : ""}</p>
+                  </div>
+                  <div className="bg-canvas rounded-lg2 px-3 py-2">
+                    <p className="text-ink-dim mb-0.5">Outer (current)</p>
+                    <p className="font-mono font-semibold text-ink">{outer ? `${grams(outer.total_weight_g)}${outer.qty != null ? ` · ${outer.qty}pc` : ""}` : "—"}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Transfer weight (g)</label>
+                    <input type="number" step="0.001" min="0" value={transferWeightInput}
+                      onChange={e => setTransferWeightInput(e.target.value)}
+                      placeholder="e.g. 10.500" autoFocus
+                      className={clsx(inp, "font-mono")} />
+                  </div>
+                  {vault.qty != null && (
+                    <div>
+                      <label className="block text-xs text-ink-dim mb-1">Transfer qty (pieces)</label>
+                      <input type="number" step="1" min="0" value={transferQtyInput}
+                        onChange={e => setTransferQtyInput(e.target.value)}
+                        placeholder="e.g. 3"
+                        className={inp} />
+                    </div>
+                  )}
+                </div>
+                {tWt > 0 && (
+                  <div className="bg-info/5 border border-info/30 rounded-lg2 px-3 py-2 text-xs grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-ink-dim mb-0.5">Vault after</p>
+                      <p className={clsx("font-mono font-semibold", afterVaultWt < 0 ? "text-err" : "text-ink")}>
+                        {grams(Math.max(afterVaultWt, 0))}{afterVaultQty != null ? ` · ${Math.max(afterVaultQty, 0)}pc` : ""}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-ink-dim mb-0.5">Outer after</p>
+                      <p className="font-mono font-semibold text-ok">
+                        {grams(afterOuterWt)}{afterOuterQty != null ? ` · ${afterOuterQty}pc` : ""}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {upsert.isError && <p className="text-xs text-err">{(upsert.error as Error).message}</p>}
+                <div className="flex gap-2">
+                  <button disabled={upsert.isPending || invalid} onClick={handleTransfer}
+                    className="bg-info text-white text-sm font-medium px-6 py-2 rounded-lg2 disabled:opacity-50 hover:opacity-90">
+                    {upsert.isPending ? "Transferring…" : "Transfer to Outer"}
+                  </button>
+                  <button onClick={() => { setTransferMode(false); setTransferWeightInput(""); setTransferQtyInput(""); }}
+                    className="border border-line text-sm px-4 py-2 rounded-lg2 text-ink-dim hover:text-ink">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Normal entry — hidden when in sold/transfer/rename mode */}
+          {!soldMode && !transferMode && !renameMode && <>
 
           {/* Weight list */}
           {weights.length > 0 && (
