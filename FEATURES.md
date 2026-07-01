@@ -62,6 +62,7 @@
 ### Chit Savings
 - Cash chit: monthly payment tracking
 - Gold chit: weight-based with board_rate at payment time
+- **Smart Gold Chit print**: "அச்சிடு" button per deposit row opens a Tamil receipt overlay — shop header (சபரிநாதன் நகைக்கடை), receipt number, date, customer name, metal, gross weight, purity, credited weight, notes, signature lines; "அச்சிடு / Print" triggers `window.print()` which hides all other content and prints only the receipt
 - Chit payment edit (corrects wrong amount, recalculates grams)
 - Chit payment delete (reverses grams from customer balance + clears ledger entries)
 - Chit bonus payments

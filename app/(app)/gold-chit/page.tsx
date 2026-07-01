@@ -23,6 +23,7 @@ export default function GoldChitPage() {
   const qc = useQueryClient();
 
   const [showForm, setShowForm] = useState(false);
+  const [printRow, setPrintRow] = useState<Record<string, unknown> | null>(null);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [metalType, setMetalType] = useState<"gold" | "silver">("gold");
   const [depositDate, setDepositDate] = useState(globalDate);
@@ -218,6 +219,7 @@ export default function GoldChitPage() {
                 <th className="text-right px-3 py-2.5">Purity %</th>
                 <th className="text-right px-3 py-2.5">Pure Wt Credited</th>
                 <th className="text-left px-3 py-2.5">Notes</th>
+                <th className="px-3 py-2.5"></th>
               </tr>
             </thead>
             <tbody>
@@ -232,6 +234,9 @@ export default function GoldChitPage() {
                   <td className="px-3 py-2.5 text-right text-ink-dim">{d.purity_pct}%</td>
                   <td className="px-3 py-2.5 text-right font-mono text-gold font-semibold">{Number(d.pure_wt).toFixed(4)}g</td>
                   <td className="px-3 py-2.5 text-ink-dim text-xs">{d.notes ?? "—"}</td>
+                  <td className="px-3 py-2.5">
+                    <button onClick={() => setPrintRow(d)} className="text-xs text-info hover:underline whitespace-nowrap">அச்சிடு</button>
+                  </td>
                 </tr>
               ))}
               {!rows.length && (
@@ -240,6 +245,105 @@ export default function GoldChitPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* ── Tamil Print Receipt ── */}
+      {printRow && (
+        <>
+          <style>{`
+            @media print {
+              body * { visibility: hidden; }
+              #chit-print-area, #chit-print-area * { visibility: visible; }
+              #chit-print-area { position: fixed; top: 0; left: 0; width: 100%; padding: 24px; box-sizing: border-box; }
+            }
+          `}</style>
+
+          {/* Screen overlay */}
+          <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm flex flex-col">
+              {/* Action buttons */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-line">
+                <span className="text-sm font-semibold text-ink">வரவு சீட்டு / Deposit Receipt</span>
+                <div className="flex gap-2">
+                  <button onClick={() => window.print()}
+                    className="bg-gold text-white text-xs px-4 py-1.5 rounded-lg2 font-medium">அச்சிடு / Print</button>
+                  <button onClick={() => setPrintRow(null)}
+                    className="border border-line text-xs px-3 py-1.5 rounded-lg2 text-ink-dim">மூடு</button>
+                </div>
+              </div>
+
+              {/* Receipt */}
+              <div id="chit-print-area" className="p-5 font-['Arial',sans-serif] text-[13px] leading-relaxed">
+                {/* Shop header */}
+                <div className="text-center border-b-2 border-gray-800 pb-3 mb-3">
+                  <p className="text-base font-bold text-gray-900">சபரிநாதன் நகைக்கடை</p>
+                  <p className="text-xs text-gray-600">Sabarinathan Jewellery</p>
+                  <p className="text-sm font-semibold mt-1 text-gray-800">
+                    {printRow.metal_type === "gold" ? "தங்க வரவு சீட்டு" : "வெள்ளி வரவு சீட்டு"}
+                  </p>
+                  <p className="text-[11px] text-gray-500">
+                    {printRow.metal_type === "gold" ? "Gold Deposit Receipt" : "Silver Deposit Receipt"}
+                  </p>
+                </div>
+
+                {/* Meta row */}
+                <div className="flex justify-between text-[11px] text-gray-600 mb-3">
+                  <span>சீட்டு எண்: <strong className="text-gray-900">{String(printRow.id).slice(0, 8).toUpperCase()}</strong></span>
+                  <span>தேதி: <strong className="text-gray-900">{shortDate(String(printRow.deposit_date))}</strong></span>
+                </div>
+
+                {/* Customer */}
+                <div className="border border-gray-300 rounded px-3 py-2 mb-3">
+                  <p className="text-[10px] text-gray-500 mb-0.5">வாடிக்கையாளர் / Customer</p>
+                  <p className="font-bold text-gray-900 text-sm">{(printRow as Record<string,unknown> & {customers?: {name?: string}}).customers?.name ?? "—"}</p>
+                </div>
+
+                {/* Details table */}
+                <table className="w-full text-[12px] border-collapse mb-3">
+                  <tbody>
+                    {[
+                      ["உலோகம்", "Metal", printRow.metal_type === "gold" ? "தங்கம் (Gold)" : "வெள்ளி (Silver)"],
+                      ["மொத்த எடை", "Gross Weight", `${Number(printRow.gross_wt).toFixed(3)} கிராம்`],
+                      ["தூய்மை", "Purity", `${printRow.purity_pct}%`],
+                      ["வரவு எடை", "Credited Weight", `${Number(printRow.pure_wt).toFixed(3)} கிராம்`],
+                      ...(printRow.notes ? [["குறிப்பு", "Notes", String(printRow.notes)]] : []),
+                    ].map(([ta, en, val]) => (
+                      <tr key={ta} className="border-b border-gray-200 last:border-0">
+                        <td className="py-1.5 pr-2 text-gray-600 w-[38%]">
+                          <span className="block">{ta}</span>
+                          <span className="text-[10px] text-gray-400">{en}</span>
+                        </td>
+                        <td className="py-1.5 font-semibold text-gray-900">{val}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Credit note */}
+                <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2 text-center mb-4">
+                  <p className="text-[11px] text-gray-700 font-medium">உங்கள் உலோக கணக்கில் வரவு வைக்கப்பட்டது</p>
+                  <p className="text-[10px] text-gray-500">Credited to your metal account</p>
+                </div>
+
+                {/* Signature row */}
+                <div className="grid grid-cols-2 gap-4 mt-2">
+                  <div className="text-center">
+                    <div className="border-b border-gray-400 h-8 mb-1"></div>
+                    <p className="text-[10px] text-gray-600">வாடிக்கையாளர் கையொப்பம்</p>
+                    <p className="text-[9px] text-gray-400">Customer Signature</p>
+                  </div>
+                  <div className="text-center">
+                    <div className="border-b border-gray-400 h-8 mb-1"></div>
+                    <p className="text-[10px] text-gray-600">கடை கையொப்பம்</p>
+                    <p className="text-[9px] text-gray-400">Shop Signature</p>
+                  </div>
+                </div>
+
+                <p className="text-center text-[10px] text-gray-400 mt-4 border-t border-gray-200 pt-2">நன்றி — Thank You</p>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
