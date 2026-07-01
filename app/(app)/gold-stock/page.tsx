@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useRef, KeyboardEvent } from "react";
+import { useState, useRef, KeyboardEvent, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { grams, shortDate } from "@/lib/format";
 import { clsx } from "clsx";
 
-const CATEGORIES = [
+const PRESET_CATEGORIES = [
   "75KDM", "Bangle", "Bracelet", "Chain", "Diamond", "Dollar",
   "Gold Kolusu", "Malaim", "Necklace", "Ring", "Stud", "Thali",
 ];
@@ -77,6 +77,10 @@ export default function GoldStockPage() {
   const [notes, setNotes] = useState("");
   const weightRef = useRef<HTMLInputElement>(null);
 
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [customCatInput, setCustomCatInput] = useState("");
+  const customRef = useRef<HTMLInputElement>(null);
+
   const { data: entries = [] } = useStockEntries(date);
   const upsert = useUpsertStock();
   const del = useDeleteStock();
@@ -84,6 +88,12 @@ export default function GoldStockPage() {
 
   const entriesForType = entries.filter(e => e.stock_type === stockType);
   const entryMap = new Map(entries.map(e => [`${e.stock_type}:${e.category}`, e]));
+
+  // Merge preset with any custom categories saved in the DB for this date
+  const allCategories = useMemo(() => {
+    const saved = entries.map(e => e.category);
+    return Array.from(new Set([...PRESET_CATEGORIES, ...saved]));
+  }, [entries]);
 
   const runningTotal = weights.reduce((s, w) => s + w, 0);
   const pendingW = parseFloat(weightInput) || 0;
@@ -170,9 +180,10 @@ export default function GoldStockPage() {
 
       {/* Category grid */}
       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-        {CATEGORIES.map(cat => {
+        {allCategories.map(cat => {
           const existing = entryMap.get(`${stockType}:${cat}`);
           const isActive = activeCategory === cat;
+          const isCustom = !PRESET_CATEGORIES.includes(cat);
           return (
             <button key={cat} onClick={() => selectCategory(cat)}
               className={clsx(
@@ -183,7 +194,9 @@ export default function GoldStockPage() {
                   ? "border-ok/40 bg-ok/5 hover:border-ok"
                   : "border-line bg-white hover:border-gold"
               )}>
-              <p className={clsx("text-xs font-semibold truncate", isActive ? "text-gold" : existing ? "text-ok" : "text-ink")}>{cat}</p>
+              <p className={clsx("text-xs font-semibold truncate", isActive ? "text-gold" : existing ? "text-ok" : "text-ink")}>
+                {cat}{isCustom && <span className="ml-1 text-[9px] text-ink-dim/60 font-normal">custom</span>}
+              </p>
               {existing
                 ? <p className="text-[11px] font-mono text-ink-dim mt-0.5">{grams(existing.total_weight_g)}{existing.qty != null ? ` · ${existing.qty}pc` : ""}</p>
                 : <p className="text-[11px] text-ink-dim/60 mt-0.5">—</p>
@@ -191,6 +204,46 @@ export default function GoldStockPage() {
             </button>
           );
         })}
+
+        {/* Add custom category tile */}
+        {showCustomInput ? (
+          <div className="rounded-xl border border-gold/40 bg-gold/5 px-3 py-2.5 flex flex-col gap-1.5">
+            <input
+              ref={customRef}
+              value={customCatInput}
+              onChange={e => setCustomCatInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  const name = customCatInput.trim();
+                  if (name) { selectCategory(name); setShowCustomInput(false); setCustomCatInput(""); }
+                }
+                if (e.key === "Escape") { setShowCustomInput(false); setCustomCatInput(""); }
+              }}
+              placeholder="e.g. Coin"
+              autoFocus
+              className="text-xs border border-line rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-gold w-full"
+            />
+            <div className="flex gap-1">
+              <button
+                onClick={() => {
+                  const name = customCatInput.trim();
+                  if (name) { selectCategory(name); setShowCustomInput(false); setCustomCatInput(""); }
+                }}
+                className="text-[10px] bg-gold text-white px-2 py-0.5 rounded font-medium">Add</button>
+              <button
+                onClick={() => { setShowCustomInput(false); setCustomCatInput(""); }}
+                className="text-[10px] text-ink-dim px-1">✕</button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => { setShowCustomInput(true); setTimeout(() => customRef.current?.focus(), 50); }}
+            className="rounded-xl border border-dashed border-line px-3 py-2.5 text-left hover:border-gold transition-all">
+            <p className="text-xs font-semibold text-ink-dim">+ Custom</p>
+            <p className="text-[11px] text-ink-dim/60 mt-0.5">Coin, Bar…</p>
+          </button>
+        )}
       </div>
 
       {/* Weight entry panel */}
@@ -314,7 +367,7 @@ export default function GoldStockPage() {
               </tr>
             </thead>
             <tbody>
-              {CATEGORIES.filter(c => entriesForType.some(e => e.category === c)).map(cat => {
+              {allCategories.filter(c => entriesForType.some(e => e.category === c)).map(cat => {
                 const e = entryMap.get(`${stockType}:${cat}`)!;
                 return (
                   <tr key={cat} className="border-b border-line last:border-0 hover:bg-canvas/40 cursor-pointer"

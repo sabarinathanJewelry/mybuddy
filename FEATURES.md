@@ -96,7 +96,7 @@
 - Used in sale item autocomplete
 
 ### Gold Stock (`/gold-stock`)
-- Date-based stock entry for gold items across 12 categories: 75KDM, Bangle, Bracelet, Chain, Diamond, Dollar, Gold Kolusu, Malaim, Necklace, Ring, Stud, Thali
+- Date-based stock entry for gold items across 12 preset categories (75KDM, Bangle, Bracelet, Chain, Diamond, Dollar, Gold Kolusu, Malaim, Necklace, Ring, Stud, Thali) plus unlimited custom categories (Coin, Bar, etc.) via "+ Custom" tile
 - Two stock types: **Vault** (weight only) and **Outer** (weight + quantity)
 - Multi-weight accumulator: enter individual piece weights one by one (press Enter or + Add), running total shown; delete any entry from the list; pending input auto-included on Save (no need to press Enter first)
 - Quantity field on both Vault and Outer stock: required for Outer, optional for Vault (for tagged/scanned items); auto-filled from number of weight entries if not manually set
