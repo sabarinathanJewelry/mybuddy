@@ -101,6 +101,17 @@ function useDeleteStock() {
   });
 }
 
+function useDeleteCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (category: string) => {
+      const { error } = await supabase().from("gold_stock_entries").delete().eq("category", category);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["gold_stock"] }),
+  });
+}
+
 function useRenameCategory() {
   const qc = useQueryClient();
   return useMutation({
@@ -276,9 +287,11 @@ export default function GoldStockPage() {
   const upsert = useUpsertStock();
   const del = useDeleteStock();
   const rename = useRenameCategory();
+  const deleteCategory = useDeleteCategory();
 
   const entriesForType = entries.filter(e => e.stock_type === stockType);
   const entryMap = new Map(entries.map(e => [`${e.stock_type}:${e.category}`, e]));
+  const hasAnyEntryToday = (cat: string) => entries.some(e => e.category === cat);
 
   const allCategories = useMemo(() => {
     const saved = entries.map(e => e.category);
@@ -916,6 +929,16 @@ export default function GoldStockPage() {
                       }
                     }}
                     className="ml-auto text-xs text-err hover:underline">Delete entry</button>
+                )}
+                {!hasAnyEntryToday(activeCategory!) && (
+                  <button
+                    disabled={deleteCategory.isPending}
+                    onClick={async () => {
+                      if (!window.confirm(`Delete category "${activeCategory}" and all its entries across all dates? This cannot be undone.`)) return;
+                      await deleteCategory.mutateAsync(activeCategory!);
+                      setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes(""); setUntaggedInput(""); clearModes();
+                    }}
+                    className="ml-auto text-xs text-err hover:underline disabled:opacity-40">Delete category</button>
                 )}
               </div>
             </>
