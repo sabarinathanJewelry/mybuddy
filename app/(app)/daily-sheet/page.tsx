@@ -737,7 +737,7 @@ export default function DailySheetPage() {
   const [viewTab, setViewTab] = useState<ViewTab>("summary");
   const [includeBankOut, setIncludeBankOut] = useState(false);
   const [exchNetOnly, setExchNetOnly] = useState(false);
-  const [hideOrderAdvance, setHideOrderAdvance] = useState(true);
+  const [hideOrderAdvance, setHideOrderAdvance] = useState(false);
   const [cbFrom, setCbFrom] = useState(date);
   const [cbTo,   setCbTo]   = useState(date);
   const { data: salesLedger, isLoading: ledgerLoading } = useDaySalesLedger(cbFrom, cbTo);
@@ -1166,7 +1166,7 @@ export default function DailySheetPage() {
             <label className="flex items-center gap-1.5 cursor-pointer select-none text-ink-dim">
               <input type="checkbox" checked={!hideOrderAdvance} onChange={e => setHideOrderAdvance(!e.target.checked)}
                 className="accent-gold" />
-              Show order advance
+              Show advance on orders
             </label>
             <label className="flex items-center gap-1.5 ml-auto cursor-pointer select-none text-ink-dim">
               <input type="checkbox" checked={includeBankOut} onChange={e => setIncludeBankOut(e.target.checked)}
