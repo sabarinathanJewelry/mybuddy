@@ -20,6 +20,7 @@ interface StockEntry {
   stock_type: StockType;
   category: string;
   total_weight_g: number;
+  untagged_weight_g: number;
   qty: number | null;
   notes: string | null;
   reserved_weight_g: number;
@@ -30,6 +31,7 @@ interface StockEntry {
 type UpsertPayload = {
   entry_date: string; stock_type: StockType; category: string;
   total_weight_g: number; qty: number | null; notes: string;
+  untagged_weight_g?: number;
   reserved_weight_g?: number; reserved_qty?: number; reserved_notes?: string;
 };
 
@@ -233,6 +235,7 @@ export default function GoldStockPage() {
   const [weights, setWeights] = useState<number[]>([]);
   const [weightInput, setWeightInput] = useState("");
   const [qty, setQty] = useState<string>("");
+  const [untaggedInput, setUntaggedInput] = useState("");
   const [notes, setNotes] = useState("");
   const weightRef = useRef<HTMLInputElement>(null);
 
@@ -295,7 +298,7 @@ export default function GoldStockPage() {
 
   function selectCategory(cat: string) {
     if (activeCategory === cat) {
-      setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes("");
+      setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes(""); setUntaggedInput("");
       clearModes(); return;
     }
     setActiveCategory(cat);
@@ -304,10 +307,11 @@ export default function GoldStockPage() {
     if (existing) {
       setWeights([existing.total_weight_g]);
       setQty(existing.qty != null ? String(existing.qty) : "");
+      setUntaggedInput(Number(existing.untagged_weight_g) > 0 ? String(existing.untagged_weight_g) : "");
       const res = parseReservations(existing);
       if (res.length > 0) { setShowReserved(true); setReservations(res); }
     } else {
-      setWeights([]); setQty("");
+      setWeights([]); setQty(""); setUntaggedInput("");
     }
     setTimeout(() => weightRef.current?.focus(), 50);
   }
@@ -324,23 +328,26 @@ export default function GoldStockPage() {
   }
 
   async function handleSave() {
-    if (!activeCategory || effectiveTotal <= 0) return;
+    const untaggedWt = parseFloat(untaggedInput) || 0;
+    if (!activeCategory || (effectiveTotal <= 0 && untaggedWt <= 0)) return;
     const finalWeights = pendingW > 0 ? [...weights, pendingW] : weights;
     const total = parseFloat(finalWeights.reduce((s, w) => s + w, 0).toFixed(3));
-    const autoQty = finalWeights.length;
+    // Only auto-count qty when multiple individual weights were scanned; single weight stays untagged unless qty is explicit
+    const autoQty = finalWeights.length > 1 ? finalWeights.length : null;
     const allRes = showReserved ? reservations : [];
     const resWt = parseFloat(allRes.reduce((s, r) => s + r.w, 0).toFixed(3));
     const resQty = allRes.reduce((s, r) => s + r.q, 0);
     await upsert.mutateAsync({
       entry_date: date, stock_type: stockType, category: activeCategory,
       total_weight_g: total,
-      qty: qty ? parseInt(qty) : (autoQty > 0 ? autoQty : null),
+      qty: qty ? parseInt(qty) : autoQty,
       notes: notes.trim() || "",
+      untagged_weight_g: untaggedWt,
       reserved_weight_g: resWt,
       reserved_qty: resQty,
       reserved_notes: allRes.length > 0 ? JSON.stringify(allRes) : undefined,
     });
-    setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes("");
+    setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes(""); setUntaggedInput("");
     clearModes();
   }
 
@@ -358,10 +365,11 @@ export default function GoldStockPage() {
     await upsert.mutateAsync({
       entry_date: date, stock_type: stockType, category: activeCategory!,
       total_weight_g: newWt, qty: newQty, notes: existing.notes || "",
+      untagged_weight_g: Number(existing.untagged_weight_g) || 0,
       reserved_weight_g: existing.reserved_weight_g, reserved_qty: existing.reserved_qty,
       reserved_notes: existing.reserved_notes || undefined,
     });
-    setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes("");
+    setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes(""); setUntaggedInput("");
     clearModes();
   }
 
@@ -394,6 +402,7 @@ export default function GoldStockPage() {
       entry_date: date, stock_type: srcType, category: activeCategory,
       total_weight_g: newSrcWt, qty: newSrcQty,
       notes: [src.notes, reasonNote].filter(Boolean).join(" ").trim(),
+      untagged_weight_g: Number(src.untagged_weight_g) || 0,
       reserved_weight_g: src.reserved_weight_g, reserved_qty: src.reserved_qty,
       reserved_notes: src.reserved_notes || undefined,
     });
@@ -401,11 +410,12 @@ export default function GoldStockPage() {
       entry_date: date, stock_type: dstType, category: activeCategory,
       total_weight_g: newDstWt, qty: newDstQty,
       notes: [dst?.notes, reasonNote].filter(Boolean).join(" ").trim(),
+      untagged_weight_g: Number(dst?.untagged_weight_g) || 0,
       reserved_weight_g: dst?.reserved_weight_g ?? 0, reserved_qty: dst?.reserved_qty ?? 0,
       reserved_notes: dst?.reserved_notes || undefined,
     });
 
-    setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes("");
+    setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes(""); setUntaggedInput("");
     clearModes();
   }
 
@@ -413,12 +423,12 @@ export default function GoldStockPage() {
     if (!activeCategory || !renameInput.trim() || renameInput.trim() === activeCategory) return;
     if (!window.confirm(`Rename "${activeCategory}" → "${renameInput.trim()}" across ALL dates? This cannot be undone.`)) return;
     await rename.mutateAsync({ oldName: activeCategory, newName: renameInput.trim() });
-    setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes("");
+    setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes(""); setUntaggedInput("");
     clearModes();
   }
 
-  const vaultTotal = entries.filter(e => e.stock_type === "vault").reduce((s, e) => s + Number(e.total_weight_g), 0);
-  const outerTotal = entries.filter(e => e.stock_type === "outer").reduce((s, e) => s + Number(e.total_weight_g), 0);
+  const vaultTotal = entries.filter(e => e.stock_type === "vault").reduce((s, e) => s + Number(e.total_weight_g) + Number(e.untagged_weight_g), 0);
+  const outerTotal = entries.filter(e => e.stock_type === "outer").reduce((s, e) => s + Number(e.total_weight_g) + Number(e.untagged_weight_g), 0);
 
   const transferSrc = activeCategory
     ? (transferDir === "to_outer" ? entryMap.get(`vault:${activeCategory}`) : entryMap.get(`outer:${activeCategory}`))
@@ -496,6 +506,7 @@ export default function GoldStockPage() {
           const existing = entryMap.get(`${stockType}:${cat}`);
           const isActive = activeCategory === cat;
           const isTagged = existing?.qty != null;
+          const hasUntagged = Number(existing?.untagged_weight_g) > 0;
           const hasReserved = (existing?.reserved_weight_g ?? 0) > 0;
           const isCustom = !PRESET_CATEGORIES.includes(cat);
           return (
@@ -514,9 +525,14 @@ export default function GoldStockPage() {
               </p>
               {existing ? (
                 <div className="mt-0.5">
-                  <p className="text-[11px] font-mono text-ink-dim">
-                    {grams(existing.total_weight_g)}{existing.qty != null ? <span className="text-info"> · {existing.qty}pc</span> : ""}
-                  </p>
+                  {Number(existing.total_weight_g) > 0 && (
+                    <p className="text-[11px] font-mono text-ink-dim">
+                      {grams(existing.total_weight_g)}{existing.qty != null ? <span className="text-info"> · {existing.qty}pc</span> : ""}
+                    </p>
+                  )}
+                  {hasUntagged && (
+                    <p className="text-[11px] font-mono text-ok">+{grams(existing.untagged_weight_g)} bulk</p>
+                  )}
                   {hasReserved && (
                     <p className="text-[10px] text-warn/70 font-medium">{grams(existing.reserved_weight_g)} reserved</p>
                   )}
@@ -792,6 +808,21 @@ export default function GoldStockPage() {
                 </div>
               </div>
 
+              {/* Bulk / Untagged weight */}
+              <div className="border border-ok/30 rounded-xl p-3 space-y-2">
+                <label className="block text-xs font-medium text-ok/90">
+                  Bulk / Untagged weight
+                  <span className="ml-1.5 font-normal text-ink-dim/60">= no individual piece tracking</span>
+                </label>
+                <input type="number" step="0.001" min="0" value={untaggedInput}
+                  onChange={e => setUntaggedInput(e.target.value)}
+                  placeholder="e.g. 50.000 (loose chains, kolusu, scrap gold…)"
+                  className={clsx(inp, "font-mono")} />
+                {(parseFloat(untaggedInput) || 0) > 0 && (
+                  <p className="text-xs text-ok font-mono">Bulk: {grams(parseFloat(untaggedInput))}</p>
+                )}
+              </div>
+
               {/* Reserved / Custom Order section (vault only) */}
               {stockType === "vault" && (() => {
                 const totalReserved = parseFloat(reservations.reduce((s, r) => s + r.w, 0).toFixed(3));
@@ -868,12 +899,12 @@ export default function GoldStockPage() {
 
               <div className="flex gap-2">
                 <button
-                  disabled={upsert.isPending || effectiveTotal <= 0 || (stockType === "outer" && !qty && weights.length === 0 && pendingW <= 0)}
+                  disabled={upsert.isPending || (effectiveTotal <= 0 && (parseFloat(untaggedInput) || 0) <= 0)}
                   onClick={handleSave}
                   className="bg-gold text-white text-sm font-medium px-6 py-2 rounded-lg2 disabled:opacity-50 hover:opacity-90">
                   {upsert.isPending ? "Saving…" : entryMap.has(`${stockType}:${activeCategory}`) ? "Update" : "Save"}
                 </button>
-                <button onClick={() => { setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes(""); clearModes(); }}
+                <button onClick={() => { setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes(""); setUntaggedInput(""); clearModes(); }}
                   className="border border-line text-sm px-4 py-2 rounded-lg2 text-ink-dim hover:text-ink">Cancel</button>
                 {entryMap.has(`${stockType}:${activeCategory}`) && (
                   <button
@@ -881,7 +912,7 @@ export default function GoldStockPage() {
                       const e = entryMap.get(`${stockType}:${activeCategory}`)!;
                       if (window.confirm(`Delete ${activeCategory} entry?`)) {
                         del.mutate({ id: e.id, date });
-                        setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes(""); clearModes();
+                        setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes(""); setUntaggedInput(""); clearModes();
                       }
                     }}
                     className="ml-auto text-xs text-err hover:underline">Delete entry</button>
@@ -900,7 +931,7 @@ export default function GoldStockPage() {
               {stockType} Stock — {shortDate(date)}
             </span>
             <span className="text-xs font-mono font-semibold text-gold">
-              Total: {grams(entriesForType.reduce((s, e) => s + Number(e.total_weight_g), 0))}
+              Total: {grams(entriesForType.reduce((s, e) => s + Number(e.total_weight_g) + Number(e.untagged_weight_g), 0))}
               {` · ${entriesForType.reduce((s, e) => s + (e.qty ?? 0), 0)} tagged pcs`}
             </span>
           </div>
@@ -919,16 +950,20 @@ export default function GoldStockPage() {
               {allCategories.filter(c => entriesForType.some(e => e.category === c)).map(cat => {
                 const e = entryMap.get(`${stockType}:${cat}`)!;
                 const isTagged = e.qty != null;
+                const rowUntagged = Number(e.untagged_weight_g) || 0;
                 const hasRes = (e.reserved_weight_g ?? 0) > 0;
                 return (
                   <tr key={cat} className="border-b border-line last:border-0 hover:bg-canvas/40 cursor-pointer" onClick={() => selectCategory(cat)}>
                     <td className="px-4 py-2.5 font-medium text-ink">{cat}</td>
                     <td className="px-4 py-2.5">
-                      {isTagged
-                        ? <span className="text-[10px] font-semibold text-info bg-info/10 px-1.5 py-0.5 rounded">Tagged</span>
-                        : <span className="text-[10px] font-semibold text-ok bg-ok/10 px-1.5 py-0.5 rounded">Untagged</span>}
+                      {isTagged && <span className="text-[10px] font-semibold text-info bg-info/10 px-1.5 py-0.5 rounded">Tagged</span>}
+                      {rowUntagged > 0 && <span className={clsx("text-[10px] font-semibold text-ok bg-ok/10 px-1.5 py-0.5 rounded", isTagged && "ml-1")}>Bulk</span>}
+                      {!isTagged && rowUntagged === 0 && <span className="text-[10px] font-semibold text-ok bg-ok/10 px-1.5 py-0.5 rounded">Untagged</span>}
                     </td>
-                    <td className="px-3 py-2.5 text-right font-mono font-semibold text-gold">{grams(e.total_weight_g)}</td>
+                    <td className="px-3 py-2.5 text-right">
+                      {Number(e.total_weight_g) > 0 && <p className="font-mono font-semibold text-gold">{grams(e.total_weight_g)}</p>}
+                      {rowUntagged > 0 && <p className="font-mono font-semibold text-ok text-xs">+{grams(rowUntagged)} bulk</p>}
+                    </td>
                     <td className="px-3 py-2.5 text-right text-info font-semibold">{e.qty != null ? `${e.qty}pc` : "—"}</td>
                     {stockType === "vault" && (
                       <td className="px-3 py-2.5 text-right">

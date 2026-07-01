@@ -98,8 +98,8 @@
 ### Gold Stock (`/gold-stock`)
 - Date-based stock entry for gold items across 12 preset categories (75KDM, Bangle, Bracelet, Chain, Diamond, Dollar, Gold Kolusu, Malaim, Necklace, Ring, Stud, Thali) plus unlimited custom categories (Coin, Bar, etc.) via "+ Custom" tile
 - Two stock types: **Vault** and **Outer** (both support weight + optional qty)
-- **Tagged vs Untagged**: items with qty = blue "Tagged" badge (individually scanned); items without qty = green "Untagged" (bulk weight only); category tiles use blue/green colour to distinguish at a glance
-- Multi-weight accumulator: enter individual piece weights, press Enter or + Add; pending input auto-included on Save without needing Enter first; qty auto-counted from entries if left blank
+- **Tagged vs Untagged + Bulk**: items with qty = blue "Tagged" badge (individually scanned pieces); items without qty = green "Untagged"; a separate **Bulk / Untagged weight** field in the entry panel lets you store bulk/loose weight alongside tagged pieces in the same category row — stored in `untagged_weight_g` column (migration 119); tiles show "+Xg bulk" in green when bulk weight exists; summary table shows both portions separately
+- Multi-weight accumulator: enter individual piece weights, press Enter or + Add; pending input auto-included on Save without needing Enter first; qty auto-counts from entries only when 2+ weights are scanned (single weight = untagged by default unless qty is explicitly set)
 - Saves per date/type/category (upsert) — re-clicking a category loads existing values
 - Summary table: shows Tagged/Untagged badge, weight, qty, notes per category
 - **Period Report**: click "Period Report" button, set Opening date + Closing date; comparison table shows Opening weight → Closing weight → Sold (= Opening − Closing) per category; tagged items also show qty sold; footer totals; vault/outer tab selector inside report
@@ -107,7 +107,7 @@
 - **Transfer Vault ↔ Outer**: "→ Outer" on vault entries / "→ Vault" on outer entries; required Reason field (Repair, Suspense, Customer return, etc.); reason stored in entry notes; live before/after preview for both source and destination; validates transfer doesn't exceed source stock
 - **Rename Category**: pencil icon (✎) next to category name in entry panel; renames across ALL dates and stock types globally; shows confirm dialog before applying
 - **Custom Order Reserved (Vault)**: "Custom Order Reserved" section in vault entry form; supports multiple reservations per category — each with weight, optional qty, and customer/order reference; list shows all reservations with × to remove; total reserved and available-for-sale shown live; tile shows total reserved in orange; summary table has Reserved column; data stored as JSON in reserved_notes
-- Migration 117: `gold_stock_entries` table
+- Migration 117: `gold_stock_entries` table; Migration 118: reserved columns; Migration 119: `untagged_weight_g` column
 
 ### Kolusu (Anklet Stock)
 - Kolusu stock management
