@@ -97,11 +97,12 @@
 
 ### Gold Stock (`/gold-stock`)
 - Date-based stock entry for gold items across 12 preset categories (75KDM, Bangle, Bracelet, Chain, Diamond, Dollar, Gold Kolusu, Malaim, Necklace, Ring, Stud, Thali) plus unlimited custom categories (Coin, Bar, etc.) via "+ Custom" tile
-- Two stock types: **Vault** (weight only) and **Outer** (weight + quantity)
-- Multi-weight accumulator: enter individual piece weights one by one (press Enter or + Add), running total shown; delete any entry from the list; pending input auto-included on Save (no need to press Enter first)
-- Quantity field on both Vault and Outer stock: required for Outer, optional for Vault (for tagged/scanned items); auto-filled from number of weight entries if not manually set
+- Two stock types: **Vault** and **Outer** (both support weight + optional qty)
+- **Tagged vs Untagged**: items with qty = blue "Tagged" badge (individually scanned); items without qty = green "Untagged" (bulk weight only); category tiles use blue/green colour to distinguish at a glance
+- Multi-weight accumulator: enter individual piece weights, press Enter or + Add; pending input auto-included on Save without needing Enter first; qty auto-counted from entries if left blank
 - Saves per date/type/category (upsert) — re-clicking a category loads existing values
-- Summary table shows all entered categories for the day with totals
+- Summary table: shows Tagged/Untagged badge, weight, qty, notes per category
+- **Period Report**: click "Period Report" button, set Opening date + Closing date; comparison table shows Opening weight → Closing weight → Sold (= Opening − Closing) per category; tagged items also show qty sold; footer totals; vault/outer tab selector inside report
 - Migration 117: `gold_stock_entries` table
 
 ### Kolusu (Anklet Stock)
