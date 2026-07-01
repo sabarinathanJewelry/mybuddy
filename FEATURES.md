@@ -279,6 +279,7 @@
 - Staff page (`/my-attendance`): bell in all three header variants (smart home, smart tab, classic)
 - Service worker registered globally (`src/components/ui/sw-register.tsx` in root layout); `sw.js` updated with `install`/`activate` handlers for immediate activation and `setAppBadge` on push payload
 - PWA icons generated on demand via `/api/icons/[size]` (ImageResponse, edge runtime) — fixes missing `icon-192.png` / `icon-512.png`; manifest updated to reference these routes
+- manifest.json enriched: `lang`, `dir`, `categories`, `prefer_related_applications`, `scope`, 3 shortcuts (Daily Sheet / New Sale / Board Rate) — improves PWABuilder score
 - **Android APK**: install the PWA from Chrome → "Add to Home Screen" shows the badge automatically; for a standalone APK use pwabuilder.com against the live URL to generate a TWA (Trusted Web Activity) package
 
 ### Board Rate

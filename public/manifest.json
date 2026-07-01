@@ -1,12 +1,17 @@
 {
   "name": "MyBuddy – Jewellery ERP",
   "short_name": "MyBuddy",
-  "description": "Sabarinathan Jewellery Management System",
+  "description": "Sabarinathan Jewellery — Sales, inventory, staff, and finance management",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "theme_color": "#1A1410",
   "background_color": "#1A1410",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["business", "finance", "productivity"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/api/icons/192",
@@ -25,6 +30,26 @@
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Daily Sheet",
+      "short_name": "Daily",
+      "url": "/daily-sheet",
+      "icons": [{ "src": "/api/icons/96", "sizes": "96x96" }]
+    },
+    {
+      "name": "New Sale",
+      "short_name": "Sale",
+      "url": "/sales",
+      "icons": [{ "src": "/api/icons/96", "sizes": "96x96" }]
+    },
+    {
+      "name": "Board Rate",
+      "short_name": "Rates",
+      "url": "/board-rate",
+      "icons": [{ "src": "/api/icons/96", "sizes": "96x96" }]
     }
   ]
 }
