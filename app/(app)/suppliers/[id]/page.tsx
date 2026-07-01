@@ -106,7 +106,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const updateStockOut = useUpdateStockOut();
   const deleteStockOut = useDeleteStockOut();
 
-  const blankStockOutForm = () => ({ given_date: globalDate, description: "", metal: "gold_22k", gross_wt: 0, qty: 1, rate: 0, amount: 0, notes: "" });
+  const METAL_PURITY: Record<string, number> = { gold_22k: 91.6, gold_24k: 99.9, gold_18k: 75.0, silver: 92.5, silver_pure: 99.9 };
+  const blankStockOutForm = () => ({ given_date: globalDate, description: "", metal: "gold_22k", purity_pct: 91.6, gross_wt: 0, qty: 1, rate: 0, amount: 0, notes: "" });
   const [showStockOutForm, setShowStockOutForm] = useState(false);
   const [stockOutForm, setStockOutForm] = useState(blankStockOutForm());
   const [deletingStockOutId, setDeletingStockOutId] = useState<string | null>(null);
@@ -114,8 +115,9 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   function updateStockOutForm(patch: Partial<typeof stockOutForm>) {
     setStockOutForm(prev => {
       const next = { ...prev, ...patch };
+      if ("metal" in patch) next.purity_pct = METAL_PURITY[next.metal] ?? 91.6;
       if (next.gross_wt > 0 && next.rate > 0) {
-        next.amount = parseFloat((next.gross_wt * next.rate).toFixed(2));
+        next.amount = parseFloat((next.gross_wt * next.purity_pct / 100 * next.rate).toFixed(2));
       }
       return next;
     });
@@ -1849,9 +1851,22 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                     </select>
                   </div>
                   <div>
+                    <label className="block text-xs text-ink-dim mb-1">Touch %</label>
+                    <input type="number" step="0.001" value={stockOutForm.purity_pct || ""} onFocus={(e) => e.target.select()} placeholder="91.6"
+                      onChange={(e) => updateStockOutForm({ purity_pct: parseFloat(e.target.value) || 0 })} className={inp} />
+                  </div>
+                  <div>
                     <label className="block text-xs text-ink-dim mb-1">Gross Wt (g)</label>
                     <input type="number" step="0.001" value={stockOutForm.gross_wt || ""} onFocus={(e) => e.target.select()} placeholder="0.000"
                       onChange={(e) => updateStockOutForm({ gross_wt: parseFloat(e.target.value) || 0 })} className={inp} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Pure Wt (g)</label>
+                    <p className="px-3 py-2 text-sm font-mono text-gold">
+                      {stockOutForm.gross_wt > 0 && stockOutForm.purity_pct > 0
+                        ? grams(stockOutForm.gross_wt * stockOutForm.purity_pct / 100)
+                        : "—"}
+                    </p>
                   </div>
                   <div>
                     <label className="block text-xs text-ink-dim mb-1">Qty</label>
@@ -1859,7 +1874,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                       onChange={(e) => updateStockOutForm({ qty: parseInt(e.target.value) || 1 })} className={inp} />
                   </div>
                   <div>
-                    <label className="block text-xs text-ink-dim mb-1">Rate (₹/g)</label>
+                    <label className="block text-xs text-ink-dim mb-1">Rate (₹/g pure)</label>
                     <input type="number" step="1" value={stockOutForm.rate || ""} onFocus={(e) => e.target.select()} placeholder="0"
                       onChange={(e) => updateStockOutForm({ rate: parseFloat(e.target.value) || 0 })} className={inp} />
                   </div>
@@ -1899,7 +1914,11 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                         <div className="text-xs text-ink-dim mt-1 flex gap-3 flex-wrap">
                           <span>{shortDate(r.given_date)}</span>
                           <span>{metalLabel(r.metal)}</span>
-                          {r.gross_wt > 0 && <span>{grams(r.gross_wt)}</span>}
+                          {r.gross_wt > 0 && <span>{grams(r.gross_wt)} gross</span>}
+                          {r.purity_pct > 0 && <span>{Number(r.purity_pct).toFixed(1)}%</span>}
+                          {r.gross_wt > 0 && r.purity_pct > 0 && (
+                            <span className="text-gold font-medium">{grams(r.gross_wt * r.purity_pct / 100)} pure</span>
+                          )}
                           {r.qty > 1 && <span>{r.qty} pcs</span>}
                           {r.rate > 0 && <span>@ {inr(r.rate)}/g</span>}
                           {r.notes && <span className="text-ink-dim/70">{r.notes}</span>}
