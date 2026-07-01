@@ -555,7 +555,7 @@ export default function GoldStockPage() {
         {(["vault", "outer"] as StockType[]).map(t => (
           <button key={t} onClick={() => { setStockType(t); setActiveCategory(null); setWeights([]); setWeightInput(""); clearModes(); }}
             className={clsx("flex-1 py-2 transition-colors", stockType === t ? "bg-gold text-white" : "text-ink-dim hover:text-ink")}>
-            {t === "vault" ? <span>வால்ட் <span className="text-xs font-normal opacity-75">Vault</span></span> : <span>வெளி சரக்கு <span className="text-xs font-normal opacity-75">Outer</span></span>}
+            {t === "vault" ? "வால்ட் / Vault Stock" : "வெளி / Outer Stock"}
           </button>
         ))}
       </div>
@@ -1072,10 +1072,15 @@ export default function GoldStockPage() {
       {showPrint && (
         <>
           <style>{`
+            @page { margin: 15mm; }
             @media print {
               body * { visibility: hidden; }
               #gold-stock-print, #gold-stock-print * { visibility: visible; }
-              #gold-stock-print { position: fixed; top: 0; left: 0; width: 100%; padding: 20px; box-sizing: border-box; font-family: Arial, sans-serif; }
+              #gold-stock-print { position: absolute; top: 0; left: 0; width: 100%; font-family: Arial, sans-serif; }
+              #gold-stock-print table { break-inside: auto; }
+              #gold-stock-print tr { break-inside: avoid; }
+              #gold-stock-print thead { display: table-header-group; }
+              #gold-stock-print .section-block { break-inside: avoid-page; }
             }
           `}</style>
 
@@ -1120,7 +1125,7 @@ export default function GoldStockPage() {
 
                 {/* Vault section */}
                 {entries.some(e => e.stock_type === "vault") && (
-                  <div className="mb-5">
+                  <div className="section-block mb-5">
                     <div className="bg-gray-100 px-3 py-1.5 rounded mb-2 flex justify-between items-center">
                       <span className="font-bold text-gray-800 text-sm">வால்ட் சரக்கு <span className="font-normal text-gray-500 text-xs">Vault Stock</span></span>
                       <span className="font-mono font-semibold text-sm">{grams(vaultTotal)}</span>
@@ -1166,7 +1171,7 @@ export default function GoldStockPage() {
 
                 {/* Outer section */}
                 {entries.some(e => e.stock_type === "outer") && (
-                  <div className="mb-5">
+                  <div className="section-block mb-5">
                     <div className="bg-gray-100 px-3 py-1.5 rounded mb-2 flex justify-between items-center">
                       <span className="font-bold text-gray-800 text-sm">வெளி சரக்கு <span className="font-normal text-gray-500 text-xs">Outer Stock</span></span>
                       <span className="font-mono font-semibold text-sm">{grams(outerTotal)}</span>
