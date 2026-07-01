@@ -1806,6 +1806,23 @@ function PoliciesTab() {
   );
 }
 
+function getStaffReminderWindow(): { label: string; lsKey: string } | null {
+  const h = new Date().getHours();
+  const d = new Date().toLocaleDateString("en-CA");
+  const windows = [
+    { range: [7, 11],  period: "morning",  label: "Good morning" },
+    { range: [12, 15], period: "mid",      label: "Good afternoon" },
+    { range: [17, 21], period: "evening",  label: "Good evening" },
+  ];
+  for (const w of windows) {
+    if (h >= w.range[0] && h < w.range[1]) {
+      const lsKey = `task_reminder_${d}_${w.period}`;
+      if (!localStorage.getItem(lsKey)) return { label: w.label, lsKey };
+    }
+  }
+  return null;
+}
+
 // ── Staff Tasks (staff view) ──────────────────────────────────────────────────
 function StaffTasksTab({ tasks, staffName, bioUserId, todayStr }: {
   tasks: StaffTask[];
@@ -1820,6 +1837,26 @@ function StaffTasksTab({ tasks, staffName, bioUserId, todayStr }: {
   const [filter, setFilter] = useState<"pending" | "completed" | "all">("pending");
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState({ title: "", description: "", due_date: todayStr });
+  const [reminderDismissed, setReminderDismissed] = useState(false);
+  const [notifPerm, setNotifPerm] = useState<NotificationPermission | "unsupported">("unsupported");
+
+  const pendingTasks = tasks.filter(t => t.status === "pending");
+  const reminderWindow = reminderDismissed || pendingTasks.length === 0 ? null : getStaffReminderWindow();
+
+  useEffect(() => {
+    if ("Notification" in window) setNotifPerm(Notification.permission);
+  }, []);
+
+  useEffect(() => {
+    if (!reminderWindow) return;
+    if (notifPerm === "granted") {
+      new Notification(`${reminderWindow.label}! Task reminder`, {
+        body: `You have ${pendingTasks.length} pending task${pendingTasks.length !== 1 ? "s" : ""} to complete.`,
+        icon: "/favicon.ico",
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reminderWindow?.lsKey]);
 
   const filtered = tasks.filter(t => filter === "all" || t.status === filter);
 
@@ -1849,6 +1886,30 @@ function StaffTasksTab({ tasks, staffName, bioUserId, todayStr }: {
 
   return (
     <div className="space-y-4">
+      {/* Time-based reminder banner */}
+      {reminderWindow && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-start gap-3">
+          <span className="text-xl shrink-0">🔔</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-amber-800">{reminderWindow.label}! You have {pendingTasks.length} pending task{pendingTasks.length !== 1 ? "s" : ""}</p>
+            <p className="text-xs text-amber-700 mt-0.5">Check your tasks below and mark them done when complete.</p>
+            {notifPerm === "default" && (
+              <button
+                onClick={() => Notification.requestPermission().then(p => setNotifPerm(p))}
+                className="mt-1.5 text-xs text-amber-600 underline underline-offset-2"
+              >
+                Enable desktop notifications for future reminders
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => { localStorage.setItem(reminderWindow.lsKey, "1"); setReminderDismissed(true); }}
+            className="text-amber-400 hover:text-amber-600 text-lg leading-none shrink-0"
+            title="Dismiss until next reminder window"
+          >×</button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold text-ink">My Tasks</h2>

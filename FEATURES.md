@@ -205,6 +205,7 @@
 - "Myself (Admin)" option in Assign To dropdown when admin has a bio_user_id (self-assigned tasks)
 - Staff marks complete, admin can reopen
 - Time-based reminder banner: shows in Tasks tab at morning (7–11am), mid-day (12–3pm), and evening (5–9pm) when admin has pending self-assigned tasks; dismissed per time-window via localStorage; optionally prompts for browser desktop notification permission
+- Same reminder banner shown to staff in their My Tasks tab (/my-attendance) when admin-assigned tasks are pending — same 3-window schedule, dismiss per window, optional desktop notification
 
 ### Google Review
 - "Write a Review" prompt card in staff smart home and admin attendance view
