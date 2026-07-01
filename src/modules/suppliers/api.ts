@@ -51,12 +51,13 @@ export function useSupplier360(id: string) {
     queryKey: ["supplier-360", id],
     enabled: !!id,
     queryFn: async () => {
-      const [supplierRes, purchasesRes, paymentsRes, suspenseRes, dispatchesRes] = await Promise.all([
+      const [supplierRes, purchasesRes, paymentsRes, suspenseRes, dispatchesRes, stockOutRes] = await Promise.all([
         client.from("suppliers").select("*").eq("id", id).single(),
         client.from("supplier_purchases").select("*").eq("supplier_id", id).order("purchase_date", { ascending: false }),
         client.from("supplier_payments").select("*").eq("supplier_id", id).order("pay_date", { ascending: false }),
         client.from("supplier_suspense").select("*").eq("supplier_id", id).order("bill_date", { ascending: false }).limit(50),
         client.from("metal_dispatches").select("id, dispatch_date, metal, weight_g, purity_pct, notes").eq("supplier_id", id).order("dispatch_date", { ascending: false }),
+        client.from("supplier_stock_out").select("*").eq("supplier_id", id).order("given_date", { ascending: false }),
       ]);
       return {
         supplier: supplierRes.data,
@@ -64,6 +65,7 @@ export function useSupplier360(id: string) {
         payments: paymentsRes.data ?? [],
         suspense: suspenseRes.data ?? [],
         dispatches: dispatchesRes.data ?? [],
+        stockOut: stockOutRes.data ?? [],
       };
     },
   });
@@ -242,5 +244,41 @@ export function useDeleteSupplierPayment() {
       return supplierId;
     },
     onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ["supplier-360", vars.supplierId] }),
+  });
+}
+
+export function useSaveStockOut() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const { data: row, error } = await supabase().from("supplier_stock_out").insert(data).select().single();
+      if (error) throw error;
+      return row;
+    },
+    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ["supplier-360", vars.supplier_id] }),
+  });
+}
+
+export function useUpdateStockOut() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, supplierId, data }: { id: string; supplierId: string; data: Record<string, unknown> }) => {
+      const { error } = await supabase().from("supplier_stock_out").update({ ...data, updated_at: new Date().toISOString() }).eq("id", id);
+      if (error) throw error;
+      return supplierId;
+    },
+    onSuccess: (supplierId) => qc.invalidateQueries({ queryKey: ["supplier-360", supplierId] }),
+  });
+}
+
+export function useDeleteStockOut() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, supplierId }: { id: string; supplierId: string }) => {
+      const { error } = await supabase().from("supplier_stock_out").delete().eq("id", id);
+      if (error) throw error;
+      return supplierId;
+    },
+    onSuccess: (supplierId) => qc.invalidateQueries({ queryKey: ["supplier-360", supplierId] }),
   });
 }

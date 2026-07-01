@@ -2,13 +2,14 @@
 
 import { Fragment, use, useState } from "react";
 import Link from "next/link";
-import { useSupplier360, useSaveSupplierPurchase, useUpdateSupplierPurchase, useDeleteSupplierPurchase, useSaveSupplierPayment, useUpdateSupplierPayment, useDeleteSupplierPayment, useConfirmSuspenseVa, useConfirmSuspenseBatch, useUpsertSupplier } from "@/modules/suppliers/api";
+import { useSupplier360, useSaveSupplierPurchase, useUpdateSupplierPurchase, useDeleteSupplierPurchase, useSaveSupplierPayment, useUpdateSupplierPayment, useDeleteSupplierPayment, useConfirmSuspenseVa, useConfirmSuspenseBatch, useUpsertSupplier, useSaveStockOut, useUpdateStockOut, useDeleteStockOut } from "@/modules/suppliers/api";
 import { useGlobalDate } from "@/stores/global-date";
 import { useT } from "@/i18n";
 import { inr, grams, shortDate } from "@/lib/format";
 
-const TABS = ["purchases", "payments", "suspense"] as const;
+const TABS = ["purchases", "payments", "suspense", "stock_out"] as const;
 type Tab = (typeof TABS)[number];
+const TAB_LABELS: Record<Tab, string> = { purchases: "Purchases", payments: "Payments", suspense: "Suspense", stock_out: "Stock Out" };
 
 const PAY_MODES = ["cash", "upi", "bank", "old_gold", "old_silver"];
 const METALS = ["gold_22k", "gold_24k", "gold_18k", "silver", "silver_pure"];
@@ -101,6 +102,31 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const confirmVa = useConfirmSuspenseVa();
   const confirmBatch = useConfirmSuspenseBatch();
   const upsertSupplier = useUpsertSupplier();
+  const saveStockOut = useSaveStockOut();
+  const updateStockOut = useUpdateStockOut();
+  const deleteStockOut = useDeleteStockOut();
+
+  const blankStockOutForm = () => ({ given_date: globalDate, description: "", metal: "gold_22k", gross_wt: 0, qty: 1, rate: 0, amount: 0, notes: "" });
+  const [showStockOutForm, setShowStockOutForm] = useState(false);
+  const [stockOutForm, setStockOutForm] = useState(blankStockOutForm());
+  const [deletingStockOutId, setDeletingStockOutId] = useState<string | null>(null);
+
+  function updateStockOutForm(patch: Partial<typeof stockOutForm>) {
+    setStockOutForm(prev => {
+      const next = { ...prev, ...patch };
+      if (next.gross_wt > 0 && next.rate > 0) {
+        next.amount = parseFloat((next.gross_wt * next.rate).toFixed(2));
+      }
+      return next;
+    });
+  }
+
+  async function handleStockOutSave(e: React.FormEvent) {
+    e.preventDefault();
+    await saveStockOut.mutateAsync({ ...stockOutForm, supplier_id: id, status: "given" });
+    setStockOutForm(blankStockOutForm());
+    setShowStockOutForm(false);
+  }
 
   // Multi-select batch settlement
   const [selectedSuspense, setSelectedSuspense] = useState<Set<string>>(new Set());
@@ -450,8 +476,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       <div className="flex border-b border-line gap-1">
         {TABS.map((tb) => (
           <button key={tb} onClick={() => setTab(tb)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors capitalize ${tab === tb ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"}`}>
-            {tb}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${tab === tb ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink"}`}>
+            {TAB_LABELS[tb]}
           </button>
         ))}
       </div>
@@ -1780,6 +1806,142 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
           )}
         </div>
       )}
+
+      {/* Stock Out */}
+      {tab === "stock_out" && !isLoading && (() => {
+        const items = view?.stockOut ?? [];
+        const outstanding = items.filter((r: any) => r.status === "given").reduce((s: number, r: any) => s + Number(r.amount), 0);
+        const metalLabel = (m: string) => ({ gold_22k: "Gold 22K", gold_24k: "Gold 24K", gold_18k: "Gold 18K", silver: "Silver", silver_pure: "Silver Pure" }[m] ?? m);
+        return (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <button onClick={() => setShowStockOutForm(!showStockOutForm)} className="text-xs text-gold hover:underline">
+                + Record Stock Given
+              </button>
+              {outstanding > 0 && (
+                <div className="text-sm">
+                  <span className="text-ink-dim">Outstanding: </span>
+                  <span className="font-semibold text-err">{inr(outstanding)}</span>
+                </div>
+              )}
+            </div>
+
+            {showStockOutForm && (
+              <form onSubmit={handleStockOutSave} className="bg-gold/5 border border-gold/30 rounded-xl p-4 space-y-3">
+                <h3 className="text-sm font-semibold">Stock Given to Supplier</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Date</label>
+                    <input type="date" value={stockOutForm.given_date} onChange={(e) => updateStockOutForm({ given_date: e.target.value })} className={inp} required />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Description</label>
+                    <input value={stockOutForm.description} onChange={(e) => updateStockOutForm({ description: e.target.value })} className={inp} placeholder="e.g. Ear ring" required />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Metal</label>
+                    <select value={stockOutForm.metal} onChange={(e) => updateStockOutForm({ metal: e.target.value })} className={inp}>
+                      <option value="gold_22k">Gold 22K</option>
+                      <option value="gold_24k">Gold 24K</option>
+                      <option value="gold_18k">Gold 18K</option>
+                      <option value="silver">Silver</option>
+                      <option value="silver_pure">Silver Pure</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Gross Wt (g)</label>
+                    <input type="number" step="0.001" value={stockOutForm.gross_wt || ""} onFocus={(e) => e.target.select()} placeholder="0.000"
+                      onChange={(e) => updateStockOutForm({ gross_wt: parseFloat(e.target.value) || 0 })} className={inp} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Qty</label>
+                    <input type="number" step="1" min="1" value={stockOutForm.qty || ""} onFocus={(e) => e.target.select()} placeholder="1"
+                      onChange={(e) => updateStockOutForm({ qty: parseInt(e.target.value) || 1 })} className={inp} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Rate (₹/g)</label>
+                    <input type="number" step="1" value={stockOutForm.rate || ""} onFocus={(e) => e.target.select()} placeholder="0"
+                      onChange={(e) => updateStockOutForm({ rate: parseFloat(e.target.value) || 0 })} className={inp} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ink-dim mb-1">Amount (₹)</label>
+                    <input type="number" step="0.01" value={stockOutForm.amount || ""} onFocus={(e) => e.target.select()} placeholder="0"
+                      onChange={(e) => setStockOutForm(f => ({ ...f, amount: parseFloat(e.target.value) || 0 }))} className={inp} />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs text-ink-dim mb-1">Notes</label>
+                    <input value={stockOutForm.notes} onChange={(e) => updateStockOutForm({ notes: e.target.value })} className={inp} placeholder="Optional" />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button type="submit" disabled={saveStockOut.isPending} className="bg-gold text-white text-sm px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                    {saveStockOut.isPending ? "Saving…" : "Save"}
+                  </button>
+                  <button type="button" onClick={() => setShowStockOutForm(false)} className="border border-line text-sm px-4 py-1.5 rounded-lg2">Cancel</button>
+                </div>
+              </form>
+            )}
+
+            {items.length === 0 ? (
+              <p className="text-sm text-ink-dim text-center py-8">No stock given to this supplier yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {items.map((r: any) => (
+                  <div key={r.id} className="bg-white rounded-xl border border-line p-4 shadow-soft">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium">{r.description}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${r.status === "given" ? "bg-warn/10 text-warn" : r.status === "returned" ? "bg-info/10 text-info" : "bg-ok/10 text-ok"}`}>
+                            {r.status === "given" ? "Pending" : r.status === "returned" ? "Returned" : "Settled"}
+                          </span>
+                        </div>
+                        <div className="text-xs text-ink-dim mt-1 flex gap-3 flex-wrap">
+                          <span>{shortDate(r.given_date)}</span>
+                          <span>{metalLabel(r.metal)}</span>
+                          {r.gross_wt > 0 && <span>{grams(r.gross_wt)}</span>}
+                          {r.qty > 1 && <span>{r.qty} pcs</span>}
+                          {r.rate > 0 && <span>@ {inr(r.rate)}/g</span>}
+                          {r.notes && <span className="text-ink-dim/70">{r.notes}</span>}
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className={`text-sm font-semibold font-mono ${r.status === "given" ? "text-err" : "text-ink-dim"}`}>{inr(r.amount)}</p>
+                        {r.settled_date && <p className="text-xs text-ink-dim">{shortDate(r.settled_date)}</p>}
+                      </div>
+                    </div>
+                    {r.status === "given" && (
+                      <div className="mt-3 flex gap-2 flex-wrap">
+                        <button
+                          disabled={updateStockOut.isPending}
+                          onClick={() => updateStockOut.mutateAsync({ id: r.id, supplierId: id, data: { status: "returned", settled_date: globalDate } })}
+                          className="text-xs text-info hover:underline disabled:opacity-40">
+                          Mark Returned
+                        </button>
+                        <button
+                          disabled={updateStockOut.isPending}
+                          onClick={() => updateStockOut.mutateAsync({ id: r.id, supplierId: id, data: { status: "settled", settled_date: globalDate } })}
+                          className="text-xs text-ok hover:underline disabled:opacity-40">
+                          Mark Settled
+                        </button>
+                        {deletingStockOutId === r.id ? (
+                          <span className="text-xs flex items-center gap-2">
+                            Delete?
+                            <button onClick={() => { deleteStockOut.mutateAsync({ id: r.id, supplierId: id }); setDeletingStockOutId(null); }} className="text-err hover:underline">Yes</button>
+                            <button onClick={() => setDeletingStockOutId(null)} className="text-ink-dim hover:underline">No</button>
+                          </span>
+                        ) : (
+                          <button onClick={() => setDeletingStockOutId(r.id)} className="text-xs text-ink-dim hover:text-err hover:underline ml-auto">Delete</button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

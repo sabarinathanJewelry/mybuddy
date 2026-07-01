@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useSales, useDeleteSale } from "@/modules/sales/api";
+import { useSales, useDeleteSale, useReturnSale } from "@/modules/sales/api";
 import { useT } from "@/i18n";
 import { useGlobalDate } from "@/stores/global-date";
 import { inr, shortDate, grams } from "@/lib/format";
@@ -14,6 +14,8 @@ export default function SalesPage() {
 
   const { data: sales, isLoading } = useSales(filterDate || null);
   const deleteSale = useDeleteSale();
+  const returnSale = useReturnSale();
+  const [returningId, setReturningId] = useState<string | null>(null);
 
   const totalAmt = sales?.reduce((s: number, x: any) => s + (x.total ?? 0), 0) ?? 0;
 
@@ -110,12 +112,16 @@ export default function SalesPage() {
                     .map((i: any) => i.suppliers.name as string)
                 )];
                 const hasVaultItems = items.some((i: any) => i.from_vault);
+                const isReturned = s.status === "returned";
                 return (
-                <tr key={s.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                <tr key={s.id} className={`border-b border-line last:border-0 hover:bg-canvas/50 ${isReturned ? "opacity-60" : ""}`}>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-mono text-info font-medium">{s.bill_no}</span>
-                      {s.sale_type === "exchange" && (
+                      <span className={`font-mono font-medium ${isReturned ? "text-ink-dim line-through" : "text-info"}`}>{s.bill_no}</span>
+                      {isReturned && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-err/10 text-err font-medium">Returned</span>
+                      )}
+                      {s.sale_type === "exchange" && !isReturned && (
                         <span className="text-xs px-1.5 py-0.5 rounded bg-warn/15 text-warn font-medium">Exch</span>
                       )}
                     </div>
@@ -142,21 +148,48 @@ export default function SalesPage() {
                   <td className="px-3 py-2.5 text-right text-xs text-ink-dim tabular-nums">
                     {totalGrossWt > 0 ? grams(totalGrossWt) : "—"}
                   </td>
-                  <td className="px-3 py-2.5 text-right font-mono">{inr(s.total)}</td>
+                  <td className={`px-3 py-2.5 text-right font-mono ${isReturned ? "line-through text-ink-dim" : ""}`}>{inr(s.total)}</td>
                   <td className="px-3 py-2.5 text-right">
-                    <div className="flex items-center justify-end gap-3">
-                      <Link href={`/sales/${s.id}/edit`} className="text-xs text-gold hover:underline">Edit</Link>
+                    {isReturned ? (
                       <button
-                        disabled={deleteSale.isPending}
+                        disabled={returnSale.isPending}
                         onClick={() => {
-                          if (window.confirm(`Delete ${s.bill_no}? This will reverse all ledger entries.`)) {
-                            deleteSale.mutate(s.id);
+                          if (window.confirm(`Undo return of ${s.bill_no}? The bill will be active again.`)) {
+                            returnSale.mutate({ id: s.id, undo: true });
                           }
                         }}
-                        className="text-xs text-err hover:underline disabled:opacity-40">
-                        Delete
+                        className="text-xs text-ink-dim hover:underline disabled:opacity-40">
+                        Undo Return
                       </button>
-                    </div>
+                    ) : (
+                      <div className="flex items-center justify-end gap-3">
+                        <Link href={`/sales/${s.id}/edit`} className="text-xs text-gold hover:underline">Edit</Link>
+                        {returningId === s.id ? (
+                          <span className="text-xs flex items-center gap-1.5">
+                            Return bill?
+                            <button
+                              disabled={returnSale.isPending}
+                              onClick={async () => { await returnSale.mutateAsync({ id: s.id, undo: false }); setReturningId(null); }}
+                              className="text-err font-medium hover:underline disabled:opacity-40">Yes</button>
+                            <button onClick={() => setReturningId(null)} className="text-ink-dim hover:underline">No</button>
+                          </span>
+                        ) : (
+                          <>
+                            <button onClick={() => setReturningId(s.id)} className="text-xs text-warn hover:underline">Return</button>
+                            <button
+                              disabled={deleteSale.isPending}
+                              onClick={() => {
+                                if (window.confirm(`Delete ${s.bill_no}? This will reverse all ledger entries.`)) {
+                                  deleteSale.mutate(s.id);
+                                }
+                              }}
+                              className="text-xs text-err hover:underline disabled:opacity-40">
+                              Delete
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </td>
                 </tr>
                 );

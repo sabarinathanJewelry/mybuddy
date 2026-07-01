@@ -15,6 +15,7 @@
 - Customer balance formula: `opening_balance − total_sales + payments_in − payments_out + writeoffs`
 
 ### Sales
+- **Bill Return**: mark a sale as returned (status = 'returned') — automatically excluded from customer balance; returned bills shown with strikethrough + "Returned" badge; undo available; no ledger reversal (payments already made become advance credit on customer account)
 - Multi-item sale entry (Gold 22K / 18K / 24K / Silver / Diamond series)
 - Per-item: gross weight, stone weight, net weight, purity, rate, VA%, making amount, stone value, diamond (carats or direct amount)
 - GST: 3% inclusive — extraction: `gst = total × 3/103`
@@ -49,6 +50,7 @@
 - Suspense tab: set cash bill amount + record partial payment in one step; balance shown live; Metal VA% optional alongside
 - Suspense tab: multi-select items with checkboxes → batch settle with total gross, total pure wt, average purity summary + one combined cash payment
 - Suspense cash amounts flow into supplier Cash Balance (formula includes supplier_cash_amt; ledger shows suspense entries chronologically)
+- **Stock Out tab**: record stock items given FROM shop TO supplier (outgoing consignment/suspense-out) — e.g. MJ takes 0.920g earring from shop stock and will pay later; each item has date, description, metal, weight, qty, rate, amount; status: Pending → Returned / Settled; outstanding total shown; migration 120
 
 ---
 

@@ -469,3 +469,18 @@ export function useDeleteSale() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["sales"] }),
   });
 }
+
+export function useReturnSale() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, undo }: { id: string; undo: boolean }) => {
+      const { error } = await supabase().from("sales").update({ status: undo ? "confirmed" : "returned" }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sales"] });
+      qc.invalidateQueries({ queryKey: ["customer-balances"] });
+      qc.invalidateQueries({ queryKey: ["customers"] });
+    },
+  });
+}
