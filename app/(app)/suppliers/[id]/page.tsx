@@ -2,7 +2,7 @@
 
 import { Fragment, use, useState } from "react";
 import Link from "next/link";
-import { useSupplier360, useSaveSupplierPurchase, useUpdateSupplierPurchase, useDeleteSupplierPurchase, useSaveSupplierPayment, useUpdateSupplierPayment, useDeleteSupplierPayment, useConfirmSuspenseVa, useConfirmSuspenseBatch, useUpsertSupplier, useSaveMetalDispatch, useDeleteMetalDispatch, useSaveStockOut, useUpdateStockOut, useDeleteStockOut } from "@/modules/suppliers/api";
+import { useSupplier360, useSaveSupplierPurchase, useUpdateSupplierPurchase, useDeleteSupplierPurchase, useSaveSupplierPayment, useUpdateSupplierPayment, useDeleteSupplierPayment, useConfirmSuspenseVa, useConfirmSuspenseBatch, useUpsertSupplier, useSaveMetalDispatch, useUpdateMetalDispatch, useDeleteMetalDispatch, useSaveStockOut, useUpdateStockOut, useDeleteStockOut } from "@/modules/suppliers/api";
 import { useGlobalDate } from "@/stores/global-date";
 import { useT } from "@/i18n";
 import { inr, grams, shortDate } from "@/lib/format";
@@ -100,11 +100,14 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const updatePayment = useUpdateSupplierPayment();
   const deletePayment = useDeleteSupplierPayment();
   const saveDispatch = useSaveMetalDispatch();
+  const updateDispatch = useUpdateMetalDispatch();
   const deleteDispatch = useDeleteMetalDispatch();
 
   const [showDispatchForm, setShowDispatchForm] = useState(false);
   const [dispatchForm, setDispatchForm] = useState({ dispatch_date: globalDate, metal: "gold_22k", weight_g: 0, purity_pct: 91.6, notes: "" });
   const [deletingDispatchId, setDeletingDispatchId] = useState<string | null>(null);
+  const [editingDispatchId, setEditingDispatchId] = useState<string | null>(null);
+  const [editDispatchForm, setEditDispatchForm] = useState({ dispatch_date: "", metal: "gold", weight_g: 0, purity_pct: 91.6, notes: "" });
 
   async function handleDispatchSave(e: React.FormEvent) {
     e.preventDefault();
@@ -1647,6 +1650,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                     )}
                     {metalLedger.map((row) => {
                       const dispatchId = row.id.startsWith("d-") ? row.id.slice(2) : null;
+                      const isEditingThis = editingDispatchId === dispatchId;
+                      const dispatchRaw = dispatchId ? view?.dispatches?.find((d: any) => d.id === dispatchId) : null;
                       return (
                       <Fragment key={row.id}>
                         <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
@@ -1667,7 +1672,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                             {grams(Math.abs(row.balance))}
                             <span className="ml-1 text-xs font-normal">{row.balance > 0 ? "owed" : row.balance < 0 ? "over" : ""}</span>
                           </td>
-                          <td className="px-3 py-2.5 text-right">
+                          <td className="px-3 py-2.5 text-right whitespace-nowrap">
                             {dispatchId && (
                               deletingDispatchId === dispatchId ? (
                                 <span className="text-xs flex items-center gap-1.5 justify-end">
@@ -1675,11 +1680,86 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                                   <button onClick={() => setDeletingDispatchId(null)} className="text-ink-dim hover:underline">No</button>
                                 </span>
                               ) : (
-                                <button onClick={() => setDeletingDispatchId(dispatchId)} className="text-xs text-ink-dim hover:text-err hover:underline">Del</button>
+                                <span className="flex items-center gap-2 justify-end">
+                                  <button onClick={() => {
+                                    setEditingDispatchId(dispatchId);
+                                    setEditDispatchForm({
+                                      dispatch_date: dispatchRaw?.dispatch_date ?? "",
+                                      metal: dispatchRaw?.metal ?? "gold",
+                                      weight_g: Number(dispatchRaw?.weight_g) || 0,
+                                      purity_pct: Number(dispatchRaw?.purity_pct) || 91.6,
+                                      notes: dispatchRaw?.notes ?? "",
+                                    });
+                                    setDeletingDispatchId(null);
+                                  }} className="text-xs text-gold hover:underline">Edit</button>
+                                  <button onClick={() => setDeletingDispatchId(dispatchId)} className="text-xs text-ink-dim hover:text-err hover:underline">Del</button>
+                                </span>
                               )
                             )}
                           </td>
                         </tr>
+                        {isEditingThis && (
+                          <tr className="border-b border-line bg-gold/5">
+                            <td colSpan={6} className="px-4 py-3">
+                              <form onSubmit={async (e) => {
+                                e.preventDefault();
+                                const metalMapped = editDispatchForm.metal.startsWith("silver") ? "silver" : "gold";
+                                await updateDispatch.mutateAsync({ id: dispatchId!, supplierId: id, data: { ...editDispatchForm, metal: metalMapped } });
+                                setEditingDispatchId(null);
+                              }} className="grid grid-cols-2 sm:grid-cols-5 gap-2 items-end">
+                                <div>
+                                  <label className="text-xs text-ink-dim block mb-1">Date</label>
+                                  <input type="date" value={editDispatchForm.dispatch_date}
+                                    onChange={(e) => setEditDispatchForm(f => ({ ...f, dispatch_date: e.target.value }))}
+                                    className={inp} required />
+                                </div>
+                                <div>
+                                  <label className="text-xs text-ink-dim block mb-1">Metal</label>
+                                  <select value={editDispatchForm.metal}
+                                    onChange={(e) => setEditDispatchForm(f => ({ ...f, metal: e.target.value }))}
+                                    className={inp}>
+                                    <option value="gold">Gold</option>
+                                    <option value="silver">Silver</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="text-xs text-ink-dim block mb-1">Touch %</label>
+                                  <input type="number" step="0.001" value={editDispatchForm.purity_pct || ""}
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => setEditDispatchForm(f => ({ ...f, purity_pct: parseFloat(e.target.value) || 0 }))}
+                                    className={inp} />
+                                </div>
+                                <div>
+                                  <label className="text-xs text-ink-dim block mb-1">Weight (g)</label>
+                                  <input type="number" step="0.001" value={editDispatchForm.weight_g || ""}
+                                    onFocus={(e) => e.target.select()}
+                                    onChange={(e) => setEditDispatchForm(f => ({ ...f, weight_g: parseFloat(e.target.value) || 0 }))}
+                                    className={inp} />
+                                </div>
+                                <div>
+                                  <label className="text-xs text-ink-dim block mb-1">Pure Wt</label>
+                                  <p className="px-3 py-2 text-sm font-mono text-gold">
+                                    {grams(editDispatchForm.weight_g * editDispatchForm.purity_pct / 100)}
+                                  </p>
+                                </div>
+                                <div className="sm:col-span-3">
+                                  <label className="text-xs text-ink-dim block mb-1">Notes</label>
+                                  <input value={editDispatchForm.notes}
+                                    onChange={(e) => setEditDispatchForm(f => ({ ...f, notes: e.target.value }))}
+                                    className={inp} placeholder="Optional" />
+                                </div>
+                                <div className="sm:col-span-2 flex gap-2 items-end pb-0.5">
+                                  <button type="submit" disabled={updateDispatch.isPending}
+                                    className="bg-gold text-white text-sm px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                                    {updateDispatch.isPending ? "Saving…" : "Save"}
+                                  </button>
+                                  <button type="button" onClick={() => setEditingDispatchId(null)}
+                                    className="border border-line text-sm px-3 py-1.5 rounded-lg2">Cancel</button>
+                                </div>
+                              </form>
+                            </td>
+                          </tr>
+                        )}
                       </Fragment>
                       );
                     })}
