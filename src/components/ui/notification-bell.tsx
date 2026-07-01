@@ -7,6 +7,36 @@ import {
   useMarkAllNotificationsRead,
 } from "@/modules/attendance/api";
 
+const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  const output = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) output[i] = raw.charCodeAt(i);
+  return output;
+}
+
+async function subscribePush(bioUserId: string) {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const existing = await reg.pushManager.getSubscription();
+    const sub = existing ?? await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+    });
+    await fetch("/api/push/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bio_user_id: bioUserId, subscription: sub.toJSON() }),
+    });
+  } catch {
+    // push not supported or denied
+  }
+}
+
 export default function NotificationBell({ bioUserId }: { bioUserId: string | null }) {
   const { data: notifications = [] } = useAppNotifications(bioUserId);
   const markOne = useMarkNotificationRead();
@@ -22,6 +52,18 @@ export default function NotificationBell({ bioUserId }: { bioUserId: string | nu
       }
     }
   }, [notifications.length]);
+
+  useEffect(() => {
+    if (!bioUserId || !VAPID_PUBLIC_KEY) return;
+    if (!("Notification" in window)) return;
+    if (Notification.permission === "granted") {
+      subscribePush(bioUserId);
+    } else if (Notification.permission === "default") {
+      Notification.requestPermission().then(perm => {
+        if (perm === "granted") subscribePush(bioUserId);
+      });
+    }
+  }, [bioUserId]);
 
   return (
     <div className="relative">

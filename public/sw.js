@@ -5,8 +5,8 @@ self.addEventListener("push", (event) => {
   tasks.push(
     self.registration.showNotification(data.title || "MyBuddy", {
       body: data.body || "",
-      icon: "/icon.svg",
-      badge: "/icon.svg",
+      icon: "/api/icons/192",
+      badge: "/api/icons/96",
       tag: data.tag || "mybuddy",
       data: { url: data.url || "/" },
     })

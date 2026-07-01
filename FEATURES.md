@@ -274,13 +274,14 @@
 - Statement persists in DB (`bank_statements` + `bank_statement_entries` tables); upload replaces previous month's data
 
 ### Notifications & PWA Badge
-- Shared `NotificationBell` component (`src/components/ui/notification-bell.tsx`): red dot badge on bell icon showing unread count; dropdown with mark-one / mark-all-read; calls `navigator.setAppBadge()` so installed PWA shows count on home screen icon
+- Shared `NotificationBell` component (`src/components/ui/notification-bell.tsx`): red dot badge on bell icon showing unread count; dropdown with mark-one / mark-all-read; calls `navigator.setAppBadge()` so installed PWA shows count on home screen icon; on mount requests push permission and registers a Web Push subscription via `/api/push/subscribe`
 - Admin page (`/attendance`): bell in both smart-home header and tab header
 - Staff page (`/my-attendance`): bell in all three header variants (smart home, smart tab, classic)
-- Service worker registered globally (`src/components/ui/sw-register.tsx` in root layout); `sw.js` updated with `install`/`activate` handlers for immediate activation and `setAppBadge` on push payload
+- Service worker registered globally (`src/components/ui/sw-register.tsx` in root layout); `sw.js` handles `push` event (shows OS notification), `notificationclick` (focuses/opens app), `install`/`activate` for immediate activation
 - PWA icons generated on demand via `/api/icons/[size]` (ImageResponse, edge runtime) — fixes missing `icon-192.png` / `icon-512.png`; manifest updated to reference these routes
 - manifest.json enriched: `lang`, `dir`, `categories`, `prefer_related_applications`, `scope`, 3 shortcuts (Daily Sheet / New Sale / Board Rate) — improves PWABuilder score
 - **Android APK**: install the PWA from Chrome → "Add to Home Screen" shows the badge automatically; for a standalone APK use pwabuilder.com against the live URL to generate a TWA (Trusted Web Activity) package
+- **iPhone / iOS Web Push**: VAPID keys stored in env (`NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`); `push_subscriptions` table (migration 116) stores per-device endpoint + keys; `/api/push/subscribe` (POST) upserts subscription; `/api/push/send` (POST) sends via `web-push` to all devices for a `bio_user_id`, auto-cleans expired (410) endpoints; push sent on leave approved/rejected and task assigned events (staff-targeted); iOS 16.4+ receives push when PWA is added to Home Screen
 
 ### Board Rate
 - Daily gold/silver rate entry
@@ -331,3 +332,4 @@
 | 111 | `111_kpi_weight_target.sql` | Rename sales_target → weight_target |
 | 113 | `113_order_items_diamond_fields.sql` | Add diamond_wt, diamond_amt, certificate_amt to order_items |
 | 114 | `114_suspense_cash_amount.sql` | Add supplier_cash_amt to sale_items + recreate supplier_suspense view |
+| 116 | `116_push_subscriptions.sql` | Push subscription storage for Web Push / iPhone notifications |

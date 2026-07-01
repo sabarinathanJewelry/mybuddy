@@ -864,13 +864,20 @@ export function useDecideLeaveRequest() {
         .eq("id", id);
       if (error) throw error;
       const typeLabel = leave_type === "half_day" ? "half-day" : leave_type;
+      const leaveTitle = `Leave ${status === "approved" ? "Approved" : "Rejected"}`;
+      const leaveBody = `Your ${typeLabel} leave request for ${leave_date} was ${status}${admin_note ? ` — ${admin_note}` : ""}.`;
       await client.from("app_notifications").insert({
         for_bio_user_id: bio_user_id,
-        title: `Leave ${status === "approved" ? "Approved" : "Rejected"}`,
-        body: `Your ${typeLabel} leave request for ${leave_date} was ${status}${admin_note ? ` — ${admin_note}` : ""}.`,
+        title: leaveTitle,
+        body: leaveBody,
         ref_type: "leave_request",
         ref_id: id,
       });
+      fetch("/api/push/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bio_user_id, title: leaveTitle, body: leaveBody }),
+      }).catch(() => {});
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["leave-requests-all"] });
@@ -1576,13 +1583,19 @@ export function useCreateTask() {
         due_date: payload.due_date,
       });
       if (error) throw error;
+      const taskBody = `You have a new task: "${payload.title}" — due ${payload.due_date}.`;
       await client.from("app_notifications").insert({
         for_bio_user_id: payload.assigned_to,
         title: "New Task Assigned",
-        body: `You have a new task: "${payload.title}" — due ${payload.due_date}.`,
+        body: taskBody,
         ref_type: "staff_task",
         ref_id: null,
       });
+      fetch("/api/push/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bio_user_id: payload.assigned_to, title: "New Task Assigned", body: taskBody }),
+      }).catch(() => {});
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["staff_tasks"] }),
   });
