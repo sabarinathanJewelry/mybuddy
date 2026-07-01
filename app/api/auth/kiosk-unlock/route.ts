@@ -42,7 +42,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Could not generate token" }, { status: 500 });
     }
 
-    return NextResponse.json({ token: linkData.properties.hashed_token });
+    const res = NextResponse.json({ token: linkData.properties.hashed_token });
+    // Short-lived bypass so middleware skips TOTP after kiosk magic-link login
+    res.cookies.set("kiosk_mfa_bypass", match.id, {
+      httpOnly: true,
+      sameSite: "strict",
+      path: "/",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 300, // 5 minutes — enough to complete the magic-link exchange
+    });
+    return res;
   } catch {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

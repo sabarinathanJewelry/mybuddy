@@ -8,6 +8,7 @@ export default function VerifyOtpPage() {
   const [digits, setDigits] = useState(["", "", "", "", "", ""]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [trust, setTrust] = useState(true);
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => { inputs.current[0]?.focus(); }, []);
@@ -44,7 +45,7 @@ export default function VerifyOtpPage() {
       const res = await fetch("/api/auth/verify-totp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, trust }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Invalid code");
@@ -94,6 +95,16 @@ export default function VerifyOtpPage() {
             {error && (
               <p className="text-err text-sm text-center">{error}</p>
             )}
+
+            <label className="flex items-center gap-2 text-sm text-ink-dim cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={trust}
+                onChange={(e) => setTrust(e.target.checked)}
+                className="accent-gold w-4 h-4"
+              />
+              Trust this device for 90 days
+            </label>
 
             <button
               type="submit"

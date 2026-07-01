@@ -51,6 +51,21 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/") ||
     pathname.startsWith("/apply");
 
+  // Kiosk login bypass: if kiosk-unlock set a bypass cookie for this user,
+  // grant mfa_verified without requiring TOTP entry
+  const kioskBypass = request.cookies.get("kiosk_mfa_bypass")?.value;
+  if (session && mfaEnabled && !mfaVerified && kioskBypass === session.user.id) {
+    const res = NextResponse.next({ request });
+    res.cookies.set("mfa_verified", session.user.id, {
+      httpOnly: true,
+      sameSite: "strict",
+      path: "/",
+      secure: process.env.NODE_ENV === "production",
+    });
+    res.cookies.delete("kiosk_mfa_bypass");
+    return res;
+  }
+
   if (session && mfaEnabled && !mfaVerified && !isMfaExemptPath) {
     return NextResponse.redirect(new URL("/verify-otp", request.url));
   }

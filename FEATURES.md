@@ -269,12 +269,12 @@
 - TOTP-based (Google Authenticator-style rotating 6-digit codes, 30s window)
 - Admin enables 2FA at `/admin/security` — secret stored in `user_totp` table
 - After password login, users with 2FA enabled are redirected to `/verify-otp`
+- `/verify-otp` has a "Trust this device for 90 days" checkbox (checked by default) — when checked, sets a 90-day `mfa_verified` cookie so TOTP is not asked again on that browser; unchecked = session cookie cleared on browser close
 - `/my-security-code` page shows the current rotating code (requires prior MFA verification)
 - Admin opens MyBuddy on their phone → taps Security Code → reads the 6-digit code → types it on the new device
-- Setup device (phone) permanently trusted via 1-year `mfa_verified` cookie (`trust: true` sent during setup)
-- PC logins get a session-only cookie (no `maxAge`) — cleared when browser closes, TOTP asked every login
 - `app_metadata.mfa_enabled` flag (service-role only) gated in middleware — no DB query per request
 - Staff (game-login users) are exempt from 2FA
+- **Kiosk login bypasses TOTP**: kiosk tap-sequence unlock sets a short-lived (5 min) `kiosk_mfa_bypass` cookie; middleware detects it on the next request, auto-grants `mfa_verified` for that user, and clears the bypass cookie — no TOTP prompt after kiosk login
 
 ### Supplier Ledger Import (`/admin/supplier-ledger`)
 - Select supplier, paste Tally ledger export (tab or comma delimited, auto-detected)
