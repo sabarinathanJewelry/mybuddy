@@ -108,7 +108,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
 
   async function handleDispatchSave(e: React.FormEvent) {
     e.preventDefault();
-    await saveDispatch.mutateAsync({ ...dispatchForm, supplier_id: id, purpose: "supplier" });
+    const metalMapped = dispatchForm.metal.startsWith("silver") ? "silver" : "gold";
+    await saveDispatch.mutateAsync({ ...dispatchForm, metal: metalMapped, supplier_id: id, purpose: "supplier" });
     setDispatchForm({ dispatch_date: globalDate, metal: "gold_22k", weight_g: 0, purity_pct: 91.6, notes: "" });
     setShowDispatchForm(false);
   }
