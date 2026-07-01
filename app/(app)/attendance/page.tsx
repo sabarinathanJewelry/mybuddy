@@ -3025,6 +3025,23 @@ export default function AttendancePage() {
 }
 
 // ── Staff Tasks Tab ───────────────────────────────────────────────────────────
+function getReminderWindow(): { label: string; lsKey: string } | null {
+  const h = new Date().getHours();
+  const d = new Date().toLocaleDateString("en-CA");
+  const windows = [
+    { range: [7, 11],  period: "morning",  label: "Good morning" },
+    { range: [12, 15], period: "mid",      label: "Good afternoon" },
+    { range: [17, 21], period: "evening",  label: "Good evening" },
+  ];
+  for (const w of windows) {
+    if (h >= w.range[0] && h < w.range[1]) {
+      const lsKey = `task_reminder_${d}_${w.period}`;
+      if (!localStorage.getItem(lsKey)) return { label: w.label, lsKey };
+    }
+  }
+  return null;
+}
+
 function TasksAdminTab({ isAdmin, myBioUserId }: { isAdmin: boolean; myBioUserId: string | null }) {
   const today = new Date().toLocaleDateString("en-CA");
   const { data: staff = [] } = useStaff();
@@ -3034,6 +3051,26 @@ function TasksAdminTab({ isAdmin, myBioUserId }: { isAdmin: boolean; myBioUserId
   const reopenTask = useReopenTask();
 
   const activeStaff = staff.filter((s) => s.active);
+  const otherStaff = activeStaff.filter(s => s.bio_user_id !== myBioUserId);
+  const pendingSelf = tasks.filter(t => t.status === "pending" && t.assigned_to === myBioUserId);
+  const [reminderDismissed, setReminderDismissed] = useState(false);
+  const [notifPerm, setNotifPerm] = useState<NotificationPermission | "unsupported">("unsupported");
+  const reminderWindow = reminderDismissed || pendingSelf.length === 0 || !myBioUserId ? null : getReminderWindow();
+
+  useEffect(() => {
+    if ("Notification" in window) setNotifPerm(Notification.permission);
+  }, []);
+
+  useEffect(() => {
+    if (!reminderWindow) return;
+    if (notifPerm === "granted") {
+      new Notification(`${reminderWindow.label}! Task reminder`, {
+        body: `You have ${pendingSelf.length} pending task${pendingSelf.length !== 1 ? "s" : ""} to complete.`,
+        icon: "/favicon.ico",
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reminderWindow?.lsKey]);
 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: "", description: "", assigned_to: "", due_date: today });
@@ -3060,6 +3097,30 @@ function TasksAdminTab({ isAdmin, myBioUserId }: { isAdmin: boolean; myBioUserId
 
   return (
     <div className="space-y-4">
+      {/* Self-task reminder banner */}
+      {reminderWindow && (
+        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-start gap-3">
+          <span className="text-xl shrink-0">🔔</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-amber-800">{reminderWindow.label}! You have {pendingSelf.length} pending task{pendingSelf.length !== 1 ? "s" : ""}</p>
+            <p className="text-xs text-amber-700 mt-0.5">Check your tasks below and mark them complete when done.</p>
+            {notifPerm === "default" && (
+              <button
+                onClick={() => Notification.requestPermission().then(p => setNotifPerm(p))}
+                className="mt-1.5 text-xs text-amber-600 underline underline-offset-2"
+              >
+                Enable desktop notifications for future reminders
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => { localStorage.setItem(reminderWindow.lsKey, "1"); setReminderDismissed(true); }}
+            className="text-amber-400 hover:text-amber-600 text-lg leading-none shrink-0"
+            title="Dismiss until next reminder window"
+          >×</button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
@@ -3100,7 +3161,8 @@ function TasksAdminTab({ isAdmin, myBioUserId }: { isAdmin: boolean; myBioUserId
               <select required value={form.assigned_to} onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))}
                 className={inpCls + " w-full bg-white"}>
                 <option value="">— Select staff —</option>
-                {activeStaff.map(s => <option key={s.bio_user_id} value={s.bio_user_id}>{s.name}</option>)}
+                {myBioUserId && <option value={myBioUserId}>Myself (Admin)</option>}
+                {otherStaff.map(s => <option key={s.bio_user_id} value={s.bio_user_id}>{s.name}</option>)}
               </select>
             </div>
             <div>
