@@ -247,6 +247,30 @@ export function useDeleteSupplierPayment() {
   });
 }
 
+export function useSaveMetalDispatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const { data: row, error } = await supabase().from("metal_dispatches").insert(data).select().single();
+      if (error) throw error;
+      return row;
+    },
+    onSuccess: (_d, vars) => qc.invalidateQueries({ queryKey: ["supplier-360", vars.supplier_id] }),
+  });
+}
+
+export function useDeleteMetalDispatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, supplierId }: { id: string; supplierId: string }) => {
+      const { error } = await supabase().from("metal_dispatches").delete().eq("id", id);
+      if (error) throw error;
+      return supplierId;
+    },
+    onSuccess: (supplierId) => qc.invalidateQueries({ queryKey: ["supplier-360", supplierId] }),
+  });
+}
+
 export function useSaveStockOut() {
   const qc = useQueryClient();
   return useMutation({

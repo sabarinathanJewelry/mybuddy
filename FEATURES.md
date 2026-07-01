@@ -50,6 +50,7 @@
 - Suspense tab: set cash bill amount + record partial payment in one step; balance shown live; Metal VA% optional alongside
 - Suspense tab: multi-select items with checkboxes → batch settle with total gross, total pure wt, average purity summary + one combined cash payment
 - Suspense cash amounts flow into supplier Cash Balance (formula includes supplier_cash_amt; ledger shows suspense entries chronologically)
+- **Dispatch Metal** button in Payments tab: creates a `metal_dispatches` row (date, metal, touch%, weight, pure wt preview) — flows into Metal Statement and reduces gold reserve exactly like the metal flow page; delete button per dispatch row
 - **Stock Out tab**: record stock items given FROM shop TO supplier (outgoing consignment/suspense-out) — e.g. MJ takes 0.920g earring from shop stock and will pay later; each item has date, description, metal, touch % (purity, auto-set by metal), gross wt, pure wt (calculated), qty, rate (₹/g pure), amount; status: Pending → Returned / Settled; outstanding total shown; migrations 120, 122
 
 ---

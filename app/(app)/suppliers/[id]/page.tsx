@@ -2,7 +2,7 @@
 
 import { Fragment, use, useState } from "react";
 import Link from "next/link";
-import { useSupplier360, useSaveSupplierPurchase, useUpdateSupplierPurchase, useDeleteSupplierPurchase, useSaveSupplierPayment, useUpdateSupplierPayment, useDeleteSupplierPayment, useConfirmSuspenseVa, useConfirmSuspenseBatch, useUpsertSupplier, useSaveStockOut, useUpdateStockOut, useDeleteStockOut } from "@/modules/suppliers/api";
+import { useSupplier360, useSaveSupplierPurchase, useUpdateSupplierPurchase, useDeleteSupplierPurchase, useSaveSupplierPayment, useUpdateSupplierPayment, useDeleteSupplierPayment, useConfirmSuspenseVa, useConfirmSuspenseBatch, useUpsertSupplier, useSaveMetalDispatch, useDeleteMetalDispatch, useSaveStockOut, useUpdateStockOut, useDeleteStockOut } from "@/modules/suppliers/api";
 import { useGlobalDate } from "@/stores/global-date";
 import { useT } from "@/i18n";
 import { inr, grams, shortDate } from "@/lib/format";
@@ -99,6 +99,19 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const savePayment = useSaveSupplierPayment();
   const updatePayment = useUpdateSupplierPayment();
   const deletePayment = useDeleteSupplierPayment();
+  const saveDispatch = useSaveMetalDispatch();
+  const deleteDispatch = useDeleteMetalDispatch();
+
+  const [showDispatchForm, setShowDispatchForm] = useState(false);
+  const [dispatchForm, setDispatchForm] = useState({ dispatch_date: globalDate, metal: "gold_22k", weight_g: 0, purity_pct: 91.6, notes: "" });
+  const [deletingDispatchId, setDeletingDispatchId] = useState<string | null>(null);
+
+  async function handleDispatchSave(e: React.FormEvent) {
+    e.preventDefault();
+    await saveDispatch.mutateAsync({ ...dispatchForm, supplier_id: id });
+    setDispatchForm({ dispatch_date: globalDate, metal: "gold_22k", weight_g: 0, purity_pct: 91.6, notes: "" });
+    setShowDispatchForm(false);
+  }
   const confirmVa = useConfirmSuspenseVa();
   const confirmBatch = useConfirmSuspenseBatch();
   const upsertSupplier = useUpsertSupplier();
@@ -1269,7 +1282,75 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       {/* Payments */}
       {tab === "payments" && !isLoading && (
         <div className="space-y-3">
-          <button onClick={() => setShowPaymentForm(!showPaymentForm)} className="text-xs text-gold hover:underline">+ Add Payment</button>
+          <div className="flex gap-4">
+            <button onClick={() => { setShowPaymentForm(!showPaymentForm); setShowDispatchForm(false); }} className="text-xs text-gold hover:underline">+ Add Payment</button>
+            <button onClick={() => { setShowDispatchForm(!showDispatchForm); setShowPaymentForm(false); }} className="text-xs text-info hover:underline">+ Dispatch Metal</button>
+          </div>
+          {showDispatchForm && (
+            <form onSubmit={handleDispatchSave} className="bg-info/5 border border-info/30 rounded-xl p-4 shadow-soft space-y-3">
+              <h3 className="text-sm font-semibold text-info">Dispatch Metal to Supplier</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs text-ink-dim block mb-1">Date</label>
+                  <input type="date" value={dispatchForm.dispatch_date}
+                    onChange={(e) => setDispatchForm({ ...dispatchForm, dispatch_date: e.target.value })}
+                    className={inp} required />
+                </div>
+                <div>
+                  <label className="text-xs text-ink-dim block mb-1">Metal</label>
+                  <select value={dispatchForm.metal}
+                    onChange={(e) => {
+                      const purity = { gold_22k: 91.6, gold_24k: 99.9, gold_18k: 75.0, silver: 92.5, silver_pure: 99.9 }[e.target.value] ?? 91.6;
+                      setDispatchForm({ ...dispatchForm, metal: e.target.value, purity_pct: purity });
+                    }}
+                    className={inp}>
+                    <option value="gold_22k">Gold 22K</option>
+                    <option value="gold_24k">Gold 24K</option>
+                    <option value="gold_18k">Gold 18K</option>
+                    <option value="silver">Silver</option>
+                    <option value="silver_pure">Silver Pure</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-ink-dim block mb-1">Touch %</label>
+                  <input type="number" step="0.001" value={dispatchForm.purity_pct || ""}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => setDispatchForm({ ...dispatchForm, purity_pct: parseFloat(e.target.value) || 0 })}
+                    className={inp} />
+                </div>
+                <div>
+                  <label className="text-xs text-ink-dim block mb-1">Weight (g)</label>
+                  <input type="number" step="0.001" value={dispatchForm.weight_g || ""}
+                    onFocus={(e) => e.target.select()} placeholder="0.000"
+                    onChange={(e) => setDispatchForm({ ...dispatchForm, weight_g: parseFloat(e.target.value) || 0 })}
+                    className={inp} required />
+                </div>
+                <div>
+                  <label className="text-xs text-ink-dim block mb-1">Pure Wt (g)</label>
+                  <p className="px-3 py-2 text-sm font-mono text-gold">
+                    {dispatchForm.weight_g > 0 && dispatchForm.purity_pct > 0
+                      ? grams(dispatchForm.weight_g * dispatchForm.purity_pct / 100)
+                      : "—"}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-xs text-ink-dim block mb-1">Notes</label>
+                  <input value={dispatchForm.notes}
+                    onChange={(e) => setDispatchForm({ ...dispatchForm, notes: e.target.value })}
+                    className={inp} placeholder="Optional" />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button type="submit" disabled={saveDispatch.isPending}
+                  className="bg-info text-white text-sm px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                  {saveDispatch.isPending ? "Saving…" : "Dispatch"}
+                </button>
+                <button type="button" onClick={() => setShowDispatchForm(false)}
+                  className="border border-line text-sm px-4 py-1.5 rounded-lg2">Cancel</button>
+              </div>
+            </form>
+          )}
+
           {showPaymentForm && (
             <form onSubmit={handlePaymentSave} className="bg-white border border-line rounded-xl p-4 shadow-soft space-y-3">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1550,6 +1631,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                     <th className="text-left px-3 py-2.5">Description</th>
                     <th className="text-right px-3 py-2.5">Grams</th>
                     <th className="text-right px-4 py-2.5">Balance</th>
+                    <th className="px-3 py-2.5" />
                   </tr></thead>
                   <tbody>
                     {(goldOpeningG + silverOpeningG) > 0 && (
@@ -1559,29 +1641,47 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                         <td className="px-3 py-2 text-xs text-ink-dim">Opening balance</td>
                         <td className="px-3 py-2 text-right font-mono text-xs text-gold">+{grams(goldOpeningG + silverOpeningG)}</td>
                         <td className="px-4 py-2 text-right font-mono text-xs font-semibold text-err">{grams(goldOpeningG + silverOpeningG)}</td>
+                        <td />
                       </tr>
                     )}
-                    {metalLedger.map((row) => (
-                      <tr key={row.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                        <td className="px-4 py-2.5 text-ink-dim text-xs">{shortDate(row.date)}</td>
-                        <td className="px-3 py-2.5">
-                          <span className={`text-xs font-medium ${
-                            row.type === "Purchase"   ? "text-gold" :
-                            row.type === "Return"     ? "text-ok"   :
-                            row.type === "Adjustment" ? "text-info" :
-                            row.type === "Dispatch"   ? "text-info" : "text-warn"
-                          }`}>{row.type}</span>
-                        </td>
-                        <td className="px-3 py-2.5 text-xs text-ink-dim">{row.description}</td>
-                        <td className={`px-3 py-2.5 text-right font-mono text-xs ${row.delta > 0 ? "text-err" : "text-ok"}`}>
-                          {row.delta > 0 ? "+" : ""}{grams(row.delta)}
-                        </td>
-                        <td className={`px-4 py-2.5 text-right font-mono text-sm font-semibold ${row.balance > 0 ? "text-err" : row.balance < 0 ? "text-ok" : "text-ink-dim"}`}>
-                          {grams(Math.abs(row.balance))}
-                          <span className="ml-1 text-xs font-normal">{row.balance > 0 ? "owed" : row.balance < 0 ? "over" : ""}</span>
-                        </td>
-                      </tr>
-                    ))}
+                    {metalLedger.map((row) => {
+                      const dispatchId = row.id.startsWith("d-") ? row.id.slice(2) : null;
+                      return (
+                      <Fragment key={row.id}>
+                        <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
+                          <td className="px-4 py-2.5 text-ink-dim text-xs">{shortDate(row.date)}</td>
+                          <td className="px-3 py-2.5">
+                            <span className={`text-xs font-medium ${
+                              row.type === "Purchase"   ? "text-gold" :
+                              row.type === "Return"     ? "text-ok"   :
+                              row.type === "Adjustment" ? "text-info" :
+                              row.type === "Dispatch"   ? "text-info" : "text-warn"
+                            }`}>{row.type}</span>
+                          </td>
+                          <td className="px-3 py-2.5 text-xs text-ink-dim">{row.description}</td>
+                          <td className={`px-3 py-2.5 text-right font-mono text-xs ${row.delta > 0 ? "text-err" : "text-ok"}`}>
+                            {row.delta > 0 ? "+" : ""}{grams(row.delta)}
+                          </td>
+                          <td className={`px-4 py-2.5 text-right font-mono text-sm font-semibold ${row.balance > 0 ? "text-err" : row.balance < 0 ? "text-ok" : "text-ink-dim"}`}>
+                            {grams(Math.abs(row.balance))}
+                            <span className="ml-1 text-xs font-normal">{row.balance > 0 ? "owed" : row.balance < 0 ? "over" : ""}</span>
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            {dispatchId && (
+                              deletingDispatchId === dispatchId ? (
+                                <span className="text-xs flex items-center gap-1.5 justify-end">
+                                  <button onClick={() => { deleteDispatch.mutate({ id: dispatchId, supplierId: id }); setDeletingDispatchId(null); }} className="text-err hover:underline">Del</button>
+                                  <button onClick={() => setDeletingDispatchId(null)} className="text-ink-dim hover:underline">No</button>
+                                </span>
+                              ) : (
+                                <button onClick={() => setDeletingDispatchId(dispatchId)} className="text-xs text-ink-dim hover:text-err hover:underline">Del</button>
+                              )
+                            )}
+                          </td>
+                        </tr>
+                      </Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
                 <div className="px-4 py-2 bg-canvas border-t border-line flex justify-between text-xs font-semibold">
