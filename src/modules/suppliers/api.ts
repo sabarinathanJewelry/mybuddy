@@ -247,6 +247,39 @@ export function useDeleteSupplierPayment() {
   });
 }
 
+export function useConvertSuspenseToPurchase() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ item, supplierId, purchaseDate }: {
+      item: { id: string; description: string; metal: string; gross_wt: number; purity_pct: number; supplier_va_pct: number; supplier_cash_amt: number; bill_no: string };
+      supplierId: string; purchaseDate: string;
+    }) => {
+      const client = supabase();
+      const metalKey = item.metal?.startsWith("silver") ? (item.metal === "silver_pure" ? "silver_pure" : "silver") : "gold_22k";
+      const purityPct = item.supplier_va_pct > 0 ? item.supplier_va_pct : (item.purity_pct ?? 91.6);
+      const pureWt = parseFloat(((item.gross_wt ?? 0) * purityPct / 100).toFixed(4));
+
+      const { error: pe } = await client.from("supplier_purchases").insert({
+        supplier_id: supplierId,
+        purchase_date: purchaseDate,
+        description: item.description,
+        metal: metalKey,
+        gross_wt: item.gross_wt ?? 0,
+        purity_pct: purityPct,
+        pure_wt: pureWt,
+        is_metal_balance: true,
+        amount: item.supplier_cash_amt ?? 0,
+        notes: `From suspense — ${item.bill_no}`,
+      });
+      if (pe) throw pe;
+
+      const { error: ue } = await client.from("sale_items").update({ supplier_converted: true }).eq("id", item.id);
+      if (ue) throw ue;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["supplier-360"] }),
+  });
+}
+
 export function useSaveMetalDispatch() {
   const qc = useQueryClient();
   return useMutation({

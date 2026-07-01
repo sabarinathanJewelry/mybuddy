@@ -2,7 +2,7 @@
 
 import { Fragment, use, useState } from "react";
 import Link from "next/link";
-import { useSupplier360, useSaveSupplierPurchase, useUpdateSupplierPurchase, useDeleteSupplierPurchase, useSaveSupplierPayment, useUpdateSupplierPayment, useDeleteSupplierPayment, useConfirmSuspenseVa, useConfirmSuspenseBatch, useUpsertSupplier, useSaveMetalDispatch, useUpdateMetalDispatch, useDeleteMetalDispatch, useSaveStockOut, useUpdateStockOut, useDeleteStockOut } from "@/modules/suppliers/api";
+import { useSupplier360, useSaveSupplierPurchase, useUpdateSupplierPurchase, useDeleteSupplierPurchase, useSaveSupplierPayment, useUpdateSupplierPayment, useDeleteSupplierPayment, useConfirmSuspenseVa, useConfirmSuspenseBatch, useUpsertSupplier, useConvertSuspenseToPurchase, useSaveMetalDispatch, useUpdateMetalDispatch, useDeleteMetalDispatch, useSaveStockOut, useUpdateStockOut, useDeleteStockOut } from "@/modules/suppliers/api";
 import { useGlobalDate } from "@/stores/global-date";
 import { useT } from "@/i18n";
 import { inr, grams, shortDate } from "@/lib/format";
@@ -120,6 +120,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   }
   const confirmVa = useConfirmSuspenseVa();
   const confirmBatch = useConfirmSuspenseBatch();
+  const convertToPurchase = useConvertSuspenseToPurchase();
   const upsertSupplier = useUpsertSupplier();
   const saveStockOut = useSaveStockOut();
   const updateStockOut = useUpdateStockOut();
@@ -215,7 +216,7 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
     return acc + (Number(p.pure_wt) || 0); // adjustments store signed pure_wt directly
   }, 0) ?? 0;
   const metalOwedG = goldOpeningG + silverOpeningG + metalPurchasesG + (view?.suspense
-    .filter((s: any) => s.supplier_confirmed)
+    .filter((s: any) => s.supplier_confirmed && !s.supplier_converted)
     .reduce((acc: number, s: any) => acc + (Number(s.supplier_pure_wt) || 0), 0) ?? 0);
   const metalPhysicalG = view?.dispatches?.reduce((acc: number, d: any) => acc + (Number(d.weight_g) || 0) * (Number(d.purity_pct) || 100) / 100, 0) ?? 0;
   const metalCashG = view?.payments?.filter((p: any) => (p.metal_wt ?? 0) > 0).reduce((acc: number, p: any) => acc + (Number(p.metal_wt) || 0), 0) ?? 0;
@@ -1829,19 +1830,32 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                           : <span className="text-ink-dim">—</span>}
                       </td>
                       <td className="px-3 py-2.5 text-right">
-                        {!s.supplier_confirmed && (
+                        {s.supplier_converted ? (
+                          <span className="text-xs text-ok font-medium">✓ In Purchases</span>
+                        ) : !s.supplier_confirmed ? (
                           <button
                             onClick={() => setEditingVa({ id: s.id, gross_wt: s.gross_wt ?? 0, purity_pct: s.purity_pct ?? 92, va_pct: 0, cash_amt: s.supplier_cash_amt ?? 0, cash_paid_now: 0, bill_no: s.bill_no ?? "" })}
                             className="text-xs text-gold hover:underline">
                             Settle
                           </button>
-                        )}
-                        {s.supplier_confirmed && (
-                          <button
-                            onClick={() => setEditingVa({ id: s.id, gross_wt: s.gross_wt ?? 0, purity_pct: s.purity_pct ?? 92, va_pct: s.supplier_va_pct ?? 0, cash_amt: s.supplier_cash_amt ?? 0, cash_paid_now: 0, bill_no: s.bill_no ?? "" })}
-                            className="text-xs text-ok hover:underline">
-                            ✓ Edit
-                          </button>
+                        ) : (
+                          <div className="flex items-center gap-2 justify-end flex-wrap">
+                            <button
+                              onClick={() => setEditingVa({ id: s.id, gross_wt: s.gross_wt ?? 0, purity_pct: s.purity_pct ?? 92, va_pct: s.supplier_va_pct ?? 0, cash_amt: s.supplier_cash_amt ?? 0, cash_paid_now: 0, bill_no: s.bill_no ?? "" })}
+                              className="text-xs text-ok hover:underline">
+                              ✓ Edit
+                            </button>
+                            <button
+                              disabled={convertToPurchase.isPending}
+                              onClick={() => {
+                                if (window.confirm(`Move ${s.bill_no} (${grams(s.gross_wt)} @ ${s.supplier_va_pct}%) to Purchases?`)) {
+                                  convertToPurchase.mutate({ item: s, supplierId: id, purchaseDate: globalDate });
+                                }
+                              }}
+                              className="text-xs text-info hover:underline disabled:opacity-40">
+                              → Purchase
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
