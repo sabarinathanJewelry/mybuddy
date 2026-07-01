@@ -14,6 +14,7 @@ import {
   useStaffTasks, useCompleteTask, useCreateTask,
   type PermissionRequest, type LeaveRequest, type OutsideDuty, type StaffTask,
 } from "@/modules/attendance/api";
+import NotificationBell from "@/components/ui/notification-bell";
 import { parseKolusuChat } from "@/lib/kolusu-parse";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -575,10 +576,13 @@ export default function MyAttendancePage() {
             </h1>
             <p className="text-xs text-ink-dim mt-0.5">Sabarinathan Jewellery</p>
           </div>
-          <button onClick={handleLogout}
-            className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-err hover:border-err transition-colors">
-            Logout
-          </button>
+          <div className="flex items-center gap-2">
+            <NotificationBell bioUserId={staff?.bio_user_id ?? null} />
+            <button onClick={handleLogout}
+              className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-err hover:border-err transition-colors">
+              Logout
+            </button>
+          </div>
         </div>
       ) : smartView ? (
         /* Smart mode — viewing a tab — show back button */
@@ -589,10 +593,13 @@ export default function MyAttendancePage() {
           </button>
           <span className="text-ink-dim text-sm">|</span>
           <span className="text-sm font-semibold text-ink capitalize">{tab}</span>
-          <button onClick={handleLogout}
-            className="ml-auto text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-err hover:border-err transition-colors">
-            Logout
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <NotificationBell bioUserId={staff?.bio_user_id ?? null} />
+            <button onClick={handleLogout}
+              className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-err hover:border-err transition-colors">
+              Logout
+            </button>
+          </div>
         </div>
       ) : (
         <div className="flex items-center gap-3 py-2">
@@ -625,6 +632,7 @@ export default function MyAttendancePage() {
             className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-gold hover:border-gold transition-colors">
             ⭐ Review
           </button>
+          <NotificationBell bioUserId={staff?.bio_user_id ?? null} />
           <button onClick={handleLogout}
             className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-err hover:border-err transition-colors">
             Logout

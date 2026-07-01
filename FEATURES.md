@@ -273,6 +273,14 @@
 - Filter: All | Unmatched | Ignored tabs
 - Statement persists in DB (`bank_statements` + `bank_statement_entries` tables); upload replaces previous month's data
 
+### Notifications & PWA Badge
+- Shared `NotificationBell` component (`src/components/ui/notification-bell.tsx`): red dot badge on bell icon showing unread count; dropdown with mark-one / mark-all-read; calls `navigator.setAppBadge()` so installed PWA shows count on home screen icon
+- Admin page (`/attendance`): bell in both smart-home header and tab header
+- Staff page (`/my-attendance`): bell in all three header variants (smart home, smart tab, classic)
+- Service worker registered globally (`src/components/ui/sw-register.tsx` in root layout); `sw.js` updated with `install`/`activate` handlers for immediate activation and `setAppBadge` on push payload
+- PWA icons generated on demand via `/api/icons/[size]` (ImageResponse, edge runtime) — fixes missing `icon-192.png` / `icon-512.png`; manifest updated to reference these routes
+- **Android APK**: install the PWA from Chrome → "Add to Home Screen" shows the badge automatically; for a standalone APK use pwabuilder.com against the live URL to generate a TWA (Trusted Web Activity) package
+
 ### Board Rate
 - Daily gold/silver rate entry
 - Used in all sale calculations

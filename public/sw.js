@@ -1,14 +1,22 @@
 self.addEventListener("push", (event) => {
   const data = event.data?.json() ?? {};
-  event.waitUntil(
+  const tasks = [];
+
+  tasks.push(
     self.registration.showNotification(data.title || "MyBuddy", {
       body: data.body || "",
-      icon: "/icon-192.png",
-      badge: "/icon-192.png",
+      icon: "/icon.svg",
+      badge: "/icon.svg",
       tag: data.tag || "mybuddy",
       data: { url: data.url || "/" },
     })
   );
+
+  if (data.badge != null && "setAppBadge" in self.navigator) {
+    tasks.push(self.navigator.setAppBadge(data.badge));
+  }
+
+  event.waitUntil(Promise.all(tasks));
 });
 
 self.addEventListener("notificationclick", (event) => {
@@ -22,3 +30,6 @@ self.addEventListener("notificationclick", (event) => {
     })
   );
 });
+
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => event.waitUntil(clients.claim()));

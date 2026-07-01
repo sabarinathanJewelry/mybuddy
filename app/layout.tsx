@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import QueryProvider from "@/components/providers/query-provider";
+import SwRegister from "@/components/ui/sw-register";
 
 export const metadata: Metadata = {
   title: "MyBuddy",
@@ -26,6 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
       <body>
+        <SwRegister />
         <QueryProvider>{children}</QueryProvider>
       </body>
     </html>
