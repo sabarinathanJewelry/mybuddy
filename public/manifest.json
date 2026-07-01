@@ -38,19 +38,19 @@
       "name": "Daily Sheet",
       "short_name": "Daily",
       "url": "/daily-sheet",
-      "icons": [{ "src": "/api/icons/96", "sizes": "96x96" }]
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "New Sale",
       "short_name": "Sale",
       "url": "/sales",
-      "icons": [{ "src": "/api/icons/96", "sizes": "96x96" }]
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "Board Rate",
       "short_name": "Rates",
       "url": "/board-rate",
-      "icons": [{ "src": "/api/icons/96", "sizes": "96x96" }]
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }
