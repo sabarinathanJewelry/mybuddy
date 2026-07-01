@@ -95,6 +95,14 @@
 - Product master with categories and metal types
 - Used in sale item autocomplete
 
+### Gold Stock (`/gold-stock`)
+- Date-based stock entry for gold items across 12 categories: 75KDM, Bangle, Bracelet, Chain, Diamond, Dollar, Gold Kolusu, Malaim, Necklace, Ring, Stud, Thali
+- Two stock types: **Vault** (weight only) and **Outer** (weight + quantity)
+- Multi-weight accumulator: enter individual piece weights one by one (press Enter or + Add), running total shown; delete any entry from the list
+- Saves per date/type/category (upsert) — re-clicking a category loads existing values
+- Summary table shows all entered categories for the day with totals
+- Migration 117: `gold_stock_entries` table
+
 ### Kolusu (Anklet Stock)
 - Kolusu stock management
 - Kolusu sale module (staff-accessible)

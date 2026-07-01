@@ -43,6 +43,7 @@ const SECTIONS: Section[] = [
       { icon: "🪙", label: "Chits",        href: "/chits" },
       { icon: "💰", label: "Cash Bonus",   href: "/cash-bonus" },
       { icon: "🪬", label: "Kolusu",       href: "/kolusu" },
+      { icon: "🏅", label: "Gold Stock",   href: "/gold-stock" },
       { icon: "✂️",  label: "Write-off",   href: "/writeoff" },
     ],
   },
