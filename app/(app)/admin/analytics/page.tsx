@@ -20,6 +20,13 @@ const ymToRange = (ym: string) => {
   d.setMonth(d.getMonth() + 1);
   return { ms, me: isoDate(d) };
 };
+const prevYM = (ym: string) => {
+  const d = new Date(ym + "-01");
+  d.setMonth(d.getMonth() - 1);
+  return d.toISOString().slice(0, 7);
+};
+const ymLabel = (ym: string) =>
+  new Date(ym + "-01").toLocaleString("en-IN", { month: "long", year: "numeric" });
 
 // ── Chart colors ──────────────────────────────────────────────────────────────
 const C = {
@@ -215,12 +222,10 @@ function useTodayStats() {
   });
 }
 
-function useMonthStats(offset = 0) {
-  const ms = monthStart(offset);
-  const me = monthStart(offset + 1);
-  const mk = monthKey(offset);
+function useMonthStats(ym = monthKey()) {
+  const { ms, me } = ymToRange(ym);
   return useQuery({
-    queryKey: ["adash-month", mk],
+    queryKey: ["adash-month", ym],
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       const [salesRes, itemsRes] = await Promise.all([
@@ -265,13 +270,12 @@ function useRevenueTrend() {
   });
 }
 
-function usePaymentMix() {
+function usePaymentMix(ym = monthKey()) {
+  const { ms, me } = ymToRange(ym);
   return useQuery({
-    queryKey: ["adash-paymix", monthKey()],
+    queryKey: ["adash-paymix", ym],
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const ms = monthStart();
-      const me = monthStart(1);
       const { data } = await supabase().from("sale_payments")
         .select("mode, amount, sales!inner(bill_date, status)")
         .gte("sales.bill_date", ms).lt("sales.bill_date", me).eq("sales.status", "confirmed");
@@ -360,13 +364,12 @@ function useTopCustomers(ym = monthKey()) {
   });
 }
 
-function useTopProducts() {
+function useTopProducts(ym = monthKey()) {
+  const { ms, me } = ymToRange(ym);
   return useQuery({
-    queryKey: ["adash-products", monthKey()],
+    queryKey: ["adash-products", ym],
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const ms = monthStart();
-      const me = monthStart(1);
       const { data } = await supabase().from("sale_items")
         .select("description, gross_wt, net_wt, metal, line_total, is_suspense, sales!inner(id, order_id, bill_date, status)")
         .gte("sales.bill_date", ms).lt("sales.bill_date", me).eq("sales.status", "confirmed");
@@ -382,13 +385,12 @@ function useTopProducts() {
   });
 }
 
-function useSourceBreakdown() {
+function useSourceBreakdown(ym = monthKey()) {
+  const { ms, me } = ymToRange(ym);
   return useQuery({
-    queryKey: ["adash-source", monthKey()],
+    queryKey: ["adash-source", ym],
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const ms = monthStart();
-      const me = monthStart(1);
       const { data } = await supabase().from("sale_items")
         .select("metal, gross_wt, net_wt, line_total, is_suspense, sales!inner(id, order_id, bill_date, status)")
         .gte("sales.bill_date", ms).lt("sales.bill_date", me).eq("sales.status", "confirmed");
@@ -424,12 +426,12 @@ function useMonthExpenses(ym = monthKey()) {
     queryKey: ["adash-exp", ym],
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const { data } = await supabase().from("expenses").select("amount, categories(name)")
+      const { data } = await supabase().from("expenses").select("amount, expense_categories(name)")
         .gte("exp_date", ms).lt("exp_date", me);
       const total = (data ?? []).reduce((s, e: any) => s + (e.amount ?? 0), 0);
       const bycat = new Map<string, number>();
       for (const e of (data ?? []) as any[]) {
-        const cat = (e.categories as any)?.name ?? "Uncategorised";
+        const cat = (e.expense_categories as any)?.name ?? "Uncategorised";
         bycat.set(cat, (bycat.get(cat) ?? 0) + (e.amount ?? 0));
       }
       return {
@@ -441,14 +443,13 @@ function useMonthExpenses(ym = monthKey()) {
   });
 }
 
-// Full purchase-vs-sales profit analysis for current month
-function useProfitAnalysis() {
+// Full purchase-vs-sales profit analysis for selected month
+function useProfitAnalysis(ym = monthKey()) {
+  const { ms, me } = ymToRange(ym);
   return useQuery({
-    queryKey: ["adash-profit", monthKey()],
+    queryKey: ["adash-profit", ym],
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const ms = monthStart();
-      const me = monthStart(1);
       const [purchRes, payRes, itemsRes, expRes] = await Promise.all([
         supabase().from("supplier_purchases")
           .select("metal, gross_wt, purity_pct")
@@ -610,12 +611,12 @@ function useTodayTopSales() {
 }
 
 // ── Tab: Overview ─────────────────────────────────────────────────────────────
-function OverviewTab() {
+function OverviewTab({ selYM }: { selYM: string }) {
   const { data: tod }   = useTodayStats();
-  const { data: mon }   = useMonthStats(0);
-  const { data: last }  = useMonthStats(-1);
+  const { data: mon }   = useMonthStats(selYM);
+  const { data: last }  = useMonthStats(prevYM(selYM));
   const { data: trend } = useRevenueTrend();
-  const { data: pmix }  = usePaymentMix();
+  const { data: pmix }  = usePaymentMix(selYM);
   const { data: recent} = useRecentSales();
 
   const vsLast = mon && last && last.revenue > 0
@@ -727,8 +728,7 @@ function OverviewTab() {
 // ── Tab: Sales Analysis ───────────────────────────────────────────────────────
 const EXP_COLORS_SALES = [C.red, C.orange, C.purple, C.blue, C.green, C.gray];
 
-function SalesTab() {
-  const [selYM, setSelYM] = useState(monthKey());
+function SalesTab({ selYM }: { selYM: string }) {
   const { data: byMetal } = useSalesByMetal(selYM);
   const { data: daily }   = useDailySales(selYM);
   const { data: topCust } = useTopCustomers(selYM);
@@ -737,39 +737,10 @@ function SalesTab() {
   const metals   = Object.entries(byMetal ?? {}).sort((a, b) => b[1].revenue - a[1].revenue);
   const totalRev = metals.reduce((s, [, v]) => s + v.revenue, 0);
   const maxCust  = Math.max(...(topCust ?? []).map((c) => c.amount), 1);
-  const maxYM    = monthKey();
-
-  const shiftYM = (dir: -1 | 1) => {
-    const d = new Date(selYM + "-01");
-    d.setMonth(d.getMonth() + dir);
-    const next = d.toISOString().slice(0, 7);
-    if (next <= maxYM) setSelYM(next);
-  };
-
-  const monthLabel = new Date(selYM + "-01").toLocaleString("en-IN", { month: "long", year: "numeric" });
+  const monthLabel = ymLabel(selYM);
 
   return (
     <div className="space-y-5">
-      {/* Month picker */}
-      <div className="flex items-center gap-2">
-        <button onClick={() => shiftYM(-1)}
-          className="px-3 py-1.5 text-sm border border-line rounded-lg2 text-ink-dim hover:bg-slate-50">←</button>
-        <div className="relative">
-          <input
-            type="month"
-            value={selYM}
-            max={maxYM}
-            onChange={(e) => e.target.value && setSelYM(e.target.value)}
-            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-          />
-          <span className="px-4 py-1.5 text-sm font-semibold text-ink border border-line rounded-lg2 bg-white inline-block min-w-[160px] text-center cursor-pointer select-none">
-            {monthLabel}
-          </span>
-        </div>
-        <button onClick={() => shiftYM(1)} disabled={selYM >= maxYM}
-          className="px-3 py-1.5 text-sm border border-line rounded-lg2 text-ink-dim hover:bg-slate-50 disabled:opacity-40">→</button>
-      </div>
-
       {/* Sales by metal */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         {metals.slice(0, 6).map(([metal, s]) => (
@@ -845,9 +816,9 @@ function SalesTab() {
 }
 
 // ── Tab: Inventory ────────────────────────────────────────────────────────────
-function InventoryTab() {
-  const { data: src }  = useSourceBreakdown();
-  const { data: prod } = useTopProducts();
+function InventoryTab({ selYM }: { selYM: string }) {
+  const { data: src }  = useSourceBreakdown(selYM);
+  const { data: prod } = useTopProducts(selYM);
 
   const srcTotal = (src?.all.ready.revenue ?? 0) + (src?.all.order.revenue ?? 0) + (src?.all.suspense.revenue ?? 0);
 
@@ -971,13 +942,13 @@ function InventoryTab() {
 // ── Tab: Deep Analytics ───────────────────────────────────────────────────────
 const EXP_COLORS = [C.blue, C.green, C.orange, C.red, C.purple, C.gray];
 
-function DeepTab() {
-  const { data: mon }     = useMonthStats(0);
-  const { data: exp }     = useMonthExpenses();
+function DeepTab({ selYM }: { selYM: string }) {
+  const { data: mon }     = useMonthStats(selYM);
+  const { data: exp }     = useMonthExpenses(selYM);
   const { data: topSale } = useTodayTopSales();
   const { data: supPay }  = useSupplierPaymentsTrend();
   const { data: rates }   = useAvgMetalRates();
-  const { data: pa }      = useProfitAnalysis();
+  const { data: pa }      = useProfitAnalysis(selYM);
 
   return (
     <div className="space-y-5">
@@ -1226,7 +1197,16 @@ type TabId = (typeof TABS)[number]["id"];
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function AnalyticsPage() {
-  const [tab, setTab] = useState<TabId>("overview");
+  const [tab, setTab]     = useState<TabId>("overview");
+  const [selYM, setSelYM] = useState(monthKey());
+  const maxYM = monthKey();
+
+  const shiftYM = (dir: -1 | 1) => {
+    const d = new Date(selYM + "-01");
+    d.setMonth(d.getMonth() + dir);
+    const next = d.toISOString().slice(0, 7);
+    if (next <= maxYM) setSelYM(next);
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-5">
@@ -1236,6 +1216,33 @@ export default function AnalyticsPage() {
           <p className="text-[11px] text-ink-dim mt-0.5">Sabarinathan Jewellery — business intelligence</p>
         </div>
         <Link href="/dashboard" className="text-sm text-ink-dim hover:text-ink">← Home</Link>
+      </div>
+
+      {/* Global month filter */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-ink-dim font-medium uppercase tracking-wide mr-1">Month</span>
+        <button onClick={() => shiftYM(-1)}
+          className="px-3 py-1.5 text-sm border border-line rounded-lg2 text-ink-dim hover:bg-slate-50">←</button>
+        <div className="relative">
+          <input
+            type="month"
+            value={selYM}
+            max={maxYM}
+            onChange={(e) => e.target.value && setSelYM(e.target.value)}
+            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+          />
+          <span className="px-4 py-1.5 text-sm font-semibold text-ink border border-line rounded-lg2 bg-white inline-block min-w-[160px] text-center cursor-pointer select-none">
+            {ymLabel(selYM)}
+          </span>
+        </div>
+        <button onClick={() => shiftYM(1)} disabled={selYM >= maxYM}
+          className="px-3 py-1.5 text-sm border border-line rounded-lg2 text-ink-dim hover:bg-slate-50 disabled:opacity-40">→</button>
+        {selYM !== maxYM && (
+          <button onClick={() => setSelYM(maxYM)}
+            className="ml-1 px-2 py-1 text-xs text-gold border border-gold/30 rounded-lg2 hover:bg-gold/5">
+            Current
+          </button>
+        )}
       </div>
 
       <div className="flex border-b border-line gap-1 overflow-x-auto">
@@ -1249,10 +1256,10 @@ export default function AnalyticsPage() {
         ))}
       </div>
 
-      {tab === "overview"  && <OverviewTab />}
-      {tab === "sales"     && <SalesTab />}
-      {tab === "inventory" && <InventoryTab />}
-      {tab === "deep"      && <DeepTab />}
+      {tab === "overview"  && <OverviewTab selYM={selYM} />}
+      {tab === "sales"     && <SalesTab selYM={selYM} />}
+      {tab === "inventory" && <InventoryTab selYM={selYM} />}
+      {tab === "deep"      && <DeepTab selYM={selYM} />}
     </div>
   );
 }
