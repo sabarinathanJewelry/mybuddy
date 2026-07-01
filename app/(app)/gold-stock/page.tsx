@@ -33,6 +33,21 @@ type UpsertPayload = {
   reserved_weight_g?: number; reserved_qty?: number; reserved_notes?: string;
 };
 
+interface Reservation { w: number; q: number; ref: string; }
+
+function parseReservations(e: StockEntry): Reservation[] {
+  if (e.reserved_notes) {
+    try {
+      const p = JSON.parse(e.reserved_notes);
+      if (Array.isArray(p)) return p as Reservation[];
+    } catch {}
+    // Legacy single-reservation plain text
+    if (e.reserved_weight_g > 0) return [{ w: e.reserved_weight_g, q: e.reserved_qty, ref: e.reserved_notes }];
+  }
+  if (e.reserved_weight_g > 0) return [{ w: e.reserved_weight_g, q: e.reserved_qty, ref: "" }];
+  return [];
+}
+
 const inp = "w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
 
 function useStockEntries(date: string) {
@@ -247,11 +262,12 @@ export default function GoldStockPage() {
   const [renameMode, setRenameMode] = useState(false);
   const [renameInput, setRenameInput] = useState("");
 
-  // Reserved / custom-order tagging (vault only)
+  // Reserved / custom-order tagging (vault only) — multiple reservations
   const [showReserved, setShowReserved] = useState(false);
-  const [reservedWeight, setReservedWeight] = useState("");
-  const [reservedQtyInput, setReservedQtyInput] = useState("");
-  const [reservedNotes, setReservedNotes] = useState("");
+  const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [newResW, setNewResW] = useState("");
+  const [newResQ, setNewResQ] = useState("");
+  const [newResRef, setNewResRef] = useState("");
 
   const { data: entries = [] } = useStockEntries(date);
   const upsert = useUpsertStock();
@@ -274,7 +290,7 @@ export default function GoldStockPage() {
     setSoldMode(false); setSoldWeightInput(""); setSoldQtyInput("");
     setTransferMode(false); setTransferWeightInput(""); setTransferQtyInput(""); setTransferReason("");
     setRenameMode(false); setRenameInput("");
-    setShowReserved(false); setReservedWeight(""); setReservedQtyInput(""); setReservedNotes("");
+    setShowReserved(false); setReservations([]); setNewResW(""); setNewResQ(""); setNewResRef("");
   }
 
   function selectCategory(cat: string) {
@@ -288,12 +304,8 @@ export default function GoldStockPage() {
     if (existing) {
       setWeights([existing.total_weight_g]);
       setQty(existing.qty != null ? String(existing.qty) : "");
-      if (existing.reserved_weight_g > 0) {
-        setShowReserved(true);
-        setReservedWeight(String(existing.reserved_weight_g));
-        setReservedQtyInput(existing.reserved_qty > 0 ? String(existing.reserved_qty) : "");
-        setReservedNotes(existing.reserved_notes || "");
-      }
+      const res = parseReservations(existing);
+      if (res.length > 0) { setShowReserved(true); setReservations(res); }
     } else {
       setWeights([]); setQty("");
     }
@@ -316,8 +328,9 @@ export default function GoldStockPage() {
     const finalWeights = pendingW > 0 ? [...weights, pendingW] : weights;
     const total = parseFloat(finalWeights.reduce((s, w) => s + w, 0).toFixed(3));
     const autoQty = finalWeights.length;
-    const resWt = showReserved ? (parseFloat(reservedWeight) || 0) : 0;
-    const resQty = showReserved ? (parseInt(reservedQtyInput) || 0) : 0;
+    const allRes = showReserved ? reservations : [];
+    const resWt = parseFloat(allRes.reduce((s, r) => s + r.w, 0).toFixed(3));
+    const resQty = allRes.reduce((s, r) => s + r.q, 0);
     await upsert.mutateAsync({
       entry_date: date, stock_type: stockType, category: activeCategory,
       total_weight_g: total,
@@ -325,7 +338,7 @@ export default function GoldStockPage() {
       notes: notes.trim() || "",
       reserved_weight_g: resWt,
       reserved_qty: resQty,
-      reserved_notes: reservedNotes.trim() || undefined,
+      reserved_notes: allRes.length > 0 ? JSON.stringify(allRes) : undefined,
     });
     setActiveCategory(null); setWeights([]); setWeightInput(""); setQty(""); setNotes("");
     clearModes();
@@ -780,46 +793,76 @@ export default function GoldStockPage() {
               </div>
 
               {/* Reserved / Custom Order section (vault only) */}
-              {stockType === "vault" && (
-                <div className="border border-warn/30 rounded-xl overflow-hidden">
-                  <button
-                    onClick={() => setShowReserved(v => !v)}
-                    className="w-full flex items-center justify-between px-4 py-2.5 bg-warn/5 hover:bg-warn/10 transition-colors text-sm">
-                    <span className="font-medium text-warn/90">Custom Order Reserved</span>
-                    <span className="text-xs text-ink-dim">{showReserved ? "▲ Hide" : "▼ Mark items reserved"}</span>
-                  </button>
-                  {showReserved && (
-                    <div className="px-4 py-3 space-y-3 bg-white">
-                      <p className="text-xs text-ink-dim">Mark a portion of this vault stock as reserved for custom orders — these will not appear as available for sale.</p>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs text-ink-dim mb-1">Reserved weight (g)</label>
-                          <input type="number" step="0.001" min="0" value={reservedWeight}
-                            onChange={e => setReservedWeight(e.target.value)}
-                            placeholder="e.g. 15.000" className={clsx(inp, "font-mono")} />
+              {stockType === "vault" && (() => {
+                const totalReserved = parseFloat(reservations.reduce((s, r) => s + r.w, 0).toFixed(3));
+                const availableWt = Math.max(0, effectiveTotal - totalReserved);
+                function addReservation() {
+                  const w = parseFloat(newResW);
+                  if (!w || w <= 0) return;
+                  setReservations(prev => [...prev, { w, q: parseInt(newResQ) || 0, ref: newResRef.trim() }]);
+                  setNewResW(""); setNewResQ(""); setNewResRef("");
+                }
+                return (
+                  <div className="border border-warn/30 rounded-xl overflow-hidden">
+                    <button onClick={() => setShowReserved(v => !v)}
+                      className="w-full flex items-center justify-between px-4 py-2.5 bg-warn/5 hover:bg-warn/10 transition-colors text-sm">
+                      <span className="font-medium text-warn/90">
+                        Custom Order Reserved
+                        {reservations.length > 0 && <span className="ml-2 text-[11px] bg-warn/20 text-warn px-1.5 py-0.5 rounded font-semibold">{reservations.length}</span>}
+                      </span>
+                      <span className="text-xs text-ink-dim">{showReserved ? "▲ Hide" : "▼ Manage"}</span>
+                    </button>
+                    {showReserved && (
+                      <div className="px-4 py-3 space-y-3 bg-white">
+                        {/* Existing reservations list */}
+                        {reservations.length > 0 && (
+                          <div className="space-y-1.5">
+                            {reservations.map((r, i) => (
+                              <div key={i} className="flex items-center gap-2 bg-warn/5 border border-warn/20 rounded-lg2 px-3 py-2 text-xs">
+                                <span className="font-mono font-semibold text-warn shrink-0">{grams(r.w)}</span>
+                                {r.q > 0 && <span className="text-ink-dim shrink-0">{r.q}pc</span>}
+                                <span className="text-ink flex-1 truncate">{r.ref || <em className="text-ink-dim/50">no reference</em>}</span>
+                                <button onClick={() => setReservations(prev => prev.filter((_, j) => j !== i))}
+                                  className="text-err hover:underline shrink-0 ml-1">×</button>
+                              </div>
+                            ))}
+                            <div className="flex justify-between text-xs pt-1 border-t border-warn/20">
+                              <span className="text-ink-dim">Total reserved</span>
+                              <span className="font-mono font-semibold text-warn">{grams(totalReserved)}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Add new reservation */}
+                        <p className="text-xs text-ink-dim font-medium">Add reservation</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input type="number" step="0.001" min="0" value={newResW}
+                            onChange={e => setNewResW(e.target.value)}
+                            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addReservation(); } }}
+                            placeholder="Weight (g)" className={clsx(inp, "font-mono text-xs py-1.5")} />
+                          <input type="number" step="1" min="0" value={newResQ}
+                            onChange={e => setNewResQ(e.target.value)}
+                            placeholder="Qty (optional)" className={clsx(inp, "text-xs py-1.5")} />
                         </div>
-                        <div>
-                          <label className="block text-xs text-ink-dim mb-1">Reserved qty (pieces)</label>
-                          <input type="number" step="1" min="0" value={reservedQtyInput}
-                            onChange={e => setReservedQtyInput(e.target.value)}
-                            placeholder="Optional" className={inp} />
+                        <div className="flex gap-2">
+                          <input value={newResRef} onChange={e => setNewResRef(e.target.value)}
+                            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addReservation(); } }}
+                            placeholder="Customer / Order reference (e.g. Ravi wedding ring)"
+                            className={clsx(inp, "text-xs py-1.5 flex-1")} />
+                          <button onClick={addReservation} disabled={!newResW || parseFloat(newResW) <= 0}
+                            className="bg-warn text-white text-xs px-3 rounded-lg2 disabled:opacity-40 shrink-0">+ Add</button>
                         </div>
+
+                        {effectiveTotal > 0 && totalReserved > 0 && (
+                          <p className="text-xs text-ok">
+                            Available for sale: <span className="font-mono font-semibold">{grams(availableWt)}</span>
+                          </p>
+                        )}
                       </div>
-                      <div>
-                        <label className="block text-xs text-ink-dim mb-1">Customer / Order reference</label>
-                        <input value={reservedNotes} onChange={e => setReservedNotes(e.target.value)}
-                          placeholder="e.g. Ravi custom necklace — wedding Nov 2026"
-                          className={inp} />
-                      </div>
-                      {effectiveTotal > 0 && reservedWeight && (
-                        <p className="text-xs text-ok">
-                          Available for sale: <span className="font-mono font-semibold">{grams(Math.max(0, effectiveTotal - (parseFloat(reservedWeight) || 0)))}</span>
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                );
+              })()}
 
               {upsert.isError && <p className="text-xs text-err">{(upsert.error as Error).message}</p>}
 

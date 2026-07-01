@@ -106,7 +106,7 @@
 - **Record Sold / Reduce**: click any entered category tile → "Record Sold" button appears in panel header; enter sold weight (and sold qty for tagged items); shows live preview of stock after reduction; "Apply Reduction" saves the reduced entry directly
 - **Transfer Vault ↔ Outer**: "→ Outer" on vault entries / "→ Vault" on outer entries; required Reason field (Repair, Suspense, Customer return, etc.); reason stored in entry notes; live before/after preview for both source and destination; validates transfer doesn't exceed source stock
 - **Rename Category**: pencil icon (✎) next to category name in entry panel; renames across ALL dates and stock types globally; shows confirm dialog before applying
-- **Custom Order Reserved (Vault)**: "Custom Order Reserved" section in vault entry form; enter reserved weight, optional qty, and customer/order reference; tile shows reserved weight in orange; summary table has Reserved column; available-for-sale = total − reserved
+- **Custom Order Reserved (Vault)**: "Custom Order Reserved" section in vault entry form; supports multiple reservations per category — each with weight, optional qty, and customer/order reference; list shows all reservations with × to remove; total reserved and available-for-sale shown live; tile shows total reserved in orange; summary table has Reserved column; data stored as JSON in reserved_notes
 - Migration 117: `gold_stock_entries` table
 
 ### Kolusu (Anklet Stock)
