@@ -168,7 +168,13 @@
 - Master rate table: incentive code → ₹/gram rate + minimum VA%
 - Split: SP1 gets configurable % (default 70%), SP2 gets rest
 - Saved sheets (`incentive_sheets` table) with overrides per row
+- **Mark paid with date history**: clicking "Mark paid" on a balance row stamps today's date in the override; date shown below "Paid ✓" badge; persisted in sheet save; undo clears date
 - Staff view (`/my-incentive`): read-only personal incentive breakdown
+
+### Payroll
+- Monthly payroll sheet: basic salary, leave deductions, advance recovery, incentive, arrear → net salary
+- Load from staff master, load attendance (auto-fills deductions), load from incentive sheet
+- **Load as Arrear**: when loading an incentive sheet into payroll, check "Load as Arrear (not Incentive)" to defer incentive amounts into the Arrear column instead — used when this month's incentive should be paid in a later month's salary
 
 ---
 

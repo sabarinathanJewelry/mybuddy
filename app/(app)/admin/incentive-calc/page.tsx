@@ -14,7 +14,7 @@ interface CalcRow {
   idx: number; date: string; product: string; wastage: number;
   netWt: number; balance: number; sp1: string; sp2: string;
 }
-interface RowOverride  { balanceZero?: boolean; minWastage?: number; sp1Share?: number; wastage?: number }
+interface RowOverride  { balanceZero?: boolean; paidDate?: string; minWastage?: number; sp1Share?: number; wastage?: number }
 
 // ─── Initial Master Rate Table (official incentive codes only) ─────────────────
 const INITIAL_MASTER: MasterEntry[] = [
@@ -819,15 +819,18 @@ export default function IncentiveCalcPage() {
                         {eff.balance > 0 ? (
                           <span className="inline-flex items-center gap-1">
                             <span className="text-err font-medium">{inr(eff.balance)}</span>
-                            <button onClick={() => setOv(row.idx, { balanceZero: true })}
+                            <button onClick={() => setOv(row.idx, { balanceZero: true, paidDate: new Date().toISOString().slice(0, 10) })}
                               className="text-[10px] bg-ok/10 text-ok border border-ok/30 px-1.5 py-0.5 rounded hover:bg-ok/20">
                               Mark paid
                             </button>
                           </span>
                         ) : ov?.balanceZero ? (
-                          <span className="inline-flex items-center gap-1">
-                            <span className="text-ok text-[10px]">Paid ✓</span>
-                            <button onClick={() => setOv(row.idx, { balanceZero: false })} className="text-[10px] text-ink-dim hover:text-err">undo</button>
+                          <span className="inline-flex flex-col gap-0.5">
+                            <span className="inline-flex items-center gap-1">
+                              <span className="text-ok text-[10px]">Paid ✓</span>
+                              <button onClick={() => setOv(row.idx, { balanceZero: false, paidDate: undefined })} className="text-[10px] text-ink-dim hover:text-err">undo</button>
+                            </span>
+                            {ov.paidDate && <span className="text-[10px] text-ink-dim font-mono">{ov.paidDate}</span>}
                           </span>
                         ) : <span className="text-ok text-[10px]">—</span>}
                       </td>

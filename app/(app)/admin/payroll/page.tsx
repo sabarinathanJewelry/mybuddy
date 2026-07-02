@@ -204,6 +204,9 @@ export default function PayrollPage() {
   // ── Payment status
   const [payingId, setPayingId] = useState<string | null>(null);
 
+  // ── Incentive load mode
+  const [loadAsArrear, setLoadAsArrear] = useState(false);
+
   // ── Incentive sheet lock tracking
   const [incSheetId, setIncSheetId]         = useState<string | null>(null);
   const [incSheetData, setIncSheetData]     = useState<any>(null);
@@ -329,11 +332,13 @@ export default function PayrollPage() {
     const rounded = new Map([...resolved.entries()].map(([k, v]) => [k, Math.round(v)]));
     setEntries(prev => prev.map(e => {
       const inc = rounded.get(e.name.toUpperCase());
-      return inc !== undefined ? { ...e, incentive: inc } : e;
+      if (inc === undefined) return e;
+      return loadAsArrear ? { ...e, arrear: (e.arrear || 0) + inc } : { ...e, incentive: inc };
     }));
     setMapSaving(false);
     setLoadStep(null);
     setPendingInc(new Map());
+    setLoadAsArrear(false);
   }
 
   // ── Lock incentive rows for a staff member (called on "Mark Paid")
@@ -608,12 +613,17 @@ export default function PayrollPage() {
                 </tbody>
               </table>
             </div>
-            <div className="flex gap-2 pt-1 border-t border-line">
+            <div className="flex flex-wrap gap-3 items-center pt-1 border-t border-line">
               <button onClick={applyMapping} disabled={mapSaving}
                 className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
-                {mapSaving ? "Saving…" : "Save & Apply"}
+                {mapSaving ? "Saving…" : loadAsArrear ? "Save & Apply as Arrear" : "Save & Apply"}
               </button>
               <button onClick={() => setLoadStep(null)} className="border border-line text-sm px-4 py-2 rounded-lg2 text-ink-dim">Cancel</button>
+              <label className="ml-auto flex items-center gap-2 cursor-pointer text-sm select-none">
+                <input type="checkbox" checked={loadAsArrear} onChange={e => setLoadAsArrear(e.target.checked)}
+                  className="accent-gold w-4 h-4" />
+                <span className={loadAsArrear ? "text-gold font-medium" : "text-ink-dim"}>Load as Arrear (not Incentive)</span>
+              </label>
             </div>
           </div>
         </div>
