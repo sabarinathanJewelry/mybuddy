@@ -72,7 +72,10 @@
 - Chit bonus payments
 
 ### Expenses
-- Expense entry by category
+- Expense entry by category (scalable — add any category: Staff Salary, Loan EMI, Bank Charges, Electricity, Courier, Hallmarking, etc.)
+- Fields: date, category, description, amount, mode (cash/bank), notes/reference (for bill no, NACH ID, weight, bank ref, etc.)
+- Notes shown as secondary line under description in the table
+- Mode=bank posts to bank_ledger automatically
 - Reports: Expenses by Category tab
 
 ### Investments & AV Income

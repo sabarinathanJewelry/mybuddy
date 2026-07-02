@@ -156,7 +156,10 @@ function ExpenseTable({
               <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
                 <td className="px-4 py-2.5 text-ink-dim">{shortDate(exp.exp_date)}</td>
                 <td className="px-3 py-2.5 text-ink-dim">{exp.expense_categories?.name ?? "—"}</td>
-                <td className="px-3 py-2.5">{exp.description}</td>
+                <td className="px-3 py-2.5">
+                  <div>{exp.description}</div>
+                  {exp.notes && <div className="text-[11px] text-ink-dim mt-0.5">{exp.notes}</div>}
+                </td>
                 <td className="px-3 py-2.5 text-right font-mono text-err">{inr(exp.amount)}</td>
                 <td className="px-3 py-2.5 capitalize text-ink-dim text-xs">{exp.mode}</td>
                 <td className="px-3 py-2.5 text-right">
@@ -392,6 +395,12 @@ export default function ExpensesPage() {
                 <option value="cash">Cash</option>
                 <option value="bank">Bank</option>
               </select>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-ink-dim mb-1">Notes / Reference</label>
+              <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                placeholder="e.g. P/25-26/214, 316.9g, NACH-ID, bill no…"
+                className="w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
             </div>
             <div className="col-span-2">
               <label className="flex items-center gap-2 text-sm cursor-pointer">
