@@ -77,6 +77,7 @@
 - Notes shown as secondary line under description in the table
 - Mode=bank posts to bank_ledger automatically
 - Reports: Expenses by Category tab
+- **Bulk Import tab**: paste tab-separated ERP/Excel ledger data → select category + mode → Parse & Check (auto-detects date col 0 DD-MM-YYYY, txnNo col 1, narration col 5/fallback col 3, debit col 6 / credit col 7) → preview table with New/Duplicate badges (duplicate key: date|amount|category) → per-row checkboxes + Select All → selected-total footer → Import N rows (inserts to expenses + bank_ledger/cash_ledger)
 
 ### Investments & AV Income
 - Investment tracking

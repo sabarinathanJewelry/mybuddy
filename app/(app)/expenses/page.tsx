@@ -8,7 +8,38 @@ import { useT } from "@/i18n";
 import { inr, shortDate } from "@/lib/format";
 
 const inp = "border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
-type PageTab = "today" | "all";
+type PageTab = "today" | "all" | "bulk";
+
+// ── Bulk import helpers ───────────────────────────────────────────────────────
+interface BulkRow {
+  idx: number; date: string; txnNo: string;
+  description: string; amount: number; isDuplicate: boolean;
+}
+
+function parseAmt(s: string): number {
+  const n = parseFloat((s ?? "").replace(/[₹,\s]/g, ""));
+  return isNaN(n) ? 0 : Math.abs(n);
+}
+
+function parsePaste(raw: string): Omit<BulkRow, "idx" | "isDuplicate">[] {
+  const results: Omit<BulkRow, "idx" | "isDuplicate">[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    const c = line.split("\t");
+    const rawDate = (c[0] ?? "").trim();
+    const m = rawDate.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+    if (!m) continue;
+    const date = `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+    const txnNo = (c[1] ?? "").trim();
+    const description = (c[5] ?? "").trim() || (c[3] ?? "").trim() || txnNo;
+    const amtD = parseAmt(c[6] ?? "");
+    const amtC = parseAmt(c[7] ?? "");
+    const amount = amtD > 0 ? amtD : amtC;
+    if (amount <= 0) continue;
+    results.push({ date, txnNo, description, amount });
+  }
+  return results;
+}
 
 // ── Palette for category bars (hex — avoids Tailwind purge issues) ────────────
 const CAT_PALETTE = [
@@ -261,6 +292,64 @@ export default function ExpensesPage() {
     amount: 0, mode: "cash", notes: "",
   });
 
+  // Bulk import state
+  const [bulkRaw, setBulkRaw]           = useState("");
+  const [bulkCategory, setBulkCategory] = useState("");
+  const [bulkMode, setBulkMode]         = useState("bank");
+  const [bulkRows, setBulkRows]         = useState<BulkRow[]>([]);
+  const [bulkChecked, setBulkChecked]   = useState<Set<number>>(new Set());
+  const [bulkImporting, setBulkImporting] = useState(false);
+  const [bulkDone, setBulkDone]         = useState(0);
+
+  async function handleBulkParse() {
+    const parsed = parsePaste(bulkRaw);
+    if (!parsed.length) return;
+    const dates = parsed.map(r => r.date);
+    const minDate = dates.reduce((a, b) => a < b ? a : b);
+    const maxDate = dates.reduce((a, b) => a > b ? a : b);
+    const { data: existing } = await supabase()
+      .from("expenses").select("exp_date, amount, category_id")
+      .gte("exp_date", minDate).lte("exp_date", maxDate);
+    const existSet = new Set(
+      (existing ?? []).map((e: any) => `${e.exp_date}|${parseFloat(e.amount).toFixed(2)}|${e.category_id ?? ""}`)
+    );
+    const rows: BulkRow[] = parsed.map((r, i) => ({
+      idx: i, ...r,
+      isDuplicate: existSet.has(`${r.date}|${r.amount.toFixed(2)}|${bulkCategory}`),
+    }));
+    setBulkRows(rows);
+    setBulkChecked(new Set(rows.filter(r => !r.isDuplicate).map(r => r.idx)));
+    setBulkDone(0);
+  }
+
+  async function handleBulkImport() {
+    setBulkImporting(true);
+    const toImport = bulkRows.filter(r => bulkChecked.has(r.idx));
+    const client = supabase();
+    let count = 0;
+    for (const row of toImport) {
+      const { data: exp, error } = await client.from("expenses").insert({
+        exp_date: row.date, category_id: bulkCategory || null,
+        description: row.description, amount: row.amount,
+        mode: bulkMode, notes: row.txnNo || null, is_advance: false,
+      }).select().single();
+      if (error) { console.error(error); continue; }
+      const ledger = bulkMode === "bank" ? "bank_ledger" : "cash_ledger";
+      await client.from(ledger).insert({
+        tx_date: row.date, direction: "out", amount: row.amount,
+        description: row.description, ref_type: "expense", ref_id: exp.id,
+      });
+      count++;
+    }
+    setBulkImporting(false);
+    setBulkDone(count);
+    setBulkRows([]);
+    setBulkChecked(new Set());
+    setBulkRaw("");
+    qc.invalidateQueries({ queryKey: ["expenses-today"] });
+    qc.invalidateQueries({ queryKey: ["expenses-filtered"] });
+  }
+
   // All-expenses filters
   const [filterFrom, setFilterFrom]   = useState(monthStart);
   const [filterTo, setFilterTo]       = useState(globalDate);
@@ -423,6 +512,7 @@ export default function ExpensesPage() {
         {([
           { key: "today", label: `Today  ${todayTotal > 0 ? `· ${inr(todayTotal)}` : ""}` },
           { key: "all",   label: "All Expenses" },
+          { key: "bulk",  label: "Bulk Import" },
         ] as { key: PageTab; label: string }[]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
@@ -530,6 +620,124 @@ export default function ExpensesPage() {
               onDelete={remove.mutate}
               editPending={update.isPending}
             />
+          )}
+        </div>
+      )}
+
+      {/* ── BULK IMPORT TAB ────────────────────────────────────────────────────── */}
+      {tab === "bulk" && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
+            <p className="text-xs font-medium text-ink-dim uppercase tracking-wide">Paste ERP / Excel rows (tab-separated)</p>
+            <textarea
+              value={bulkRaw}
+              onChange={e => { setBulkRaw(e.target.value); setBulkRows([]); setBulkDone(0); }}
+              rows={6}
+              placeholder={"Date\tTxn No\tType\tLedger\tMode\tNarration\tAmount(D)\tAmount(C)\n03-04-2026\tP/24-25/1428\tPAYMENT\tSTAFF SALARY\tBANK\tSTAFF SALARY (MARCH-2026)\t₹2,12,040.00"}
+              className="w-full border border-line rounded-lg2 px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gold resize-y"
+            />
+            <div className="flex flex-wrap gap-3 items-end">
+              <div>
+                <label className="text-xs text-ink-dim block mb-1">Category (applied to all rows)</label>
+                <select value={bulkCategory} onChange={e => { setBulkCategory(e.target.value); setBulkRows([]); }} className={inp}>
+                  <option value="">— Select category —</option>
+                  {(categories as any[]).map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-ink-dim block mb-1">Mode</label>
+                <select value={bulkMode} onChange={e => setBulkMode(e.target.value)} className={inp}>
+                  <option value="bank">Bank</option>
+                  <option value="cash">Cash</option>
+                </select>
+              </div>
+              <button onClick={handleBulkParse} disabled={!bulkRaw.trim() || !bulkCategory}
+                className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-40">
+                Parse & Check
+              </button>
+              {bulkRows.length > 0 && (
+                <button onClick={() => { setBulkRows([]); setBulkRaw(""); setBulkChecked(new Set()); setBulkDone(0); }}
+                  className="border border-line text-sm px-4 py-2 rounded-lg2 hover:border-err hover:text-err">
+                  Clear
+                </button>
+              )}
+            </div>
+            {!bulkCategory && bulkRaw.trim() && (
+              <p className="text-xs text-warn">Select a category before parsing.</p>
+            )}
+            {bulkDone > 0 && (
+              <p className="text-xs text-ok font-medium">{bulkDone} expense{bulkDone !== 1 ? "s" : ""} imported successfully.</p>
+            )}
+          </div>
+
+          {bulkRows.length > 0 && (
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-line bg-canvas flex-wrap gap-2">
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                    <input type="checkbox" className="accent-gold"
+                      checked={bulkChecked.size === bulkRows.length && bulkRows.length > 0}
+                      onChange={e => setBulkChecked(e.target.checked ? new Set(bulkRows.map(r => r.idx)) : new Set())} />
+                    Select all
+                  </label>
+                  <span className="text-xs text-ink-dim">
+                    {bulkChecked.size} of {bulkRows.length} selected
+                    · {bulkRows.filter(r => r.isDuplicate).length} duplicate{bulkRows.filter(r => r.isDuplicate).length !== 1 ? "s" : ""} found
+                  </span>
+                </div>
+                <button onClick={handleBulkImport} disabled={bulkChecked.size === 0 || bulkImporting}
+                  className="bg-ok text-white text-sm px-4 py-1.5 rounded-lg2 font-medium disabled:opacity-40">
+                  {bulkImporting ? "Importing…" : `Import ${bulkChecked.size} row${bulkChecked.size !== 1 ? "s" : ""}`}
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs" style={{ minWidth: 620 }}>
+                  <thead>
+                    <tr className="text-ink-dim border-b border-line bg-canvas/50">
+                      <th className="px-3 py-2 w-8" />
+                      <th className="text-left px-3 py-2">Date</th>
+                      <th className="text-left px-3 py-2">Txn No</th>
+                      <th className="text-left px-3 py-2">Description / Narration</th>
+                      <th className="text-right px-3 py-2">Amount</th>
+                      <th className="text-center px-3 py-2">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bulkRows.map(row => (
+                      <tr key={row.idx} className={`border-b border-line last:border-0 ${row.isDuplicate ? "bg-warn/5" : "hover:bg-canvas/40"}`}>
+                        <td className="px-3 py-2 text-center">
+                          <input type="checkbox" className="accent-gold"
+                            checked={bulkChecked.has(row.idx)}
+                            onChange={e => setBulkChecked(prev => {
+                              const n = new Set(prev);
+                              e.target.checked ? n.add(row.idx) : n.delete(row.idx);
+                              return n;
+                            })} />
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap text-ink-dim">{row.date}</td>
+                        <td className="px-3 py-2 font-mono text-ink-dim">{row.txnNo || "—"}</td>
+                        <td className="px-3 py-2">{row.description}</td>
+                        <td className="px-3 py-2 text-right font-mono font-semibold text-err">{inr(row.amount)}</td>
+                        <td className="px-3 py-2 text-center">
+                          {row.isDuplicate
+                            ? <span className="text-[10px] bg-warn/10 text-warn border border-warn/30 px-1.5 py-0.5 rounded">Duplicate</span>
+                            : <span className="text-[10px] bg-ok/10 text-ok border border-ok/30 px-1.5 py-0.5 rounded">New</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-canvas border-t-2 border-line font-semibold">
+                      <td colSpan={4} className="px-3 py-2 text-right text-xs text-ink-dim">Selected total</td>
+                      <td className="px-3 py-2 text-right font-mono text-err">
+                        {inr(bulkRows.filter(r => bulkChecked.has(r.idx)).reduce((s, r) => s + r.amount, 0))}
+                      </td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
           )}
         </div>
       )}
