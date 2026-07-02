@@ -313,14 +313,22 @@ function parseErp(raw: string): CalcRow[] {
   lines.slice(hi + 1).forEach((line, i) => {
     if (!line.trim()) return;
     const c = line.split("\t");
-    const product = (c[1] ?? "").trim().toUpperCase();
-    const netWt   = parseNum(c[8] ?? "");
+    const product      = (c[1] ?? "").trim().toUpperCase();
+    const productGroup = (c[2] ?? "").trim().toUpperCase();
+    const netWt        = parseNum(c[8] ?? "");
     if (!product || netWt <= 0) return;
+    const wastageField = (c[3] ?? "").trim();
+    // Silver groups and SIDE STUD don't use % wastage for eligibility — force to 1
+    // Also handle ERP entries where wastage is expressed in Gm (weight) instead of %
+    const isSilver   = /^(SILVER|92\.5)/i.test(productGroup);
+    const isSideStud = /SIDE STUD/i.test(product);
+    const isGrams    = /gm/i.test(wastageField);
+    const wastage    = (isSilver || isSideStud || isGrams) ? 1 : parseNum(wastageField);
     rows.push({
       idx:     i,
       date:    (c[0] ?? "").trim(),
       product,
-      wastage: parseNum(c[3] ?? ""),
+      wastage,
       netWt,
       balance: Math.max(0, parseNum(c[7] ?? "")),
       sp1:     (c[5] ?? "").trim(),
@@ -338,8 +346,8 @@ function lookupProduct(
   const mapEntry = mapper.find(m => m.erpName.toUpperCase() === erpProduct);
   const mapped   = !!mapEntry;
   let incentiveCode = (mapEntry?.incentiveCode ?? erpProduct).toUpperCase();
-  // Weight-based 92.5 split
-  if (incentiveCode === "92.5-S" && netWt >= 20) incentiveCode = "92.5-L";
+  // Weight-based 92.5 split: ≤20g = S, >20g = L
+  if (incentiveCode === "92.5-S" && netWt > 20) incentiveCode = "92.5-L";
   const masterEntry = master.find(m => m.code.toUpperCase() === incentiveCode) ?? null;
   return { masterEntry, incentiveCode, mapped };
 }
