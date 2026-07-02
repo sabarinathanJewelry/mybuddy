@@ -174,7 +174,7 @@
 ### Payroll
 - Monthly payroll sheet: basic salary, leave deductions, advance recovery, incentive, arrear → net salary
 - Load from staff master, load attendance (auto-fills deductions), load from incentive sheet
-- **Load as Arrear**: when loading an incentive sheet into payroll, check "Load as Arrear (not Incentive)" to defer incentive amounts into the Arrear column instead — used when this month's incentive should be paid in a later month's salary
+- **Load as Arrear**: when loading an incentive sheet into payroll, check "Load as Arrear (not Incentive)" to defer incentive amounts into the Arrear column instead; in arrear mode only items manually marked paid (balanceZero override) are counted — items that were naturally balance=0 in the ERP export are excluded, so the arrear reflects only newly cleared balances
 
 ---
 

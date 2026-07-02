@@ -95,9 +95,11 @@ function NumCell({ value, onChange, highlight, warn }: { value: number; onChange
 
 // ─── Incentive calc (mirrors incentive-calc page) ──────────────────────────────
 // lockedRows: { "rowIdx": { staff, period } } — rows already paid; skip them
+// paidOverridesOnly: when true, only count items manually marked paid (balanceZero override)
 function calcStaffIncentives(
   sheetData: any,
-  lockedRows: Record<string, { staff: string; period: string }> = {}
+  lockedRows: Record<string, { staff: string; period: string }> = {},
+  paidOverridesOnly = false
 ): Map<string, number> {
   const rawData = sheetData.raw_data as string;
   const overrides = sheetData.overrides ?? {};
@@ -114,6 +116,8 @@ function calcStaffIncentives(
     const netWt = parseFloat((c[8] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
     if (netWt <= 0) return;
     const ov = overrides[i] ?? {};
+    // arrear mode: only items explicitly marked paid (had a balance, now cleared)
+    if (paidOverridesOnly && !ov.balanceZero) return;
     const balance = ov.balanceZero ? 0 : Math.max(0, parseFloat((c[7] ?? "").match(/[-\d.]+/)?.[0] ?? "0") || 0);
     if (balance > 0) return;
     const sp1 = (c[5] ?? "").trim();
@@ -289,6 +293,14 @@ export default function PayrollPage() {
     setAttApplied(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attSummary, attLoading]);
+
+  // Recalculate pending amounts when arrear toggle changes
+  useEffect(() => {
+    if (!incSheetData || loadStep !== "map_names") return;
+    const staffInc = calcStaffIncentives(incSheetData, incLockedRows, loadAsArrear);
+    setPendingInc(staffInc);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadAsArrear]);
 
   // ── Incentive load step 1: select sheet
   async function selectIncentiveSheet(id: string) {
