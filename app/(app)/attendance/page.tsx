@@ -2270,6 +2270,7 @@ export default function AttendancePage() {
               if (newProfile) setProfile(newProfile);
             }
             unlock();
+            setTab("payslip");
           }
         } catch { /* silent */ }
       } else {
@@ -2533,9 +2534,10 @@ export default function AttendancePage() {
         <div className="flex border-b border-line gap-1 flex-wrap">
           {([
             "attendance",
+            ...(!isAdmin ? ["payslip"] : []),
             ...(!isAdmin ? ["weekoffs"] : []),
             "staff", "monthly", "requests", "leaves", "duties", "chat",
-            ...(isAdmin ? ["announcements", "kyc", "tasks", "weekoffs"] : ["tasks", "payslip"]),
+            ...(isAdmin ? ["announcements", "kyc", "tasks", "weekoffs"] : ["tasks"]),
           ] as PageTab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
