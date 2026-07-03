@@ -174,6 +174,7 @@
 - Master rate table: incentive code → ₹/gram rate + minimum VA%
 - Split: SP1 gets configurable % (default 70%), SP2 gets rest
 - Saved sheets (`incentive_sheets` table) with overrides per row
+- **Manual skip (force ineligible)**: "↓ skip" button in the Ok? column on eligible or balance rows — marks the row ineligible regardless of wastage/balance (e.g. negative VA silver items auto-normalised to 1% but should not earn incentive); shows "Skipped" with "↑ undo" to reverse; `forceIneligible` persisted in sheet save
 - **Mark paid with date history**: clicking "Mark paid" on a balance row stamps today's date in the override; date shown below "Paid ✓" badge; persisted in sheet save; undo clears date
 - **Partial payment + write-off**: "Partial" button opens inline form with two separate actions — "Save received ₹X" records partial payment without closing the balance (customer may still pay rest later; row stays red/ineligible); "Write off ₹Y" closes the balance and marks incentive eligible; after partial save shows "Rcvd ₹X · Rem ₹Y" with "Fully paid" and "Write off ₹Y" buttons; after write-off shows GST lost + net lost; undo reverts all; write-off summary footer shows totals
 - Staff view (`/my-incentive`): read-only personal incentive breakdown

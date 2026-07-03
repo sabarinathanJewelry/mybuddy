@@ -15,7 +15,7 @@ interface CalcRow {
   netWt: number; balance: number; sp1: string; sp2: string;
   customer: string; mobile: string; billNo: string;
 }
-interface RowOverride  { balanceZero?: boolean; paidDate?: string; minWastage?: number; sp1Share?: number; wastage?: number; amountPaid?: number; writeOffAmt?: number; }
+interface RowOverride  { balanceZero?: boolean; paidDate?: string; minWastage?: number; sp1Share?: number; wastage?: number; amountPaid?: number; writeOffAmt?: number; forceIneligible?: boolean; }
 
 // ─── Initial Master Rate Table (official incentive codes only) ─────────────────
 const INITIAL_MASTER: MasterEntry[] = [
@@ -377,7 +377,7 @@ function calcRow(
   const balance    = ov?.balanceZero ? 0 : row.balance;
   const sp1Share   = ov?.sp1Share   ?? defaultSplit;
   const wastage    = ov?.wastage    ?? row.wastage;
-  const eligible   = !!masterEntry && rate > 0 && wastage >= minWastage && balance <= 0;
+  const eligible   = !ov?.forceIneligible && !!masterEntry && rate > 0 && wastage >= minWastage && balance <= 0;
   const totalInc   = eligible ? parseFloat((rate * row.netWt).toFixed(2)) : 0;
   const sp1Inc     = row.sp2 ? parseFloat((totalInc * sp1Share / 100).toFixed(2)) : totalInc;
   const sp2Inc     = row.sp2 ? parseFloat((totalInc * (100 - sp1Share) / 100).toFixed(2)) : 0;
@@ -1042,10 +1042,29 @@ export default function IncentiveCalcPage() {
                         ) : <span className="text-ink-dim">—</span>}
                       </td>
                       <td className="px-2 py-1.5 text-center">
-                        {eff.eligible ? <span className="text-ok font-bold">✓</span>
-                          : eff.balance > 0    ? <span className="text-err text-[10px] font-medium">Balance</span>
-                          : !eff.mapped         ? <span className="text-err text-[10px]">Unmapped</span>
-                          : <span className="text-err text-[10px]">Low%</span>}
+                        {ov?.forceIneligible ? (
+                          <span className="inline-flex flex-col items-center gap-0.5">
+                            <span className="text-ink-dim text-[10px]">Skipped</span>
+                            <button onClick={() => setOv(row.idx, { forceIneligible: false })}
+                              className="text-[9px] text-ok border border-ok/30 rounded px-1 hover:bg-ok/10">↑ undo</button>
+                          </span>
+                        ) : eff.eligible ? (
+                          <span className="inline-flex flex-col items-center gap-0.5">
+                            <span className="text-ok font-bold">✓</span>
+                            <button onClick={() => setOv(row.idx, { forceIneligible: true })}
+                              className="text-[9px] text-ink-dim border border-line rounded px-1 hover:text-err hover:border-err/30">↓ skip</button>
+                          </span>
+                        ) : eff.balance > 0 ? (
+                          <span className="inline-flex flex-col items-center gap-0.5">
+                            <span className="text-err text-[10px] font-medium">Balance</span>
+                            <button onClick={() => setOv(row.idx, { forceIneligible: true })}
+                              className="text-[9px] text-ink-dim border border-line rounded px-1 hover:text-err hover:border-err/30">↓ skip</button>
+                          </span>
+                        ) : !eff.mapped ? (
+                          <span className="text-err text-[10px]">Unmapped</span>
+                        ) : (
+                          <span className="text-err text-[10px]">Low%</span>
+                        )}
                       </td>
                       <td className={clsx("px-3 py-1.5 text-right font-mono font-semibold", eff.totalInc > 0 ? "text-ok" : "text-ink-dim")}>
                         {eff.totalInc > 0 ? inr(eff.totalInc) : "—"}
