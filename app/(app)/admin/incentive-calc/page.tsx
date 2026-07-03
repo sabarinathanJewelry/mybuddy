@@ -13,6 +13,7 @@ interface MapperEntry  { erpName: string; incentiveCode: string; notes: string }
 interface CalcRow {
   idx: number; date: string; product: string; wastage: number;
   netWt: number; balance: number; sp1: string; sp2: string;
+  customer: string; mobile: string;
 }
 interface RowOverride  { balanceZero?: boolean; paidDate?: string; minWastage?: number; sp1Share?: number; wastage?: number }
 
@@ -330,9 +331,11 @@ function parseErp(raw: string): CalcRow[] {
       product,
       wastage,
       netWt,
-      balance: Math.max(0, parseNum(c[7] ?? "")),
-      sp1:     (c[5] ?? "").trim(),
-      sp2:     (c[6] ?? "").trim(),
+      balance:  Math.max(0, parseNum(c[7] ?? "")),
+      sp1:      (c[5] ?? "").trim(),
+      sp2:      (c[6] ?? "").trim(),
+      customer: (c[9] ?? "").trim(),
+      mobile:   (c[10] ?? "").trim(),
     });
   });
   return rows;
@@ -757,7 +760,7 @@ export default function IncentiveCalcPage() {
           </div>
 
           <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
-            <table className="w-full text-xs" style={{ minWidth: 900 }}>
+            <table className="w-full text-xs" style={{ minWidth: 1100 }}>
               <thead>
                 <tr className="text-ink-dim border-b border-line bg-canvas">
                   <th className="text-left px-3 py-2">Date</th>
@@ -771,6 +774,8 @@ export default function IncentiveCalcPage() {
                   <th className="text-center px-2 py-2 text-gold" title="Click to override">Split↓</th>
                   <th className="text-center px-2 py-2">Ok?</th>
                   <th className="text-right px-3 py-2">Inc</th>
+                  <th className="text-left px-3 py-2">Customer</th>
+                  <th className="text-left px-3 py-2">Mobile</th>
                 </tr>
               </thead>
               <tbody>
@@ -861,6 +866,8 @@ export default function IncentiveCalcPage() {
                       <td className={clsx("px-3 py-1.5 text-right font-mono font-semibold", eff.totalInc > 0 ? "text-ok" : "text-ink-dim")}>
                         {eff.totalInc > 0 ? inr(eff.totalInc) : "—"}
                       </td>
+                      <td className="px-3 py-1.5 text-ink-dim truncate max-w-[120px]">{row.customer || "—"}</td>
+                      <td className="px-3 py-1.5 text-ink-dim font-mono text-[11px]">{row.mobile || "—"}</td>
                     </tr>
                   );
                 })}
@@ -868,7 +875,7 @@ export default function IncentiveCalcPage() {
               {filteredRows.length > 0 && (
                 <tfoot>
                   <tr className="bg-canvas border-t-2 border-line font-semibold">
-                    <td colSpan={10} className="px-3 py-2 text-right text-ink-dim text-xs">Visible total</td>
+                    <td colSpan={12} className="px-3 py-2 text-right text-ink-dim text-xs">Visible total</td>
                     <td className="px-3 py-2 text-right text-ok font-mono">
                       {inr(filteredRows.reduce((s, { eff }) => s + eff.totalInc, 0))}
                     </td>
