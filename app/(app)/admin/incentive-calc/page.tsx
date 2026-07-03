@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { inr } from "@/lib/format";
 import { clsx } from "clsx";
+import { useBoardRate } from "@/stores/board-rate";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface MasterEntry  { code: string; rate: number; minWastage: number }
@@ -434,9 +435,10 @@ function InlineText({ value, onSave, width = 120 }: { value: string; onSave: (v:
 }
 
 // ─── Balance cell with partial payment + write-off ─────────────────────────────
-function BalanceCell({ balance, ov, onMarkPaid, onSavePartial, onWriteOff, onUndo }: {
+function BalanceCell({ balance, ov, defaultBoardRate, onMarkPaid, onSavePartial, onWriteOff, onUndo }: {
   balance: number;
   ov: RowOverride | undefined;
+  defaultBoardRate?: number;
   onMarkPaid: () => void;
   onSavePartial: (paid: number) => void;
   onWriteOff: (paid: number, writeOff: number, boardRate?: number) => void;
@@ -444,7 +446,7 @@ function BalanceCell({ balance, ov, onMarkPaid, onSavePartial, onWriteOff, onUnd
 }) {
   const [mode, setMode] = useState<"idle" | "partial">("idle");
   const [received, setReceived] = useState("");
-  const [boardRateInput, setBoardRateInput] = useState("");
+  const [boardRateInput, setBoardRateInput] = useState(() => defaultBoardRate ? String(defaultBoardRate) : "");
 
   // ── State 1: fully paid (no write-off)
   if (ov?.balanceZero && !ov.writeOffAmt) {
@@ -614,6 +616,7 @@ type ViewTab = "data" | "staff" | "settings";
 
 export default function IncentiveCalcPage() {
   const qc = useQueryClient();
+  const boardRateStore = useBoardRate(s => s.rate);
   const [raw, setRaw]           = useState("");
   const [rows, setRows]         = useState<CalcRow[] | null>(null);
   const [overrides, setOverrides] = useState<Record<number, RowOverride>>({});
@@ -1046,6 +1049,11 @@ export default function IncentiveCalcPage() {
                           <BalanceCell
                             balance={row.balance}
                             ov={ov}
+                            defaultBoardRate={(() => {
+                              if (!boardRateStore) return undefined;
+                              const pfx = row.billNo.split("/").pop()?.[0]?.toUpperCase();
+                              return pfx === "S" ? boardRateStore.silver : boardRateStore.gold_22k;
+                            })()}
                             onMarkPaid={() => setOv(row.idx, { balanceZero: true, paidDate: new Date().toISOString().slice(0, 10) })}
                             onSavePartial={paid => setOv(row.idx, { amountPaid: paid })}
                             onWriteOff={(paid, wo, br) => setOv(row.idx, { balanceZero: true, paidDate: new Date().toISOString().slice(0, 10), amountPaid: paid || undefined, writeOffAmt: wo, boardRate: br })}
