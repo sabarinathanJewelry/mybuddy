@@ -423,44 +423,84 @@ function InlineText({ value, onSave, width = 120 }: { value: string; onSave: (v:
 }
 
 // ─── Balance cell with partial payment + write-off ─────────────────────────────
-function BalanceCell({ balance, ov, onMarkPaid, onWriteOff, onUndo }: {
+function BalanceCell({ balance, ov, onMarkPaid, onSavePartial, onWriteOff, onUndo }: {
   balance: number;
   ov: RowOverride | undefined;
   onMarkPaid: () => void;
+  onSavePartial: (paid: number) => void;
   onWriteOff: (paid: number, writeOff: number) => void;
   onUndo: () => void;
 }) {
   const [mode, setMode] = useState<"idle" | "partial">("idle");
   const [received, setReceived] = useState("");
 
-  if (ov?.balanceZero) {
-    const wo = ov.writeOffAmt ?? 0;
+  // ── State 1: fully paid (no write-off)
+  if (ov?.balanceZero && !ov.writeOffAmt) {
+    return (
+      <span className="inline-flex flex-col gap-0.5 text-[10px]">
+        <span className="inline-flex items-center gap-1">
+          {(ov.amountPaid ?? 0) > 0
+            ? <span className="text-ok">Paid {inr(ov.amountPaid!)} ✓</span>
+            : <span className="text-ok">Paid ✓</span>}
+          <button onClick={onUndo} className="text-ink-dim hover:text-err">undo</button>
+        </span>
+        {ov.paidDate && <span className="font-mono text-ink-dim">{ov.paidDate}</span>}
+      </span>
+    );
+  }
+
+  // ── State 2: written off
+  if (ov?.balanceZero && ov.writeOffAmt) {
+    const wo = ov.writeOffAmt;
     const gstLost = parseFloat((wo * 3 / 103).toFixed(2));
     const netLost = parseFloat((wo * 100 / 103).toFixed(2));
     return (
       <span className="inline-flex flex-col gap-0.5 text-[10px]">
         <span className="inline-flex items-center gap-1 flex-wrap">
-          {wo > 0 ? (
-            <>
-              {(ov.amountPaid ?? 0) > 0 && <span className="text-ok">Rcvd {inr(ov.amountPaid!)}</span>}
-              <span className="text-warn font-medium">W/O {inr(wo)}</span>
-            </>
-          ) : (
-            <span className="text-ok">Paid ✓</span>
-          )}
+          {(ov.amountPaid ?? 0) > 0 && <span className="text-ok">Rcvd {inr(ov.amountPaid!)}</span>}
+          <span className="text-warn font-medium">W/O {inr(wo)}</span>
           <button onClick={onUndo} className="text-ink-dim hover:text-err">undo</button>
         </span>
         {ov.paidDate && <span className="font-mono text-ink-dim">{ov.paidDate}</span>}
-        {wo > 0 && (
-          <span className="text-ink-dim">
-            GST lost: <span className="text-err">{inr(gstLost)}</span>
-            {" · "}Net lost: <span className="text-err">{inr(netLost)}</span>
-          </span>
-        )}
+        <span className="text-ink-dim">
+          GST lost: <span className="text-err">{inr(gstLost)}</span>
+          {" · "}Net lost: <span className="text-err">{inr(netLost)}</span>
+        </span>
       </span>
     );
   }
 
+  // ── State 3: partial saved, not yet written off
+  if (ov?.amountPaid && !ov.balanceZero) {
+    const remaining = Math.max(0, balance - ov.amountPaid);
+    const gstLost = parseFloat((remaining * 3 / 103).toFixed(2));
+    const netLost = parseFloat((remaining * 100 / 103).toFixed(2));
+    return (
+      <span className="inline-flex flex-col gap-0.5 text-[10px]">
+        <span className="inline-flex items-center gap-1 flex-wrap">
+          <span className="text-ok">Rcvd {inr(ov.amountPaid)}</span>
+          <span className="text-err font-medium">Rem {inr(remaining)}</span>
+          <button onClick={onUndo} className="text-ink-dim hover:text-err">undo</button>
+        </span>
+        <span className="text-ink-dim">
+          GST: <span className="text-err">{inr(gstLost)}</span>
+          {" · "}Net: <span className="text-err">{inr(netLost)}</span>
+        </span>
+        <span className="inline-flex gap-1">
+          <button onClick={() => onMarkPaid()}
+            className="bg-ok/10 text-ok border border-ok/30 px-1.5 py-0.5 rounded hover:bg-ok/20">
+            Fully paid
+          </button>
+          <button onClick={() => onWriteOff(ov.amountPaid!, remaining)}
+            className="bg-warn text-white px-1.5 py-0.5 rounded">
+            Write off {inr(remaining)}
+          </button>
+        </span>
+      </span>
+    );
+  }
+
+  // ── State 4: partial input form
   if (mode === "partial") {
     const rcv = parseFloat(received) || 0;
     const wo  = Math.max(0, balance - rcv);
@@ -486,15 +526,23 @@ function BalanceCell({ balance, ov, onMarkPaid, onWriteOff, onUndo }: {
             <div>Net lost: <span className="text-err">{inr(netLost)}</span></div>
           </span>
         )}
-        <button onClick={() => { onWriteOff(rcv, wo); setMode("idle"); setReceived(""); }}
-          disabled={wo <= 0 && rcv <= 0}
-          className="bg-warn text-white text-[10px] px-2 py-0.5 rounded disabled:opacity-40">
-          Write off {wo > 0 ? inr(wo) : ""}
-        </button>
+        <span className="inline-flex gap-1 flex-wrap">
+          <button onClick={() => { if (rcv > 0) { onSavePartial(rcv); setMode("idle"); setReceived(""); } }}
+            disabled={rcv <= 0}
+            className="bg-info/10 text-info border border-info/30 px-2 py-0.5 rounded disabled:opacity-40">
+            Save received {rcv > 0 ? inr(rcv) : ""}
+          </button>
+          <button onClick={() => { onWriteOff(rcv, wo); setMode("idle"); setReceived(""); }}
+            disabled={wo <= 0}
+            className="bg-warn text-white px-2 py-0.5 rounded disabled:opacity-40">
+            Write off {wo > 0 ? inr(wo) : ""}
+          </button>
+        </span>
       </span>
     );
   }
 
+  // ── State 5: default — balance outstanding
   return (
     <span className="inline-flex items-center gap-1 flex-wrap">
       <span className="text-err font-medium">{inr(balance)}</span>
@@ -974,10 +1022,11 @@ export default function IncentiveCalcPage() {
                       <td className="px-2 py-1.5 text-center">
                         {eff.balance > 0 || ov?.balanceZero ? (
                           <BalanceCell
-                            balance={eff.balance > 0 ? eff.balance : (ov?.amountPaid ?? 0) + (ov?.writeOffAmt ?? 0)}
+                            balance={row.balance}
                             ov={ov}
                             onMarkPaid={() => setOv(row.idx, { balanceZero: true, paidDate: new Date().toISOString().slice(0, 10) })}
-                            onWriteOff={(paid, wo) => setOv(row.idx, { balanceZero: true, paidDate: new Date().toISOString().slice(0, 10), amountPaid: paid, writeOffAmt: wo })}
+                            onSavePartial={paid => setOv(row.idx, { amountPaid: paid })}
+                            onWriteOff={(paid, wo) => setOv(row.idx, { balanceZero: true, paidDate: new Date().toISOString().slice(0, 10), amountPaid: paid || undefined, writeOffAmt: wo })}
                             onUndo={() => setOv(row.idx, { balanceZero: false, paidDate: undefined, amountPaid: undefined, writeOffAmt: undefined })}
                           />
                         ) : <span className="text-ok text-[10px]">—</span>}
