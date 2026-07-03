@@ -201,6 +201,7 @@
 - **Attendance alerts in payroll**: each staff name cell shows inline badges — red `N× perm >2h` for approved permissions exceeding 2 hours (hover shows dates + minutes), orange `N× wknd leave · −₹X` for approved weekend leaves showing the 2× per-day deduction amount (hover shows dates); requires attendance loaded for the period
 - **Fine auto-loads with attendance**: clicking "Load Attendance" also calculates and fills the Fine column using the saved attendance settings (late fine amount, per-day or per-minute mode, apply-from date, OT equalization); mirrors the MonthlyTab fine formula exactly
 - **Paid rows locked**: once a row is marked Paid, all cells (name, salary, deduction, fine, advance, incentive, arrear) become read-only — values display as static text; the undo ↩ button still allows reverting payment status if needed
+- **Inactive staff included**: "+ Load Staff" includes inactive (departed) staff so their final-month salary can be processed; inactive staff are fetched alongside active staff in the payroll staff query
 - **Load as Arrear**: when loading an incentive sheet into payroll, check "Load as Arrear (not Incentive)" to defer incentive amounts into the Arrear column instead; in arrear mode only items manually marked paid (balanceZero override) are counted — items that were naturally balance=0 in the ERP export are excluded, so the arrear reflects only newly cleared balances
 
 ---

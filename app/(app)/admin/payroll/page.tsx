@@ -253,8 +253,8 @@ export default function PayrollPage() {
   const { data: staffList = [] } = useQuery({
     queryKey: ["staff_for_payroll"],
     queryFn: async () => {
-      const { data } = await supabase().from("staff").select("id, name, monthly_salary").eq("active", true).order("name");
-      return (data ?? []) as { id: string; name: string; monthly_salary: number }[];
+      const { data } = await supabase().from("staff").select("id, name, monthly_salary, active").order("name");
+      return (data ?? []) as { id: string; name: string; monthly_salary: number; active: boolean }[];
     },
   });
   const { data: savedSheets = [] } = useQuery({
