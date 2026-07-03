@@ -54,7 +54,7 @@ ${e.arrear > 0 ? `<tr class="add"><td>Arrear</td><td>+ ${fmt(e.arrear)}</td></tr
 <p style="font-size:11px;color:#aaa;text-align:center;margin-top:24px">
 Generated ${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
 </p>
-<script>window.onload=()=>window.print();</script>
+<script>window.onload=()=>{window.print();window.addEventListener('afterprint',()=>window.close());};</script>
 </body></html>`;
 }
 

@@ -1744,7 +1744,7 @@ ${e.incentive > 0 ? `<tr class="add"><td>Incentive</td><td>+ ${fmt(e.incentive)}
 ${e.arrear > 0 ? `<tr class="add"><td>Arrear</td><td>+ ${fmt(e.arrear)}</td></tr>` : ""}
 <tr class="tot"><td>Net Salary</td><td>${fmt(net)}</td></tr></table>
 <p style="font-size:11px;color:#aaa;text-align:center;margin-top:24px">Generated ${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</p>
-<script>window.onload=()=>window.print();</script></body></html>`;
+<script>window.onload=()=>{window.print();window.addEventListener('afterprint',()=>window.close());};</script></body></html>`;
                         const blob = new Blob([html], { type: "text/html" });
                         const url = URL.createObjectURL(blob);
                         const win = window.open(url, "_blank");
