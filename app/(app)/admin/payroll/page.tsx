@@ -229,9 +229,26 @@ export default function PayrollPage() {
   const [incLockedRows, setIncLockedRows]   = useState<Record<string, { staff: string; period: string }>>({});
   const [lockedStaff, setLockedStaff]       = useState<Set<string>>(new Set());
 
+  // ── Inactive staff picker
+  const [showInactivePicker, setShowInactivePicker] = useState(false);
+  const { data: inactiveStaff = [] } = useQuery({
+    queryKey: ["staff_inactive"],
+    queryFn: async () => {
+      const { data } = await supabase().from("staff").select("id, name, monthly_salary, bio_user_id").eq("active", false).order("name");
+      return (data ?? []) as { id: string; name: string; monthly_salary: number; bio_user_id: string }[];
+    },
+  });
+
   // ── Attendance load
   const attMonth = periodToMonth(period) ?? "";
-  const { data: attSummary = [], isFetching: attLoading } = useMonthlyAttendanceSummary(attMonth);
+  // Include bio_user_ids of any deactivated staff already in the entries sheet
+  const extraBioIds = useMemo(() => {
+    const nameToInactive = new Map(inactiveStaff.map(s => [s.name.toUpperCase(), s.bio_user_id]));
+    return entries
+      .map(e => nameToInactive.get(e.name.toUpperCase()))
+      .filter((id): id is string => !!id);
+  }, [entries, inactiveStaff]);
+  const { data: attSummary = [], isFetching: attLoading } = useMonthlyAttendanceSummary(attMonth, extraBioIds);
   const { data: monthPerms  = [] } = useApprovedPermsByMonth(attMonth);
   const { data: monthLeaves = [] } = useApprovedLeavesByMonth(attMonth);
   const { data: attSettings = null } = useQuery({
@@ -253,8 +270,8 @@ export default function PayrollPage() {
   const { data: staffList = [] } = useQuery({
     queryKey: ["staff_for_payroll"],
     queryFn: async () => {
-      const { data } = await supabase().from("staff").select("id, name, monthly_salary, active").order("name");
-      return (data ?? []) as { id: string; name: string; monthly_salary: number; active: boolean }[];
+      const { data } = await supabase().from("staff").select("id, name, monthly_salary, active, bio_user_id").eq("active", true).order("name");
+      return (data ?? []) as { id: string; name: string; monthly_salary: number; active: boolean; bio_user_id: string }[];
     },
   });
   const { data: savedSheets = [] } = useQuery({
@@ -466,6 +483,13 @@ export default function PayrollPage() {
     setEntries(prev => [...prev, ...newRows]);
   }
 
+  function addInactiveStaff(s: { name: string; monthly_salary: number }) {
+    const nameUp = s.name.toUpperCase();
+    if (entries.some(e => e.name.toUpperCase() === nameUp)) return;
+    setEntries(prev => [...prev, { ...blankEntry(nameUp), basicSalary: s.monthly_salary || 0 }]);
+    setShowInactivePicker(false);
+  }
+
   // ── Entry update helpers
   function updateField(id: string, patch: Partial<PayEntry>) {
     setEntries(prev => prev.map(e => e.id === id ? { ...e, ...patch } : e));
@@ -586,6 +610,34 @@ export default function PayrollPage() {
           <button onClick={initFromStaff} className="text-sm border border-line px-4 py-1.5 rounded-lg2 hover:border-gold text-ink-dim">
             + Load Staff
           </button>
+        )}
+        {inactiveStaff.length > 0 && (
+          <div className="relative">
+            <button
+              onClick={() => setShowInactivePicker(v => !v)}
+              className="text-sm border border-line px-4 py-1.5 rounded-lg2 hover:border-warn text-ink-dim"
+            >
+              + Add Deactivated Staff
+            </button>
+            {showInactivePicker && (
+              <div className="absolute left-0 top-full mt-1 z-50 bg-canvas border border-line rounded-lg2 shadow-soft min-w-[200px] max-h-60 overflow-y-auto">
+                {inactiveStaff.map(s => {
+                  const alreadyIn = entries.some(e => e.name.toUpperCase() === s.name.toUpperCase());
+                  return (
+                    <button
+                      key={s.id}
+                      disabled={alreadyIn}
+                      onClick={() => addInactiveStaff(s)}
+                      className={clsx("w-full text-left px-3 py-2 text-sm hover:bg-gold/10", alreadyIn ? "opacity-40 cursor-not-allowed" : "")}
+                    >
+                      {s.name}
+                      {alreadyIn && <span className="ml-2 text-xs text-ink-dim">(added)</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         )}
         <button onClick={() => setEntries(prev => [...prev, blankEntry()])}
           className="text-sm border border-line px-4 py-1.5 rounded-lg2 hover:border-gold text-ink-dim">

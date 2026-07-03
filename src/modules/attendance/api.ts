@@ -275,9 +275,10 @@ export function useDeleteStaff() {
   });
 }
 
-export function useMonthlyAttendanceSummary(month: string) {
+export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[] = []) {
+  const extraKey = extraBioIds.join(",");
   return useQuery<MonthlyEmployeeSummary[]>({
-    queryKey: ["monthly-attendance", month],
+    queryKey: ["monthly-attendance", month, extraKey],
     enabled: !!month,
     refetchOnMount: "always",
     queryFn: async () => {
@@ -304,7 +305,20 @@ export function useMonthlyAttendanceSummary(month: string) {
         .eq("active", true)
         .order("name");
       if (staffRes.error) throw staffRes.error;
-      const staff = (staffRes.data ?? []) as any[];
+      let staff = (staffRes.data ?? []) as any[];
+
+      // Also fetch any extra (inactive) staff requested by the caller
+      if (extraBioIds.length > 0) {
+        const existingIds = new Set(staff.map((s) => s.bio_user_id));
+        const missing = extraBioIds.filter((id) => !existingIds.has(id));
+        if (missing.length > 0) {
+          const { data: extra } = await client
+            .from("staff")
+            .select("bio_user_id, name, designation, active, shift, monthly_salary, allowed_leaves")
+            .in("bio_user_id", missing);
+          staff = [...staff, ...(extra ?? [])];
+        }
+      }
 
       const activeIds = staff.map((s) => s.bio_user_id);
 
