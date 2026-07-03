@@ -255,6 +255,14 @@ export default function Sidebar() {
             )}
 
             <NavItem
+              href="/my-payslip"
+              icon="💰"
+              label={t("nav_my_payslip")}
+              collapsed={collapsed}
+              active={pathname.startsWith("/my-payslip")}
+            />
+
+            <NavItem
               href="/weekoffs"
               icon="📅"
               label={t("nav_weekoffs")}

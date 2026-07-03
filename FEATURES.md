@@ -183,6 +183,14 @@
 ### Permission Requests
 - Late permission rows exceeding 2 hours are highlighted in red (`bg-err/5`) with the time shown in bold red and a `>2h` badge
 
+### My Payslip (`/my-payslip`)
+- Every staff member can view all their own salary slips (periods where admin has saved payroll with their entry)
+- Period chips to switch between months; most recent shown by default
+- Payslip card shows: basic salary, leaves, deductions, fine, advance, incentive, arrear, net salary, paid status
+- "Download / Print" opens a printable HTML payslip in a new tab (auto-triggers browser print dialog)
+- Accessible to all authenticated staff; no special permission required
+- Nav item "My Payslip" added to sidebar (💰)
+
 ### Payroll
 - Monthly payroll sheet: basic salary, leave deductions, fine, advance recovery, incentive, arrear → net salary
 - Load from staff master, load attendance (auto-fills deductions), load from incentive sheet
