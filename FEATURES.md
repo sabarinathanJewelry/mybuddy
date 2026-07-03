@@ -181,8 +181,10 @@
 - Staff view (`/my-incentive`): read-only personal incentive breakdown
 
 ### Payroll
-- Monthly payroll sheet: basic salary, leave deductions, advance recovery, incentive, arrear → net salary
+- Monthly payroll sheet: basic salary, leave deductions, fine, advance recovery, incentive, arrear → net salary
 - Load from staff master, load attendance (auto-fills deductions), load from incentive sheet
+- **Per-day salary**: shown as a helper under each Basic Salary cell (`basicSalary / 30`), so leave deductions can be verified at a glance
+- **Fine deduction**: separate Fine column (editable per staff); deducted from net salary; shown on payslip as a distinct deduction line
 - **Load as Arrear**: when loading an incentive sheet into payroll, check "Load as Arrear (not Incentive)" to defer incentive amounts into the Arrear column instead; in arrear mode only items manually marked paid (balanceZero override) are counted — items that were naturally balance=0 in the ERP export are excluded, so the arrear reflects only newly cleared balances
 
 ---

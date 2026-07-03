@@ -16,6 +16,7 @@ interface PayEntry {
   noOfLeave: number;
   extraLeave: number;
   deduction: number;      // stored and editable; auto-updates when extraLeave changes
+  fine: number;
   advance: number;
   incentive: number;
   arrear: number;
@@ -24,12 +25,12 @@ interface PayEntry {
 }
 
 function derive(e: PayEntry) {
-  const calculated = parseFloat((e.basicSalary - e.deduction - e.advance + e.incentive + e.arrear).toFixed(2));
+  const calculated = parseFloat((e.basicSalary - e.deduction - (e.fine ?? 0) - e.advance + e.incentive + e.arrear).toFixed(2));
   return { calculated, salary: Math.round(calculated) };
 }
 
 function blankEntry(name = ""): PayEntry {
-  return { id: crypto.randomUUID(), name, basicSalary: 0, noOfLeave: 0, extraLeave: 0, deduction: 0, advance: 0, incentive: 0, arrear: 0 };
+  return { id: crypto.randomUUID(), name, basicSalary: 0, noOfLeave: 0, extraLeave: 0, deduction: 0, fine: 0, advance: 0, incentive: 0, arrear: 0 };
 }
 
 // Convert "May 2026" → "2026-05"
@@ -70,6 +71,7 @@ td:last-child{text-align:right}
 <tr><td>Basic Salary</td><td>${inrFmt(e.basicSalary)}</td></tr>
 ${e.noOfLeave > 0 ? `<tr><td style="color:#888;font-size:12px">Leaves taken</td><td style="color:#888;font-size:12px">${e.noOfLeave} day${e.noOfLeave !== 1 ? "s" : ""} (${e.extraLeave} excess)</td></tr>` : ""}
 ${e.deduction > 0 ? `<tr class="ded"><td>Leave Deduction</td><td>− ${inrFmt(e.deduction)}</td></tr>` : ""}
+${(e.fine ?? 0) > 0 ? `<tr class="ded"><td>Fine</td><td>− ${inrFmt(e.fine ?? 0)}</td></tr>` : ""}
 ${e.advance > 0 ? `<tr class="ded"><td>Advance Recovered</td><td>− ${inrFmt(e.advance)}</td></tr>` : ""}
 ${e.incentive > 0 ? `<tr class="add"><td>Incentive</td><td>+ ${inrFmt(e.incentive)}</td></tr>` : ""}
 ${e.arrear > 0 ? `<tr class="add"><td>Arrear</td><td>+ ${inrFmt(e.arrear)}</td></tr>` : ""}
@@ -455,6 +457,7 @@ export default function PayrollPage() {
     return {
       basic: acc.basic + e.basicSalary,
       deduction: acc.deduction + e.deduction,
+      fine: acc.fine + (e.fine ?? 0),
       advance: acc.advance + e.advance,
       incentive: acc.incentive + e.incentive,
       arrear: acc.arrear + e.arrear,
@@ -463,7 +466,7 @@ export default function PayrollPage() {
       paidBank: acc.paidBank + (e.paid && e.payMode === "bank" ? derive(e).salary : 0),
       paidCount: acc.paidCount + (e.paid ? 1 : 0),
     };
-  }, { basic: 0, deduction: 0, advance: 0, incentive: 0, arrear: 0, salary: 0, paidCash: 0, paidBank: 0, paidCount: 0 }), [entries]);
+  }, { basic: 0, deduction: 0, fine: 0, advance: 0, incentive: 0, arrear: 0, salary: 0, paidCash: 0, paidBank: 0, paidCount: 0 }), [entries]);
 
   const unmatchedCount = Object.entries(nameMap).filter(([, v]) => !v.trim()).length;
   const inp = "border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
@@ -672,6 +675,7 @@ export default function PayrollPage() {
                 <th className="text-right px-2 py-2.5">Extra<br/>Leaves</th>
                 <th className="text-right px-2 py-2.5">Basic<br/>Salary</th>
                 <th className="text-right px-2 py-2.5 text-err">Deduction<br/><span className="font-normal text-ink-dim">(editable)</span></th>
+                <th className="text-right px-2 py-2.5 text-err">Fine</th>
                 <th className="text-right px-2 py-2.5 text-err">Advance</th>
                 <th className="text-right px-2 py-2.5 text-ok">Incentive</th>
                 <th className="text-right px-2 py-2.5 text-ok">Arrear</th>
@@ -700,7 +704,12 @@ export default function PayrollPage() {
                       <NumCell value={e.extraLeave} onChange={v => updateExtraLeave(e.id, v)} highlight={e.extraLeave > 0} />
                     </td>
                     <td className="px-2 py-1.5 w-28">
-                      <NumCell value={e.basicSalary} onChange={v => updateBasicSalary(e.id, v)} />
+                      <div className="space-y-0.5">
+                        <NumCell value={e.basicSalary} onChange={v => updateBasicSalary(e.id, v)} />
+                        {e.basicSalary > 0 && (
+                          <p className="text-[10px] text-ink-dim text-right">{inr(parseFloat((e.basicSalary / 30).toFixed(2)))}/day</p>
+                        )}
+                      </div>
                     </td>
                     <td className="px-2 py-1.5 w-28">
                       <div className="space-y-0.5">
@@ -712,6 +721,9 @@ export default function PayrollPage() {
                           </button>
                         )}
                       </div>
+                    </td>
+                    <td className="px-2 py-1.5 w-24">
+                      <NumCell value={e.fine ?? 0} onChange={v => updateField(e.id, { fine: v })} warn={(e.fine ?? 0) > 0} />
                     </td>
                     <td className="px-2 py-1.5 w-24">
                       <NumCell value={e.advance} onChange={v => updateField(e.id, { advance: v })} highlight={e.advance > 0} />
@@ -793,6 +805,7 @@ export default function PayrollPage() {
                 <td colSpan={2} />
                 <td className="px-2 py-2.5 text-right font-mono">{inr(totals.basic)}</td>
                 <td className="px-2 py-2.5 text-right font-mono text-err">{totals.deduction > 0 ? inr(totals.deduction) : "—"}</td>
+                <td className="px-2 py-2.5 text-right font-mono text-err">{totals.fine > 0 ? inr(totals.fine) : "—"}</td>
                 <td className="px-2 py-2.5 text-right font-mono text-err">{totals.advance > 0 ? inr(totals.advance) : "—"}</td>
                 <td className="px-2 py-2.5 text-right font-mono text-ok">{totals.incentive > 0 ? inr(totals.incentive) : "—"}</td>
                 <td className="px-2 py-2.5 text-right font-mono text-ok">{totals.arrear > 0 ? inr(totals.arrear) : "—"}</td>
