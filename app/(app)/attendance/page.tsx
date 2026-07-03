@@ -195,9 +195,34 @@ function MonthlyTab() {
     setEditForm({ monthly_salary: r.monthly_salary, allowed_leaves: r.allowed_leaves });
   }
   async function saveEdit(bio_user_id: string) {
+    const current = data.find(r => r.bio_user_id === bio_user_id);
+    if (current && editForm.monthly_salary !== current.monthly_salary) {
+      await supabase().from("staff_salary_history").insert({
+        bio_user_id,
+        staff_name: current.name,
+        old_salary: current.monthly_salary,
+        new_salary: editForm.monthly_salary,
+        effective_month: monthLabel(month),
+      });
+      qc.invalidateQueries({ queryKey: ["salary_history", bio_user_id] });
+    }
     await update.mutateAsync({ bio_user_id, ...editForm });
     setEditingId(null);
   }
+
+  const { data: salaryHistory = [] } = useQuery<{ old_salary: number; new_salary: number; effective_month: string; changed_at: string }[]>({
+    queryKey: ["salary_history", editingId],
+    enabled: !!editingId,
+    queryFn: async () => {
+      const { data: rows } = await supabase()
+        .from("staff_salary_history")
+        .select("old_salary, new_salary, effective_month, changed_at")
+        .eq("bio_user_id", editingId!)
+        .order("changed_at", { ascending: false })
+        .limit(10);
+      return (rows ?? []) as { old_salary: number; new_salary: number; effective_month: string; changed_at: string }[];
+    },
+  });
   async function handleBulkLeaves() {
     if (!confirm(`Set allowed leaves to ${bulkLeaves} for all ${data.length} active staff?`)) return;
     for (const r of data) {
@@ -502,6 +527,26 @@ function MonthlyTab() {
                                 className="border border-line text-xs px-3 py-1.5 rounded-lg2">Cancel</button>
                             </div>
                           </div>
+                          {salaryHistory.length > 0 && (
+                            <div className="mt-3 border-t border-line pt-3">
+                              <p className="text-xs font-semibold text-ink-dim mb-2 uppercase tracking-wide">Salary History</p>
+                              <div className="space-y-1">
+                                {salaryHistory.map((h, i) => (
+                                  <div key={i} className="flex items-center gap-3 text-xs">
+                                    <span className="text-ink-dim w-28 shrink-0">
+                                      {new Date(h.changed_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                                    </span>
+                                    <span className="font-mono text-err">{inr(h.old_salary)}</span>
+                                    <span className="text-ink-dim">→</span>
+                                    <span className="font-mono text-ok">{inr(h.new_salary)}</span>
+                                    {h.effective_month && (
+                                      <span className="text-ink-dim">(effective {h.effective_month})</span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )}
