@@ -16,6 +16,7 @@ import {
 } from "@/modules/attendance/api";
 import NotificationBell from "@/components/ui/notification-bell";
 import { parseKolusuChat } from "@/lib/kolusu-parse";
+import { inr } from "@/lib/format";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const IST_MS = 5.5 * 3600000;
@@ -92,7 +93,7 @@ type DayRow = {
 
 type StaffInfo = { bio_user_id: string; name: string; shift: string };
 
-type PageTab = "today" | "monthly" | "requests" | "incentive" | "chat" | "policies" | "kyc" | "tasks" | "weekoffs";
+type PageTab = "today" | "monthly" | "requests" | "incentive" | "chat" | "policies" | "kyc" | "tasks" | "weekoffs" | "payslip";
 
 // ── page ─────────────────────────────────────────────────────────────────────
 export default function MyAttendancePage() {
@@ -123,6 +124,7 @@ export default function MyAttendancePage() {
   function enableSmartView() { setSmartView(true); setShowCards(true); localStorage.setItem("staff_smart_view", "smart"); }
   function enableClassicView() { setSmartView(false); setShowCards(false); localStorage.setItem("staff_smart_view", "classic"); }
   const [selectedSheetId, setSelectedSheetId] = useState<string | null>(null);
+  const [selectedPayslipId, setSelectedPayslipId] = useState<string | null>(null);
   const [masterSearch, setMasterSearch]       = useState("");
 
   // Chat state
@@ -395,6 +397,25 @@ export default function MyAttendancePage() {
   });
 
   const activeSheetId = selectedSheetId ?? (incSheets[0]?.id ?? null);
+
+  // Payslip
+  interface StaffPayEntry { id: string; name: string; basicSalary: number; noOfLeave: number; extraLeave: number; deduction: number; fine?: number; advance: number; incentive: number; arrear: number; paid?: boolean; payMode?: "cash" | "bank" }
+  interface PayslipRow { id: string; period: string; entry: StaffPayEntry }
+  const staffNameKey = (staff?.name ?? senderName ?? "").trim().toUpperCase();
+  const { data: payslips = [] } = useQuery<PayslipRow[]>({
+    queryKey: ["payroll_sheets_staff", staffNameKey],
+    enabled: !!staffNameKey,
+    queryFn: async () => {
+      const { data } = await supabase().from("payroll_sheets").select("id, period, entries, updated_at").order("updated_at", { ascending: false });
+      const result: PayslipRow[] = [];
+      for (const s of data ?? []) {
+        const entry = (s.entries as StaffPayEntry[]).find(e => e.name?.toUpperCase() === staffNameKey);
+        if (entry) result.push({ id: s.id, period: s.period, entry });
+      }
+      return result;
+    },
+  });
+  const activePayslip = payslips.find(p => p.id === selectedPayslipId) ?? payslips[0] ?? null;
 
   const { data: incSheet, isLoading: incSheetLoading } = useQuery({
     queryKey: ["incentive_sheet_staff", activeSheetId],
@@ -671,6 +692,7 @@ export default function MyAttendancePage() {
               {[
                 { icon: "🕐", label: "Today",    action: () => switchToTab("today") },
                 { icon: "📆", label: "Monthly",  action: () => switchToTab("monthly") },
+                { icon: "💰", label: "Payslip",  action: () => switchToTab("payslip") },
                 { icon: "📋", label: "Policies", action: () => switchToTab("policies") },
               ].map(c => (
                 <button key={c.label} onClick={c.action}
@@ -774,6 +796,7 @@ export default function MyAttendancePage() {
       {!smartView && !showCards && <div className="flex flex-wrap border-b border-line gap-x-0 gap-y-0">
         {([
           { key: "today",     label: "Today" },
+          { key: "payslip",   label: "Payslip" },
           { key: "weekoffs",  label: "Week-offs" },
           { key: "monthly",   label: "Monthly" },
           { key: "requests",  label: "Requests" },
@@ -1652,6 +1675,89 @@ export default function MyAttendancePage() {
               className="text-sm bg-gold text-white px-4 py-2 rounded-lg2 disabled:opacity-40">
               {kycSaving ? "Saving…" : myKyc ? "Update KYC" : "Submit KYC"}
             </button>
+          )}
+        </div>
+      )}
+
+      {/* ── PAYSLIP TAB ───────────────────────────────────────────────────────── */}
+      {!showCards && tab === "payslip" && (
+        <div className="space-y-4">
+          {payslips.length === 0 ? (
+            <div className="bg-white rounded-xl border border-line shadow-soft px-6 py-12 text-center text-ink-dim text-sm">
+              No payslips yet. Your admin will generate your salary slip each month.
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-2">
+                {payslips.map(p => (
+                  <button key={p.id} onClick={() => setSelectedPayslipId(p.id)}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                      activePayslip?.id === p.id
+                        ? "bg-gold text-white border-gold"
+                        : "bg-white text-ink-dim border-line hover:border-gold/50"
+                    }`}>
+                    {p.period}
+                  </button>
+                ))}
+              </div>
+
+              {activePayslip && (() => {
+                const e = activePayslip.entry;
+                const net = Math.round(e.basicSalary - e.deduction - (e.fine ?? 0) - e.advance + e.incentive + e.arrear);
+                return (
+                  <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+                    <div className="bg-gold/10 border-b border-line px-6 py-5 text-center">
+                      <p className="text-lg font-bold text-gold tracking-wide">SABARINATHAN JEWELLERY</p>
+                      <p className="text-xs text-ink-dim mt-0.5">Salary Slip — {activePayslip.period}</p>
+                      <p className="text-base font-semibold text-ink mt-2">{e.name}</p>
+                    </div>
+                    <div className="divide-y divide-line">
+                      <div className="px-6 py-3 flex justify-between text-sm"><span className="text-ink">Basic Salary</span><span className="font-mono font-medium">{inr(e.basicSalary)}</span></div>
+                      {e.noOfLeave > 0 && <div className="px-6 py-3 flex justify-between text-sm opacity-60"><span className="text-ink-dim">Leaves taken ({e.noOfLeave} day{e.noOfLeave !== 1 ? "s" : ""}, {e.extraLeave} excess)</span></div>}
+                      {e.deduction > 0 && <div className="px-6 py-3 flex justify-between text-sm"><span className="text-ink">Leave Deduction</span><span className="font-mono font-medium text-err">− {inr(e.deduction)}</span></div>}
+                      {(e.fine ?? 0) > 0 && <div className="px-6 py-3 flex justify-between text-sm"><span className="text-ink">Fine</span><span className="font-mono font-medium text-err">− {inr(e.fine ?? 0)}</span></div>}
+                      {e.advance > 0 && <div className="px-6 py-3 flex justify-between text-sm"><span className="text-ink">Advance Recovered</span><span className="font-mono font-medium text-err">− {inr(e.advance)}</span></div>}
+                      {e.incentive > 0 && <div className="px-6 py-3 flex justify-between text-sm"><span className="text-ink">Incentive</span><span className="font-mono font-medium text-ok">+ {inr(e.incentive)}</span></div>}
+                      {e.arrear > 0 && <div className="px-6 py-3 flex justify-between text-sm"><span className="text-ink">Arrear</span><span className="font-mono font-medium text-ok">+ {inr(e.arrear)}</span></div>}
+                      <div className="px-6 py-4 flex justify-between items-center bg-gold/5">
+                        <span className="font-bold text-gold text-base">Net Salary</span>
+                        <span className="font-bold text-gold text-xl font-mono">{inr(net)}</span>
+                      </div>
+                    </div>
+                    {e.paid && (
+                      <div className="px-6 py-2.5 bg-ok/5 border-t border-ok/20 text-xs text-ok font-medium text-center">
+                        Paid via {e.payMode === "bank" ? "Bank Transfer" : "Cash"}
+                      </div>
+                    )}
+                    <div className="px-6 py-4 border-t border-line flex justify-end">
+                      <button onClick={() => {
+                        const fmt = (n: number) => "₹" + Math.abs(n).toLocaleString("en-IN");
+                        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Payslip — ${e.name} — ${activePayslip.period}</title>
+<style>body{font-family:Arial,sans-serif;max-width:480px;margin:40px auto;color:#1a1a1a}h1{text-align:center;font-size:18px;margin:0;color:#b8860b}h2{text-align:center;font-size:13px;color:#666;margin:4px 0 20px}.nm{font-size:16px;font-weight:bold;text-align:center;margin-bottom:16px}table{width:100%;border-collapse:collapse}td{padding:7px 10px;border-bottom:1px solid #eee;font-size:13px}td:last-child{text-align:right}.ded td{color:#c0392b}.add td{color:#27ae60}.tot td{border-top:2px solid #b8860b;font-weight:bold;font-size:15px;color:#b8860b}@media print{body{margin:20px}}</style></head><body>
+<h1>SABARINATHAN JEWELLERY</h1><h2>Salary Slip — ${activePayslip.period}</h2><p class="nm">${e.name}</p>
+<table><tr><td>Basic Salary</td><td>${fmt(e.basicSalary)}</td></tr>
+${e.noOfLeave > 0 ? `<tr><td style="color:#888;font-size:12px">Leaves taken</td><td style="color:#888;font-size:12px">${e.noOfLeave} day${e.noOfLeave !== 1 ? "s" : ""} (${e.extraLeave} excess)</td></tr>` : ""}
+${e.deduction > 0 ? `<tr class="ded"><td>Leave Deduction</td><td>− ${fmt(e.deduction)}</td></tr>` : ""}
+${(e.fine ?? 0) > 0 ? `<tr class="ded"><td>Fine</td><td>− ${fmt(e.fine ?? 0)}</td></tr>` : ""}
+${e.advance > 0 ? `<tr class="ded"><td>Advance Recovered</td><td>− ${fmt(e.advance)}</td></tr>` : ""}
+${e.incentive > 0 ? `<tr class="add"><td>Incentive</td><td>+ ${fmt(e.incentive)}</td></tr>` : ""}
+${e.arrear > 0 ? `<tr class="add"><td>Arrear</td><td>+ ${fmt(e.arrear)}</td></tr>` : ""}
+<tr class="tot"><td>Net Salary</td><td>${fmt(net)}</td></tr></table>
+<p style="font-size:11px;color:#aaa;text-align:center;margin-top:24px">Generated ${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</p>
+<script>window.onload=()=>window.print();</script></body></html>`;
+                        const blob = new Blob([html], { type: "text/html" });
+                        const url = URL.createObjectURL(blob);
+                        const win = window.open(url, "_blank");
+                        if (win) setTimeout(() => URL.revokeObjectURL(url), 10000);
+                      }}
+                        className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 font-medium hover:opacity-90 active:opacity-75 transition-opacity">
+                        Download / Print
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </>
           )}
         </div>
       )}

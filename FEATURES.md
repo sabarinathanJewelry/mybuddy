@@ -192,6 +192,7 @@
 - Accessible to all authenticated staff; no special permission required
 - Nav item "My Payslip" added to sidebar (💰)
 - **Kiosk access**: "My Payslip" tab added to the attendance page for non-admin users — staff tap their PIN sequence on the kiosk and are immediately taken to their payslip (tab auto-switches to payslip on successful per-user unlock); the tab is position 2 in the non-admin tab bar (right after Attendance) so it's always visible without scrolling
+- **Staff app (`/my-attendance`)**: "Payslip" card added to smart home "My Work" section and as the second tab in classic view — staff can view all their salary slips, switch between months via period chips, and download/print a formatted payslip PDF directly from their attendance app
 
 ### Payroll
 - Monthly payroll sheet: basic salary, leave deductions, fine, advance recovery, incentive, arrear → net salary
