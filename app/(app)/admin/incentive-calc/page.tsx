@@ -13,7 +13,7 @@ interface MapperEntry  { erpName: string; incentiveCode: string; notes: string }
 interface CalcRow {
   idx: number; date: string; product: string; wastage: number;
   netWt: number; balance: number; sp1: string; sp2: string;
-  customer: string; mobile: string;
+  customer: string; mobile: string; billNo: string;
 }
 interface RowOverride  { balanceZero?: boolean; paidDate?: string; minWastage?: number; sp1Share?: number; wastage?: number }
 
@@ -311,7 +311,7 @@ function parseErp(raw: string): CalcRow[] {
   const hi = lines.findIndex(l => /date/i.test(l) && /product/i.test(l) && /net.?wt/i.test(l));
   if (hi < 0) return [];
   const rows: CalcRow[] = [];
-  let lastDate = "";
+  let lastDate = "", lastCustomer = "", lastMobile = "", lastBillNo = "";
   lines.slice(hi + 1).forEach((line, i) => {
     if (!line.trim()) return;
     const c = line.split("\t");
@@ -319,8 +319,9 @@ function parseErp(raw: string): CalcRow[] {
     const productGroup = (c[2] ?? "").trim().toUpperCase();
     const netWt        = parseNum(c[8] ?? "");
     if (!product || netWt <= 0) return;
+    // Carry forward bill-level fields — ERP only prints them on the first line of each bill
     const rawDate = (c[0] ?? "").trim();
-    if (rawDate) lastDate = rawDate;
+    if (rawDate) { lastDate = rawDate; lastCustomer = (c[9] ?? "").trim(); lastMobile = (c[10] ?? "").trim(); lastBillNo = (c[11] ?? "").trim(); }
     const wastageField = (c[3] ?? "").trim();
     // Silver groups and SIDE STUD don't use % wastage for eligibility — force to 1
     // Also handle ERP entries where wastage is expressed in Gm (weight) instead of %
@@ -329,16 +330,17 @@ function parseErp(raw: string): CalcRow[] {
     const isGrams    = /gm/i.test(wastageField);
     const wastage    = (isSilver || isSideStud || isGrams) ? 1 : parseNum(wastageField);
     rows.push({
-      idx:     i,
-      date:    lastDate,
+      idx:      i,
+      date:     lastDate,
       product,
       wastage,
       netWt,
       balance:  Math.max(0, parseNum(c[7] ?? "")),
       sp1:      (c[5] ?? "").trim(),
       sp2:      (c[6] ?? "").trim(),
-      customer: (c[9] ?? "").trim(),
-      mobile:   (c[10] ?? "").trim(),
+      customer: lastCustomer,
+      mobile:   lastMobile,
+      billNo:   lastBillNo,
     });
   });
   return rows;
@@ -763,7 +765,7 @@ export default function IncentiveCalcPage() {
           </div>
 
           <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
-            <table className="w-full text-xs" style={{ minWidth: 1100 }}>
+            <table className="w-full text-xs" style={{ minWidth: 1280 }}>
               <thead>
                 <tr className="text-ink-dim border-b border-line bg-canvas">
                   <th className="text-left px-3 py-2">Date</th>
@@ -777,6 +779,7 @@ export default function IncentiveCalcPage() {
                   <th className="text-center px-2 py-2 text-gold" title="Click to override">Split↓</th>
                   <th className="text-center px-2 py-2">Ok?</th>
                   <th className="text-right px-3 py-2">Inc</th>
+                  <th className="text-left px-3 py-2">Bill No</th>
                   <th className="text-left px-3 py-2">Customer</th>
                   <th className="text-left px-3 py-2">Mobile</th>
                 </tr>
@@ -869,6 +872,21 @@ export default function IncentiveCalcPage() {
                       <td className={clsx("px-3 py-1.5 text-right font-mono font-semibold", eff.totalInc > 0 ? "text-ok" : "text-ink-dim")}>
                         {eff.totalInc > 0 ? inr(eff.totalInc) : "—"}
                       </td>
+                      <td className="px-3 py-1.5 font-mono text-[11px] whitespace-nowrap">
+                        {row.billNo ? (
+                          <span className="inline-flex items-center gap-1">
+                            {(() => {
+                              const pfx = row.billNo.split("/").pop()?.[0]?.toUpperCase();
+                              const cls = pfx === "G" ? "bg-gold/10 text-gold border-gold/30"
+                                        : pfx === "S" ? "bg-info/10 text-info border-info/30"
+                                        : pfx === "D" ? "bg-purple-100 text-purple-600 border-purple-200"
+                                        : "bg-canvas text-ink-dim border-line";
+                              return pfx ? <span className={`text-[9px] border px-1 py-0.5 rounded font-bold ${cls}`}>{pfx}</span> : null;
+                            })()}
+                            <span className="text-ink-dim">{row.billNo}</span>
+                          </span>
+                        ) : "—"}
+                      </td>
                       <td className="px-3 py-1.5 text-ink-dim truncate max-w-[120px]">{row.customer || "—"}</td>
                       <td className="px-3 py-1.5 text-ink-dim font-mono text-[11px]">{row.mobile || "—"}</td>
                     </tr>
@@ -878,7 +896,7 @@ export default function IncentiveCalcPage() {
               {filteredRows.length > 0 && (
                 <tfoot>
                   <tr className="bg-canvas border-t-2 border-line font-semibold">
-                    <td colSpan={12} className="px-3 py-2 text-right text-ink-dim text-xs">Visible total</td>
+                    <td colSpan={13} className="px-3 py-2 text-right text-ink-dim text-xs">Visible total</td>
                     <td className="px-3 py-2 text-right text-ok font-mono">
                       {inr(filteredRows.reduce((s, { eff }) => s + eff.totalInc, 0))}
                     </td>
