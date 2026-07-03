@@ -229,6 +229,18 @@ export default function PayrollPage() {
   const { data: attSummary = [], isFetching: attLoading } = useMonthlyAttendanceSummary(attMonth);
   const { data: monthPerms  = [] } = useApprovedPermsByMonth(attMonth);
   const { data: monthLeaves = [] } = useApprovedLeavesByMonth(attMonth);
+  const { data: attSettings = null } = useQuery({
+    queryKey: ["attendance_settings", attMonth],
+    enabled: !!attMonth,
+    queryFn: async () => {
+      const key = `attendance_settings_${attMonth}`;
+      const { data } = await supabase().from("app_settings").select("value").eq("key", key).maybeSingle();
+      return (data?.value ?? null) as {
+        late_fine_amt?: number; fine_mode?: "day" | "minute";
+        apply_fine?: boolean; equalize_ot?: boolean; fine_from_date?: string;
+      } | null;
+    },
+  });
   const [attApplied, setAttApplied] = useState(false);
   const prevAttRef = useRef<string>("");  // tracks last-applied month
 
@@ -268,6 +280,23 @@ export default function PayrollPage() {
     return [...new Set([...fromStaff, ...fromEntries])].sort();
   }, [staffList, entries]);
 
+  // ── Calculate fine from attendance settings (mirrors MonthlyTab logic)
+  function calcAttFine(att: typeof attSummary[0]): number {
+    if (!attSettings?.apply_fine) return 0;
+    const fineAmt  = attSettings.late_fine_amt ?? 100;
+    const fineMode = attSettings.fine_mode ?? "day";
+    const fromDate = attSettings.fine_from_date ?? "";
+    const eqOt     = attSettings.equalize_ot ?? true;
+    const pd = new Set(monthPerms.filter(p => p.bio_user_id === att.bio_user_id).map(p => p.permission_date));
+    const lateDays = att.daily.filter(d => d.is_late && !pd.has(d.date) && (!fromDate || d.date >= fromDate));
+    const eld = lateDays.length;
+    const elm = lateDays.reduce((s, d) => s + d.late_minutes, 0);
+    if (eld <= 0 && elm <= 0) return 0;
+    if (fineMode === "day") return parseFloat((fineAmt * eld).toFixed(2));
+    const netMins = eqOt ? Math.max(0, elm - att.total_ot_minutes) : elm;
+    return parseFloat((fineAmt * netMins).toFixed(2));
+  }
+
   // ── Apply attendance data to entries
   function applyAttendance(summary: typeof attSummary) {
     const byName = new Map(summary.map(s => [s.name.toUpperCase(), s]));
@@ -277,7 +306,8 @@ export default function PayrollPage() {
       const noOfLeave  = att.absent_days;
       const extraLeave = att.excess_leave_days;
       const deduction  = parseFloat((att.leave_deduction ?? 0).toFixed(2));
-      return { ...e, noOfLeave, extraLeave, deduction };
+      const fine       = calcAttFine(att);
+      return { ...e, noOfLeave, extraLeave, deduction, fine };
     }));
   }
 
@@ -731,9 +761,9 @@ export default function PayrollPage() {
                             )}
                             {weekendLeaves.length > 0 && (
                               <span
-                                title={weekendLeaves.map(l => l.leave_date).join(", ")}
+                                title={`${weekendLeaves.map(l => l.leave_date).join(", ")} | 2× per-day = −₹${Math.round(weekendLeaves.length * (e.basicSalary / 30) * 2)}`}
                                 className="text-[9px] font-bold bg-warn/10 text-warn border border-warn/20 px-1.5 py-0.5 rounded cursor-help whitespace-nowrap">
-                                {weekendLeaves.length}× wknd leave
+                                {weekendLeaves.length}× wknd leave · −{inr(Math.round(weekendLeaves.length * (e.basicSalary / 30) * 2))}
                               </span>
                             )}
                           </div>
