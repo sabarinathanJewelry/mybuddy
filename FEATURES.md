@@ -188,6 +188,7 @@
 - Load from staff master, load attendance (auto-fills deductions), load from incentive sheet
 - **Per-day salary**: shown as a helper under each Basic Salary cell (`basicSalary / 30`), so leave deductions can be verified at a glance
 - **Fine deduction**: separate Fine column (editable per staff); deducted from net salary; shown on payslip as a distinct deduction line
+- **Attendance alerts in payroll**: each staff name cell shows inline badges — red `N× perm >2h` for approved permissions exceeding 2 hours (hover shows dates + minutes), orange `N× wknd leave` for approved weekend leaves; requires attendance to be loaded for the period
 - **Load as Arrear**: when loading an incentive sheet into payroll, check "Load as Arrear (not Incentive)" to defer incentive amounts into the Arrear column instead; in arrear mode only items manually marked paid (balanceZero override) are counted — items that were naturally balance=0 in the ERP export are excluded, so the arrear reflects only newly cleared balances
 
 ---

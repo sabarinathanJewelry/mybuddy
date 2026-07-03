@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
-import { useMonthlyAttendanceSummary } from "@/modules/attendance/api";
+import { useMonthlyAttendanceSummary, useApprovedPermsByMonth, useApprovedLeavesByMonth } from "@/modules/attendance/api";
 import { inr } from "@/lib/format";
 import { clsx } from "clsx";
 
@@ -31,6 +31,11 @@ function derive(e: PayEntry) {
 
 function blankEntry(name = ""): PayEntry {
   return { id: crypto.randomUUID(), name, basicSalary: 0, noOfLeave: 0, extraLeave: 0, deduction: 0, fine: 0, advance: 0, incentive: 0, arrear: 0 };
+}
+
+function isWeekend(dateStr: string): boolean {
+  const [y, mo, d] = dateStr.split("-").map(Number);
+  return [0, 6].includes(new Date(Date.UTC(y, mo - 1, d)).getUTCDay());
 }
 
 // Convert "May 2026" → "2026-05"
@@ -222,6 +227,8 @@ export default function PayrollPage() {
   // ── Attendance load
   const attMonth = periodToMonth(period) ?? "";
   const { data: attSummary = [], isFetching: attLoading } = useMonthlyAttendanceSummary(attMonth);
+  const { data: monthPerms  = [] } = useApprovedPermsByMonth(attMonth);
+  const { data: monthLeaves = [] } = useApprovedLeavesByMonth(attMonth);
   const [attApplied, setAttApplied] = useState(false);
   const prevAttRef = useRef<string>("");  // tracks last-applied month
 
@@ -450,6 +457,20 @@ export default function PayrollPage() {
     const url  = URL.createObjectURL(blob);
     const win  = window.open(url, "_blank");
     if (win) setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  const nameToBioId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of attSummary) m.set(r.name.toUpperCase(), r.bio_user_id);
+    return m;
+  }, [attSummary]);
+
+  function staffAlerts(e: PayEntry) {
+    const bioId = nameToBioId.get(e.name.toUpperCase());
+    if (!bioId) return { bigPerms: [] as { permission_date: string; late_minutes: number }[], weekendLeaves: [] as { leave_date: string }[] };
+    const bigPerms    = monthPerms.filter(p => p.bio_user_id === bioId && p.late_minutes > 120);
+    const weekendLeaves = monthLeaves.filter(l => l.bio_user_id === bioId && isWeekend(l.leave_date));
+    return { bigPerms, weekendLeaves };
   }
 
   const totals = useMemo(() => entries.reduce((acc, e) => {
@@ -696,6 +717,28 @@ export default function PayrollPage() {
                     <td className="px-3 py-1.5 sticky left-0 bg-white z-10">
                       <input value={e.name} onChange={ev => updateField(e.id, { name: ev.target.value.toUpperCase() })}
                         className="border border-line rounded px-2 py-1 text-xs uppercase w-full focus:outline-none focus:ring-1 focus:ring-gold font-medium" />
+                      {(() => {
+                        const { bigPerms, weekendLeaves } = staffAlerts(e);
+                        if (!bigPerms.length && !weekendLeaves.length) return null;
+                        return (
+                          <div className="flex gap-1 flex-wrap mt-0.5">
+                            {bigPerms.length > 0 && (
+                              <span
+                                title={bigPerms.map(p => `${p.permission_date} (${p.late_minutes}m)`).join(", ")}
+                                className="text-[9px] font-bold bg-err/10 text-err border border-err/20 px-1.5 py-0.5 rounded cursor-help whitespace-nowrap">
+                                {bigPerms.length}× perm &gt;2h
+                              </span>
+                            )}
+                            {weekendLeaves.length > 0 && (
+                              <span
+                                title={weekendLeaves.map(l => l.leave_date).join(", ")}
+                                className="text-[9px] font-bold bg-warn/10 text-warn border border-warn/20 px-1.5 py-0.5 rounded cursor-help whitespace-nowrap">
+                                {weekendLeaves.length}× wknd leave
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-2 py-1.5 w-20">
                       <NumCell value={e.noOfLeave} onChange={v => updateField(e.id, { noOfLeave: v })} />
