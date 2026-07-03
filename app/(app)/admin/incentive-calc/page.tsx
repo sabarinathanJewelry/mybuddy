@@ -487,17 +487,17 @@ export default function IncentiveCalcPage() {
     },
   });
 
-  // ── Save mutation
+  // ── Save mutation — accepts optional mapper/master override to handle async state
   const saveSheet = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (vars?: { mapperEntries?: MapperEntry[]; masterEntries?: MasterEntry[] }) => {
       setSaveStatus("saving");
       const payload = {
         period,
         raw_data: raw,
         overrides,
         default_split: defaultSplit,
-        mapper_entries: mapperEntries,
-        master_entries: masterEntries,
+        mapper_entries: vars?.mapperEntries ?? mapperEntries,
+        master_entries: vars?.masterEntries ?? masterEntries,
         updated_at: new Date().toISOString(),
       };
       const client = supabase();
@@ -845,7 +845,11 @@ export default function IncentiveCalcPage() {
                           <InlineMapperAdd
                             erpName={row.product}
                             masterEntries={masterEntries}
-                            onSave={code => setMapperEntries(p => [...p, { erpName: row.product, incentiveCode: code, notes: "" }])}
+                            onSave={code => {
+                              const updated = [...mapperEntries, { erpName: row.product, incentiveCode: code, notes: "" }];
+                              setMapperEntries(updated);
+                              if (period.trim()) saveSheet.mutate({ mapperEntries: updated });
+                            }}
                           />
                         )}
                         {lockInfo && (
