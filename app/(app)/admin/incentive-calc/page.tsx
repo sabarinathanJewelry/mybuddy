@@ -311,6 +311,7 @@ function parseErp(raw: string): CalcRow[] {
   const hi = lines.findIndex(l => /date/i.test(l) && /product/i.test(l) && /net.?wt/i.test(l));
   if (hi < 0) return [];
   const rows: CalcRow[] = [];
+  let lastDate = "";
   lines.slice(hi + 1).forEach((line, i) => {
     if (!line.trim()) return;
     const c = line.split("\t");
@@ -318,6 +319,8 @@ function parseErp(raw: string): CalcRow[] {
     const productGroup = (c[2] ?? "").trim().toUpperCase();
     const netWt        = parseNum(c[8] ?? "");
     if (!product || netWt <= 0) return;
+    const rawDate = (c[0] ?? "").trim();
+    if (rawDate) lastDate = rawDate;
     const wastageField = (c[3] ?? "").trim();
     // Silver groups and SIDE STUD don't use % wastage for eligibility — force to 1
     // Also handle ERP entries where wastage is expressed in Gm (weight) instead of %
@@ -327,7 +330,7 @@ function parseErp(raw: string): CalcRow[] {
     const wastage    = (isSilver || isSideStud || isGrams) ? 1 : parseNum(wastageField);
     rows.push({
       idx:     i,
-      date:    (c[0] ?? "").trim(),
+      date:    lastDate,
       product,
       wastage,
       netWt,
