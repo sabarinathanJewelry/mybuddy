@@ -666,7 +666,7 @@ export default function IncentiveCalcPage() {
                 className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold w-36" />
               <button
                 disabled={saveStatus === "saving" || !period.trim()}
-                onClick={() => saveSheet.mutate()}
+                onClick={() => saveSheet.mutate(undefined)}
                 className={clsx("text-sm px-4 py-1.5 rounded-lg2 font-medium", {
                   "bg-ok text-white": saveStatus === "saved",
                   "bg-gold text-white disabled:opacity-50": saveStatus !== "saved",
