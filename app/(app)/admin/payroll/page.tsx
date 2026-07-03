@@ -80,7 +80,7 @@ ${(e.fine ?? 0) > 0 ? `<tr class="ded"><td>Fine</td><td>− ${inrFmt(e.fine ?? 0
 ${e.advance > 0 ? `<tr class="ded"><td>Advance Recovered</td><td>− ${inrFmt(e.advance)}</td></tr>` : ""}
 ${e.incentive > 0 ? `<tr class="add"><td>Incentive</td><td>+ ${inrFmt(e.incentive)}</td></tr>` : ""}
 ${e.arrear > 0 ? `<tr class="add"><td>Arrear</td><td>+ ${inrFmt(e.arrear)}</td></tr>` : ""}
-<tr class="tot"><td>Net Salary</td><td>${inrFmt(d.salary)}</td></tr>
+<tr class="tot" style="${d.salary < 0 ? "color:#c0392b" : ""}"><td>Net Salary</td><td>${d.salary < 0 ? "− " : ""}${inrFmt(d.salary)}</td></tr>
 </table>
 <p style="font-size:11px;color:#aaa;text-align:center;margin-top:24px">
 Generated ${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
