@@ -323,12 +323,19 @@ function parseErp(raw: string): CalcRow[] {
     const rawDate = (c[0] ?? "").trim();
     if (rawDate) { lastDate = rawDate; lastCustomer = (c[9] ?? "").trim(); lastMobile = (c[10] ?? "").trim(); lastBillNo = (c[11] ?? "").trim(); }
     const wastageField = (c[3] ?? "").trim();
-    // Silver groups and SIDE STUD don't use % wastage for eligibility — force to 1
-    // Also handle ERP entries where wastage is expressed in Gm (weight) instead of %
     const isSilver   = /^(SILVER|92\.5)/i.test(productGroup);
     const isSideStud = /SIDE STUD/i.test(product);
     const isGrams    = /gm/i.test(wastageField);
-    const wastage    = (isSilver || isSideStud || isGrams) ? 1 : parseNum(wastageField);
+    let wastage: number;
+    if (isSilver || isSideStud) {
+      // Silver and SIDE STUD don't need real VA% — force 1 so they always pass the min-wastage check
+      wastage = 1;
+    } else if (isGrams && netWt > 0) {
+      // VA shown as weight (e.g. "0.400 Gm") — convert to % relative to net weight
+      wastage = parseFloat(((parseNum(wastageField) / netWt) * 100).toFixed(2));
+    } else {
+      wastage = parseNum(wastageField);
+    }
     rows.push({
       idx:      i,
       date:     lastDate,
