@@ -415,6 +415,38 @@ function InlineText({ value, onSave, width = 120 }: { value: string; onSave: (v:
   );
 }
 
+// ─── Inline mapper widget ───────────────────────────────────────────────────────
+function InlineMapperAdd({ erpName, masterEntries, onSave }: {
+  erpName: string;
+  masterEntries: MasterEntry[];
+  onSave: (code: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState("");
+  if (!open) return (
+    <button onClick={() => setOpen(true)}
+      className="text-err text-[10px] ml-1 underline decoration-dashed hover:text-gold">
+      unmapped
+    </button>
+  );
+  const exists = masterEntries.some(m => m.code.toUpperCase() === code.toUpperCase().trim());
+  return (
+    <span className="inline-flex items-center gap-1 ml-1">
+      <input autoFocus value={code} onChange={e => setCode(e.target.value)}
+        placeholder="Incentive code"
+        onKeyDown={e => {
+          if (e.key === "Enter" && code.trim()) { onSave(code.trim().toUpperCase()); setOpen(false); setCode(""); }
+          if (e.key === "Escape") { setOpen(false); setCode(""); }
+        }}
+        className="border border-gold rounded px-1 py-0.5 text-[10px] focus:outline-none uppercase w-28" />
+      {code.trim() && !exists && <span className="text-[9px] text-warn">not in master</span>}
+      <button disabled={!code.trim()} onClick={() => { onSave(code.trim().toUpperCase()); setOpen(false); setCode(""); }}
+        className="text-ok text-[10px] disabled:opacity-40">✓</button>
+      <button onClick={() => { setOpen(false); setCode(""); }} className="text-err text-[10px]">✕</button>
+    </span>
+  );
+}
+
 // ─── Main page ─────────────────────────────────────────────────────────────────
 type ViewTab = "data" | "staff" | "settings";
 
@@ -809,7 +841,13 @@ export default function IncentiveCalcPage() {
                         {eff.mapped && eff.incentiveCode !== row.product && (
                           <span className="text-info text-[10px] ml-1">→ {eff.incentiveCode}</span>
                         )}
-                        {!eff.mapped && <span className="text-err text-[10px] ml-1">unmapped</span>}
+                        {!eff.mapped && (
+                          <InlineMapperAdd
+                            erpName={row.product}
+                            masterEntries={masterEntries}
+                            onSave={code => setMapperEntries(p => [...p, { erpName: row.product, incentiveCode: code, notes: "" }])}
+                          />
+                        )}
                         {lockInfo && (
                           <span className="ml-1.5 text-[10px] text-ok border border-ok/30 px-1.5 py-0.5 rounded bg-ok/10">
                             paid · {lockInfo.period}

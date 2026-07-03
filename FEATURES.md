@@ -170,7 +170,7 @@
 - Paste ERP export text → parse → match to product master → calculate per-item incentive
 - **Raw paste support**: paste directly from ERP with Customer Name + Mobile columns included — no manual cleanup needed; "%" suffix stripped automatically; wastage shown as "Gm" (grams) is auto-normalized to 1% so silver/SIDE STUD items always pass the eligibility check; wastage auto-set to 1 for all silver product groups (SILVER ORNAMENTS, 92.5 ORNAMENTS, SILVER KOLUSU, etc.) and SIDE STUD products
 - **92.5-S / 92.5-L split**: ≤ 20g → 92.5-S (rate ₹5/g); > 20g → 92.5-L (rate ₹3/g) — boundary fixed to ≤20 = S
-- Product mapper: ERP product name → incentive code
+- Product mapper: ERP product name → incentive code; **inline add from unmapped badge** — click "unmapped" next to any product in the data table, type the incentive code, press Enter to add it to the mapper instantly without leaving the page
 - Master rate table: incentive code → ₹/gram rate + minimum VA%
 - Split: SP1 gets configurable % (default 70%), SP2 gets rest
 - Saved sheets (`incentive_sheets` table) with overrides per row
