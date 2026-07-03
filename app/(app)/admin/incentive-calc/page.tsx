@@ -15,7 +15,7 @@ interface CalcRow {
   netWt: number; balance: number; sp1: string; sp2: string;
   customer: string; mobile: string; billNo: string;
 }
-interface RowOverride  { balanceZero?: boolean; paidDate?: string; minWastage?: number; sp1Share?: number; wastage?: number; amountPaid?: number; writeOffAmt?: number; forceIneligible?: boolean; }
+interface RowOverride  { balanceZero?: boolean; paidDate?: string; minWastage?: number; sp1Share?: number; wastage?: number; amountPaid?: number; writeOffAmt?: number; forceIneligible?: boolean; boardRate?: number; }
 
 // ─── Initial Master Rate Table (official incentive codes only) ─────────────────
 const INITIAL_MASTER: MasterEntry[] = [
@@ -382,11 +382,17 @@ function calcRow(
   const recoveryPct = ov?.writeOffAmt && ov.writeOffAmt > 0
     ? parseFloat((((ov.amountPaid ?? 0) / ((ov.amountPaid ?? 0) + ov.writeOffAmt)) * 100).toFixed(1))
     : 100;
+  // Effective VA% after write-off: original VA% × recovery%
+  // If board rate provided: also compute MC lost in ₹ = netWt × boardRate × VA%/100 × (1 - recovery%/100)
+  const effectiveVA = recoveryPct < 100 ? parseFloat((wastage * recoveryPct / 100).toFixed(2)) : wastage;
+  const mcLost      = (ov?.boardRate && ov.writeOffAmt && ov.writeOffAmt > 0)
+    ? parseFloat((row.netWt * ov.boardRate * wastage / 100 * (1 - recoveryPct / 100)).toFixed(2))
+    : null;
   const fullInc    = eligible ? parseFloat((rate * row.netWt).toFixed(2)) : 0;
   const totalInc   = parseFloat((fullInc * recoveryPct / 100).toFixed(2));
   const sp1Inc     = row.sp2 ? parseFloat((totalInc * sp1Share / 100).toFixed(2)) : totalInc;
   const sp2Inc     = row.sp2 ? parseFloat((totalInc * (100 - sp1Share) / 100).toFixed(2)) : 0;
-  return { rate, minWastage, balance, sp1Share, wastage, eligible, fullInc, totalInc, recoveryPct, sp1Inc, sp2Inc, incentiveCode, mapped };
+  return { rate, minWastage, balance, sp1Share, wastage, eligible, fullInc, totalInc, recoveryPct, effectiveVA, mcLost, sp1Inc, sp2Inc, incentiveCode, mapped };
 }
 
 // ─── Small inline editor ────────────────────────────────────────────────────────
@@ -433,11 +439,12 @@ function BalanceCell({ balance, ov, onMarkPaid, onSavePartial, onWriteOff, onUnd
   ov: RowOverride | undefined;
   onMarkPaid: () => void;
   onSavePartial: (paid: number) => void;
-  onWriteOff: (paid: number, writeOff: number) => void;
+  onWriteOff: (paid: number, writeOff: number, boardRate?: number) => void;
   onUndo: () => void;
 }) {
   const [mode, setMode] = useState<"idle" | "partial">("idle");
   const [received, setReceived] = useState("");
+  const [boardRateInput, setBoardRateInput] = useState("");
 
   // ── State 1: fully paid (no write-off)
   if (ov?.balanceZero && !ov.writeOffAmt) {
@@ -509,20 +516,27 @@ function BalanceCell({ balance, ov, onMarkPaid, onSavePartial, onWriteOff, onUnd
   if (mode === "partial") {
     const rcv = parseFloat(received) || 0;
     const wo  = Math.max(0, balance - rcv);
+    const br  = parseFloat(boardRateInput) || undefined;
     const gstLost = parseFloat((wo * 3 / 103).toFixed(2));
     const netLost = parseFloat((wo * 100 / 103).toFixed(2));
+    const close = () => { setMode("idle"); setReceived(""); setBoardRateInput(""); };
     return (
       <span className="inline-flex flex-col gap-1 py-0.5 text-[10px]">
         <span className="inline-flex items-center gap-1">
           <span className="text-ink-dim">Due: <span className="text-err font-medium">{inr(balance)}</span></span>
-          <button onClick={() => { setMode("idle"); setReceived(""); }} className="text-err ml-1">✕</button>
+          <button onClick={close} className="text-err ml-1">✕</button>
         </span>
         <span className="inline-flex items-center gap-1">
           <span className="text-ink-dim">Received:</span>
           <input autoFocus type="number" value={received} onChange={e => setReceived(e.target.value)}
-            placeholder="0"
-            onKeyDown={e => { if (e.key === "Escape") { setMode("idle"); setReceived(""); } }}
+            placeholder="0" onKeyDown={e => e.key === "Escape" && close()}
             className="border border-gold rounded px-1 py-0.5 text-[10px] focus:outline-none w-24 text-right" />
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="text-ink-dim">Board rate ₹/g <span className="text-ink-dim/50">(opt):</span></span>
+          <input type="number" value={boardRateInput} onChange={e => setBoardRateInput(e.target.value)}
+            placeholder="e.g. 9350" onKeyDown={e => e.key === "Escape" && close()}
+            className="border border-line rounded px-1 py-0.5 text-[10px] focus:outline-none w-24 text-right focus:border-gold" />
         </span>
         {wo > 0 && (
           <span className="text-ink-dim space-y-0.5">
@@ -532,12 +546,12 @@ function BalanceCell({ balance, ov, onMarkPaid, onSavePartial, onWriteOff, onUnd
           </span>
         )}
         <span className="inline-flex gap-1 flex-wrap">
-          <button onClick={() => { if (rcv > 0) { onSavePartial(rcv); setMode("idle"); setReceived(""); } }}
+          <button onClick={() => { if (rcv > 0) { onSavePartial(rcv); close(); } }}
             disabled={rcv <= 0}
             className="bg-info/10 text-info border border-info/30 px-2 py-0.5 rounded disabled:opacity-40">
             Save received {rcv > 0 ? inr(rcv) : ""}
           </button>
-          <button onClick={() => { onWriteOff(rcv, wo); setMode("idle"); setReceived(""); }}
+          <button onClick={() => { onWriteOff(rcv, wo, br); close(); }}
             disabled={wo <= 0}
             className="bg-warn text-white px-2 py-0.5 rounded disabled:opacity-40">
             Write off {wo > 0 ? inr(wo) : ""}
@@ -1008,14 +1022,17 @@ export default function IncentiveCalcPage() {
                       </td>
                       <td className={clsx("px-2 py-1.5 text-right", { "text-ok": eff.eligible, "text-err": !eff.eligible && eff.balance <= 0, "text-ink-dim": eff.balance > 0 })}>
                         <span className={wastageChanged ? "text-info font-bold" : ""}>
-                          <InlineNum
-                            value={eff.wastage}
-                            onSave={v => setOv(row.idx, { wastage: v })}
-                          />%
+                          <InlineNum value={eff.wastage} onSave={v => setOv(row.idx, { wastage: v })} />%
                         </span>
                         {wastageChanged && (
                           <button onClick={() => setOv(row.idx, { wastage: undefined })}
                             className="text-[10px] text-ink-dim hover:text-err ml-1">↩</button>
+                        )}
+                        {eff.recoveryPct < 100 && (
+                          <div className="text-[9px] text-warn mt-0.5">
+                            eff. {eff.effectiveVA}%
+                            {eff.mcLost !== null && <span className="text-err ml-1">MC lost {inr(eff.mcLost)}</span>}
+                          </div>
                         )}
                       </td>
                       <td className="px-2 py-1.5 text-right">
@@ -1031,7 +1048,7 @@ export default function IncentiveCalcPage() {
                             ov={ov}
                             onMarkPaid={() => setOv(row.idx, { balanceZero: true, paidDate: new Date().toISOString().slice(0, 10) })}
                             onSavePartial={paid => setOv(row.idx, { amountPaid: paid })}
-                            onWriteOff={(paid, wo) => setOv(row.idx, { balanceZero: true, paidDate: new Date().toISOString().slice(0, 10), amountPaid: paid || undefined, writeOffAmt: wo })}
+                            onWriteOff={(paid, wo, br) => setOv(row.idx, { balanceZero: true, paidDate: new Date().toISOString().slice(0, 10), amountPaid: paid || undefined, writeOffAmt: wo, boardRate: br })}
                             onUndo={() => setOv(row.idx, { balanceZero: false, paidDate: undefined, amountPaid: undefined, writeOffAmt: undefined })}
                           />
                         ) : <span className="text-ok text-[10px]">—</span>}
