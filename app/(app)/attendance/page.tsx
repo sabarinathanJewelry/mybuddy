@@ -30,7 +30,7 @@ import { useAuth } from "@/stores/auth";
 import { shortDate, inr } from "@/lib/format";
 import { parseKolusuChat } from "@/lib/kolusu-parse";
 
-type PageTab = "attendance" | "staff" | "monthly" | "requests" | "leaves" | "duties" | "chat" | "announcements" | "kyc" | "tasks" | "weekoffs";
+type PageTab = "attendance" | "staff" | "monthly" | "requests" | "leaves" | "duties" | "chat" | "announcements" | "kyc" | "tasks" | "weekoffs" | "payslip";
 
 interface ChatMsg { id: string; sender_id: string; sender_name: string; message: string; is_deleted: boolean; edited_at: string | null; created_at: string }
 
@@ -2380,6 +2380,7 @@ export default function AttendancePage() {
     kyc:           "KYC",
     tasks:         "Tasks",
     weekoffs:      "Week-offs",
+    payslip:       "My Payslip",
   };
 
   // Smart home cards — admin/subadmin only; shown regardless of kiosk lock state
@@ -2534,7 +2535,7 @@ export default function AttendancePage() {
             "attendance",
             ...(!isAdmin ? ["weekoffs"] : []),
             "staff", "monthly", "requests", "leaves", "duties", "chat",
-            ...(isAdmin ? ["announcements", "kyc", "tasks", "weekoffs"] : ["tasks"]),
+            ...(isAdmin ? ["announcements", "kyc", "tasks", "weekoffs"] : ["tasks", "payslip"]),
           ] as PageTab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
@@ -2966,6 +2967,9 @@ export default function AttendancePage() {
       {/* ── Week-offs tab ── */}
       {tab === "weekoffs" && <WeekoffsView />}
 
+      {/* ── My Payslip tab (staff only) ── */}
+      {tab === "payslip" && <PayslipTab />}
+
       {/* Back to smart home */}
       {isAdmin && (
         <div className="text-center py-4 border-t border-line mt-4">
@@ -2973,6 +2977,183 @@ export default function AttendancePage() {
             className="text-xs text-ink-dim underline underline-offset-2">
             ← Back to Home
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── My Payslip Tab ────────────────────────────────────────────────────────────
+interface SlipEntry {
+  id: string; name: string; basicSalary: number;
+  noOfLeave: number; extraLeave: number; deduction: number;
+  fine?: number; advance: number; incentive: number; arrear: number;
+  paid?: boolean; payMode?: "cash" | "bank";
+}
+interface SlipSheetRow { id: string; period: string; updated_at: string; entry: SlipEntry }
+function deriveSlip(e: SlipEntry) {
+  return { salary: Math.round(e.basicSalary - e.deduction - (e.fine ?? 0) - e.advance + e.incentive + e.arrear) };
+}
+function slipFmt(n: number) {
+  return "₹" + Math.abs(n).toLocaleString("en-IN", { minimumFractionDigits: n % 1 !== 0 ? 2 : 0 });
+}
+function generateSlipHtml(e: SlipEntry, period: string) {
+  const d = deriveSlip(e);
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Payslip — ${e.name} — ${period}</title>
+<style>
+body{font-family:Arial,sans-serif;max-width:480px;margin:40px auto;color:#1a1a1a}
+h1{text-align:center;font-size:18px;margin:0;color:#b8860b}
+h2{text-align:center;font-size:13px;color:#666;margin:4px 0 20px}
+.nm{font-size:16px;font-weight:bold;text-align:center;margin-bottom:16px}
+table{width:100%;border-collapse:collapse}
+td{padding:7px 10px;border-bottom:1px solid #eee;font-size:13px}
+td:last-child{text-align:right}
+.ded td{color:#c0392b}.add td{color:#27ae60}
+.tot td{border-top:2px solid #b8860b;font-weight:bold;font-size:15px;color:#b8860b}
+@media print{body{margin:20px}}
+</style></head><body>
+<h1>SABARINATHAN JEWELLERY</h1>
+<h2>Salary Slip — ${period}</h2>
+<p class="nm">${e.name}</p>
+<table>
+<tr><td>Basic Salary</td><td>${slipFmt(e.basicSalary)}</td></tr>
+${e.noOfLeave > 0 ? `<tr><td style="color:#888;font-size:12px">Leaves taken</td><td style="color:#888;font-size:12px">${e.noOfLeave} day${e.noOfLeave !== 1 ? "s" : ""} (${e.extraLeave} excess)</td></tr>` : ""}
+${e.deduction > 0 ? `<tr class="ded"><td>Leave Deduction</td><td>− ${slipFmt(e.deduction)}</td></tr>` : ""}
+${(e.fine ?? 0) > 0 ? `<tr class="ded"><td>Fine</td><td>− ${slipFmt(e.fine ?? 0)}</td></tr>` : ""}
+${e.advance > 0 ? `<tr class="ded"><td>Advance Recovered</td><td>− ${slipFmt(e.advance)}</td></tr>` : ""}
+${e.incentive > 0 ? `<tr class="add"><td>Incentive</td><td>+ ${slipFmt(e.incentive)}</td></tr>` : ""}
+${e.arrear > 0 ? `<tr class="add"><td>Arrear</td><td>+ ${slipFmt(e.arrear)}</td></tr>` : ""}
+<tr class="tot"><td>Net Salary</td><td>${slipFmt(d.salary)}</td></tr>
+</table>
+<p style="font-size:11px;color:#aaa;text-align:center;margin-top:24px">
+Generated ${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
+</p>
+<script>window.onload=()=>window.print();</script>
+</body></html>`;
+}
+function downloadSlip(e: SlipEntry, period: string) {
+  const blob = new Blob([generateSlipHtml(e, period)], { type: "text/html" });
+  const url  = URL.createObjectURL(blob);
+  const win  = window.open(url, "_blank");
+  if (win) setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function PayslipTab() {
+  const profile = useAuth((s) => s.profile);
+  const myName  = (profile?.display_name ?? "").trim().toUpperCase();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const { data: sheets = [], isLoading } = useQuery<SlipSheetRow[]>({
+    queryKey: ["payroll_sheets_mine_att", myName],
+    enabled: !!myName,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("payroll_sheets")
+        .select("id, period, entries, updated_at")
+        .order("updated_at", { ascending: false });
+      if (error) throw error;
+      const result: SlipSheetRow[] = [];
+      for (const s of data ?? []) {
+        const entry = (s.entries as SlipEntry[]).find(e => e.name?.toUpperCase() === myName);
+        if (entry) result.push({ id: s.id, period: s.period, updated_at: s.updated_at, entry });
+      }
+      return result;
+    },
+  });
+
+  const active = sheets.find(s => s.id === selectedId) ?? sheets[0] ?? null;
+
+  if (!myName) return <p className="text-ink-dim text-sm py-8 text-center">Not signed in.</p>;
+
+  if (isLoading) return <p className="text-ink-dim text-sm py-8 text-center">Loading…</p>;
+
+  if (sheets.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-line shadow-soft px-6 py-12 text-center text-ink-dim text-sm mt-4">
+        No payslips found yet. Your admin will generate your salary slip each month.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 py-2">
+      <div className="flex flex-wrap gap-2">
+        {sheets.map(s => (
+          <button key={s.id} onClick={() => setSelectedId(s.id)}
+            className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+              active?.id === s.id
+                ? "bg-gold text-white border-gold"
+                : "bg-white text-ink-dim border-line hover:border-gold/50"
+            }`}>
+            {s.period}
+          </button>
+        ))}
+      </div>
+
+      {active && (
+        <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+          <div className="bg-gold/10 border-b border-line px-6 py-5 text-center">
+            <p className="text-lg font-bold text-gold tracking-wide">SABARINATHAN JEWELLERY</p>
+            <p className="text-xs text-ink-dim mt-0.5">Salary Slip — {active.period}</p>
+            <p className="text-base font-semibold text-ink mt-2">{active.entry.name}</p>
+          </div>
+          <div className="divide-y divide-line">
+            <div className="px-6 py-3 flex justify-between items-center text-sm">
+              <span className="text-ink">Basic Salary</span>
+              <span className="font-mono font-medium text-ink">{inr(active.entry.basicSalary)}</span>
+            </div>
+            {active.entry.noOfLeave > 0 && (
+              <div className="px-6 py-3 flex justify-between items-center text-sm opacity-60">
+                <span className="text-ink-dim">Leaves taken ({active.entry.noOfLeave} day{active.entry.noOfLeave !== 1 ? "s" : ""}, {active.entry.extraLeave} excess)</span>
+              </div>
+            )}
+            {active.entry.deduction > 0 && (
+              <div className="px-6 py-3 flex justify-between items-center text-sm">
+                <span className="text-ink">Leave Deduction</span>
+                <span className="font-mono font-medium text-err">− {inr(active.entry.deduction)}</span>
+              </div>
+            )}
+            {(active.entry.fine ?? 0) > 0 && (
+              <div className="px-6 py-3 flex justify-between items-center text-sm">
+                <span className="text-ink">Fine</span>
+                <span className="font-mono font-medium text-err">− {inr(active.entry.fine ?? 0)}</span>
+              </div>
+            )}
+            {active.entry.advance > 0 && (
+              <div className="px-6 py-3 flex justify-between items-center text-sm">
+                <span className="text-ink">Advance Recovered</span>
+                <span className="font-mono font-medium text-err">− {inr(active.entry.advance)}</span>
+              </div>
+            )}
+            {active.entry.incentive > 0 && (
+              <div className="px-6 py-3 flex justify-between items-center text-sm">
+                <span className="text-ink">Incentive</span>
+                <span className="font-mono font-medium text-ok">+ {inr(active.entry.incentive)}</span>
+              </div>
+            )}
+            {active.entry.arrear > 0 && (
+              <div className="px-6 py-3 flex justify-between items-center text-sm">
+                <span className="text-ink">Arrear</span>
+                <span className="font-mono font-medium text-ok">+ {inr(active.entry.arrear)}</span>
+              </div>
+            )}
+            <div className="px-6 py-4 flex justify-between items-center bg-gold/5">
+              <span className="font-bold text-gold text-base">Net Salary</span>
+              <span className="font-bold text-gold text-xl font-mono">{inr(deriveSlip(active.entry).salary)}</span>
+            </div>
+          </div>
+          {active.entry.paid && (
+            <div className="px-6 py-2.5 bg-ok/5 border-t border-ok/20 text-xs text-ok font-medium text-center">
+              Paid via {active.entry.payMode === "bank" ? "Bank Transfer" : "Cash"}
+            </div>
+          )}
+          <div className="px-6 py-4 border-t border-line flex justify-end">
+            <button onClick={() => downloadSlip(active.entry, active.period)}
+              className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 font-medium hover:opacity-90 active:opacity-75 transition-opacity">
+              Download / Print
+            </button>
+          </div>
         </div>
       )}
     </div>

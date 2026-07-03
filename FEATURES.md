@@ -191,6 +191,7 @@
 - "Download / Print" opens a printable HTML payslip in a new tab (auto-triggers browser print dialog)
 - Accessible to all authenticated staff; no special permission required
 - Nav item "My Payslip" added to sidebar (💰)
+- **Kiosk access**: "My Payslip" tab added to the attendance page for non-admin users — staff can tap their PIN to unlock the kiosk, then navigate to the "My Payslip" tab to view and download their salary slip without needing the sidebar or navigating away from `/attendance`
 
 ### Payroll
 - Monthly payroll sheet: basic salary, leave deductions, fine, advance recovery, incentive, arrear → net salary
