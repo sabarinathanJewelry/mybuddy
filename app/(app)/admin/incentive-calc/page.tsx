@@ -15,7 +15,7 @@ interface CalcRow {
   netWt: number; balance: number; sp1: string; sp2: string;
   customer: string; mobile: string; billNo: string;
 }
-interface RowOverride  { balanceZero?: boolean; paidDate?: string; minWastage?: number; sp1Share?: number; wastage?: number }
+interface RowOverride  { balanceZero?: boolean; paidDate?: string; minWastage?: number; sp1Share?: number; wastage?: number; amountPaid?: number; writeOffAmt?: number; }
 
 // ─── Initial Master Rate Table (official incentive codes only) ─────────────────
 const INITIAL_MASTER: MasterEntry[] = [
@@ -418,6 +418,94 @@ function InlineText({ value, onSave, width = 120 }: { value: string; onSave: (v:
         style={{ width }} className="border border-gold rounded px-1 py-0.5 text-xs focus:outline-none uppercase" />
       <button onClick={() => { onSave(draft.trim().toUpperCase()); setEditing(false); }} className="text-ok text-[10px]">✓</button>
       <button onClick={() => setEditing(false)} className="text-err text-[10px]">✕</button>
+    </span>
+  );
+}
+
+// ─── Balance cell with partial payment + write-off ─────────────────────────────
+function BalanceCell({ balance, ov, onMarkPaid, onWriteOff, onUndo }: {
+  balance: number;
+  ov: RowOverride | undefined;
+  onMarkPaid: () => void;
+  onWriteOff: (paid: number, writeOff: number) => void;
+  onUndo: () => void;
+}) {
+  const [mode, setMode] = useState<"idle" | "partial">("idle");
+  const [received, setReceived] = useState("");
+
+  if (ov?.balanceZero) {
+    const wo = ov.writeOffAmt ?? 0;
+    const gstLost = parseFloat((wo * 3 / 103).toFixed(2));
+    const netLost = parseFloat((wo * 100 / 103).toFixed(2));
+    return (
+      <span className="inline-flex flex-col gap-0.5 text-[10px]">
+        <span className="inline-flex items-center gap-1 flex-wrap">
+          {wo > 0 ? (
+            <>
+              {(ov.amountPaid ?? 0) > 0 && <span className="text-ok">Rcvd {inr(ov.amountPaid!)}</span>}
+              <span className="text-warn font-medium">W/O {inr(wo)}</span>
+            </>
+          ) : (
+            <span className="text-ok">Paid ✓</span>
+          )}
+          <button onClick={onUndo} className="text-ink-dim hover:text-err">undo</button>
+        </span>
+        {ov.paidDate && <span className="font-mono text-ink-dim">{ov.paidDate}</span>}
+        {wo > 0 && (
+          <span className="text-ink-dim">
+            GST lost: <span className="text-err">{inr(gstLost)}</span>
+            {" · "}Net lost: <span className="text-err">{inr(netLost)}</span>
+          </span>
+        )}
+      </span>
+    );
+  }
+
+  if (mode === "partial") {
+    const rcv = parseFloat(received) || 0;
+    const wo  = Math.max(0, balance - rcv);
+    const gstLost = parseFloat((wo * 3 / 103).toFixed(2));
+    const netLost = parseFloat((wo * 100 / 103).toFixed(2));
+    return (
+      <span className="inline-flex flex-col gap-1 py-0.5 text-[10px]">
+        <span className="inline-flex items-center gap-1">
+          <span className="text-ink-dim">Due: <span className="text-err font-medium">{inr(balance)}</span></span>
+          <button onClick={() => { setMode("idle"); setReceived(""); }} className="text-err ml-1">✕</button>
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="text-ink-dim">Received:</span>
+          <input autoFocus type="number" value={received} onChange={e => setReceived(e.target.value)}
+            placeholder="0"
+            onKeyDown={e => { if (e.key === "Escape") { setMode("idle"); setReceived(""); } }}
+            className="border border-gold rounded px-1 py-0.5 text-[10px] focus:outline-none w-24 text-right" />
+        </span>
+        {wo > 0 && (
+          <span className="text-ink-dim space-y-0.5">
+            <div>Write-off: <span className="text-warn font-medium">{inr(wo)}</span></div>
+            <div>GST lost: <span className="text-err">{inr(gstLost)}</span></div>
+            <div>Net lost: <span className="text-err">{inr(netLost)}</span></div>
+          </span>
+        )}
+        <button onClick={() => { onWriteOff(rcv, wo); setMode("idle"); setReceived(""); }}
+          disabled={wo <= 0 && rcv <= 0}
+          className="bg-warn text-white text-[10px] px-2 py-0.5 rounded disabled:opacity-40">
+          Write off {wo > 0 ? inr(wo) : ""}
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1 flex-wrap">
+      <span className="text-err font-medium">{inr(balance)}</span>
+      <button onClick={onMarkPaid}
+        className="text-[10px] bg-ok/10 text-ok border border-ok/30 px-1.5 py-0.5 rounded hover:bg-ok/20">
+        Mark paid
+      </button>
+      <button onClick={() => setMode("partial")}
+        className="text-[10px] bg-warn/10 text-warn border border-warn/30 px-1.5 py-0.5 rounded hover:bg-warn/20">
+        Partial
+      </button>
     </span>
   );
 }
@@ -884,22 +972,14 @@ export default function IncentiveCalcPage() {
                       </td>
                       <td className="px-2 py-1.5 text-right">{row.netWt.toFixed(3)}g</td>
                       <td className="px-2 py-1.5 text-center">
-                        {eff.balance > 0 ? (
-                          <span className="inline-flex items-center gap-1">
-                            <span className="text-err font-medium">{inr(eff.balance)}</span>
-                            <button onClick={() => setOv(row.idx, { balanceZero: true, paidDate: new Date().toISOString().slice(0, 10) })}
-                              className="text-[10px] bg-ok/10 text-ok border border-ok/30 px-1.5 py-0.5 rounded hover:bg-ok/20">
-                              Mark paid
-                            </button>
-                          </span>
-                        ) : ov?.balanceZero ? (
-                          <span className="inline-flex flex-col gap-0.5">
-                            <span className="inline-flex items-center gap-1">
-                              <span className="text-ok text-[10px]">Paid ✓</span>
-                              <button onClick={() => setOv(row.idx, { balanceZero: false, paidDate: undefined })} className="text-[10px] text-ink-dim hover:text-err">undo</button>
-                            </span>
-                            {ov.paidDate && <span className="text-[10px] text-ink-dim font-mono">{ov.paidDate}</span>}
-                          </span>
+                        {eff.balance > 0 || ov?.balanceZero ? (
+                          <BalanceCell
+                            balance={eff.balance > 0 ? eff.balance : (ov?.amountPaid ?? 0) + (ov?.writeOffAmt ?? 0)}
+                            ov={ov}
+                            onMarkPaid={() => setOv(row.idx, { balanceZero: true, paidDate: new Date().toISOString().slice(0, 10) })}
+                            onWriteOff={(paid, wo) => setOv(row.idx, { balanceZero: true, paidDate: new Date().toISOString().slice(0, 10), amountPaid: paid, writeOffAmt: wo })}
+                            onUndo={() => setOv(row.idx, { balanceZero: false, paidDate: undefined, amountPaid: undefined, writeOffAmt: undefined })}
+                          />
                         ) : <span className="text-ok text-[10px]">—</span>}
                       </td>
                       <td className="px-2 py-1.5 text-ink-dim truncate max-w-[80px]">{row.sp1 || "—"}</td>
@@ -944,6 +1024,22 @@ export default function IncentiveCalcPage() {
               </tbody>
               {filteredRows.length > 0 && (
                 <tfoot>
+                  {(() => {
+                    const woRows = filteredRows.filter(({ row }) => overrides[row.idx]?.writeOffAmt);
+                    const totalWO  = woRows.reduce((s, { row }) => s + (overrides[row.idx]?.writeOffAmt ?? 0), 0);
+                    const totalGST = parseFloat((totalWO * 3 / 103).toFixed(2));
+                    const totalNet = parseFloat((totalWO * 100 / 103).toFixed(2));
+                    return woRows.length > 0 ? (
+                      <tr className="bg-warn/5 border-t border-warn/30 text-[10px]">
+                        <td colSpan={14} className="px-3 py-1.5 text-warn">
+                          <span className="font-semibold">Write-off summary ({woRows.length} bills):</span>
+                          {" "}Total written off: <span className="font-mono font-bold">{inr(totalWO)}</span>
+                          {" · "}GST lost: <span className="font-mono text-err">{inr(totalGST)}</span>
+                          {" · "}Net revenue lost: <span className="font-mono text-err">{inr(totalNet)}</span>
+                        </td>
+                      </tr>
+                    ) : null;
+                  })()}
                   <tr className="bg-canvas border-t-2 border-line font-semibold">
                     <td colSpan={13} className="px-3 py-2 text-right text-ink-dim text-xs">Visible total</td>
                     <td className="px-3 py-2 text-right text-ok font-mono">

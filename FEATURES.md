@@ -175,6 +175,7 @@
 - Split: SP1 gets configurable % (default 70%), SP2 gets rest
 - Saved sheets (`incentive_sheets` table) with overrides per row
 - **Mark paid with date history**: clicking "Mark paid" on a balance row stamps today's date in the override; date shown below "Paid ✓" badge; persisted in sheet save; undo clears date
+- **Partial payment + write-off**: "Partial" button on any balance row opens inline form — enter amount received → shows write-off amount, GST lost (write-off × 3/103), net revenue lost (write-off × 100/103) live; "Write off ₹X" saves it; after save shows received + written-off summary with GST/net impact; undo reverts; write-off summary footer appears in table when any rows have write-offs (total written off, total GST lost, total net revenue lost)
 - Staff view (`/my-incentive`): read-only personal incentive breakdown
 
 ### Payroll
