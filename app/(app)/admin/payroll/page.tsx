@@ -91,7 +91,12 @@ Generated ${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short",y
 
 // ─── Shared input styles ────────────────────────────────────────────────────────
 const cinp = "border border-line rounded px-1.5 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold text-right w-full";
-function NumCell({ value, onChange, highlight, warn }: { value: number; onChange: (v: number) => void; highlight?: boolean; warn?: boolean }) {
+function NumCell({ value, onChange, highlight, warn, readOnly }: { value: number; onChange: (v: number) => void; highlight?: boolean; warn?: boolean; readOnly?: boolean }) {
+  if (readOnly) return (
+    <div className={clsx("text-xs text-right px-1 py-1.5 font-mono", warn && "text-err font-medium", highlight && "font-medium")}>
+      {value > 0 ? value.toLocaleString("en-IN") : <span className="text-ink-dim/40">—</span>}
+    </div>
+  );
   return (
     <input type="number" value={value || ""} placeholder="0"
       onFocus={e => e.target.select()}
@@ -746,7 +751,8 @@ export default function PayrollPage() {
                   <tr key={e.id} className={clsx("border-b border-line last:border-0", e.paid ? "bg-ok/5" : "hover:bg-canvas/30")}>
                     <td className="px-3 py-1.5 sticky left-0 bg-white z-10">
                       <input value={e.name} onChange={ev => updateField(e.id, { name: ev.target.value.toUpperCase() })}
-                        className="border border-line rounded px-2 py-1 text-xs uppercase w-full focus:outline-none focus:ring-1 focus:ring-gold font-medium" />
+                        readOnly={e.paid}
+                        className={clsx("border border-line rounded px-2 py-1 text-xs uppercase w-full focus:outline-none focus:ring-1 focus:ring-gold font-medium", e.paid && "bg-transparent cursor-default pointer-events-none")} />
                       {(() => {
                         const { bigPerms, weekendLeaves } = staffAlerts(e);
                         if (!bigPerms.length && !weekendLeaves.length) return null;
@@ -771,14 +777,14 @@ export default function PayrollPage() {
                       })()}
                     </td>
                     <td className="px-2 py-1.5 w-20">
-                      <NumCell value={e.noOfLeave} onChange={v => updateField(e.id, { noOfLeave: v })} />
+                      <NumCell value={e.noOfLeave} onChange={v => updateField(e.id, { noOfLeave: v })} readOnly={e.paid} />
                     </td>
                     <td className="px-2 py-1.5 w-20">
-                      <NumCell value={e.extraLeave} onChange={v => updateExtraLeave(e.id, v)} highlight={e.extraLeave > 0} />
+                      <NumCell value={e.extraLeave} onChange={v => updateExtraLeave(e.id, v)} highlight={e.extraLeave > 0} readOnly={e.paid} />
                     </td>
                     <td className="px-2 py-1.5 w-28">
                       <div className="space-y-0.5">
-                        <NumCell value={e.basicSalary} onChange={v => updateBasicSalary(e.id, v)} />
+                        <NumCell value={e.basicSalary} onChange={v => updateBasicSalary(e.id, v)} readOnly={e.paid} />
                         {e.basicSalary > 0 && (
                           <p className="text-[10px] text-ink-dim text-right">{inr(parseFloat((e.basicSalary / 30).toFixed(2)))}/day</p>
                         )}
@@ -786,8 +792,8 @@ export default function PayrollPage() {
                     </td>
                     <td className="px-2 py-1.5 w-28">
                       <div className="space-y-0.5">
-                        <NumCell value={e.deduction} onChange={v => updateField(e.id, { deduction: v })} warn={e.deduction > 0} />
-                        {deductionDiffers && (
+                        <NumCell value={e.deduction} onChange={v => updateField(e.id, { deduction: v })} warn={e.deduction > 0} readOnly={e.paid} />
+                        {!e.paid && deductionDiffers && (
                           <button onClick={() => updateField(e.id, { deduction: autoDeduction })}
                             className="text-[10px] text-info hover:underline w-full text-right block">
                             auto: {inr(autoDeduction)}
@@ -796,16 +802,16 @@ export default function PayrollPage() {
                       </div>
                     </td>
                     <td className="px-2 py-1.5 w-24">
-                      <NumCell value={e.fine ?? 0} onChange={v => updateField(e.id, { fine: v })} warn={(e.fine ?? 0) > 0} />
+                      <NumCell value={e.fine ?? 0} onChange={v => updateField(e.id, { fine: v })} warn={(e.fine ?? 0) > 0} readOnly={e.paid} />
                     </td>
                     <td className="px-2 py-1.5 w-24">
-                      <NumCell value={e.advance} onChange={v => updateField(e.id, { advance: v })} highlight={e.advance > 0} />
+                      <NumCell value={e.advance} onChange={v => updateField(e.id, { advance: v })} highlight={e.advance > 0} readOnly={e.paid} />
                     </td>
                     <td className="px-2 py-1.5 w-24">
-                      <NumCell value={e.incentive} onChange={v => updateField(e.id, { incentive: v })} highlight={e.incentive > 0} />
+                      <NumCell value={e.incentive} onChange={v => updateField(e.id, { incentive: v })} highlight={e.incentive > 0} readOnly={e.paid} />
                     </td>
                     <td className="px-2 py-1.5 w-24">
-                      <NumCell value={e.arrear} onChange={v => updateField(e.id, { arrear: v })} highlight={e.arrear > 0} />
+                      <NumCell value={e.arrear} onChange={v => updateField(e.id, { arrear: v })} highlight={e.arrear > 0} readOnly={e.paid} />
                     </td>
                     <td className="px-2 py-1.5 text-right font-mono text-xs text-ink-dim whitespace-nowrap">
                       {inr(d.calculated)}

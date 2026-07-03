@@ -179,6 +179,7 @@
 - **Recovery-adjusted incentive + effective VA%**: when a write-off exists, incentive scales to recovered fraction; Waste% column shows "eff. X%" below original (= original VA% × recovery%); write-off form auto-fills Board Rate from MyBuddy's live board_rates table (gold_22k for G-bills, silver for S-bills); user can override; if provided, also shows MC lost in ₹ = netWt × boardRate × VA%/100 × (1 − recovery%) — e.g. received ₹25,000 of ₹27,000 = 92.6% recovery → incentive × 0.926; Inc column shows reduced amount + strikethrough of full amount + recovery % badge; flows into By Staff totals
 - **Partial payment + write-off**: "Partial" button opens inline form with two separate actions — "Save received ₹X" records partial payment without closing the balance (customer may still pay rest later; row stays red/ineligible); "Write off ₹Y" closes the balance and marks incentive eligible; after partial save shows "Rcvd ₹X · Rem ₹Y" with "Fully paid" and "Write off ₹Y" buttons; after write-off shows GST lost + net lost; undo reverts all; write-off summary footer shows totals
 - Staff view (`/my-incentive`): read-only personal incentive breakdown
+- **Locked rows truly read-only**: once a staff member's rows are locked via the "Lock" button (writes to `incentive_sheets.locked_rows`), all editable cells on those rows are frozen — wastage, min wastage, split `InlineNum` inputs become plain text; `BalanceCell` is hidden; skip/undo buttons replaced with a "Paid" badge; prevents any accidental change to already-paid incentive data
 
 ### Permission Requests
 - Late permission rows exceeding 2 hours are highlighted in red (`bg-err/5`) with the time shown in bold red and a `>2h` badge
@@ -198,6 +199,7 @@
 - **Fine deduction**: separate Fine column (editable per staff); deducted from net salary; shown on payslip as a distinct deduction line
 - **Attendance alerts in payroll**: each staff name cell shows inline badges — red `N× perm >2h` for approved permissions exceeding 2 hours (hover shows dates + minutes), orange `N× wknd leave · −₹X` for approved weekend leaves showing the 2× per-day deduction amount (hover shows dates); requires attendance loaded for the period
 - **Fine auto-loads with attendance**: clicking "Load Attendance" also calculates and fills the Fine column using the saved attendance settings (late fine amount, per-day or per-minute mode, apply-from date, OT equalization); mirrors the MonthlyTab fine formula exactly
+- **Paid rows locked**: once a row is marked Paid, all cells (name, salary, deduction, fine, advance, incentive, arrear) become read-only — values display as static text; the undo ↩ button still allows reverting payment status if needed
 - **Load as Arrear**: when loading an incentive sheet into payroll, check "Load as Arrear (not Incentive)" to defer incentive amounts into the Arrear column instead; in arrear mode only items manually marked paid (balanceZero override) are counted — items that were naturally balance=0 in the ERP export are excluded, so the arrear reflects only newly cleared balances
 
 ---

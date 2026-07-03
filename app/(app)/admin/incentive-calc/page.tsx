@@ -397,9 +397,10 @@ function calcRow(
 }
 
 // ─── Small inline editor ────────────────────────────────────────────────────────
-function InlineNum({ value, onSave, width = 60 }: { value: number; onSave: (v: number) => void; width?: number }) {
+function InlineNum({ value, onSave, width = 60, readOnly = false }: { value: number; onSave: (v: number) => void; width?: number; readOnly?: boolean }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  if (readOnly) return <span>{value}</span>;
   if (!editing) return (
     <button onClick={() => { setDraft(String(value)); setEditing(true); }}
       className="underline decoration-dashed hover:text-gold">{value}</button>
@@ -1025,9 +1026,9 @@ export default function IncentiveCalcPage() {
                       </td>
                       <td className={clsx("px-2 py-1.5 text-right", { "text-ok": eff.eligible, "text-err": !eff.eligible && eff.balance <= 0, "text-ink-dim": eff.balance > 0 })}>
                         <span className={wastageChanged ? "text-info font-bold" : ""}>
-                          <InlineNum value={eff.wastage} onSave={v => setOv(row.idx, { wastage: v })} />%
+                          <InlineNum value={eff.wastage} onSave={v => setOv(row.idx, { wastage: v })} readOnly={!!lockInfo} />%
                         </span>
-                        {wastageChanged && (
+                        {!lockInfo && wastageChanged && (
                           <button onClick={() => setOv(row.idx, { wastage: undefined })}
                             className="text-[10px] text-ink-dim hover:text-err ml-1">↩</button>
                         )}
@@ -1040,12 +1041,12 @@ export default function IncentiveCalcPage() {
                       </td>
                       <td className="px-2 py-1.5 text-right">
                         <span className={minChanged ? "text-info font-bold" : "text-ink-dim"}>
-                          <InlineNum value={eff.minWastage} onSave={v => setOv(row.idx, { minWastage: v })} />%
+                          <InlineNum value={eff.minWastage} onSave={v => setOv(row.idx, { minWastage: v })} readOnly={!!lockInfo} />%
                         </span>
                       </td>
                       <td className="px-2 py-1.5 text-right">{row.netWt.toFixed(3)}g</td>
                       <td className="px-2 py-1.5 text-center">
-                        {eff.balance > 0 || ov?.balanceZero ? (
+                        {!lockInfo && (eff.balance > 0 || ov?.balanceZero) ? (
                           <BalanceCell
                             balance={row.balance}
                             ov={ov}
@@ -1066,13 +1067,15 @@ export default function IncentiveCalcPage() {
                       <td className="px-2 py-1.5 text-center">
                         {row.sp2 ? (
                           <span className={splitChanged ? "text-info font-bold" : "text-ink-dim"}>
-                            <InlineNum value={eff.sp1Share} onSave={v => setOv(row.idx, { sp1Share: Math.min(100, Math.max(0, v)) })} />/
+                            <InlineNum value={eff.sp1Share} onSave={v => setOv(row.idx, { sp1Share: Math.min(100, Math.max(0, v)) })} readOnly={!!lockInfo} />/
                             {100 - eff.sp1Share}
                           </span>
                         ) : <span className="text-ink-dim">—</span>}
                       </td>
                       <td className="px-2 py-1.5 text-center">
-                        {ov?.forceIneligible ? (
+                        {lockInfo ? (
+                          <span className="text-ok text-[10px] font-medium">Paid</span>
+                        ) : ov?.forceIneligible ? (
                           <span className="inline-flex flex-col items-center gap-0.5">
                             <span className="text-ink-dim text-[10px]">Skipped</span>
                             <button onClick={() => setOv(row.idx, { forceIneligible: false })}
