@@ -378,10 +378,15 @@ function calcRow(
   const sp1Share   = ov?.sp1Share   ?? defaultSplit;
   const wastage    = ov?.wastage    ?? row.wastage;
   const eligible   = !ov?.forceIneligible && !!masterEntry && rate > 0 && wastage >= minWastage && balance <= 0;
-  const totalInc   = eligible ? parseFloat((rate * row.netWt).toFixed(2)) : 0;
+  // Recovery multiplier: when a write-off exists, incentive scales to the recovered fraction
+  const recoveryPct = ov?.writeOffAmt && ov.writeOffAmt > 0
+    ? parseFloat((((ov.amountPaid ?? 0) / ((ov.amountPaid ?? 0) + ov.writeOffAmt)) * 100).toFixed(1))
+    : 100;
+  const fullInc    = eligible ? parseFloat((rate * row.netWt).toFixed(2)) : 0;
+  const totalInc   = parseFloat((fullInc * recoveryPct / 100).toFixed(2));
   const sp1Inc     = row.sp2 ? parseFloat((totalInc * sp1Share / 100).toFixed(2)) : totalInc;
   const sp2Inc     = row.sp2 ? parseFloat((totalInc * (100 - sp1Share) / 100).toFixed(2)) : 0;
-  return { rate, minWastage, balance, sp1Share, wastage, eligible, totalInc, sp1Inc, sp2Inc, incentiveCode, mapped };
+  return { rate, minWastage, balance, sp1Share, wastage, eligible, fullInc, totalInc, recoveryPct, sp1Inc, sp2Inc, incentiveCode, mapped };
 }
 
 // ─── Small inline editor ────────────────────────────────────────────────────────
@@ -1066,8 +1071,18 @@ export default function IncentiveCalcPage() {
                           <span className="text-err text-[10px]">Low%</span>
                         )}
                       </td>
-                      <td className={clsx("px-3 py-1.5 text-right font-mono font-semibold", eff.totalInc > 0 ? "text-ok" : "text-ink-dim")}>
-                        {eff.totalInc > 0 ? inr(eff.totalInc) : "—"}
+                      <td className="px-3 py-1.5 text-right">
+                        {eff.totalInc > 0 ? (
+                          <span className="inline-flex flex-col items-end gap-0.5">
+                            <span className="font-mono font-semibold text-ok">{inr(eff.totalInc)}</span>
+                            {eff.recoveryPct < 100 && (
+                              <span className="inline-flex items-center gap-1">
+                                <span className="text-[9px] line-through text-ink-dim font-mono">{inr(eff.fullInc)}</span>
+                                <span className="text-[9px] bg-warn/10 text-warn border border-warn/30 px-1 rounded">{eff.recoveryPct}%</span>
+                              </span>
+                            )}
+                          </span>
+                        ) : <span className="font-mono text-ink-dim">—</span>}
                       </td>
                       <td className="px-3 py-1.5 font-mono text-[11px] whitespace-nowrap">
                         {row.billNo ? (
