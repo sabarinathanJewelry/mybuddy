@@ -180,6 +180,9 @@
 - **Partial payment + write-off**: "Partial" button opens inline form with two separate actions — "Save received ₹X" records partial payment without closing the balance (customer may still pay rest later; row stays red/ineligible); "Write off ₹Y" closes the balance and marks incentive eligible; after partial save shows "Rcvd ₹X · Rem ₹Y" with "Fully paid" and "Write off ₹Y" buttons; after write-off shows GST lost + net lost; undo reverts all; write-off summary footer shows totals
 - Staff view (`/my-incentive`): read-only personal incentive breakdown
 
+### Permission Requests
+- Late permission rows exceeding 2 hours are highlighted in red (`bg-err/5`) with the time shown in bold red and a `>2h` badge
+
 ### Payroll
 - Monthly payroll sheet: basic salary, leave deductions, fine, advance recovery, incentive, arrear → net salary
 - Load from staff master, load attendance (auto-fills deductions), load from incentive sheet

@@ -837,15 +837,22 @@ function RequestsTab({ isAdmin, myBioUserId }: { isAdmin: boolean; myBioUserId: 
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((r: PermissionRequest) => (
+                  {filtered.map((r: PermissionRequest) => {
+                    const overTwoHours = r.late_minutes > 120;
+                    return (
                     <Fragment key={r.id}>
-                      <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
+                      <tr className={`border-b border-line last:border-0 hover:bg-canvas/50 ${overTwoHours ? "bg-err/5" : ""}`}>
                         <td className="px-4 py-2.5 font-medium">{(r as any).staff?.name ?? r.bio_user_id}</td>
                         <td className="px-3 py-2.5 text-ink-dim">{shortDate(r.permission_date)}</td>
-                        <td className="px-3 py-2.5 text-ink-dim">
-                          {r.from_time && r.to_time
-                            ? `${r.from_time.slice(0, 5)} – ${r.to_time.slice(0, 5)} (${r.late_minutes}m)`
-                            : `${r.late_minutes}m`}
+                        <td className="px-3 py-2.5">
+                          <span className={overTwoHours ? "font-semibold text-err" : "text-ink-dim"}>
+                            {r.from_time && r.to_time
+                              ? `${r.from_time.slice(0, 5)} – ${r.to_time.slice(0, 5)} (${r.late_minutes}m)`
+                              : `${r.late_minutes}m`}
+                          </span>
+                          {overTwoHours && (
+                            <span className="ml-1.5 text-[10px] font-bold bg-err/10 text-err px-1.5 py-0.5 rounded">&gt;2h</span>
+                          )}
                         </td>
                         <td className="px-3 py-2.5 text-ink-dim max-w-[200px] truncate">{r.reason || "—"}</td>
                         <td className="px-3 py-2.5 text-center">
@@ -874,7 +881,8 @@ function RequestsTab({ isAdmin, myBioUserId }: { isAdmin: boolean; myBioUserId: 
                         </td>
                       </tr>
                     </Fragment>
-                  ))}
+                  );
+                  })}
                   {!filtered.length && (
                     <tr><td colSpan={6} className="px-4 py-8 text-center text-ink-dim">No requests</td></tr>
                   )}
