@@ -8,7 +8,7 @@ import { useT } from "@/i18n";
 import { inr, shortDate } from "@/lib/format";
 
 const inp = "border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
-type PageTab = "today" | "all" | "bulk";
+type PageTab = "today" | "all" | "bulk" | "categories";
 
 // ── Bulk import helpers ───────────────────────────────────────────────────────
 interface BulkRow {
@@ -522,9 +522,10 @@ export default function ExpensesPage() {
       {/* Tabs */}
       <div className="flex border-b border-line gap-1">
         {([
-          { key: "today", label: `Today  ${todayTotal > 0 ? `· ${inr(todayTotal)}` : ""}` },
-          { key: "all",   label: "All Expenses" },
-          { key: "bulk",  label: "Bulk Import" },
+          { key: "today",      label: `Today  ${todayTotal > 0 ? `· ${inr(todayTotal)}` : ""}` },
+          { key: "all",        label: "All Expenses" },
+          { key: "bulk",       label: "Bulk Import" },
+          { key: "categories", label: "Categories" },
         ] as { key: PageTab; label: string }[]).map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
@@ -753,6 +754,68 @@ export default function ExpensesPage() {
           )}
         </div>
       )}
+
+      {/* ── CATEGORIES TAB ────────────────────────────────────────────────────── */}
+      {tab === "categories" && (
+        <CategoriesTab categories={categories} onRefresh={() => qc.invalidateQueries({ queryKey: ["expense-categories"] })} />
+      )}
+    </div>
+  );
+}
+
+function CategoriesTab({ categories, onRefresh }: { categories: { id: string; name: string }[]; onRefresh: () => void }) {
+  const [newName, setNewName] = useState("");
+  const [adding, setAdding]   = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const inp = "border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold bg-canvas";
+
+  async function handleAdd() {
+    const name = newName.trim();
+    if (!name) return;
+    setAdding(true);
+    const { error } = await supabase().from("expense_categories").insert({ name });
+    setAdding(false);
+    if (!error) { setNewName(""); onRefresh(); }
+    else alert(error.message);
+  }
+
+  async function handleDelete(id: string, name: string) {
+    if (!confirm(`Delete category "${name}"? This cannot be undone.`)) return;
+    setDeletingId(id);
+    const { error } = await supabase().from("expense_categories").delete().eq("id", id);
+    setDeletingId(null);
+    if (!error) onRefresh();
+    else alert("Cannot delete — this category may have expenses attached to it.");
+  }
+
+  return (
+    <div className="max-w-sm space-y-4">
+      {/* Add form */}
+      <div className="flex gap-2">
+        <input value={newName} onChange={e => setNewName(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && handleAdd()}
+          placeholder="New category name" className={inp + " flex-1"} />
+        <button onClick={handleAdd} disabled={adding || !newName.trim()}
+          className="bg-gold text-white text-sm px-4 py-2 rounded-lg2 disabled:opacity-40">
+          {adding ? "Adding…" : "Add"}
+        </button>
+      </div>
+
+      {/* List */}
+      <div className="border border-line rounded-lg2 divide-y divide-line">
+        {categories.map(c => (
+          <div key={c.id} className="flex items-center justify-between px-3 py-2.5">
+            <span className="text-sm">{c.name}</span>
+            <button onClick={() => handleDelete(c.id, c.name)} disabled={deletingId === c.id}
+              className="text-xs text-err hover:underline disabled:opacity-40">
+              {deletingId === c.id ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        ))}
+        {categories.length === 0 && (
+          <p className="px-3 py-4 text-sm text-ink-dim text-center">No categories yet.</p>
+        )}
+      </div>
     </div>
   );
 }
