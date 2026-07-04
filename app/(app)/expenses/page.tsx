@@ -23,13 +23,22 @@ function parseAmt(s: string): number {
 
 function parsePaste(raw: string): Omit<BulkRow, "idx" | "isDuplicate">[] {
   const results: Omit<BulkRow, "idx" | "isDuplicate">[] = [];
+  let lastDate = "";
   for (const line of raw.split("\n")) {
     if (!line.trim()) continue;
     const c = line.split("\t");
     const rawDate = (c[0] ?? "").trim();
+    const txnType = (c[2] ?? "").trim().toUpperCase();
     const m = rawDate.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
-    if (!m) continue;
-    const date = `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+    let date: string;
+    if (m) {
+      date = `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+      lastDate = date;
+    } else if (txnType === "PAYMENT" && lastDate) {
+      date = lastDate;
+    } else {
+      continue;
+    }
     const txnNo = (c[1] ?? "").trim();
     const description = (c[5] ?? "").trim() || (c[3] ?? "").trim() || txnNo;
     const amtD = parseAmt(c[6] ?? "");

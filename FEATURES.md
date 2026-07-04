@@ -77,7 +77,7 @@
 - Notes shown as secondary line under description in the table
 - Mode=bank posts to bank_ledger automatically
 - Reports: Expenses by Category tab
-- **Bulk Import tab**: paste tab-separated ERP/Excel ledger data → select category + mode → Parse & Check (auto-detects date col 0 DD-MM-YYYY, txnNo col 1, narration col 5/fallback col 3, debit col 6 / credit col 7) → preview table with New/Duplicate badges (duplicate key: date|amount|category) → per-row checkboxes + Select All → selected-total footer → Import N rows (inserts to expenses + bank_ledger/cash_ledger)
+- **Bulk Import tab**: paste tab-separated ERP/Excel ledger data → select category + mode → Parse & Check (auto-detects date col 0 DD-MM-YYYY, txnNo col 1, narration col 5/fallback col 3, debit col 6 / credit col 7) → preview table with New/Duplicate badges (duplicate key: date|amount|category) → per-row checkboxes + Select All → selected-total footer → Import N rows (inserts to expenses + bank_ledger/cash_ledger); **date carry-forward**: ERP exports only print the date on the first row of a group — blank-date PAYMENT rows now inherit the last seen date so multi-payment days are fully captured
 
 ### Investments & AV Income
 - Investment tracking
@@ -320,7 +320,7 @@
 
 ### Supplier Ledger Import (`/admin/supplier-ledger`)
 - Select supplier, paste Tally ledger export (tab or comma delimited, auto-detected)
-- Parses PAYMENT and RETAIL PURCHASE / SALE BILL rows; skips OB, Total, CB rows
+- Parses PAYMENT and RETAIL PURCHASE / SALE BILL rows; skips OB, Total, CB rows; **date carry-forward**: blank-date PAYMENT rows inherit the last seen date (ERP only prints date on the first row of a same-day group)
 - Payments tab: matches each Tally payment against MyBuddy `supplier_payments` by date + amount (±0.5); shows Matched / Not in MyBuddy; "Add Entry" creates a bank-mode `supplier_payments` record in one click
 - Purchases tab: enter rate per gram → auto-computes gross weight; select metal type (22K/18K/24K/silver); "Add" creates a `supplier_purchases` record with computed weight and purity
 - Summary row per tab: total count, matched/added count, total amount

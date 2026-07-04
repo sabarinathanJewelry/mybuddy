@@ -125,18 +125,28 @@ function parseTallyLedger(text: string): {
   const payments: LedgerPayment[] = [];
   const purchases: LedgerPurchase[] = [];
   let idx = 0;
+  let lastDate = "";
 
   for (let i = headerIdx + 1; i < lines.length; i++) {
     const cols = splitLine(lines[i], sep);
     const dateRaw = (cols[dateCol] ?? "").trim();
     const txnType = (cols[txnTypeCol] ?? "").trim().toUpperCase();
 
-    if (!txnType || !dateRaw) continue;
+    if (!txnType) continue;
     if (["OB", "CB", "TOTAL", "CLOSING BALANCE"].includes(txnType)) continue;
     if (["TOTAL", "CB"].includes(dateRaw.toUpperCase())) continue;
 
-    const date = parseDate(dateRaw);
-    if (!date) continue;
+    let date: string;
+    if (dateRaw) {
+      const parsed = parseDate(dateRaw);
+      if (!parsed) continue;
+      date = parsed;
+      lastDate = parsed;
+    } else if (txnType === "PAYMENT" && lastDate) {
+      date = lastDate;
+    } else {
+      continue;
+    }
 
     const amtDr = amtDrCol >= 0 ? parseAmt(cols[amtDrCol]) : 0;
     const amtCr = amtCrCol >= 0 ? parseAmt(cols[amtCrCol]) : 0;
