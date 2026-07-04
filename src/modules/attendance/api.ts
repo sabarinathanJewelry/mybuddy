@@ -68,6 +68,7 @@ export type StaffMember = {
   shift: "boys" | "girls" | "helper";
   monthly_salary: number;
   allowed_leaves: number;
+  equalize_ot: boolean;
   user_id: string | null;
 };
 
