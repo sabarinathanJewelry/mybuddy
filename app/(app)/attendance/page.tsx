@@ -171,12 +171,18 @@ function MonthlyTab() {
     return r.daily.filter(d => isWeekend(d.date) && !d.first_in && !approvedLeaveDates.has(d.date)).map(d => d.date);
   }
 
+  function effectiveOtMins(r: MonthlyEmployeeSummary): number {
+    return r.daily.filter(d => inFineRange(d.date, r.bio_user_id)).reduce((s, d) => s + d.ot_minutes, 0);
+  }
   function netLateMins(r: MonthlyEmployeeSummary): number {
     const lm = effectiveLateMins(r);
-    return r.equalize_ot ? Math.max(0, lm - r.total_ot_minutes) : lm;
+    const om = effectiveOtMins(r);
+    return r.equalize_ot ? Math.max(0, lm - om) : lm;
   }
   function netOtMins(r: MonthlyEmployeeSummary): number {
-    return r.equalize_ot ? Math.max(0, r.total_ot_minutes - effectiveLateMins(r)) : r.total_ot_minutes;
+    const om = effectiveOtMins(r);
+    const lm = effectiveLateMins(r);
+    return r.equalize_ot ? Math.max(0, om - lm) : om;
   }
   function calcFine(r: MonthlyEmployeeSummary): number {
     if (!applyFine) return 0;
@@ -755,30 +761,45 @@ function MonthlyTab() {
                                   </div>
                                 )}
                                 {/* Late vs OT day-by-day breakdown (always show when staff has both) */}
-                                {r.late_days > 0 && r.total_ot_minutes > 0 && fineMode === "minute" && applyFine && (() => {
+                                {r.late_days > 0 && effectiveOtMins(r) > 0 && fineMode === "minute" && applyFine && (() => {
                                   const pd = permDates(r.bio_user_id);
                                   const dd = dutyDates(r.bio_user_id);
                                   const rows = r.daily.filter(d =>
-                                    (d.is_late && !pd.has(d.date) && !dd.has(d.date) && (!fineFromDate || d.date >= fineFromDate)) ||
-                                    d.ot_minutes > 0
+                                    inFineRange(d.date, r.bio_user_id) && (
+                                      (d.is_late && !pd.has(d.date) && !dd.has(d.date)) ||
+                                      d.ot_minutes > 0
+                                    )
                                   );
                                   if (!rows.length) return null;
-                                  const totalLate = rows.reduce((s, d) => {
-                                    const eff = d.is_late && !pd.has(d.date) && !dd.has(d.date) && (!fineFromDate || d.date >= fineFromDate);
-                                    return s + (eff ? d.late_minutes : 0);
-                                  }, 0);
+                                  const totalLate = effectiveLateMins(r);
+                                  const totalOt   = effectiveOtMins(r);
                                   const fineWithout = Math.round(lateFineAmt * totalLate);
-                                  const fineWith    = Math.round(lateFineAmt * Math.max(0, totalLate - r.total_ot_minutes));
+                                  const fineWith    = Math.round(lateFineAmt * Math.max(0, totalLate - totalOt));
                                   return (
                                     <div className="mt-1.5 border-t border-line pt-1.5">
                                       <p className="text-[10px] font-semibold text-ink-dim uppercase tracking-wide mb-1.5">Late & OT — Day Breakdown</p>
+                                      {/* Totals row */}
+                                      <div className="text-[10px] space-y-0.5 mb-2">
+                                        <div className="flex justify-between">
+                                          <span className="text-ink-dim">Total late (in range)</span>
+                                          <span className="font-mono text-err">{totalLate} min ({formatMins(totalLate)})</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                          <span className="text-ink-dim">Total OT (in range)</span>
+                                          <span className="font-mono text-ok">{totalOt} min ({formatMins(totalOt)})</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                          <span className="text-ink-dim">Net late (late − OT)</span>
+                                          <span className="font-mono text-warn">{Math.max(0, totalLate - totalOt)} min</span>
+                                        </div>
+                                      </div>
                                       <div className="grid grid-cols-2 gap-2 text-[10px] mb-2">
                                         <div className="bg-err/5 rounded px-2 py-1">
-                                          <div className="text-ink-dim mb-0.5">Fine (no OT offset)</div>
+                                          <div className="text-ink-dim mb-0.5">Fine (no OT) = {totalLate} × ₹{lateFineAmt}</div>
                                           <div className="font-mono font-semibold text-err">−{inr(fineWithout)}</div>
                                         </div>
                                         <div className="bg-ok/5 rounded px-2 py-1">
-                                          <div className="text-ink-dim mb-0.5">Fine (with OT offset)</div>
+                                          <div className="text-ink-dim mb-0.5">Fine (with OT) = {Math.max(0, totalLate - totalOt)} × ₹{lateFineAmt}</div>
                                           <div className="font-mono font-semibold text-ok">−{inr(fineWith)}</div>
                                         </div>
                                       </div>
@@ -786,27 +807,32 @@ function MonthlyTab() {
                                         <thead>
                                           <tr className="text-ink-dim border-b border-line">
                                             <th className="text-left pb-0.5 font-medium">Date</th>
-                                            <th className="text-right pb-0.5 font-medium text-err">Late</th>
-                                            <th className="text-right pb-0.5 font-medium text-ok">OT</th>
+                                            <th className="text-right pb-0.5 font-medium text-err">Late (min)</th>
+                                            <th className="text-right pb-0.5 font-medium text-ok">OT (min)</th>
                                           </tr>
                                         </thead>
                                         <tbody>
                                           {rows.map(d => {
-                                            const eff = d.is_late && !pd.has(d.date) && !dd.has(d.date) && (!fineFromDate || d.date >= fineFromDate);
+                                            const eff = d.is_late && !pd.has(d.date) && !dd.has(d.date);
                                             const lateMins = eff ? d.late_minutes : 0;
                                             return (
                                               <tr key={d.date} className="border-b border-line/40 last:border-0">
                                                 <td className="py-0.5 text-ink-dim">{shortDate(d.date)}</td>
                                                 <td className={`text-right font-mono ${lateMins > 0 ? "text-err" : "text-ink-dim"}`}>
-                                                  {lateMins > 0 ? formatMins(lateMins) : "—"}
+                                                  {lateMins > 0 ? `${lateMins}` : "—"}
                                                   {d.is_late && !eff && <span className="text-ok ml-1">(perm)</span>}
                                                 </td>
                                                 <td className={`text-right font-mono ${d.ot_minutes > 0 ? "text-ok" : "text-ink-dim"}`}>
-                                                  {d.ot_minutes > 0 ? formatMins(d.ot_minutes) : "—"}
+                                                  {d.ot_minutes > 0 ? `${d.ot_minutes}` : "—"}
                                                 </td>
                                               </tr>
                                             );
                                           })}
+                                          <tr className="border-t border-line font-semibold">
+                                            <td className="py-0.5 text-ink-dim">Total</td>
+                                            <td className="text-right font-mono text-err">{totalLate}</td>
+                                            <td className="text-right font-mono text-ok">{totalOt}</td>
+                                          </tr>
                                         </tbody>
                                       </table>
                                     </div>
