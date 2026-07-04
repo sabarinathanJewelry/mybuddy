@@ -78,7 +78,8 @@ function MonthlyTab() {
   const [showNetPay, setShowNetPay]   = useState(true);
   const [expandedId, setExpandedId]   = useState<string | null>(null);
   const [editingId, setEditingId]     = useState<string | null>(null);
-  const [editForm, setEditForm]       = useState({ monthly_salary: 0, allowed_leaves: 1, equalize_ot: false });
+  const [editForm, setEditForm]       = useState({ monthly_salary: 0, allowed_leaves: 1, equalize_ot: false, fine_from: "", fine_to: "" });
+  const [staffFineRanges, setStaffFineRanges] = useState<Record<string, { from: string; to: string }>>({});
   const [weekendPenalty, setWeekendPenalty] = useState(false);
   const [equalizeOt, setEqualizeOt]         = useState(true);
   const [applyOt, setApplyOt]               = useState(false);
@@ -110,7 +111,8 @@ function MonthlyTab() {
         if (v.ot_rate_amt    !== undefined) setOtRateAmt(v.ot_rate_amt);
         if (v.ot_rate_mode   !== undefined) setOtRateMode(v.ot_rate_mode);
         if (v.weekend_penalty !== undefined) setWeekendPenalty(v.weekend_penalty);
-        if (v.fine_from_date !== undefined) setFineFromDate(v.fine_from_date);
+        if (v.fine_from_date    !== undefined) setFineFromDate(v.fine_from_date);
+        if (v.staff_fine_ranges !== undefined) setStaffFineRanges(v.staff_fine_ranges);
       }
       return data;
     },
@@ -118,7 +120,7 @@ function MonthlyTab() {
 
   const saveSettings = useMutation({
     mutationFn: async () => {
-      const value = { late_fine_amt: lateFineAmt, fine_mode: fineMode, apply_fine: applyFine, equalize_ot: equalizeOt, apply_ot: applyOt, ot_rate_amt: otRateAmt, ot_rate_mode: otRateMode, weekend_penalty: weekendPenalty, fine_from_date: fineFromDate };
+      const value = { late_fine_amt: lateFineAmt, fine_mode: fineMode, apply_fine: applyFine, equalize_ot: equalizeOt, apply_ot: applyOt, ot_rate_amt: otRateAmt, ot_rate_mode: otRateMode, weekend_penalty: weekendPenalty, fine_from_date: fineFromDate, staff_fine_ranges: staffFineRanges };
       const { error } = await supabase().from("app_settings").upsert({ key: settingsKey, value }, { onConflict: "key" });
       if (error) throw error;
     },
@@ -145,16 +147,23 @@ function MonthlyTab() {
   function dutyDates(bio_user_id: string): Set<string> {
     return new Set(monthDuties.filter(d => d.bio_user_id === bio_user_id).map(d => d.duty_date));
   }
+  function staffFineRange(bio_user_id: string) {
+    return staffFineRanges[bio_user_id] ?? { from: fineFromDate, to: "" };
+  }
+  function inFineRange(date: string, bio_user_id: string) {
+    const r = staffFineRange(bio_user_id);
+    return (!r.from || date >= r.from) && (!r.to || date <= r.to);
+  }
   // Late days excluding permission-forgiven and outside-duty days
   function effectiveLateDays(r: MonthlyEmployeeSummary): number {
     const pd = permDates(r.bio_user_id);
     const dd = dutyDates(r.bio_user_id);
-    return r.daily.filter(d => d.is_late && !pd.has(d.date) && !dd.has(d.date) && (!fineFromDate || d.date >= fineFromDate)).length;
+    return r.daily.filter(d => d.is_late && !pd.has(d.date) && !dd.has(d.date) && inFineRange(d.date, r.bio_user_id)).length;
   }
   function effectiveLateMins(r: MonthlyEmployeeSummary): number {
     const pd = permDates(r.bio_user_id);
     const dd = dutyDates(r.bio_user_id);
-    return r.daily.filter(d => d.is_late && !pd.has(d.date) && !dd.has(d.date) && (!fineFromDate || d.date >= fineFromDate)).reduce((s, d) => s + d.late_minutes, 0);
+    return r.daily.filter(d => d.is_late && !pd.has(d.date) && !dd.has(d.date) && inFineRange(d.date, r.bio_user_id)).reduce((s, d) => s + d.late_minutes, 0);
   }
   // Weekend absences without approved leave
   function weekendAbsentDays(r: MonthlyEmployeeSummary): string[] {
@@ -192,7 +201,8 @@ function MonthlyTab() {
 
   function startEdit(r: MonthlyEmployeeSummary) {
     setEditingId(r.bio_user_id);
-    setEditForm({ monthly_salary: r.monthly_salary, allowed_leaves: r.allowed_leaves, equalize_ot: r.equalize_ot });
+    const range = staffFineRanges[r.bio_user_id] ?? { from: "", to: "" };
+    setEditForm({ monthly_salary: r.monthly_salary, allowed_leaves: r.allowed_leaves, equalize_ot: r.equalize_ot, fine_from: range.from ?? "", fine_to: range.to ?? "" });
   }
   async function saveEdit(bio_user_id: string) {
     const current = data.find(r => r.bio_user_id === bio_user_id);
@@ -206,7 +216,18 @@ function MonthlyTab() {
       });
       qc.invalidateQueries({ queryKey: ["salary_history", bio_user_id] });
     }
-    await update.mutateAsync({ bio_user_id, ...editForm });
+    // Save per-staff fine range to monthly settings
+    const newRanges = { ...staffFineRanges };
+    if (editForm.fine_from || editForm.fine_to) {
+      newRanges[bio_user_id] = { from: editForm.fine_from, to: editForm.fine_to };
+    } else {
+      delete newRanges[bio_user_id];
+    }
+    setStaffFineRanges(newRanges);
+    const settingsValue = { late_fine_amt: lateFineAmt, fine_mode: fineMode, apply_fine: applyFine, equalize_ot: equalizeOt, apply_ot: applyOt, ot_rate_amt: otRateAmt, ot_rate_mode: otRateMode, weekend_penalty: weekendPenalty, fine_from_date: fineFromDate, staff_fine_ranges: newRanges };
+    await supabase().from("app_settings").upsert({ key: settingsKey, value: settingsValue }, { onConflict: "key" });
+    const { equalize_ot, fine_from: _ff, fine_to: _ft, ...staffUpdate } = editForm;
+    await update.mutateAsync({ bio_user_id, ...staffUpdate, equalize_ot });
     setEditingId(null);
   }
 
@@ -521,6 +542,18 @@ function MonthlyTab() {
                                 className={inp + " w-24"} />
                             </div>
                             <div>
+                              <label className="text-xs text-ink-dim block mb-1">Fine from date</label>
+                              <input type="date" value={editForm.fine_from}
+                                onChange={e => setEditForm(f => ({ ...f, fine_from: e.target.value }))}
+                                className={inp + " w-36 text-xs"} />
+                            </div>
+                            <div>
+                              <label className="text-xs text-ink-dim block mb-1">Fine to date</label>
+                              <input type="date" value={editForm.fine_to}
+                                onChange={e => setEditForm(f => ({ ...f, fine_to: e.target.value }))}
+                                className={inp + " w-36 text-xs"} />
+                            </div>
+                            <div>
                               <label className="flex items-center gap-2 cursor-pointer text-xs">
                                 <input type="checkbox" checked={editForm.equalize_ot}
                                   onChange={e => setEditForm(f => ({ ...f, equalize_ot: e.target.checked }))} />
@@ -690,6 +723,9 @@ function MonthlyTab() {
                                     {permDates(r.bio_user_id).size > 0 && (
                                       <span className="ml-1 text-ok text-[10px]">({permDates(r.bio_user_id).size} permission-forgiven)</span>
                                     )}
+                                    {(() => { const rng = staffFineRanges[r.bio_user_id]; return rng ? (
+                                      <span className="ml-1 text-info text-[10px]">[{rng.from || "—"} → {rng.to || "—"}]</span>
+                                    ) : null; })()}
                                   </span>
                                 </div>
                                 {r.equalize_ot && r.total_ot_minutes > 0 && (
