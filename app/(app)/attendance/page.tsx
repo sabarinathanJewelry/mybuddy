@@ -79,7 +79,7 @@ function MonthlyTab() {
   const [expandedId, setExpandedId]   = useState<string | null>(null);
   const [editingId, setEditingId]     = useState<string | null>(null);
   const [editForm, setEditForm]       = useState({ monthly_salary: 0, allowed_leaves: 1, equalize_ot: false, fine_from: "", fine_to: "", fine_mode: "" as "" | "day" | "minute", fine_amt: "" as number | "", ot_rate_amt: "" as number | "", ot_rate_mode: "" as "" | "hour" | "minute" });
-  const [staffFineRanges, setStaffFineRanges] = useState<Record<string, { from: string; to: string }>>({});
+  const [staffFineRanges, setStaffFineRanges] = useState<Record<string, { from?: string; to?: string; fine_mode?: "day" | "minute"; fine_amt?: number; ot_rate_amt?: number; ot_rate_mode?: "hour" | "minute" }>>({});
   const [weekendPenalty, setWeekendPenalty] = useState(false);
   const [equalizeOt, setEqualizeOt]         = useState(true);
   const [applyOt, setApplyOt]               = useState(false);
