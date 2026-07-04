@@ -78,7 +78,7 @@ function MonthlyTab() {
   const [showNetPay, setShowNetPay]   = useState(true);
   const [expandedId, setExpandedId]   = useState<string | null>(null);
   const [editingId, setEditingId]     = useState<string | null>(null);
-  const [editForm, setEditForm]       = useState({ monthly_salary: 0, allowed_leaves: 1 });
+  const [editForm, setEditForm]       = useState({ monthly_salary: 0, allowed_leaves: 1, equalize_ot: false });
   const [weekendPenalty, setWeekendPenalty] = useState(false);
   const [equalizeOt, setEqualizeOt]         = useState(true);
   const [applyOt, setApplyOt]               = useState(false);
@@ -164,10 +164,10 @@ function MonthlyTab() {
 
   function netLateMins(r: MonthlyEmployeeSummary): number {
     const lm = effectiveLateMins(r);
-    return equalizeOt ? Math.max(0, lm - r.total_ot_minutes) : lm;
+    return r.equalize_ot ? Math.max(0, lm - r.total_ot_minutes) : lm;
   }
   function netOtMins(r: MonthlyEmployeeSummary): number {
-    return equalizeOt ? Math.max(0, r.total_ot_minutes - effectiveLateMins(r)) : r.total_ot_minutes;
+    return r.equalize_ot ? Math.max(0, r.total_ot_minutes - effectiveLateMins(r)) : r.total_ot_minutes;
   }
   function calcFine(r: MonthlyEmployeeSummary): number {
     if (!applyFine) return 0;
@@ -192,7 +192,7 @@ function MonthlyTab() {
 
   function startEdit(r: MonthlyEmployeeSummary) {
     setEditingId(r.bio_user_id);
-    setEditForm({ monthly_salary: r.monthly_salary, allowed_leaves: r.allowed_leaves });
+    setEditForm({ monthly_salary: r.monthly_salary, allowed_leaves: r.allowed_leaves, equalize_ot: r.equalize_ot });
   }
   async function saveEdit(bio_user_id: string) {
     const current = data.find(r => r.bio_user_id === bio_user_id);
@@ -520,6 +520,13 @@ function MonthlyTab() {
                                 onChange={e => setEditForm(f => ({ ...f, allowed_leaves: Number(e.target.value) }))}
                                 className={inp + " w-24"} />
                             </div>
+                            <div>
+                              <label className="flex items-center gap-2 cursor-pointer text-xs">
+                                <input type="checkbox" checked={editForm.equalize_ot}
+                                  onChange={e => setEditForm(f => ({ ...f, equalize_ot: e.target.checked }))} />
+                                OT offsets late fine
+                              </label>
+                            </div>
                             <div className="flex gap-2">
                               <button onClick={() => saveEdit(r.bio_user_id)} disabled={update.isPending}
                                 className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40">Save</button>
@@ -685,7 +692,7 @@ function MonthlyTab() {
                                     )}
                                   </span>
                                 </div>
-                                {equalizeOt && r.total_ot_minutes > 0 && (
+                                {r.equalize_ot && r.total_ot_minutes > 0 && (
                                   <div className="flex justify-between text-ok pl-2">
                                     <span>OT offset ({formatMins(r.total_ot_minutes)})</span>
                                     <span className="text-[10px] text-ink-dim">

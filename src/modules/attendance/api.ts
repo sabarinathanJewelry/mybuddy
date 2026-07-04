@@ -91,6 +91,7 @@ export type MonthlyEmployeeSummary = {
   shift: "boys" | "girls" | "helper";
   monthly_salary: number;
   allowed_leaves: number;
+  equalize_ot: boolean;
   total_days: number;
   present_days: number;
   absent_days: number;
@@ -301,7 +302,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
 
       const staffRes = await client
         .from("staff")
-        .select("bio_user_id, name, designation, active, shift, monthly_salary, allowed_leaves")
+        .select("bio_user_id, name, designation, active, shift, monthly_salary, allowed_leaves, equalize_ot")
         .eq("active", true)
         .order("name");
       if (staffRes.error) throw staffRes.error;
@@ -314,7 +315,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
         if (missing.length > 0) {
           const { data: extra } = await client
             .from("staff")
-            .select("bio_user_id, name, designation, active, shift, monthly_salary, allowed_leaves")
+            .select("bio_user_id, name, designation, active, shift, monthly_salary, allowed_leaves, equalize_ot")
             .in("bio_user_id", missing);
           staff = [...staff, ...(extra ?? [])];
         }
@@ -452,6 +453,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
           designation:       (s.designation as string) ?? "",
           shift:             ((s.shift as string) ?? "boys") as "boys" | "girls",
           monthly_salary:    (s.monthly_salary as number) ?? 0,
+          equalize_ot:       (s.equalize_ot as boolean) ?? false,
           allowed_leaves,
           total_days:        totalDays,
           present_days,

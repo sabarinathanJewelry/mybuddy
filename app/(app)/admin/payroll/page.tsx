@@ -308,7 +308,7 @@ export default function PayrollPage() {
     const fineAmt  = attSettings.late_fine_amt ?? 100;
     const fineMode = attSettings.fine_mode ?? "day";
     const fromDate = attSettings.fine_from_date ?? "";
-    const eqOt     = attSettings.equalize_ot ?? true;
+    const eqOt     = att.equalize_ot ?? (attSettings.equalize_ot ?? false);
     const pd = new Set(monthPerms.filter(p => p.bio_user_id === att.bio_user_id).map(p => p.permission_date));
     const lateDays = att.daily.filter(d => d.is_late && !pd.has(d.date) && (!fromDate || d.date >= fromDate));
     const eld = lateDays.length;
