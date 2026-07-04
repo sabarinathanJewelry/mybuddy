@@ -78,7 +78,7 @@ function MonthlyTab() {
   const [showNetPay, setShowNetPay]   = useState(true);
   const [expandedId, setExpandedId]   = useState<string | null>(null);
   const [editingId, setEditingId]     = useState<string | null>(null);
-  const [editForm, setEditForm]       = useState({ monthly_salary: 0, allowed_leaves: 1, equalize_ot: false, fine_from: "", fine_to: "" });
+  const [editForm, setEditForm]       = useState({ monthly_salary: 0, allowed_leaves: 1, equalize_ot: false, fine_from: "", fine_to: "", fine_mode: "" as "" | "day" | "minute", fine_amt: "" as number | "", ot_rate_amt: "" as number | "", ot_rate_mode: "" as "" | "hour" | "minute" });
   const [staffFineRanges, setStaffFineRanges] = useState<Record<string, { from: string; to: string }>>({});
   const [weekendPenalty, setWeekendPenalty] = useState(false);
   const [equalizeOt, setEqualizeOt]         = useState(true);
@@ -174,27 +174,48 @@ function MonthlyTab() {
   function effectiveOtMins(r: MonthlyEmployeeSummary): number {
     return r.daily.filter(d => inFineRange(d.date, r.bio_user_id)).reduce((s, d) => s + d.ot_minutes, 0);
   }
-  function netLateMins(r: MonthlyEmployeeSummary): number {
-    const lm = effectiveLateMins(r);
-    const om = effectiveOtMins(r);
-    return r.equalize_ot ? Math.max(0, lm - om) : lm;
+  // Per-staff settings with global fallback
+  function staffFM(bio_user_id: string): "day" | "minute" {
+    return (staffFineRanges[bio_user_id]?.fine_mode as "day" | "minute") ?? fineMode;
   }
-  function netOtMins(r: MonthlyEmployeeSummary): number {
-    const om = effectiveOtMins(r);
-    const lm = effectiveLateMins(r);
-    return r.equalize_ot ? Math.max(0, om - lm) : om;
+  function staffFA(bio_user_id: string): number {
+    return staffFineRanges[bio_user_id]?.fine_amt ?? lateFineAmt;
   }
-  function calcFine(r: MonthlyEmployeeSummary): number {
+  function staffOtAmt(bio_user_id: string): number {
+    return staffFineRanges[bio_user_id]?.ot_rate_amt ?? otRateAmt;
+  }
+  function staffOtMode(bio_user_id: string): "hour" | "minute" {
+    return (staffFineRanges[bio_user_id]?.ot_rate_mode as "hour" | "minute") ?? otRateMode;
+  }
+  // Raw fine in ₹ before OT equalization
+  function calcRawFine(r: MonthlyEmployeeSummary): number {
     if (!applyFine) return 0;
-    const eld = effectiveLateDays(r);
-    const nlm = netLateMins(r);
-    if (eld <= 0 && nlm <= 0) return 0;
-    return fineMode === "day" ? lateFineAmt * eld : lateFineAmt * nlm;
+    const mode = staffFM(r.bio_user_id);
+    const amt  = staffFA(r.bio_user_id);
+    const eld  = effectiveLateDays(r);
+    const elm  = effectiveLateMins(r);
+    if (eld <= 0 && elm <= 0) return 0;
+    return mode === "day" ? amt * eld : amt * elm;
   }
+  // Raw OT pay in ₹
+  function calcRawOtPay(r: MonthlyEmployeeSummary): number {
+    const otMins = effectiveOtMins(r);
+    if (otMins <= 0) return 0;
+    const rateAmt  = staffOtAmt(r.bio_user_id);
+    const rateMode = staffOtMode(r.bio_user_id);
+    return rateMode === "hour" ? rateAmt * (otMins / 60) : rateAmt * otMins;
+  }
+  // Net fine after value-based OT equalization
+  function calcFine(r: MonthlyEmployeeSummary): number {
+    const rawFine = calcRawFine(r);
+    if (!r.equalize_ot) return rawFine;
+    return Math.max(0, rawFine - calcRawOtPay(r));
+  }
+  // OT pay: if equalize, only excess OT beyond fine; else full OT if applyOt
   function calcOtPay(r: MonthlyEmployeeSummary): number {
-    if (!applyOt) return 0;
-    const nom = netOtMins(r);
-    return otRateMode === "hour" ? otRateAmt * (nom / 60) : otRateAmt * nom;
+    const rawOt = calcRawOtPay(r);
+    if (r.equalize_ot) return Math.max(0, rawOt - calcRawFine(r));
+    return applyOt ? rawOt : 0;
   }
   function calcWeekendExtra(r: MonthlyEmployeeSummary): number {
     if (!weekendPenalty) return 0;
@@ -207,8 +228,8 @@ function MonthlyTab() {
 
   function startEdit(r: MonthlyEmployeeSummary) {
     setEditingId(r.bio_user_id);
-    const range = staffFineRanges[r.bio_user_id] ?? { from: "", to: "" };
-    setEditForm({ monthly_salary: r.monthly_salary, allowed_leaves: r.allowed_leaves, equalize_ot: r.equalize_ot, fine_from: range.from ?? "", fine_to: range.to ?? "" });
+    const s = staffFineRanges[r.bio_user_id] ?? {};
+    setEditForm({ monthly_salary: r.monthly_salary, allowed_leaves: r.allowed_leaves, equalize_ot: r.equalize_ot, fine_from: s.from ?? "", fine_to: s.to ?? "", fine_mode: (s.fine_mode as "" | "day" | "minute") ?? "", fine_amt: s.fine_amt ?? "", ot_rate_amt: s.ot_rate_amt ?? "", ot_rate_mode: (s.ot_rate_mode as "" | "hour" | "minute") ?? "" });
   }
   async function saveEdit(bio_user_id: string) {
     const current = data.find(r => r.bio_user_id === bio_user_id);
@@ -224,8 +245,15 @@ function MonthlyTab() {
     }
     // Save per-staff fine range to monthly settings
     const newRanges = { ...staffFineRanges };
-    if (editForm.fine_from || editForm.fine_to) {
-      newRanges[bio_user_id] = { from: editForm.fine_from, to: editForm.fine_to };
+    const hasSetting = editForm.fine_from || editForm.fine_to || editForm.fine_mode || editForm.fine_amt !== "" || editForm.ot_rate_amt !== "" || editForm.ot_rate_mode;
+    if (hasSetting) {
+      newRanges[bio_user_id] = {
+        from: editForm.fine_from, to: editForm.fine_to,
+        ...(editForm.fine_mode ? { fine_mode: editForm.fine_mode } : {}),
+        ...(editForm.fine_amt !== "" ? { fine_amt: Number(editForm.fine_amt) } : {}),
+        ...(editForm.ot_rate_amt !== "" ? { ot_rate_amt: Number(editForm.ot_rate_amt) } : {}),
+        ...(editForm.ot_rate_mode ? { ot_rate_mode: editForm.ot_rate_mode } : {}),
+      };
     } else {
       delete newRanges[bio_user_id];
     }
@@ -548,6 +576,34 @@ function MonthlyTab() {
                                 className={inp + " w-24"} />
                             </div>
                             <div>
+                              <label className="text-xs text-ink-dim block mb-1">Fine mode (blank = global)</label>
+                              <select value={editForm.fine_mode} onChange={e => setEditForm(f => ({ ...f, fine_mode: e.target.value as "" | "day" | "minute" }))} className={inp + " w-32 text-xs"}>
+                                <option value="">Global ({fineMode === "day" ? "₹/day" : "₹/min"})</option>
+                                <option value="day">Per day</option>
+                                <option value="minute">Per minute</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-xs text-ink-dim block mb-1">Fine rate ₹ (blank = global ₹{lateFineAmt})</label>
+                              <input type="number" min={0} value={editForm.fine_amt} placeholder={String(lateFineAmt)}
+                                onChange={e => setEditForm(f => ({ ...f, fine_amt: e.target.value === "" ? "" : Number(e.target.value) }))}
+                                className={inp + " w-28 text-xs"} />
+                            </div>
+                            <div>
+                              <label className="text-xs text-ink-dim block mb-1">OT rate ₹ (blank = global ₹{otRateAmt})</label>
+                              <input type="number" min={0} value={editForm.ot_rate_amt} placeholder={String(otRateAmt)}
+                                onChange={e => setEditForm(f => ({ ...f, ot_rate_amt: e.target.value === "" ? "" : Number(e.target.value) }))}
+                                className={inp + " w-28 text-xs"} />
+                            </div>
+                            <div>
+                              <label className="text-xs text-ink-dim block mb-1">OT rate mode (blank = global)</label>
+                              <select value={editForm.ot_rate_mode} onChange={e => setEditForm(f => ({ ...f, ot_rate_mode: e.target.value as "" | "hour" | "minute" }))} className={inp + " w-32 text-xs"}>
+                                <option value="">Global ({otRateMode})</option>
+                                <option value="hour">Per hour</option>
+                                <option value="minute">Per minute</option>
+                              </select>
+                            </div>
+                            <div>
                               <label className="text-xs text-ink-dim block mb-1">Fine from date</label>
                               <input type="date" value={editForm.fine_from}
                                 onChange={e => setEditForm(f => ({ ...f, fine_from: e.target.value }))}
@@ -734,32 +790,63 @@ function MonthlyTab() {
                                     ) : null; })()}
                                   </span>
                                 </div>
-                                {r.equalize_ot && r.total_ot_minutes > 0 && (
-                                  <div className="flex justify-between text-ok pl-2">
-                                    <span>OT offset ({formatMins(r.total_ot_minutes)})</span>
-                                    <span className="text-[10px] text-ink-dim">
-                                      net late: {formatMins(netLateMins(r))}
-                                    </span>
-                                  </div>
-                                )}
-                                <div className="flex justify-between">
-                                  <span className="text-ink-dim pl-2">
-                                    {applyFine ? `Fine @₹${lateFineAmt}/${fineMode === "day" ? "day" : "min"}` : "Fine (disabled)"}
-                                  </span>
-                                  <span className={`font-mono ${fine > 0 ? "text-err font-medium" : "text-ink-dim"}`}>
-                                    {fine > 0 ? `−${inr(fine)}` : "—"}
-                                  </span>
-                                </div>
-                                {r.total_ot_minutes > 0 && (
-                                  <div className="flex justify-between">
-                                    <span className="text-ok">
-                                      OT Pay ({formatMins(netOtMins(r))} net)
-                                    </span>
-                                    <span className={`font-mono ${calcOtPay(r) > 0 ? "text-ok font-medium" : "text-ink-dim text-[10px]"}`}>
-                                      {calcOtPay(r) > 0 ? `+${inr(Math.round(calcOtPay(r)))}` : "not applied"}
-                                    </span>
-                                  </div>
-                                )}
+                                {(() => {
+                                  const rawFine   = calcRawFine(r);
+                                  const rawOt     = calcRawOtPay(r);
+                                  const netFine   = calcFine(r);
+                                  const netOtPay  = calcOtPay(r);
+                                  const fm        = staffFM(r.bio_user_id);
+                                  const fa        = staffFA(r.bio_user_id);
+                                  const oa        = staffOtAmt(r.bio_user_id);
+                                  const om        = staffOtMode(r.bio_user_id);
+                                  const otMins    = effectiveOtMins(r);
+                                  const eld       = effectiveLateDays(r);
+                                  const elm       = effectiveLateMins(r);
+                                  return (<>
+                                    {applyFine && (
+                                      <div className="pl-2 space-y-0.5">
+                                        <div className="flex justify-between text-[11px]">
+                                          <span className="text-ink-dim">
+                                            Fine: {fm === "day" ? `${eld} days × ₹${fa}/day` : `${elm} min × ₹${fa}/min`}
+                                          </span>
+                                          <span className="font-mono text-err">−{inr(Math.round(rawFine))}</span>
+                                        </div>
+                                        {r.equalize_ot && otMins > 0 && (
+                                          <div className="flex justify-between text-[11px]">
+                                            <span className="text-ok">
+                                              OT: {formatMins(otMins)} × ₹{oa}/{om === "hour" ? "h" : "min"}
+                                            </span>
+                                            <span className="font-mono text-ok">+{inr(Math.round(rawOt))}</span>
+                                          </div>
+                                        )}
+                                        {r.equalize_ot && rawOt > 0 && (
+                                          <div className="flex justify-between text-[11px] font-semibold border-t border-line pt-0.5">
+                                            <span className={netFine > 0 ? "text-err" : "text-ok"}>
+                                              {netFine > 0 ? "Net fine" : "Fine cleared — OT bonus"}
+                                            </span>
+                                            <span className={`font-mono ${netFine > 0 ? "text-err" : "text-ok"}`}>
+                                              {netFine > 0 ? `−${inr(Math.round(netFine))}` : `+${inr(Math.round(netOtPay))}`}
+                                            </span>
+                                          </div>
+                                        )}
+                                        {!r.equalize_ot && (
+                                          <div className="flex justify-between text-[11px]">
+                                            <span className="text-err font-medium pl-2">Fine</span>
+                                            <span className="font-mono text-err font-medium">−{inr(Math.round(netFine))}</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                    {!r.equalize_ot && otMins > 0 && (
+                                      <div className="flex justify-between">
+                                        <span className="text-ok">OT Pay ({formatMins(otMins)})</span>
+                                        <span className={`font-mono ${netOtPay > 0 ? "text-ok font-medium" : "text-ink-dim text-[10px]"}`}>
+                                          {netOtPay > 0 ? `+${inr(Math.round(netOtPay))}` : "not applied"}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </>);
+                                })()}
                                 {/* Late vs OT day-by-day breakdown (always show when staff has both) */}
                                 {r.late_days > 0 && effectiveOtMins(r) > 0 && fineMode === "minute" && applyFine && (() => {
                                   const pd = permDates(r.bio_user_id);
