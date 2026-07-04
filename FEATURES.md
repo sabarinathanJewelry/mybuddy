@@ -77,7 +77,7 @@
 - Notes shown as secondary line under description in the table
 - Mode=bank posts to bank_ledger automatically
 - Reports: Expenses by Category tab
-- **Bulk Import tab**: paste tab-separated ERP/Excel ledger data → select category + mode → Parse & Check (auto-detects date col 0 DD-MM-YYYY, txnNo col 1, narration col 5/fallback col 3, debit col 6 / credit col 7) → preview table with New/Duplicate badges (duplicate key: date|amount|category) → per-row checkboxes + Select All → selected-total footer → Import N rows (inserts to expenses + bank_ledger/cash_ledger); **date carry-forward**: ERP exports only print the date on the first row of a group — blank-date PAYMENT rows now inherit the last seen date so multi-payment days are fully captured
+- **Bulk Import tab**: paste tab-separated ERP/Excel ledger data → select category + mode → Parse & Check (auto-detects date col 0 DD-MM-YYYY, txnNo col 1, narration col 5/fallback col 3, debit col 6 / credit col 7) → preview table with New/Duplicate badges (duplicate key: date|amount|category) → per-row checkboxes + Select All → selected-total footer → Import N rows (inserts to expenses + bank_ledger/cash_ledger); **date carry-forward**: ERP exports only print the date on the first row of a group — blank-date PAYMENT rows now inherit the last seen date so multi-payment days are fully captured; **PURCHASE ENTRY rows ignored**: only PAYMENT type rows are imported; **approximate duplicate detection**: matches existing expenses within ₹1 tolerance on same date + category instead of exact amount
 
 ### Investments & AV Income
 - Investment tracking

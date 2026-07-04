@@ -39,6 +39,7 @@ function parsePaste(raw: string): Omit<BulkRow, "idx" | "isDuplicate">[] {
     } else {
       continue;
     }
+    if (txnType !== "PAYMENT") continue;
     const txnNo = (c[1] ?? "").trim();
     const description = (c[5] ?? "").trim() || (c[3] ?? "").trim() || txnNo;
     const amtD = parseAmt(c[6] ?? "");
@@ -319,12 +320,14 @@ export default function ExpensesPage() {
     const { data: existing } = await supabase()
       .from("expenses").select("exp_date, amount, category_id")
       .gte("exp_date", minDate).lte("exp_date", maxDate);
-    const existSet = new Set(
-      (existing ?? []).map((e: any) => `${e.exp_date}|${parseFloat(e.amount).toFixed(2)}|${e.category_id ?? ""}`)
-    );
+    const existingRows = (existing ?? []) as { exp_date: string; amount: number; category_id: string | null }[];
     const rows: BulkRow[] = parsed.map((r, i) => ({
       idx: i, ...r,
-      isDuplicate: existSet.has(`${r.date}|${r.amount.toFixed(2)}|${bulkCategory}`),
+      isDuplicate: existingRows.some(e =>
+        e.exp_date === r.date &&
+        (e.category_id ?? "") === bulkCategory &&
+        Math.abs(parseFloat(String(e.amount)) - r.amount) <= 1
+      ),
     }));
     setBulkRows(rows);
     setBulkChecked(new Set(rows.filter(r => !r.isDuplicate).map(r => r.idx)));
