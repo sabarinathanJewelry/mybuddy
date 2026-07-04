@@ -718,6 +718,64 @@ function MonthlyTab() {
                                     </span>
                                   </div>
                                 )}
+                                {/* Late vs OT day-by-day breakdown (always show when staff has both) */}
+                                {r.late_days > 0 && r.total_ot_minutes > 0 && fineMode === "minute" && applyFine && (() => {
+                                  const pd = permDates(r.bio_user_id);
+                                  const dd = dutyDates(r.bio_user_id);
+                                  const rows = r.daily.filter(d =>
+                                    (d.is_late && !pd.has(d.date) && !dd.has(d.date) && (!fineFromDate || d.date >= fineFromDate)) ||
+                                    d.ot_minutes > 0
+                                  );
+                                  if (!rows.length) return null;
+                                  const totalLate = rows.reduce((s, d) => {
+                                    const eff = d.is_late && !pd.has(d.date) && !dd.has(d.date) && (!fineFromDate || d.date >= fineFromDate);
+                                    return s + (eff ? d.late_minutes : 0);
+                                  }, 0);
+                                  const fineWithout = Math.round(lateFineAmt * totalLate);
+                                  const fineWith    = Math.round(lateFineAmt * Math.max(0, totalLate - r.total_ot_minutes));
+                                  return (
+                                    <div className="mt-1.5 border-t border-line pt-1.5">
+                                      <p className="text-[10px] font-semibold text-ink-dim uppercase tracking-wide mb-1.5">Late & OT — Day Breakdown</p>
+                                      <div className="grid grid-cols-2 gap-2 text-[10px] mb-2">
+                                        <div className="bg-err/5 rounded px-2 py-1">
+                                          <div className="text-ink-dim mb-0.5">Fine (no OT offset)</div>
+                                          <div className="font-mono font-semibold text-err">−{inr(fineWithout)}</div>
+                                        </div>
+                                        <div className="bg-ok/5 rounded px-2 py-1">
+                                          <div className="text-ink-dim mb-0.5">Fine (with OT offset)</div>
+                                          <div className="font-mono font-semibold text-ok">−{inr(fineWith)}</div>
+                                        </div>
+                                      </div>
+                                      <table className="w-full" style={{ fontSize: "10px" }}>
+                                        <thead>
+                                          <tr className="text-ink-dim border-b border-line">
+                                            <th className="text-left pb-0.5 font-medium">Date</th>
+                                            <th className="text-right pb-0.5 font-medium text-err">Late</th>
+                                            <th className="text-right pb-0.5 font-medium text-ok">OT</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {rows.map(d => {
+                                            const eff = d.is_late && !pd.has(d.date) && !dd.has(d.date) && (!fineFromDate || d.date >= fineFromDate);
+                                            const lateMins = eff ? d.late_minutes : 0;
+                                            return (
+                                              <tr key={d.date} className="border-b border-line/40 last:border-0">
+                                                <td className="py-0.5 text-ink-dim">{shortDate(d.date)}</td>
+                                                <td className={`text-right font-mono ${lateMins > 0 ? "text-err" : "text-ink-dim"}`}>
+                                                  {lateMins > 0 ? formatMins(lateMins) : "—"}
+                                                  {d.is_late && !eff && <span className="text-ok ml-1">(perm)</span>}
+                                                </td>
+                                                <td className={`text-right font-mono ${d.ot_minutes > 0 ? "text-ok" : "text-ink-dim"}`}>
+                                                  {d.ot_minutes > 0 ? formatMins(d.ot_minutes) : "—"}
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  );
+                                })()}
                               </div>
 
                               <div className="border-t border-line pt-1.5 mt-1.5 space-y-1">

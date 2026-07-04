@@ -140,6 +140,7 @@
 - Monthly attendance summary: present days, late days, OT, leaves, deductions
 - **Salary increment history**: when admin saves a salary change from the monthly attendance edit panel, the old → new amount and effective month are recorded in `staff_salary_history`; history is shown inline below the edit form (date changed, old salary in red, new salary in green, effective month) — only future edits are tracked, past changes before this feature are not recorded
 - **Per-staff OT vs late fine**: each staff member has an "OT offsets late fine" flag (`equalize_ot` column on `staff` table, default false); when enabled, that staff's OT minutes cancel out their late minutes before fine is calculated — set via the pencil edit panel in the monthly attendance view; also respected in payroll's Load Attendance fine calculation
+- **Late & OT day breakdown**: in the expanded staff detail (per-minute fine mode), a "Late & OT — Day Breakdown" section always appears when a staff member has both late days and OT — shows Fine without OT offset (red) vs Fine with OT offset (green) side by side, plus a per-day table of late minutes and OT minutes so admin can see exact impact before deciding to enable the flag
 - Kiosk mode with bio-user sequence lock
 - Shop late-opening exceptions (shop_exceptions table)
 
