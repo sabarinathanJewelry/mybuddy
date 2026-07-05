@@ -101,6 +101,12 @@ export default function LoansPage() {
   const [deletePaymentId, setDeletePaymentId] = useState<string | null>(null);
   const [editPaymentId, setEditPaymentId]     = useState<string | null>(null);
   const [editPayForm, setEditPayForm] = useState({ pay_date: "", principal: 0, interest: 0, mode: "cash", notes: "" });
+  const [editLoanId, setEditLoanId]     = useState<string | null>(null);
+  const [editLoanForm, setEditLoanForm] = useState({
+    loan_date: "", kind: "local", lender: "", principal: 0,
+    interest_rate: 0, interest_period: "daily" as InterestPeriod,
+    tenure_months: 1, affects_cash: true, notes: "",
+  });
 
   const [form, setForm] = useState({
     loan_date: globalDate, kind: "local", lender: "",
@@ -249,6 +255,26 @@ export default function LoansPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["loans"] });
       setEditGroupLoanId(null);
+    },
+  });
+
+  const updateLoan = useMutation({
+    mutationFn: async ({ loan, lf }: { loan: any; lf: typeof editLoanForm }) => {
+      const client = supabase();
+      const principalDelta = lf.principal - Number(loan.principal);
+      const newOutstanding = Math.max(0, Number(loan.outstanding) + principalDelta);
+      const { error } = await client.from("loans").update({
+        loan_date: lf.loan_date, kind: lf.kind, lender: lf.lender,
+        principal: lf.principal, interest_rate: lf.interest_rate,
+        interest_period: lf.interest_period, tenure_months: lf.tenure_months,
+        affects_cash: lf.affects_cash, notes: lf.notes || null,
+        outstanding: newOutstanding,
+      }).eq("id", loan.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["loans"] });
+      setEditLoanId(null);
     },
   });
 
@@ -741,13 +767,109 @@ export default function LoansPage() {
                       <p className="text-xs text-ink-dim bg-canvas rounded-lg px-3 py-2">{l.notes}</p>
                     )}
 
+                    {/* Edit Loan */}
+                    {editLoanId === l.id && (
+                      <div className="border border-gold/30 rounded-xl p-4 bg-gold/5 space-y-3">
+                        <h3 className="text-sm font-semibold">Edit Loan</h3>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-medium text-ink-dim mb-1">Date</label>
+                            <input type="date" value={editLoanForm.loan_date}
+                              onChange={e => setEditLoanForm(f => ({ ...f, loan_date: e.target.value }))} className={inp} />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-ink-dim mb-1">Lender</label>
+                            <input type="text" value={editLoanForm.lender} required
+                              onChange={e => setEditLoanForm(f => ({ ...f, lender: e.target.value }))} className={inp} />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-ink-dim mb-1">Principal (₹)</label>
+                            <input type="number" step="0.01" value={editLoanForm.principal || ""}
+                              onFocus={e => e.target.select()}
+                              onChange={e => setEditLoanForm(f => ({ ...f, principal: parseFloat(e.target.value) || 0 }))} className={inp} />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-ink-dim mb-1">Kind</label>
+                            <select value={editLoanForm.kind}
+                              onChange={e => setEditLoanForm(f => ({ ...f, kind: e.target.value }))} className={inp}>
+                              {KINDS.map(k => <option key={k} value={k}>{k}</option>)}
+                            </select>
+                          </div>
+                          <div className="col-span-2">
+                            <label className="block text-xs font-medium text-ink-dim mb-1">Interest Rate</label>
+                            <div className="flex gap-2">
+                              <input type="number" step="0.0001" value={editLoanForm.interest_rate || ""}
+                                onChange={e => setEditLoanForm(f => ({ ...f, interest_rate: parseFloat(e.target.value) || 0 }))}
+                                className="flex-1 border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
+                                placeholder="e.g. 0.06" />
+                              <span className="flex items-center text-sm text-ink-dim px-1">%</span>
+                              <div className="flex rounded-lg2 overflow-hidden border border-line">
+                                {PERIODS.map(p => (
+                                  <button key={p.value} type="button"
+                                    onClick={() => setEditLoanForm(f => ({ ...f, interest_period: p.value }))}
+                                    className={clsx("px-3 py-2 text-xs font-medium transition-colors",
+                                      editLoanForm.interest_period === p.value ? "bg-gold text-white" : "bg-white text-ink-dim hover:bg-canvas")}>
+                                    {p.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-ink-dim mb-1">Tenure (months)</label>
+                            <input type="number" value={editLoanForm.tenure_months || ""}
+                              onChange={e => setEditLoanForm(f => ({ ...f, tenure_months: parseInt(e.target.value) || 1 }))} className={inp} />
+                          </div>
+                          <div className="flex flex-col justify-center">
+                            <label className="flex items-center gap-2 text-sm cursor-pointer">
+                              <input type="checkbox" checked={editLoanForm.affects_cash}
+                                onChange={e => setEditLoanForm(f => ({ ...f, affects_cash: e.target.checked }))} className="accent-gold w-4 h-4" />
+                              Affects cash balance
+                            </label>
+                          </div>
+                          <div className="col-span-2">
+                            <label className="block text-xs font-medium text-ink-dim mb-1">Notes</label>
+                            <input type="text" value={editLoanForm.notes}
+                              onChange={e => setEditLoanForm(f => ({ ...f, notes: e.target.value }))} className={inp} placeholder="Optional" />
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            disabled={updateLoan.isPending || !editLoanForm.lender || editLoanForm.principal <= 0}
+                            onClick={() => updateLoan.mutate({ loan: l, lf: editLoanForm })}
+                            className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
+                            {updateLoan.isPending ? "Saving…" : "Save Changes"}
+                          </button>
+                          <button onClick={() => setEditLoanId(null)}
+                            className="border border-line text-sm px-5 py-2 rounded-lg2">Cancel</button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="border-t border-line pt-3">
                       {deleteConfirmId !== l.id ? (
-                        <div className="flex justify-end">
+                        <div className="flex justify-between items-center">
+                          <button
+                            onClick={() => {
+                              setEditLoanId(l.id);
+                              setEditLoanForm({
+                                loan_date: l.loan_date, kind: l.kind, lender: l.lender,
+                                principal: Number(l.principal), interest_rate: Number(l.interest_rate),
+                                interest_period: (l.interest_period ?? "daily") as InterestPeriod,
+                                tenure_months: l.tenure_months ?? 1, affects_cash: !!l.affects_cash,
+                                notes: l.notes ?? "",
+                              });
+                              setDeleteConfirmId(null);
+                            }}
+                            className="text-xs text-gold hover:underline"
+                          >
+                            Edit this loan
+                          </button>
                           <button
                             onClick={() => {
                               setDeleteConfirmId(l.id);
                               setDeleteOpts({ removeLoanLedger: !!l.affects_cash, removePaymentLedger: (l.loan_payments?.length ?? 0) > 0 });
+                              setEditLoanId(null);
                             }}
                             className="text-xs text-err hover:underline"
                           >
