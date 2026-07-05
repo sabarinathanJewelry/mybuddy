@@ -129,7 +129,7 @@ export default function LoansPage() {
       if (data.affects_cash) {
         await supabase().from("cash_ledger").insert({
           tx_date: data.loan_date, direction: "in", amount: data.principal,
-          description: `Loan from ${data.lender}`, ref_type: "loan",
+          description: `Loan from ${data.lender}`, ref_type: "loan", ref_id: row.id,
         });
       }
       return row;
@@ -271,6 +271,18 @@ export default function LoansPage() {
         outstanding: newOutstanding,
       }).eq("id", loan.id);
       if (error) throw error;
+      // Remove old cash_ledger entry — match by ref_id (new loans) or by date+amount (old loans with NULL ref_id)
+      if (loan.affects_cash) {
+        await client.from("cash_ledger").delete().eq("ref_type", "loan").eq("ref_id", loan.id);
+        await client.from("cash_ledger").delete().eq("ref_type", "loan").eq("tx_date", loan.loan_date).eq("amount", Number(loan.principal));
+      }
+      // Insert updated entry if still affects cash
+      if (lf.affects_cash) {
+        await client.from("cash_ledger").insert({
+          tx_date: lf.loan_date, direction: "in", amount: lf.principal,
+          description: `Loan from ${lf.lender}`, ref_type: "loan", ref_id: loan.id,
+        });
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["loans"] });
