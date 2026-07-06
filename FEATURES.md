@@ -292,6 +292,7 @@
 - Expenses by Category: monthly expense breakdown
 - Metal Flow reports
 - Sales Breakdown: grams and revenue split by source — Ready Stock (shelf inventory) / Order Delivery (converted from orders) / From Suspense (supplier suspense items); shown per metal (gold/silver) with gross wt, net wt, item count, and revenue per bucket
+- **P&L Summary weight columns**: The Profit & Loss Summary table now shows Gold (g) and Silver (g) weight columns alongside each rupee figure — revenue rows show net wt sold, dispatch rows show grams sent, cut-rate rows show grams settled, bullion trading rows show grams sold; rows with no weight (GST, expenses, profit totals) show —
 
 ## Analytics Dashboard (`/admin/analytics`)
 
