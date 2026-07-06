@@ -683,13 +683,19 @@ export default function ReportsPage() {
   const cutRateSilvWt    = (cutRatePayments as any[]).filter((p: any) => (p.metal ?? "").startsWith("silver")).reduce((s: number, p: any) => s + Number(p.metal_wt || 0), 0);
   const cutRateGoldAmt   = (cutRatePayments as any[]).filter((p: any) => (p.metal ?? "").startsWith("gold")).reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
   const cutRateSilvAmt   = (cutRatePayments as any[]).filter((p: any) => (p.metal ?? "").startsWith("silver")).reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
-  // Combined per-metal purchase cost (WAC mode)
+  // Period acquisition cost: what was actually spent/credited this period to acquire metal
+  const periodGoldCostWt  = oldGoldBuyWt   + exchGoldWt  + cutRateGoldWt;
+  const periodSilvCostWt  = oldSilverBuyWt + exchSilvWt  + cutRateSilvWt;
+  const periodGoldCost    = oldGoldBuyAmt  + exchGoldVal + cutRateGoldAmt;
+  const periodSilvCost    = oldSilverBuyAmt + exchSilvVal + cutRateSilvAmt;
+
+  // WAC dispatch cost (kept for Metal Purchase Cost reference widget only)
   const goldPurchaseCost = dispatchGoldCost + cutRateGoldAmt;
   const silvPurchaseCost = dispatchSilvCost + cutRateSilvAmt;
   const goldPurchaseWt   = dispatchGoldWt   + cutRateGoldWt;
   const silvPurchaseWt   = dispatchSilvWt   + cutRateSilvWt;
 
-  // Total metal purchase cost in period
+  // Total WAC dispatch cost (for Metal Purchase Cost widget)
   const totalMetalPurchaseCost = dispatchGoldCost + dispatchSilvCost + cutRatePaid;
   const metalGrossMargin = totalRevenue - totalMetalPurchaseCost;
 
@@ -713,11 +719,11 @@ export default function ReportsPage() {
   const orderGoldValue   = goldOrderItems.reduce((s: number, i: any) => s + Number(i.amount || 0), 0);
   const orderSilverValue = silverOrderItems.reduce((s: number, i: any) => s + Number(i.amount || 0), 0);
 
-  // Effective P&L: use WAC-based metal cost when reserve data exists, else fall back to period purchases
+  // Effective P&L: period acquisition cost (actual cash+credits spent on metal this period)
   const hasWac = goldWAC > 0;
-  const effectivePurchaseCost  = hasWac ? totalMetalPurchaseCost : (supplierCogs + totalOldMetalCost);
-  const effectiveGrossProfit   = hasWac ? (metalGrossMargin + bullionTradingProfit) : (totalRevenue - supplierCogs - totalOldMetalCost);
-  const grossProfit   = totalRevenue - totalCogs; // kept for P&L summary fallback row
+  const effectivePurchaseCost  = hasWac ? (periodGoldCost + periodSilvCost) : (supplierCogs + totalOldMetalCost);
+  const effectiveGrossProfit   = hasWac ? (totalRevenue - periodGoldCost - periodSilvCost + bullionTradingProfit) : (totalRevenue - supplierCogs - totalOldMetalCost);
+  const grossProfit   = totalRevenue - totalCogs;
   const netProfit     = effectiveGrossProfit - totalExpenses;
 
   return (
@@ -780,7 +786,7 @@ export default function ReportsPage() {
             {[
               { label: "Revenue (excl GST)",                                       value: inr(totalRevenue),            color: "text-ink" },
               { label: "GST Collected",                                            value: inr(totalGst),                color: "text-warn" },
-              { label: hasWac ? "Metal Purchase Cost (WAC)" : "Supplier Purchases", value: inr(effectivePurchaseCost),  color: "text-err" },
+              { label: hasWac ? "Metal Cost (Period)" : "Supplier Purchases", value: inr(effectivePurchaseCost),  color: "text-err" },
               { label: hasWac ? "Bullion Trading Profit" : "Old Metal Bought",     value: hasWac ? inr(bullionTradingProfit) : inr(totalOldMetalCost), color: hasWac ? (bullionTradingProfit >= 0 ? "text-ok" : "text-err") : "text-err" },
               { label: "Gross Profit",                                             value: inr(effectiveGrossProfit),    color: effectiveGrossProfit >= 0 ? "text-ok" : "text-err" },
               { label: "Net Profit",                                               value: inr(netProfit),               color: netProfit >= 0 ? "text-ok" : "text-err" },
@@ -1134,7 +1140,7 @@ export default function ReportsPage() {
                 </div>
                 {/* Received in exchange */}
                 <div className="px-4 py-4 space-y-2">
-                  <p className="text-xs font-semibold text-ok">Received in Exchange (ASSET — not a P&L cost yet)</p>
+                  <p className="text-xs font-semibold text-err">Received in Exchange (COST — exchange credits deducted in P&L)</p>
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
                       <p className="text-xs text-ink-dim">Gold from exchanges</p>
@@ -1147,7 +1153,7 @@ export default function ReportsPage() {
                       <p className="text-xs text-ok font-medium">{inr(exchSilvVal)} credited to customers</p>
                     </div>
                   </div>
-                  <p className="text-xs text-ink-dim">This metal is now your raw material stock. When sold to supplier or refined+used, it will offset future COGS.</p>
+                  <p className="text-xs text-ink-dim">Exchange credit given to customer = cost of acquiring this metal. Included as period metal cost in P&L above.</p>
                 </div>
               </div>
             </div>
@@ -1165,17 +1171,19 @@ export default function ReportsPage() {
             </div>
             <div className="divide-y divide-line text-sm">
               {(hasWac ? [
-                { label: "Total Revenue (incl GST)",                                      value: gold.revenueInclGst + silver.revenueInclGst + mprRevenue, goldWt: gold.netWt,    silvWt: silver.netWt,  indent: false, bold: false, color: "" },
-                { label: "  Less: GST Collected",                                         value: -totalGst,              goldWt: null,                 silvWt: null,              indent: true,  bold: false, color: "text-warn" },
-                { label: "Net Revenue (excl GST)",                                        value: totalRevenue,           goldWt: gold.netWt,           silvWt: silver.netWt,      indent: false, bold: true,  color: "text-ink" },
-                { label: "  Less: Gold Purchase (dispatch + rate cut)",                   value: -goldPurchaseCost,      goldWt: goldPurchaseWt,       silvWt: null,              indent: true,  bold: false, color: "text-err", sub: `${grams(dispatchGoldWt)} dispatch + ${grams(cutRateGoldWt)} rate cut` },
-                ...(oldGoldBuyWt > 0 || exchGoldWt > 0 ? [{ label: "      Old gold purchased (period)", value: -(oldGoldBuyAmt + exchGoldVal), goldWt: oldGoldBuyWt + exchGoldWt, silvWt: null, indent: true, bold: false, color: "text-err", info: true, sub: `${grams(oldGoldBuyWt)} cash ₹${Math.round(oldGoldBuyAmt).toLocaleString("en-IN")} + ${grams(exchGoldWt)} exchange credits ₹${Math.round(exchGoldVal).toLocaleString("en-IN")} — embedded in WAC dispatch above` }] : []),
-                { label: "  Less: Silver Purchase (dispatch + rate cut)",                 value: -silvPurchaseCost,      goldWt: null,                 silvWt: silvPurchaseWt,    indent: true,  bold: false, color: "text-err", sub: `${grams(dispatchSilvWt)} dispatch + ${grams(cutRateSilvWt)} rate cut` },
-                ...(oldSilverBuyWt > 0 || exchSilvWt > 0 ? [{ label: "      Old silver purchased (period)", value: -(oldSilverBuyAmt + exchSilvVal), goldWt: null, silvWt: oldSilverBuyWt + exchSilvWt, indent: true, bold: false, color: "text-err", info: true, sub: `${grams(oldSilverBuyWt)} cash ₹${Math.round(oldSilverBuyAmt).toLocaleString("en-IN")} + ${grams(exchSilvWt)} exchange credits ₹${Math.round(exchSilvVal).toLocaleString("en-IN")} — embedded in WAC dispatch above` }] : []),
-                { label: "  Add: Bullion Trading Profit",                                 value: bullionTradingProfit,   goldWt: bullionSellGoldWt,    silvWt: bullionSellSilvWt, indent: true,  bold: false, color: bullionTradingProfit >= 0 ? "text-ok" : "text-err" },
-                { label: "Gross Profit",                                                  value: effectiveGrossProfit,   goldWt: null,                 silvWt: null,              indent: false, bold: true,  color: effectiveGrossProfit >= 0 ? "text-ok" : "text-err" },
-                { label: "  Less: Operating Expenses",                                    value: -totalExpenses,         goldWt: null,                 silvWt: null,              indent: true,  bold: false, color: "text-err" },
-                { label: "Net Profit",                                                    value: netProfit,              goldWt: null,                 silvWt: null,              indent: false, bold: true,  color: netProfit >= 0 ? "text-ok" : "text-err" },
+                { label: "Total Revenue (incl GST)",         value: gold.revenueInclGst + silver.revenueInclGst + mprRevenue, goldWt: gold.netWt, silvWt: silver.netWt, indent: false, bold: false, color: "" },
+                { label: "  Less: GST Collected",            value: -totalGst,            goldWt: null,             silvWt: null,            indent: true,  bold: false, color: "text-warn" },
+                { label: "Net Revenue (excl GST)",           value: totalRevenue,         goldWt: gold.netWt,       silvWt: silver.netWt,    indent: false, bold: true,  color: "text-ink" },
+                { label: "  Less: Gold Metal Cost (period)", value: -periodGoldCost,      goldWt: periodGoldCostWt, silvWt: null,            indent: true,  bold: false, color: "text-err",
+                  sub: `${grams(oldGoldBuyWt)} cash ₹${Math.round(oldGoldBuyAmt).toLocaleString("en-IN")} + ${grams(exchGoldWt)} exchange ₹${Math.round(exchGoldVal).toLocaleString("en-IN")}${cutRateGoldAmt > 0 ? ` + ${grams(cutRateGoldWt)} rate cut ₹${Math.round(cutRateGoldAmt).toLocaleString("en-IN")}` : ""}` },
+                ...(dispatchGoldWt > 0 ? [{ label: "      (Ref) Gold dispatched to supplier", value: -dispatchGoldCost, goldWt: dispatchGoldWt, silvWt: null, indent: true, bold: false, color: "text-err", info: true, sub: `${grams(dispatchGoldWt)} × ₹${Math.round(goldWAC).toLocaleString("en-IN")}/g all-time WAC — reference only` }] : []),
+                ...(periodSilvCost > 0 ? [{ label: "  Less: Silver Metal Cost (period)", value: -periodSilvCost, goldWt: null, silvWt: periodSilvCostWt, indent: true, bold: false, color: "text-err",
+                  sub: `${grams(oldSilverBuyWt)} cash ₹${Math.round(oldSilverBuyAmt).toLocaleString("en-IN")} + ${grams(exchSilvWt)} exchange ₹${Math.round(exchSilvVal).toLocaleString("en-IN")}${cutRateSilvAmt > 0 ? ` + ${grams(cutRateSilvWt)} rate cut ₹${Math.round(cutRateSilvAmt).toLocaleString("en-IN")}` : ""}` }] : []),
+                ...(dispatchSilvWt > 0 ? [{ label: "      (Ref) Silver dispatched to supplier", value: -dispatchSilvCost, goldWt: null, silvWt: dispatchSilvWt, indent: true, bold: false, color: "text-err", info: true, sub: `${grams(dispatchSilvWt)} × ₹${Math.round(silverWAC).toLocaleString("en-IN")}/g all-time WAC — reference only` }] : []),
+                { label: "  Add: Bullion Trading Profit",   value: bullionTradingProfit, goldWt: bullionSellGoldWt, silvWt: bullionSellSilvWt, indent: true, bold: false, color: bullionTradingProfit >= 0 ? "text-ok" : "text-err" },
+                { label: "Gross Profit",                    value: effectiveGrossProfit, goldWt: null, silvWt: null, indent: false, bold: true, color: effectiveGrossProfit >= 0 ? "text-ok" : "text-err" },
+                { label: "  Less: Operating Expenses",      value: -totalExpenses,       goldWt: null, silvWt: null, indent: true,  bold: false, color: "text-err" },
+                { label: "Net Profit",                      value: netProfit,            goldWt: null, silvWt: null, indent: false, bold: true, color: netProfit >= 0 ? "text-ok" : "text-err" },
               ] : [
                 { label: "Total Revenue (incl GST)",                                      value: gold.revenueInclGst + silver.revenueInclGst + mprRevenue, goldWt: gold.netWt, silvWt: silver.netWt, indent: false, bold: false, color: "" },
                 { label: "  Less: GST Collected",                                         value: -totalGst,                                     goldWt: null,                                  silvWt: null,                                   indent: true,  bold: false, color: "text-warn" },
