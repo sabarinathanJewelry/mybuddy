@@ -247,6 +247,22 @@ function useCutRatePayments(from: string, to: string) {
   });
 }
 
+// All-time rate cut payments for monthly breakdown view
+function useAllCutRates() {
+  return useQuery({
+    queryKey: ["all-cut-rates"],
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("supplier_payments")
+        .select("amount, metal, metal_wt, cut_rate, pay_date, suppliers(name)")
+        .eq("mode", "cut_rate")
+        .order("pay_date", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
 // Physical metal dispatches to suppliers/goldsmiths in the period
 function useMetalDispatches(from: string, to: string) {
   return useQuery({
@@ -615,6 +631,7 @@ export default function ReportsPage() {
   const { data: metalDispatches = [] }                              = useMetalDispatches(range.from, range.to);
   const { data: bullionSells = [] }                                 = useBullionSells(range.from, range.to);
   const { data: ordersReport = [] }                                 = useOrdersReport(range.from, range.to);
+  const { data: allCutRates = [] }                                  = useAllCutRates();
 
   const isLoading = loadingItems || loadingPurchases || loadingExpenses;
 
@@ -1452,6 +1469,71 @@ export default function ReportsPage() {
               </table>
             </div>
           )}
+
+          {/* Monthly Rate Cut Summary — all time */}
+          {(allCutRates as any[]).length > 0 && (() => {
+            const byMonth = new Map<string, { goldWt: number; silvWt: number; amount: number; suppliers: Set<string> }>();
+            for (const p of allCutRates as any[]) {
+              const ym  = (p.pay_date as string).slice(0, 7);
+              const cur = byMonth.get(ym) ?? { goldWt: 0, silvWt: 0, amount: 0, suppliers: new Set<string>() };
+              const isGold   = (p.metal ?? "").startsWith("gold");
+              const isSilver = (p.metal ?? "").startsWith("silver");
+              const wt  = Number(p.metal_wt || 0);
+              const amt = Number(p.amount || 0);
+              if (p.suppliers?.name) cur.suppliers.add(p.suppliers.name);
+              byMonth.set(ym, { goldWt: cur.goldWt + (isGold ? wt : 0), silvWt: cur.silvWt + (isSilver ? wt : 0), amount: cur.amount + amt, suppliers: cur.suppliers });
+            }
+            const rows = Array.from(byMonth.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+            const totalGoldWt = rows.reduce((s, [, r]) => s + r.goldWt, 0);
+            const totalSilvWt = rows.reduce((s, [, r]) => s + r.silvWt, 0);
+            const totalAmt    = rows.reduce((s, [, r]) => s + r.amount, 0);
+            return (
+              <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+                <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-gold bg-gold/5">
+                  Rate Cut — Monthly Gold Summary (All Time)
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                      <th className="text-left px-4 py-2">Month</th>
+                      <th className="text-right px-3 py-2">Gold (g)</th>
+                      <th className="text-right px-3 py-2">Silver (g)</th>
+                      <th className="text-right px-3 py-2">Cash Paid</th>
+                      <th className="text-left px-4 py-2">Supplier(s)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map(([ym, r]) => {
+                      const [y, m] = ym.split("-");
+                      const label  = `${MONTHS[Number(m) - 1]} ${y}`;
+                      return (
+                        <tr key={ym} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                          <td className="px-4 py-2.5 font-medium">{label}</td>
+                          <td className={clsx("px-3 py-2.5 text-right font-mono text-xs", r.goldWt > 0 ? "text-gold font-semibold" : "text-ink-dim")}>
+                            {r.goldWt > 0 ? grams(r.goldWt) : "—"}
+                          </td>
+                          <td className={clsx("px-3 py-2.5 text-right font-mono text-xs", r.silvWt > 0 ? "text-ink-mid" : "text-ink-dim")}>
+                            {r.silvWt > 0 ? grams(r.silvWt) : "—"}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono text-err">{inr(r.amount)}</td>
+                          <td className="px-4 py-2.5 text-ink-dim text-xs">{Array.from(r.suppliers).join(", ") || "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-canvas/50 border-t border-line font-semibold text-sm">
+                      <td className="px-4 py-2.5">Total ({rows.length} month{rows.length !== 1 ? "s" : ""})</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-xs text-gold">{grams(totalGoldWt)}</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-xs text-ink-mid">{totalSilvWt > 0 ? grams(totalSilvWt) : "—"}</td>
+                      <td className="px-3 py-2.5 text-right font-mono font-bold text-err">{inr(totalAmt)}</td>
+                      <td className="px-4 py-2.5" />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            );
+          })()}
 
           {/* Note about accuracy */}
           <div className="bg-canvas border border-line rounded-xl px-4 py-3 text-xs text-ink-dim space-y-1">
