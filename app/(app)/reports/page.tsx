@@ -190,18 +190,21 @@ function useSaleExchangePayments(from: string, to: string) {
   });
 }
 
-// Weighted average cost across ALL-TIME bullion buys + old metal intake (no date filter)
+// Weighted average cost across ALL-TIME bullion buys + old metal intake + exchange payments (no date filter)
 function useMetalWAC() {
   return useQuery({
     queryKey: ["metal-wac"],
     queryFn: async () => {
       const client = supabase();
-      const [{ data: bullion, error: e1 }, { data: intake, error: e2 }] = await Promise.all([
+      const [{ data: bullion, error: e1 }, { data: intake, error: e2 }, { data: exchPay, error: e3 }] = await Promise.all([
         client.from("bullion_trades").select("metal, pure_wt, total_amount").eq("trade_type", "buy"),
         client.from("old_metal_intake").select("metal, pure_wt, payout_amount").gt("payout_amount", 0),
+        // Exchange metal received in sales — cost = credit given to customer (metal_wt as proxy for pure_wt)
+        client.from("sale_payments").select("mode, amount, metal_wt").in("mode", ["old_gold", "old_silver"]).gt("amount", 0),
       ]);
       if (e1) throw e1;
       if (e2) throw e2;
+      if (e3) throw e3;
 
       function calcWac(items: { pure_wt: any; cost: any }[]) {
         const wt   = items.reduce((s, i) => s + Number(i.pure_wt || 0), 0);
@@ -210,12 +213,14 @@ function useMetalWAC() {
       }
 
       const goldItems = [
-        ...(bullion ?? []).filter(t => t.metal === "gold").map(t => ({ pure_wt: t.pure_wt, cost: t.total_amount })),
-        ...(intake  ?? []).filter(i => (i.metal as string).startsWith("gold")).map(i => ({ pure_wt: i.pure_wt, cost: i.payout_amount })),
+        ...(bullion  ?? []).filter(t => t.metal === "gold").map(t => ({ pure_wt: t.pure_wt, cost: t.total_amount })),
+        ...(intake   ?? []).filter(i => (i.metal as string).startsWith("gold")).map(i => ({ pure_wt: i.pure_wt, cost: i.payout_amount })),
+        ...(exchPay  ?? []).filter(p => p.mode === "old_gold").map(p => ({ pure_wt: p.metal_wt, cost: p.amount })),
       ];
       const silvItems = [
-        ...(bullion ?? []).filter(t => t.metal === "silver").map(t => ({ pure_wt: t.pure_wt, cost: t.total_amount })),
-        ...(intake  ?? []).filter(i => (i.metal as string).startsWith("silver")).map(i => ({ pure_wt: i.pure_wt, cost: i.payout_amount })),
+        ...(bullion  ?? []).filter(t => t.metal === "silver").map(t => ({ pure_wt: t.pure_wt, cost: t.total_amount })),
+        ...(intake   ?? []).filter(i => (i.metal as string).startsWith("silver")).map(i => ({ pure_wt: i.pure_wt, cost: i.payout_amount })),
+        ...(exchPay  ?? []).filter(p => p.mode === "old_silver").map(p => ({ pure_wt: p.metal_wt, cost: p.amount })),
       ];
 
       return { gold: calcWac(goldItems), silver: calcWac(silvItems) };
@@ -1171,15 +1176,13 @@ export default function ReportsPage() {
                 { label: "Net Profit",                                                    value: netProfit,              goldWt: null,                 silvWt: null,              indent: false, bold: true,  color: netProfit >= 0 ? "text-ok" : "text-err" },
               ] : [
                 { label: "Total Revenue (incl GST)",                                      value: gold.revenueInclGst + silver.revenueInclGst + mprRevenue, goldWt: gold.netWt, silvWt: silver.netWt, indent: false, bold: false, color: "" },
-                { label: "  Less: GST Collected",                                         value: -totalGst,              goldWt: null,                 silvWt: null,              indent: true,  bold: false, color: "text-warn" },
-                { label: "Net Revenue (excl GST)",                                        value: totalRevenue,           goldWt: gold.netWt,           silvWt: silver.netWt,      indent: false, bold: true,  color: "text-ink" },
-                { label: "  Less: Gold Supplier Purchases",                               value: -goldPurchases.amount,  goldWt: goldPurchases.grossWt, silvWt: null,             indent: true,  bold: false, color: "text-err" },
-                { label: "  Less: Silver Supplier Purchases",                             value: -silverPurchases.amount, goldWt: null,                silvWt: silverPurchases.grossWt, indent: true, bold: false, color: "text-err" },
-                { label: "  Less: Old Metal Purchased — Gold (cash)",                     value: -oldGoldBuyAmt,         goldWt: oldGoldBuyWt,         silvWt: null,              indent: true,  bold: false, color: "text-err" },
-                { label: "  Less: Old Metal Purchased — Silver (cash)",                   value: -oldSilverBuyAmt,       goldWt: null,                 silvWt: oldSilverBuyWt,    indent: true,  bold: false, color: "text-err" },
-                { label: "Gross Profit",                                                  value: grossProfit,            goldWt: null,                 silvWt: null,              indent: false, bold: true,  color: grossProfit >= 0 ? "text-ok" : "text-err" },
-                { label: "  Less: Operating Expenses",                                    value: -totalExpenses,         goldWt: null,                 silvWt: null,              indent: true,  bold: false, color: "text-err" },
-                { label: "Net Profit",                                                    value: netProfit,              goldWt: null,                 silvWt: null,              indent: false, bold: true,  color: netProfit >= 0 ? "text-ok" : "text-err" },
+                { label: "  Less: GST Collected",                                         value: -totalGst,                                     goldWt: null,                                  silvWt: null,                                   indent: true,  bold: false, color: "text-warn" },
+                { label: "Net Revenue (excl GST)",                                        value: totalRevenue,                                  goldWt: gold.netWt,                            silvWt: silver.netWt,                           indent: false, bold: true,  color: "text-ink" },
+                { label: "  Less: Gold Purchase (supplier + old metal)",                  value: -(goldPurchases.amount + oldGoldBuyAmt),       goldWt: goldPurchases.grossWt + oldGoldBuyWt,  silvWt: null,                                   indent: true,  bold: false, color: "text-err", sub: `Supplier: ${grams(goldPurchases.grossWt)} ₹${Math.round(goldPurchases.amount).toLocaleString("en-IN")}${oldGoldBuyAmt > 0 ? ` + Old metal: ${grams(oldGoldBuyWt)} ₹${Math.round(oldGoldBuyAmt).toLocaleString("en-IN")}` : ""}` },
+                { label: "  Less: Silver Purchase (supplier + old metal)",                value: -(silverPurchases.amount + oldSilverBuyAmt),   goldWt: null,                                  silvWt: silverPurchases.grossWt + oldSilverBuyWt, indent: true, bold: false, color: "text-err", sub: `Supplier: ${grams(silverPurchases.grossWt)} ₹${Math.round(silverPurchases.amount).toLocaleString("en-IN")}${oldSilverBuyAmt > 0 ? ` + Old metal: ${grams(oldSilverBuyWt)} ₹${Math.round(oldSilverBuyAmt).toLocaleString("en-IN")}` : ""}` },
+                { label: "Gross Profit",                                                  value: grossProfit,                                   goldWt: null,                                  silvWt: null,                                   indent: false, bold: true,  color: grossProfit >= 0 ? "text-ok" : "text-err" },
+                { label: "  Less: Operating Expenses",                                    value: -totalExpenses,                                goldWt: null,                                  silvWt: null,                                   indent: true,  bold: false, color: "text-err" },
+                { label: "Net Profit",                                                    value: netProfit,                                     goldWt: null,                                  silvWt: null,                                   indent: false, bold: true,  color: netProfit >= 0 ? "text-ok" : "text-err" },
               ]).map((row, i) => (
                 <div key={i} className={clsx("grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-6 px-4 py-3", row.bold && "bg-canvas/50")}>
                   <span className={clsx(row.indent && "pl-4", row.bold && "font-semibold")}>
