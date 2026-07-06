@@ -676,6 +676,13 @@ export default function ReportsPage() {
   const cutRateGrams     = (cutRatePayments as any[]).reduce((s: number, p: any) => s + Number(p.metal_wt || 0), 0);
   const cutRateGoldWt    = (cutRatePayments as any[]).filter((p: any) => (p.metal ?? "").startsWith("gold")).reduce((s: number, p: any) => s + Number(p.metal_wt || 0), 0);
   const cutRateSilvWt    = (cutRatePayments as any[]).filter((p: any) => (p.metal ?? "").startsWith("silver")).reduce((s: number, p: any) => s + Number(p.metal_wt || 0), 0);
+  const cutRateGoldAmt   = (cutRatePayments as any[]).filter((p: any) => (p.metal ?? "").startsWith("gold")).reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
+  const cutRateSilvAmt   = (cutRatePayments as any[]).filter((p: any) => (p.metal ?? "").startsWith("silver")).reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
+  // Combined per-metal purchase cost (WAC mode)
+  const goldPurchaseCost = dispatchGoldCost + cutRateGoldAmt;
+  const silvPurchaseCost = dispatchSilvCost + cutRateSilvAmt;
+  const goldPurchaseWt   = dispatchGoldWt   + cutRateGoldWt;
+  const silvPurchaseWt   = dispatchSilvWt   + cutRateSilvWt;
 
   // Total metal purchase cost in period
   const totalMetalPurchaseCost = dispatchGoldCost + dispatchSilvCost + cutRatePaid;
@@ -1153,27 +1160,34 @@ export default function ReportsPage() {
             </div>
             <div className="divide-y divide-line text-sm">
               {(hasWac ? [
-                { label: "Total Revenue (incl GST)",                          value: gold.revenueInclGst + silver.revenueInclGst + mprRevenue, goldWt: gold.netWt,          silvWt: silver.netWt,         indent: false, bold: false, color: "" },
-                { label: "  Less: GST Collected",                             value: -totalGst,                  goldWt: null,                   silvWt: null,                 indent: true,  bold: false, color: "text-warn" },
-                { label: "Net Revenue (excl GST)",                            value: totalRevenue,                goldWt: gold.netWt,          silvWt: silver.netWt,         indent: false, bold: true,  color: "text-ink" },
-                { label: "  Less: Metal Dispatched to Suppliers (at WAC)",    value: -(dispatchGoldCost + dispatchSilvCost), goldWt: dispatchGoldWt, silvWt: dispatchSilvWt, indent: true, bold: false, color: "text-err" },
-                { label: "  Less: Rate Cut Payments (cash)",                  value: -cutRatePaid,               goldWt: cutRateGoldWt || (cutRateGrams > 0 ? cutRateGrams : null), silvWt: cutRateSilvWt || null, indent: true, bold: false, color: "text-err" },
-                { label: "  Add: Bullion Trading Profit",                     value: bullionTradingProfit,       goldWt: bullionSellGoldWt,   silvWt: bullionSellSilvWt,    indent: true,  bold: false, color: bullionTradingProfit >= 0 ? "text-ok" : "text-err" },
-                { label: "Gross Profit",                                      value: effectiveGrossProfit,       goldWt: null,                   silvWt: null,                 indent: false, bold: true,  color: effectiveGrossProfit >= 0 ? "text-ok" : "text-err" },
-                { label: "  Less: Operating Expenses",                        value: -totalExpenses,             goldWt: null,                   silvWt: null,                 indent: true,  bold: false, color: "text-err" },
-                { label: "Net Profit",                                        value: netProfit,                  goldWt: null,                   silvWt: null,                 indent: false, bold: true,  color: netProfit >= 0 ? "text-ok" : "text-err" },
+                { label: "Total Revenue (incl GST)",                                      value: gold.revenueInclGst + silver.revenueInclGst + mprRevenue, goldWt: gold.netWt,    silvWt: silver.netWt,  indent: false, bold: false, color: "" },
+                { label: "  Less: GST Collected",                                         value: -totalGst,              goldWt: null,                 silvWt: null,              indent: true,  bold: false, color: "text-warn" },
+                { label: "Net Revenue (excl GST)",                                        value: totalRevenue,           goldWt: gold.netWt,           silvWt: silver.netWt,      indent: false, bold: true,  color: "text-ink" },
+                { label: "  Less: Gold Purchase (dispatch + rate cut)",                   value: -goldPurchaseCost,      goldWt: goldPurchaseWt,       silvWt: null,              indent: true,  bold: false, color: "text-err", sub: `${grams(dispatchGoldWt)} dispatch + ${grams(cutRateGoldWt)} rate cut` },
+                { label: "  Less: Silver Purchase (dispatch + rate cut)",                 value: -silvPurchaseCost,      goldWt: null,                 silvWt: silvPurchaseWt,    indent: true,  bold: false, color: "text-err", sub: `${grams(dispatchSilvWt)} dispatch + ${grams(cutRateSilvWt)} rate cut` },
+                { label: "  Add: Bullion Trading Profit",                                 value: bullionTradingProfit,   goldWt: bullionSellGoldWt,    silvWt: bullionSellSilvWt, indent: true,  bold: false, color: bullionTradingProfit >= 0 ? "text-ok" : "text-err" },
+                { label: "Gross Profit",                                                  value: effectiveGrossProfit,   goldWt: null,                 silvWt: null,              indent: false, bold: true,  color: effectiveGrossProfit >= 0 ? "text-ok" : "text-err" },
+                { label: "  Less: Operating Expenses",                                    value: -totalExpenses,         goldWt: null,                 silvWt: null,              indent: true,  bold: false, color: "text-err" },
+                { label: "Net Profit",                                                    value: netProfit,              goldWt: null,                 silvWt: null,              indent: false, bold: true,  color: netProfit >= 0 ? "text-ok" : "text-err" },
               ] : [
-                { label: "Total Revenue (incl GST)",                          value: gold.revenueInclGst + silver.revenueInclGst + mprRevenue, goldWt: gold.netWt, silvWt: silver.netWt, indent: false, bold: false, color: "" },
-                { label: "  Less: GST Collected",                             value: -totalGst,                  goldWt: null,              silvWt: null,                indent: true,  bold: false, color: "text-warn" },
-                { label: "Net Revenue (excl GST)",                            value: totalRevenue,                goldWt: gold.netWt,        silvWt: silver.netWt,        indent: false, bold: true,  color: "text-ink" },
-                { label: "  Less: Supplier Purchases",                        value: -supplierCogs,              goldWt: goldPurchases.grossWt, silvWt: silverPurchases.grossWt, indent: true, bold: false, color: "text-err" },
-                { label: "  Less: Old Metal Purchased (cash)",                value: -totalOldMetalCost,         goldWt: oldGoldBuyWt,      silvWt: oldSilverBuyWt,      indent: true,  bold: false, color: "text-err" },
-                { label: "Gross Profit",                                      value: grossProfit,                goldWt: null,              silvWt: null,                indent: false, bold: true,  color: grossProfit >= 0 ? "text-ok" : "text-err" },
-                { label: "  Less: Operating Expenses",                        value: -totalExpenses,             goldWt: null,              silvWt: null,                indent: true,  bold: false, color: "text-err" },
-                { label: "Net Profit",                                        value: netProfit,                  goldWt: null,              silvWt: null,                indent: false, bold: true,  color: netProfit >= 0 ? "text-ok" : "text-err" },
+                { label: "Total Revenue (incl GST)",                                      value: gold.revenueInclGst + silver.revenueInclGst + mprRevenue, goldWt: gold.netWt, silvWt: silver.netWt, indent: false, bold: false, color: "" },
+                { label: "  Less: GST Collected",                                         value: -totalGst,              goldWt: null,                 silvWt: null,              indent: true,  bold: false, color: "text-warn" },
+                { label: "Net Revenue (excl GST)",                                        value: totalRevenue,           goldWt: gold.netWt,           silvWt: silver.netWt,      indent: false, bold: true,  color: "text-ink" },
+                { label: "  Less: Gold Supplier Purchases",                               value: -goldPurchases.amount,  goldWt: goldPurchases.grossWt, silvWt: null,             indent: true,  bold: false, color: "text-err" },
+                { label: "  Less: Silver Supplier Purchases",                             value: -silverPurchases.amount, goldWt: null,                silvWt: silverPurchases.grossWt, indent: true, bold: false, color: "text-err" },
+                { label: "  Less: Old Metal Purchased — Gold (cash)",                     value: -oldGoldBuyAmt,         goldWt: oldGoldBuyWt,         silvWt: null,              indent: true,  bold: false, color: "text-err" },
+                { label: "  Less: Old Metal Purchased — Silver (cash)",                   value: -oldSilverBuyAmt,       goldWt: null,                 silvWt: oldSilverBuyWt,    indent: true,  bold: false, color: "text-err" },
+                { label: "Gross Profit",                                                  value: grossProfit,            goldWt: null,                 silvWt: null,              indent: false, bold: true,  color: grossProfit >= 0 ? "text-ok" : "text-err" },
+                { label: "  Less: Operating Expenses",                                    value: -totalExpenses,         goldWt: null,                 silvWt: null,              indent: true,  bold: false, color: "text-err" },
+                { label: "Net Profit",                                                    value: netProfit,              goldWt: null,                 silvWt: null,              indent: false, bold: true,  color: netProfit >= 0 ? "text-ok" : "text-err" },
               ]).map((row, i) => (
                 <div key={i} className={clsx("grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-6 px-4 py-3", row.bold && "bg-canvas/50")}>
-                  <span className={clsx(row.indent && "pl-4 text-ink-dim", row.bold && "font-semibold")}>{row.label}</span>
+                  <span className={clsx(row.indent && "pl-4", row.bold && "font-semibold")}>
+                    <span className={clsx(row.indent && "text-ink-dim")}>{row.label}</span>
+                    {"sub" in row && row.sub && (
+                      <span className="block text-[10px] text-ink-dim/60 font-normal">{row.sub}</span>
+                    )}
+                  </span>
                   <span className="font-mono text-xs text-right w-20 text-gold">
                     {row.goldWt != null && row.goldWt > 0 ? grams(row.goldWt) : <span className="text-ink-dim/40">—</span>}
                   </span>
