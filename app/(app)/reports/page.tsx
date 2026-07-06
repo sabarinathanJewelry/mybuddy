@@ -1169,7 +1169,9 @@ export default function ReportsPage() {
                 { label: "  Less: GST Collected",                                         value: -totalGst,              goldWt: null,                 silvWt: null,              indent: true,  bold: false, color: "text-warn" },
                 { label: "Net Revenue (excl GST)",                                        value: totalRevenue,           goldWt: gold.netWt,           silvWt: silver.netWt,      indent: false, bold: true,  color: "text-ink" },
                 { label: "  Less: Gold Purchase (dispatch + rate cut)",                   value: -goldPurchaseCost,      goldWt: goldPurchaseWt,       silvWt: null,              indent: true,  bold: false, color: "text-err", sub: `${grams(dispatchGoldWt)} dispatch + ${grams(cutRateGoldWt)} rate cut` },
+                ...(oldGoldBuyWt > 0 || exchGoldWt > 0 ? [{ label: "      Old gold purchased (period)", value: -(oldGoldBuyAmt + exchGoldVal), goldWt: oldGoldBuyWt + exchGoldWt, silvWt: null, indent: true, bold: false, color: "text-err", info: true, sub: `${grams(oldGoldBuyWt)} cash ₹${Math.round(oldGoldBuyAmt).toLocaleString("en-IN")} + ${grams(exchGoldWt)} exchange credits ₹${Math.round(exchGoldVal).toLocaleString("en-IN")} — embedded in WAC dispatch above` }] : []),
                 { label: "  Less: Silver Purchase (dispatch + rate cut)",                 value: -silvPurchaseCost,      goldWt: null,                 silvWt: silvPurchaseWt,    indent: true,  bold: false, color: "text-err", sub: `${grams(dispatchSilvWt)} dispatch + ${grams(cutRateSilvWt)} rate cut` },
+                ...(oldSilverBuyWt > 0 || exchSilvWt > 0 ? [{ label: "      Old silver purchased (period)", value: -(oldSilverBuyAmt + exchSilvVal), goldWt: null, silvWt: oldSilverBuyWt + exchSilvWt, indent: true, bold: false, color: "text-err", info: true, sub: `${grams(oldSilverBuyWt)} cash ₹${Math.round(oldSilverBuyAmt).toLocaleString("en-IN")} + ${grams(exchSilvWt)} exchange credits ₹${Math.round(exchSilvVal).toLocaleString("en-IN")} — embedded in WAC dispatch above` }] : []),
                 { label: "  Add: Bullion Trading Profit",                                 value: bullionTradingProfit,   goldWt: bullionSellGoldWt,    silvWt: bullionSellSilvWt, indent: true,  bold: false, color: bullionTradingProfit >= 0 ? "text-ok" : "text-err" },
                 { label: "Gross Profit",                                                  value: effectiveGrossProfit,   goldWt: null,                 silvWt: null,              indent: false, bold: true,  color: effectiveGrossProfit >= 0 ? "text-ok" : "text-err" },
                 { label: "  Less: Operating Expenses",                                    value: -totalExpenses,         goldWt: null,                 silvWt: null,              indent: true,  bold: false, color: "text-err" },
@@ -1183,25 +1185,32 @@ export default function ReportsPage() {
                 { label: "Gross Profit",                                                  value: grossProfit,                                   goldWt: null,                                  silvWt: null,                                   indent: false, bold: true,  color: grossProfit >= 0 ? "text-ok" : "text-err" },
                 { label: "  Less: Operating Expenses",                                    value: -totalExpenses,                                goldWt: null,                                  silvWt: null,                                   indent: true,  bold: false, color: "text-err" },
                 { label: "Net Profit",                                                    value: netProfit,                                     goldWt: null,                                  silvWt: null,                                   indent: false, bold: true,  color: netProfit >= 0 ? "text-ok" : "text-err" },
-              ]).map((row, i) => (
-                <div key={i} className={clsx("grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-6 px-4 py-3", row.bold && "bg-canvas/50")}>
-                  <span className={clsx(row.indent && "pl-4", row.bold && "font-semibold")}>
-                    <span className={clsx(row.indent && "text-ink-dim")}>{row.label}</span>
-                    {"sub" in row && row.sub && (
-                      <span className="block text-[10px] text-ink-dim/60 font-normal">{row.sub}</span>
-                    )}
-                  </span>
-                  <span className="font-mono text-xs text-right w-20 text-gold">
-                    {row.goldWt != null && row.goldWt > 0 ? grams(row.goldWt) : <span className="text-ink-dim/40">—</span>}
-                  </span>
-                  <span className="font-mono text-xs text-right w-20 text-ink-mid">
-                    {row.silvWt != null && row.silvWt > 0 ? grams(row.silvWt) : <span className="text-ink-dim/40">—</span>}
-                  </span>
-                  <span className={clsx("font-mono text-right w-28", row.bold && "text-base font-bold", row.color)}>
-                    {row.value < 0 ? `(${inr(Math.abs(row.value))})` : inr(row.value)}
-                  </span>
-                </div>
-              ))}
+              ]).map((row, i) => {
+                const isInfo = "info" in row && row.info;
+                return (
+                  <div key={i} className={clsx(
+                    "grid grid-cols-[1fr_auto_auto_auto] items-center gap-x-6 px-4",
+                    isInfo ? "py-1.5 bg-canvas/30 border-l-2 border-gold/30 ml-4" : "py-3",
+                    row.bold && "bg-canvas/50",
+                  )}>
+                    <span className={clsx(row.indent && "pl-4", row.bold && "font-semibold")}>
+                      <span className={clsx(isInfo ? "text-xs text-ink-dim" : row.indent && "text-ink-dim")}>{row.label}</span>
+                      {"sub" in row && row.sub && (
+                        <span className="block text-[10px] text-ink-dim/50 font-normal">{row.sub}</span>
+                      )}
+                    </span>
+                    <span className={clsx("font-mono text-right w-20", isInfo ? "text-[11px] text-gold/70" : "text-xs text-gold")}>
+                      {row.goldWt != null && row.goldWt > 0 ? grams(row.goldWt) : <span className="text-ink-dim/40">—</span>}
+                    </span>
+                    <span className={clsx("font-mono text-right w-20", isInfo ? "text-[11px] text-ink-mid/70" : "text-xs text-ink-mid")}>
+                      {row.silvWt != null && row.silvWt > 0 ? grams(row.silvWt) : <span className="text-ink-dim/40">—</span>}
+                    </span>
+                    <span className={clsx("font-mono text-right w-28", row.bold && "text-base font-bold", isInfo ? "text-[11px] text-ink-dim" : row.color)}>
+                      {isInfo ? `(${inr(Math.abs(row.value))})` : row.value < 0 ? `(${inr(Math.abs(row.value))})` : inr(row.value)}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 

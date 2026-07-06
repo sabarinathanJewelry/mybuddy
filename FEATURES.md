@@ -294,6 +294,7 @@
 - Sales Breakdown: grams and revenue split by source — Ready Stock (shelf inventory) / Order Delivery (converted from orders) / From Suspense (supplier suspense items); shown per metal (gold/silver) with gross wt, net wt, item count, and revenue per bucket
 - **P&L Summary weight columns**: Gold (g) and Silver (g) columns alongside each rupee figure; WAC mode: "Gold Purchase (dispatch + rate cut)" and "Silver Purchase (dispatch + rate cut)" per-metal lines; non-WAC mode: "Gold Purchase (supplier + old metal)" and "Silver Purchase (supplier + old metal)" combined per-metal lines with sub-note showing the split — prevents double-counting when old/exchange metal sent to supplier appears in both tables
 - **Exchange metal in WAC**: `sale_payments` old_gold/old_silver exchange receipts (at credited amount) are now included in the all-time WAC pool alongside bullion buys and standalone old metal intake — ensures dispatch cost for exchange metal correctly reflects its acquisition cost rather than an inflated WAC
+- **Old/exchange cost visibility in WAC P&L**: Under each "Less: Gold/Silver Purchase" line, a secondary info row shows the period's old metal purchased (cash) + exchange credits given — weight and amount — labeled "embedded in WAC dispatch above" so costs are visible without double-counting the P&L deduction
 
 ## Analytics Dashboard (`/admin/analytics`)
 
