@@ -229,6 +229,7 @@ function useMetalWAC() {
 }
 
 // Cut rate payments settled in the selected period
+// Note: supplier_payments has no "metal" column yet — all cut_rate payments are gold
 function useCutRatePayments(from: string, to: string) {
   return useQuery({
     queryKey: ["cut-rate-payments", from, to],
@@ -236,7 +237,7 @@ function useCutRatePayments(from: string, to: string) {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("supplier_payments")
-        .select("amount, metal, metal_wt, cut_rate, pay_date, suppliers(name)")
+        .select("amount, metal_wt, cut_rate, pay_date, suppliers(name)")
         .eq("mode", "cut_rate")
         .gte("pay_date", from)
         .lte("pay_date", to)
@@ -254,7 +255,7 @@ function useAllCutRates() {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("supplier_payments")
-        .select("amount, metal, metal_wt, cut_rate, pay_date, suppliers(name)")
+        .select("amount, metal_wt, cut_rate, pay_date, suppliers(name)")
         .eq("mode", "cut_rate")
         .order("pay_date", { ascending: false });
       if (error) throw error;
@@ -693,13 +694,13 @@ export default function ReportsPage() {
   const dispatchGoldCost = dispatchGoldWt * goldWAC;
   const dispatchSilvCost = dispatchSilvWt * silverWAC;
 
-  // Rate cut payments → cost = amount paid (the cash IS the purchase price, not WAC)
-  const cutRatePaid      = (cutRatePayments as any[]).reduce((s: number, p: any) => s + Number(p.amount   || 0), 0);
-  const cutRateGrams     = (cutRatePayments as any[]).reduce((s: number, p: any) => s + Number(p.metal_wt || 0), 0);
-  const cutRateGoldWt    = (cutRatePayments as any[]).filter((p: any) => (p.metal ?? "").startsWith("gold")).reduce((s: number, p: any) => s + Number(p.metal_wt || 0), 0);
-  const cutRateSilvWt    = (cutRatePayments as any[]).filter((p: any) => (p.metal ?? "").startsWith("silver")).reduce((s: number, p: any) => s + Number(p.metal_wt || 0), 0);
-  const cutRateGoldAmt   = (cutRatePayments as any[]).filter((p: any) => (p.metal ?? "").startsWith("gold")).reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
-  const cutRateSilvAmt   = (cutRatePayments as any[]).filter((p: any) => (p.metal ?? "").startsWith("silver")).reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
+  // Rate cut payments → all treated as gold (supplier_payments has no metal column yet)
+  const cutRatePaid    = (cutRatePayments as any[]).reduce((s: number, p: any) => s + Number(p.amount   || 0), 0);
+  const cutRateGrams   = (cutRatePayments as any[]).reduce((s: number, p: any) => s + Number(p.metal_wt || 0), 0);
+  const cutRateGoldWt  = cutRateGrams;
+  const cutRateSilvWt  = 0;
+  const cutRateGoldAmt = cutRatePaid;
+  const cutRateSilvAmt = 0;
   // Period acquisition cost: what was actually spent/credited this period to acquire metal
   const periodGoldCostWt  = oldGoldBuyWt   + exchGoldWt  + cutRateGoldWt;
   const periodSilvCostWt  = oldSilverBuyWt + exchSilvWt  + cutRateSilvWt;
@@ -1482,12 +1483,11 @@ export default function ReportsPage() {
             for (const p of allCutRates as any[]) {
               const ym  = (p.pay_date as string).slice(0, 7);
               const cur = byMonth.get(ym) ?? { goldWt: 0, silvWt: 0, amount: 0, suppliers: new Set<string>() };
-              const isGold   = (p.metal ?? "").startsWith("gold");
-              const isSilver = (p.metal ?? "").startsWith("silver");
               const wt  = Number(p.metal_wt || 0);
               const amt = Number(p.amount || 0);
               if (p.suppliers?.name) cur.suppliers.add(p.suppliers.name);
-              byMonth.set(ym, { goldWt: cur.goldWt + (isGold ? wt : 0), silvWt: cur.silvWt + (isSilver ? wt : 0), amount: cur.amount + amt, suppliers: cur.suppliers });
+              // All cut_rate payments are gold (no metal column in supplier_payments yet)
+              byMonth.set(ym, { goldWt: cur.goldWt + wt, silvWt: cur.silvWt, amount: cur.amount + amt, suppliers: cur.suppliers });
             }
             const rows = Array.from(byMonth.entries()).sort((a, b) => b[0].localeCompare(a[0]));
             const totalGoldWt = rows.reduce((s, [, r]) => s + r.goldWt, 0);
