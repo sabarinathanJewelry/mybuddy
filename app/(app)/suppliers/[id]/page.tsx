@@ -1875,6 +1875,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                 <th className="text-left px-3 py-2.5">{t("date")}</th>
                 <th className="text-left px-3 py-2.5">Description</th>
                 <th className="text-right px-3 py-2.5">Gross</th>
+                <th className="text-right px-3 py-2.5 hidden sm:table-cell">Sold Touch</th>
+                <th className="text-right px-3 py-2.5 hidden sm:table-cell">Cost Touch</th>
                 <th className="text-right px-3 py-2.5">Cash Total</th>
                 <th className="text-right px-3 py-2.5">Pure Wt Owed</th>
                 <th className="px-3 py-2.5"></th>
@@ -1898,6 +1900,16 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                       <td className="px-3 py-2.5 text-ink-dim">{shortDate(s.bill_date)}</td>
                       <td className="px-3 py-2.5">{s.description}</td>
                       <td className="px-3 py-2.5 text-right">{grams(s.gross_wt ?? 0)}</td>
+                      <td className="px-3 py-2.5 text-right hidden sm:table-cell">
+                        {s.purity_pct
+                          ? <span className="text-ink font-mono">{Number(s.purity_pct).toFixed(1)}%</span>
+                          : <span className="text-ink-dim">—</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-right hidden sm:table-cell">
+                        {s.supplier_va_pct > 0
+                          ? <span className={`font-mono font-semibold ${s.supplier_va_pct < (s.purity_pct ?? 0) ? "text-ok" : "text-warn"}`}>{Number(s.supplier_va_pct).toFixed(1)}%</span>
+                          : <span className="text-ink-dim">—</span>}
+                      </td>
                       <td className="px-3 py-2.5 text-right">
                         {s.supplier_cash_amt > 0
                           ? <span className="font-mono text-ink">{inr(s.supplier_cash_amt)}</span>

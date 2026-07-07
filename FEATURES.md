@@ -47,7 +47,7 @@
 - Supplier list with search
 - Edit opening balance (₹ + gold g + silver g)
 - Supplier detail: purchase history, payments
-- Suspense tab: set cash bill amount + record partial payment in one step; balance shown live; Metal VA% optional alongside
+- Suspense tab: set cash bill amount + record partial payment in one step; balance shown live; Metal VA% optional alongside; **Sold Touch** and **Cost Touch** columns — sold touch = item purity_pct from bill, cost touch = supplier_va_pct set at settlement (green when cost < sold = metal profit, orange when cost ≥ sold)
 - Suspense tab: multi-select items with checkboxes → batch settle with total gross, total pure wt, average purity summary + one combined cash payment
 - **Suspense → Purchase**: confirmed suspense items (VA% set) show "→ Purchase" button; clicking creates a `supplier_purchases` row (metal balance, pure wt = gross × VA%) and marks item as converted; converted items show "✓ In Purchases" badge and are excluded from metal owed calc; migration 123
 - Suspense cash amounts flow into supplier Cash Balance (formula includes supplier_cash_amt; ledger shows suspense entries chronologically)
