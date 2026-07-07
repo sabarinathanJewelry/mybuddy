@@ -637,13 +637,14 @@ export default function ReportsPage() {
   const isLoading = loadingItems || loadingPurchases || loadingExpenses;
 
   // Old metal purchase totals (cash paid to buy old gold/silver from public)
-  const oldGoldBuyAmt    = (oldMetalBuys as any[]).filter(x => (x.metal ?? "").startsWith("gold")).reduce((s, x) => s + Number(x.payout_amount || 0), 0);
-  const oldSilverBuyAmt  = (oldMetalBuys as any[]).filter(x => (x.metal ?? "").startsWith("silver")).reduce((s, x) => s + Number(x.payout_amount || 0), 0);
-  const oldGoldBuyWt     = (oldMetalBuys as any[]).filter(x => (x.metal ?? "").startsWith("gold")).reduce((s, x) => s + Number(x.gross_wt || 0), 0);
-  const oldSilverBuyWt   = (oldMetalBuys as any[]).filter(x => (x.metal ?? "").startsWith("silver")).reduce((s, x) => s + Number(x.gross_wt || 0), 0);
+  const oldGoldBuyAmt     = (oldMetalBuys as any[]).filter(x => (x.metal ?? "").startsWith("gold")).reduce((s, x) => s + Number(x.payout_amount || 0), 0);
+  const oldSilverBuyAmt   = (oldMetalBuys as any[]).filter(x => (x.metal ?? "").startsWith("silver")).reduce((s, x) => s + Number(x.payout_amount || 0), 0);
+  const oldGoldBuyWt      = (oldMetalBuys as any[]).filter(x => (x.metal ?? "").startsWith("gold")).reduce((s, x) => s + Number(x.gross_wt || 0), 0);
+  const oldSilverBuyWt    = (oldMetalBuys as any[]).filter(x => (x.metal ?? "").startsWith("silver")).reduce((s, x) => s + Number(x.gross_wt || 0), 0);
+  const oldGoldBuyPureWt  = (oldMetalBuys as any[]).filter(x => (x.metal ?? "").startsWith("gold")).reduce((s, x) => s + Number(x.pure_wt || 0), 0);
   const totalOldMetalCost = oldGoldBuyAmt + oldSilverBuyAmt;
 
-  // Exchange metal received in sales (ASSETS — not a cost in this period)
+  // Exchange metal received in sales
   const exchGoldWt  = (exchangePayments as any[]).filter(x => x.mode === "old_gold").reduce((s, x) => s + Number(x.metal_wt || 0), 0);
   const exchSilvWt  = (exchangePayments as any[]).filter(x => x.mode === "old_silver").reduce((s, x) => s + Number(x.metal_wt || 0), 0);
   const exchGoldVal = (exchangePayments as any[]).filter(x => x.mode === "old_gold").reduce((s, x) => s + Number(x.amount || 0), 0);
@@ -652,6 +653,11 @@ export default function ReportsPage() {
   // Computed sections
   const gold   = metalSection(items, GOLD_METALS);
   const silver = metalSection(items, SILVER_METALS);
+
+  // Touch analysis (must come after gold is computed)
+  const avgSoldTouchPct = gold.grossWt    > 0 ? (gold.pureWt / gold.grossWt) * 100 : 0;
+  const avgCostTouchPct = oldGoldBuyWt    > 0 ? (oldGoldBuyPureWt / oldGoldBuyWt) * 100 : 0;
+  const touchSpreadPct  = avgSoldTouchPct - avgCostTouchPct;
   const mprItems = items.filter(i => i.metal === "silver_mpr");
   const mprRevenue = mprItems.reduce((s, i) => s + Number(i.line_total||0), 0);
 
@@ -815,6 +821,53 @@ export default function ReportsPage() {
               </div>
             ))}
           </div>
+
+          {/* Touch Analysis */}
+          {(avgSoldTouchPct > 0 || avgCostTouchPct > 0) && (
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+              <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-gold bg-gold/5">
+                Gold Touch Analysis — {MONTHS[month - 1]} {year}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-line text-sm">
+                <div className="px-4 py-4">
+                  <p className="text-xs text-ink-dim mb-1">Avg Sold Touch</p>
+                  <p className="text-2xl font-bold text-gold">{avgSoldTouchPct > 0 ? avgSoldTouchPct.toFixed(2) : "—"}<span className="text-sm font-normal text-ink-dim ml-0.5">%</span></p>
+                  <p className="text-xs text-ink-dim mt-1">{grams(gold.grossWt)} gross → {grams(gold.pureWt)} pure</p>
+                </div>
+                <div className="px-4 py-4">
+                  <p className="text-xs text-ink-dim mb-1">Avg Cost Touch (old metal bought)</p>
+                  <p className="text-2xl font-bold text-ink">{avgCostTouchPct > 0 ? avgCostTouchPct.toFixed(2) : "—"}<span className="text-sm font-normal text-ink-dim ml-0.5">%</span></p>
+                  <p className="text-xs text-ink-dim mt-1">{grams(oldGoldBuyWt)} gross → {grams(oldGoldBuyPureWt)} pure</p>
+                </div>
+                <div className="px-4 py-4">
+                  <p className="text-xs text-ink-dim mb-1">Touch Spread (Sold − Cost)</p>
+                  {avgCostTouchPct > 0 && avgSoldTouchPct > 0 ? (
+                    <>
+                      <p className={clsx("text-2xl font-bold", touchSpreadPct >= 0 ? "text-ok" : "text-err")}>
+                        {touchSpreadPct >= 0 ? "+" : ""}{touchSpreadPct.toFixed(2)}<span className="text-sm font-normal ml-0.5">%</span>
+                      </p>
+                      <p className="text-xs text-ink-dim mt-1">{touchSpreadPct >= 0 ? "Selling higher purity than buying" : "Buying higher purity than selling"}</p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-ink-dim mt-2">Need both sold + cost touch data</p>
+                  )}
+                </div>
+                <div className="px-4 py-4">
+                  <p className="text-xs text-ink-dim mb-1">Touch Spread Value</p>
+                  {avgCostTouchPct > 0 && avgSoldTouchPct > 0 && gold.grossWt > 0 ? (
+                    <>
+                      <p className={clsx("text-2xl font-bold", touchSpreadPct >= 0 ? "text-ok" : "text-err")}>
+                        {grams(Math.abs(gold.grossWt * touchSpreadPct / 100))}
+                      </p>
+                      <p className="text-xs text-ink-dim mt-1">pure gold {touchSpreadPct >= 0 ? "gained" : "lost"} on touch spread</p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-ink-dim mt-2">—</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Gold section */}
           {gold.count > 0 && (
