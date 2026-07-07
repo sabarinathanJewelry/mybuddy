@@ -168,6 +168,29 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
   const [adjForm, setAdjForm] = useState({ adj_date: globalDate, description: "", metal: "gold_22k", pure_wt: 0, notes: "" });
   const saveAdjustment = useSaveSupplierPurchase();
 
+  const [showCashToMetalForm, setShowCashToMetalForm] = useState(false);
+  const [cashToMetalForm, setCashToMetalForm] = useState({ date: globalDate, metal: "gold_22k", amount: 0, rate: 0 });
+  const saveCashToMetal = useSaveSupplierPurchase();
+
+  async function handleCashToMetalSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!cashToMetalForm.amount || !cashToMetalForm.rate) return;
+    const grams_calc = parseFloat((cashToMetalForm.amount / cashToMetalForm.rate).toFixed(4));
+    await saveCashToMetal.mutateAsync({
+      supplier_id: id,
+      purchase_date: cashToMetalForm.date,
+      metal: cashToMetalForm.metal,
+      is_metal_balance: true,
+      gross_wt: grams_calc,
+      purity_pct: 100,
+      pure_wt: grams_calc,
+      amount: cashToMetalForm.amount,
+      description: `Cash→Metal @ ₹${cashToMetalForm.rate.toLocaleString()}/g`,
+    });
+    setCashToMetalForm({ date: globalDate, metal: "gold_22k", amount: 0, rate: 0 });
+    setShowCashToMetalForm(false);
+  }
+
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ pay_date: globalDate, mode: "cash", amount: 0, metal_wt: 0, metal_purity: 91.6, cut_rate: 0, notes: "" });
 
@@ -1290,8 +1313,9 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       {tab === "payments" && !isLoading && (
         <div className="space-y-3">
           <div className="flex gap-4">
-            <button onClick={() => { setShowPaymentForm(!showPaymentForm); setShowDispatchForm(false); }} className="text-xs text-gold hover:underline">+ Add Payment</button>
-            <button onClick={() => { setShowDispatchForm(!showDispatchForm); setShowPaymentForm(false); }} className="text-xs text-info hover:underline">+ Dispatch Metal</button>
+            <button onClick={() => { setShowPaymentForm(!showPaymentForm); setShowDispatchForm(false); setShowCashToMetalForm(false); }} className="text-xs text-gold hover:underline">+ Add Payment</button>
+            <button onClick={() => { setShowDispatchForm(!showDispatchForm); setShowPaymentForm(false); setShowCashToMetalForm(false); }} className="text-xs text-info hover:underline">+ Dispatch Metal</button>
+            <button onClick={() => { setShowCashToMetalForm(!showCashToMetalForm); setShowPaymentForm(false); setShowDispatchForm(false); }} className="text-xs text-warn hover:underline">Cash → Metal</button>
           </div>
           {showDispatchForm && (
             <form onSubmit={handleDispatchSave} className="bg-info/5 border border-info/30 rounded-xl p-4 shadow-soft space-y-3">
@@ -1353,6 +1377,61 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                   {saveDispatch.isPending ? "Saving…" : "Dispatch"}
                 </button>
                 <button type="button" onClick={() => setShowDispatchForm(false)}
+                  className="border border-line text-sm px-4 py-1.5 rounded-lg2">Cancel</button>
+              </div>
+            </form>
+          )}
+
+          {showCashToMetalForm && (
+            <form onSubmit={handleCashToMetalSave} className="bg-warn/5 border border-warn/30 rounded-xl p-4 shadow-soft space-y-3">
+              <h3 className="text-sm font-semibold text-warn">Convert Cash Balance to Metal</h3>
+              <p className="text-xs text-ink-dim">Credits the cash balance and adds equivalent grams to metal balance.</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="text-xs text-ink-dim block mb-1">Date</label>
+                  <input type="date" value={cashToMetalForm.date}
+                    onChange={(e) => setCashToMetalForm({ ...cashToMetalForm, date: e.target.value })}
+                    className={inp} required />
+                </div>
+                <div>
+                  <label className="text-xs text-ink-dim block mb-1">Metal</label>
+                  <select value={cashToMetalForm.metal}
+                    onChange={(e) => setCashToMetalForm({ ...cashToMetalForm, metal: e.target.value })}
+                    className={inp}>
+                    <option value="gold_22k">Gold 22K</option>
+                    <option value="gold_24k">Gold 24K</option>
+                    <option value="gold_18k">Gold 18K</option>
+                    <option value="silver">Silver</option>
+                    <option value="silver_pure">Silver Pure</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-ink-dim block mb-1">Cash Amount (₹)</label>
+                  <input type="number" step="0.01" value={cashToMetalForm.amount || ""}
+                    onFocus={(e) => e.target.select()} placeholder="0.00"
+                    onChange={(e) => setCashToMetalForm({ ...cashToMetalForm, amount: parseFloat(e.target.value) || 0 })}
+                    className={inp} required />
+                </div>
+                <div>
+                  <label className="text-xs text-ink-dim block mb-1">Rate (₹/g)</label>
+                  <input type="number" step="0.01" value={cashToMetalForm.rate || ""}
+                    onFocus={(e) => e.target.select()} placeholder="0.00"
+                    onChange={(e) => setCashToMetalForm({ ...cashToMetalForm, rate: parseFloat(e.target.value) || 0 })}
+                    className={inp} required />
+                </div>
+              </div>
+              {cashToMetalForm.amount > 0 && cashToMetalForm.rate > 0 && (
+                <div className="bg-warn/10 border border-warn/20 rounded-lg2 px-3 py-2 text-sm flex justify-between items-center">
+                  <span className="text-ink-dim">{inr(cashToMetalForm.amount)} ÷ ₹{cashToMetalForm.rate.toLocaleString()}/g</span>
+                  <span className="font-mono font-semibold text-warn">{(cashToMetalForm.amount / cashToMetalForm.rate).toFixed(4)} g</span>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <button type="submit" disabled={saveCashToMetal.isPending}
+                  className="bg-warn text-white text-sm px-4 py-1.5 rounded-lg2 disabled:opacity-50">
+                  {saveCashToMetal.isPending ? "Saving…" : "Convert"}
+                </button>
+                <button type="button" onClick={() => setShowCashToMetalForm(false)}
                   className="border border-line text-sm px-4 py-1.5 rounded-lg2">Cancel</button>
               </div>
             </form>

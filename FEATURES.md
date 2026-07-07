@@ -52,6 +52,7 @@
 - **Suspense → Purchase**: confirmed suspense items (VA% set) show "→ Purchase" button; clicking creates a `supplier_purchases` row (metal balance, pure wt = gross × VA%) and marks item as converted; converted items show "✓ In Purchases" badge and are excluded from metal owed calc; migration 123
 - Suspense cash amounts flow into supplier Cash Balance (formula includes supplier_cash_amt; ledger shows suspense entries chronologically)
 - **Dispatch Metal** button in Payments tab: creates a `metal_dispatches` row (date, metal, touch%, weight, pure wt preview) — flows into Metal Statement and reduces gold reserve exactly like the metal flow page; delete button per dispatch row
+- **Cash → Metal** button in Payments tab: converts an outstanding cash balance to metal grams — enter ₹ amount + rate/g, system calculates grams = amount ÷ rate; saved as a `supplier_purchases` row (is_metal_balance=true) so the cash balance is credited and the equivalent grams are added to metal balance owed by supplier; description shows "Cash→Metal @ ₹X/g" in both ledgers; no migrations required
 - **Stock Out tab**: record stock items given FROM shop TO supplier (outgoing consignment/suspense-out) — e.g. MJ takes 0.920g earring from shop stock and will pay later; each item has date, description, metal, touch % (purity, auto-set by metal), gross wt, pure wt (calculated), qty, rate (₹/g pure), amount; status: Pending → Returned / Settled; outstanding total shown; migrations 120, 122
 
 ---
