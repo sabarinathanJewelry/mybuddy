@@ -87,6 +87,15 @@
 - Investment tracking
 - Additional/variable income entry
 
+### Touch Profit (Reports → Touch Profit tab)
+- Monthly breakdown of gold grams earned from the touch spread on suspense supply items
+- Sold touch = purity% + VA% (what customer was billed for); Cost touch = supplier VA% at settlement
+- Profit per item = (sold touch − cost touch) × gross wt; accumulated by month
+- Summary strip: Total Gross Wt, Sold Pure Wt, Cost Pure Wt, Touch Profit (g)
+- Optional gold rate input → converts gram profit to ₹ value
+- Totals row; expandable "View all items" detail table
+- Requires migration 126 (adds va_pct to supplier_suspense view)
+
 ### Refinery / Metal Flow
 - Refinery entry for metal sent out and received
 - Metal flow tracking

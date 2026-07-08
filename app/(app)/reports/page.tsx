@@ -264,6 +264,23 @@ function useAllCutRates() {
   });
 }
 
+// All-time suspense touch profit — all confirmed suspense items with VA% settled
+function useSuspenseTouchProfit() {
+  return useQuery({
+    queryKey: ["suspense-touch-profit"],
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("supplier_suspense")
+        .select("gross_wt, purity_pct, va_pct, supplier_va_pct, bill_date, description")
+        .eq("supplier_confirmed", true)
+        .gt("supplier_va_pct", 0)
+        .order("bill_date", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
 // Physical metal dispatches to suppliers/goldsmiths in the period
 function useMetalDispatches(from: string, to: string) {
   return useQuery({
@@ -574,7 +591,7 @@ export default function ReportsPage() {
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [tab, setTab]     = useState<"pnl" | "detail" | "products" | "expenses" | "items" | "kolusu">("pnl");
+  const [tab, setTab]     = useState<"pnl" | "detail" | "products" | "expenses" | "items" | "kolusu" | "touch">("pnl");
   const [kolusuPureRate,       setKolusuPureRate]       = useState(263);
   const [kolusuBoardRate,      setKolusuBoardRate]      = useState(285);
   const [kolusuSuspenseMargin, setKolusuSuspenseMargin] = useState(2);
@@ -633,6 +650,8 @@ export default function ReportsPage() {
   const { data: bullionSells = [] }                                 = useBullionSells(range.from, range.to);
   const { data: ordersReport = [] }                                 = useOrdersReport(range.from, range.to);
   const { data: allCutRates = [] }                                  = useAllCutRates();
+  const { data: suspenseTouchData = [] }                            = useSuspenseTouchProfit();
+  const [touchRate, setTouchRate] = useState(0);
 
   const isLoading = loadingItems || loadingPurchases || loadingExpenses;
 
@@ -790,7 +809,7 @@ export default function ReportsPage() {
 
       {/* Tabs */}
       <div className="flex border-b border-line gap-1">
-        {([["pnl", "P&L Report"], ["detail", "Sales Detail"], ["products", "Product Mix"], ["expenses", "Expenses"], ["items", "Item Search"], ["kolusu", "Kolusu P&L"]] as const).map(([k, label]) => (
+        {([["pnl", "P&L Report"], ["detail", "Sales Detail"], ["products", "Product Mix"], ["expenses", "Expenses"], ["items", "Item Search"], ["kolusu", "Kolusu P&L"], ["touch", "Touch Profit"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={clsx("px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
               tab === k ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink")}>
@@ -2078,6 +2097,160 @@ export default function ReportsPage() {
                 <p>• <strong>Suspense:</strong> Supplier settles at board rate − ₹{kolusuSuspenseMargin} = ₹{kolusuBoardRate - kolusuSuspenseMargin}/g. Your margin is ₹{kolusuSuspenseMargin}/g × gross weight.</p>
                 <p>• Update the rate fields above if board rate or pure rate has changed for the period.</p>
               </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ── TOUCH PROFIT TAB ─────────────────────────────────────── */}
+      {tab === "touch" && (() => {
+        const monthMap = new Map<string, { count: number; grossWt: number; soldPure: number; costPure: number }>();
+        for (const row of suspenseTouchData) {
+          const ym = (row.bill_date as string)?.slice(0, 7);
+          if (!ym) continue;
+          const gross     = Number(row.gross_wt || 0);
+          const soldTouch = (Number(row.purity_pct || 0) + Number(row.va_pct || 0)) / 100;
+          const costTouch = Number(row.supplier_va_pct || 0) / 100;
+          const prev = monthMap.get(ym) ?? { count: 0, grossWt: 0, soldPure: 0, costPure: 0 };
+          monthMap.set(ym, {
+            count:    prev.count + 1,
+            grossWt:  prev.grossWt  + gross,
+            soldPure: prev.soldPure + gross * soldTouch,
+            costPure: prev.costPure + gross * costTouch,
+          });
+        }
+        const rows = Array.from(monthMap.entries())
+          .sort((a, b) => b[0].localeCompare(a[0]))
+          .map(([ym, d]) => ({ ym, ...d, profitG: d.soldPure - d.costPure }));
+
+        const totGross  = rows.reduce((s, r) => s + r.grossWt,  0);
+        const totSold   = rows.reduce((s, r) => s + r.soldPure, 0);
+        const totCost   = rows.reduce((s, r) => s + r.costPure, 0);
+        const totProfit = totSold - totCost;
+
+        const fmtYM = (ym: string) => {
+          const [y, m] = ym.split("-");
+          return `${MONTHS[parseInt(m) - 1]} ${y}`;
+        };
+
+        return (
+          <div className="space-y-4">
+            <div className="flex items-end gap-4 flex-wrap">
+              <div>
+                <p className="text-xs text-ink-dim mb-1">Gold Rate (₹/g) for ₹ value</p>
+                <input type="number" step="1" value={touchRate || ""}
+                  onFocus={(e) => e.target.select()} placeholder="e.g. 9300"
+                  onChange={(e) => setTouchRate(parseFloat(e.target.value) || 0)}
+                  className="border border-line rounded-lg2 px-3 py-1.5 text-sm w-36 focus:outline-none focus:ring-1 focus:ring-gold" />
+              </div>
+              <p className="text-xs text-ink-dim pb-1">
+                Profit = (sold touch − cost touch) × gross wt per item<br />
+                Sold touch = purity% + VA%. Cost touch = supplier VA% at settlement.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {[
+                { label: "Total Gross Wt", value: grams(totGross),  color: "text-ink" },
+                { label: "Sold Pure Wt",   value: grams(totSold),   color: "text-info" },
+                { label: "Cost Pure Wt",   value: grams(totCost),   color: "text-err" },
+                { label: "Touch Profit",   value: grams(totProfit), color: "text-ok" },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="bg-canvas border border-line rounded-xl px-4 py-3">
+                  <p className="text-xs text-ink-dim mb-1">{label}</p>
+                  <p className={`text-lg font-bold font-mono ${color}`}>{value}</p>
+                </div>
+              ))}
+            </div>
+
+            {touchRate > 0 && (
+              <div className="bg-ok/5 border border-ok/20 rounded-xl px-4 py-3 flex justify-between items-center">
+                <span className="text-sm text-ink-dim">Total touch profit @ ₹{touchRate.toLocaleString()}/g</span>
+                <span className="text-xl font-bold font-mono text-ok">{inr(totProfit * touchRate)}</span>
+              </div>
+            )}
+
+            <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[580px]">
+                  <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                    <th className="text-left px-4 py-2.5">Month</th>
+                    <th className="text-right px-3 py-2.5">Items</th>
+                    <th className="text-right px-3 py-2.5">Gross Wt</th>
+                    <th className="text-right px-3 py-2.5">Sold Pure</th>
+                    <th className="text-right px-3 py-2.5">Cost Pure</th>
+                    <th className="text-right px-3 py-2.5">Profit (g)</th>
+                    {touchRate > 0 && <th className="text-right px-3 py-2.5">Profit (₹)</th>}
+                  </tr></thead>
+                  <tbody>
+                    {rows.map(r => (
+                      <tr key={r.ym} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                        <td className="px-4 py-2.5 font-medium">{fmtYM(r.ym)}</td>
+                        <td className="px-3 py-2.5 text-right text-ink-dim">{r.count}</td>
+                        <td className="px-3 py-2.5 text-right font-mono">{grams(r.grossWt)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-info">{grams(r.soldPure)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-err">{grams(r.costPure)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono font-semibold text-ok">{grams(r.profitG)}</td>
+                        {touchRate > 0 && <td className="px-3 py-2.5 text-right font-mono text-ok">{inr(r.profitG * touchRate)}</td>}
+                      </tr>
+                    ))}
+                    {rows.length === 0 && (
+                      <tr><td colSpan={touchRate > 0 ? 7 : 6} className="px-4 py-8 text-center text-ink-dim">
+                        No settled suspense items yet. Run migration 126 if sold touch shows 0%.
+                      </td></tr>
+                    )}
+                    {rows.length > 0 && (
+                      <tr className="border-t-2 border-line bg-canvas font-semibold">
+                        <td className="px-4 py-2.5">Total</td>
+                        <td className="px-3 py-2.5 text-right text-ink-dim">{rows.reduce((s, r) => s + r.count, 0)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono">{grams(totGross)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-info">{grams(totSold)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-err">{grams(totCost)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-ok">{grams(totProfit)}</td>
+                        {touchRate > 0 && <td className="px-3 py-2.5 text-right font-mono text-ok">{inr(totProfit * touchRate)}</td>}
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {rows.length > 0 && (
+              <details className="bg-canvas border border-line rounded-xl">
+                <summary className="px-4 py-3 text-sm font-medium cursor-pointer text-ink-dim hover:text-ink">
+                  View all items ({suspenseTouchData.length})
+                </summary>
+                <div className="overflow-x-auto border-t border-line">
+                  <table className="w-full text-xs min-w-[560px]">
+                    <thead><tr className="bg-canvas text-ink-dim border-b border-line">
+                      <th className="text-left px-4 py-2">Month</th>
+                      <th className="text-left px-3 py-2">Description</th>
+                      <th className="text-right px-3 py-2">Gross</th>
+                      <th className="text-right px-3 py-2">Sold Touch</th>
+                      <th className="text-right px-3 py-2">Cost Touch</th>
+                      <th className="text-right px-3 py-2">Profit (g)</th>
+                    </tr></thead>
+                    <tbody>
+                      {suspenseTouchData.map((row: any, i: number) => {
+                        const gross   = Number(row.gross_wt || 0);
+                        const soldT   = Number(row.purity_pct || 0) + Number(row.va_pct || 0);
+                        const costT   = Number(row.supplier_va_pct || 0);
+                        const profitG = gross * (soldT - costT) / 100;
+                        return (
+                          <tr key={i} className="border-b border-line last:border-0 hover:bg-white">
+                            <td className="px-4 py-1.5 text-ink-dim">{fmtYM((row.bill_date as string)?.slice(0, 7))}</td>
+                            <td className="px-3 py-1.5">{row.description}</td>
+                            <td className="px-3 py-1.5 text-right font-mono">{grams(gross)}</td>
+                            <td className="px-3 py-1.5 text-right font-mono">{soldT.toFixed(2)}%</td>
+                            <td className="px-3 py-1.5 text-right font-mono">{costT.toFixed(2)}%</td>
+                            <td className={`px-3 py-1.5 text-right font-mono font-semibold ${profitG >= 0 ? "text-ok" : "text-err"}`}>{grams(profitG)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
             )}
           </div>
         );
