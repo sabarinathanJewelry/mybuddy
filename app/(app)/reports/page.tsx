@@ -2248,6 +2248,21 @@ export default function ReportsPage() {
         const avgSSold  = sSoldG  > 0 ? sSoldP  / sSoldG  * 100 : 0;
         const avgSPurch = sPurchG > 0 ? sPurchP / sPurchG * 100 : 0;
 
+        // Monthly weighted avg VA% — gold only, gross_wt > 0, va_pct not null
+        const vaMonthMap = new Map<string, { wt: number; wtdVa: number }>();
+        for (const item of yearSoldItems) {
+          if (!GOLD_METALS.includes(item.metal)) continue;
+          const gross = Number(item.gross_wt || 0);
+          if (gross <= 0 || item.va_pct === null || item.va_pct === undefined) continue;
+          const ym = (item.sales as any)?.bill_date?.slice(0, 7);
+          if (!ym) continue;
+          const prev = vaMonthMap.get(ym) ?? { wt: 0, wtdVa: 0 };
+          vaMonthMap.set(ym, { wt: prev.wt + gross, wtdVa: prev.wtdVa + gross * Number(item.va_pct) });
+        }
+        let fyVaWt = 0, fyVaWtd = 0;
+        for (const [, v] of vaMonthMap) { fyVaWt += v.wt; fyVaWtd += v.wtdVa; }
+        const avgFyVa = fyVaWt > 0 ? fyVaWtd / fyVaWt : 0;
+
         // ── suspense-only touch profit (secondary) ────────────────────────────
         const monthMap = new Map<string, { count: number; grossWt: number; soldPure: number; costPure: number }>();
         for (const row of suspenseTouchData) {
@@ -2293,9 +2308,10 @@ export default function ReportsPage() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                 {[
-                  { label: "Avg Gold Sold Touch",     value: avgGSold,  color: "text-gold" },
+                  { label: "Avg Gold Sold Touch",      value: avgGSold,  color: "text-gold" },
+                  { label: "Avg Gold VA%",             value: avgFyVa,   color: "text-info" },
                   { label: "Avg Gold Purchase Touch",  value: avgGPurch, color: "text-err"  },
                   { label: "Avg Silver Sold Touch",    value: avgSSold,  color: "text-ink"  },
                   { label: "Avg Silver Purchase Touch",value: avgSPurch, color: "text-err"  },
@@ -2313,12 +2329,13 @@ export default function ReportsPage() {
                     <thead>
                       <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                         <th className="text-left px-4 py-2" rowSpan={2}>Month</th>
-                        <th colSpan={4} className="text-center px-3 py-1.5 border-l border-line text-gold">Gold</th>
+                        <th colSpan={5} className="text-center px-3 py-1.5 border-l border-line text-gold">Gold</th>
                         <th colSpan={4} className="text-center px-3 py-1.5 border-l border-line">Silver</th>
                       </tr>
                       <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                         <th className="text-right px-3 py-1.5 border-l border-line">Gross Wt</th>
                         <th className="text-right px-3 py-1.5">Sold%</th>
+                        <th className="text-right px-3 py-1.5 text-info">Avg VA%</th>
                         <th className="text-right px-3 py-1.5">Purchase%</th>
                         <th className="text-right px-3 py-1.5">Spread</th>
                         <th className="text-right px-3 py-1.5 border-l border-line">Gross Wt</th>
@@ -2343,6 +2360,7 @@ export default function ReportsPage() {
                             <td className="px-4 py-2 font-medium">{fmtYM(ym)}</td>
                             <td className="px-3 py-2 text-right font-mono text-ink-dim border-l border-line">{g && g.soldGross > 0 ? grams(g.soldGross) : "—"}</td>
                             <td className="px-3 py-2 text-right font-mono text-info">{gSold !== null ? `${gSold.toFixed(2)}%` : "—"}</td>
+                            <td className="px-3 py-2 text-right font-mono text-info">{(() => { const va = vaMonthMap.get(ym); return va && va.wt > 0 ? `${(va.wtdVa / va.wt).toFixed(2)}%` : "—"; })()}</td>
                             <td className="px-3 py-2 text-right font-mono text-err">{gPurch !== null ? `${gPurch.toFixed(2)}%` : "—"}</td>
                             <td className="px-3 py-2 text-right font-mono font-semibold">
                               {gSpread !== null ? <span className={gSpread >= 0 ? "text-ok" : "text-err"}>{gSpread >= 0 ? "+" : ""}{gSpread.toFixed(2)}%</span> : "—"}
@@ -2361,6 +2379,7 @@ export default function ReportsPage() {
                           <td className="px-4 py-2">FY Average</td>
                           <td className="px-3 py-2 text-right font-mono text-ink-dim border-l border-line">{grams(gSoldG)}</td>
                           <td className="px-3 py-2 text-right font-mono text-info">{avgGSold  > 0 ? `${avgGSold.toFixed(2)}%`  : "—"}</td>
+                          <td className="px-3 py-2 text-right font-mono text-info">{avgFyVa > 0 ? `${avgFyVa.toFixed(2)}%` : "—"}</td>
                           <td className="px-3 py-2 text-right font-mono text-err">{avgGPurch > 0 ? `${avgGPurch.toFixed(2)}%` : "—"}</td>
                           <td className="px-3 py-2 text-right font-mono">
                             {avgGSold > 0 && avgGPurch > 0 ? <span className={avgGSold - avgGPurch >= 0 ? "text-ok" : "text-err"}>{avgGSold - avgGPurch >= 0 ? "+" : ""}{(avgGSold - avgGPurch).toFixed(2)}%</span> : "—"}

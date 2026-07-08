@@ -87,14 +87,15 @@
 - Investment tracking
 - Additional/variable income entry
 
-### Touch Profit (Reports → Touch Profit tab)
-- Monthly breakdown of gold grams earned from the touch spread on suspense supply items
-- Sold touch = purity% + VA% (what customer was billed for); Cost touch = supplier VA% at settlement
-- Profit per item = (sold touch − cost touch) × gross wt; accumulated by month
-- Summary strip: Total Gross Wt, Sold Pure Wt, Cost Pure Wt, Touch Profit (g)
-- Optional gold rate input → converts gram profit to ₹ value
-- Totals row; expandable "View all items" detail table
+### Touch Analysis (Reports → Touch Profit tab)
+- **FY Monthly Touch Table**: comprehensive sold touch% vs purchase touch% per month for gold and silver separately; FY year selector; gross weight column for each metal so volumes are transparent
+  - Sold touch = weighted avg of (purity% + VA%) for all confirmed gold/silver sale_items where purity_pct > 0
+  - Purchase touch = weighted avg of supplier_purchases.purity_pct (direct) + sale_items.supplier_va_pct (confirmed suspense, not yet converted) — no double counting
+  - **Avg Gold VA% column**: weighted avg VA% per month for gold items only (gold wt > 0, va_pct not null) using `Σ(gross_wt × va_pct) / Σ(gross_wt)`; also shown in FY average row and summary cards
+  - Summary cards: Avg Gold Sold Touch, Avg Gold VA%, Avg Gold Purchase Touch, Avg Silver Sold Touch, Avg Silver Purchase Touch
+- **Suspense Touch Profit Detail** (collapsible): all-time monthly breakdown of grams earned from touch spread on confirmed suspense items; optional ₹ rate input; expandable item list
 - Requires migration 126 (adds va_pct to supplier_suspense view)
+- **Sales Detail tab**: VA% column showing weighted avg gold VA% per bill
 
 ### Refinery / Metal Flow
 - Refinery entry for metal sent out and received
