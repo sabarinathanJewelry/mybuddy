@@ -30,7 +30,7 @@ function usePnlItems(from: string, to: string) {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("sale_items")
-        .select("metal, gross_wt, net_wt, pure_wt, rate, va_pct, making_amt, stone_amt, diamond_amt, gst_pct, line_total, is_suspense, sales!inner(id, order_id, bill_date, status, bill_no)")
+        .select("metal, gross_wt, net_wt, pure_wt, purity_pct, rate, va_pct, making_amt, stone_amt, diamond_amt, gst_pct, line_total, is_suspense, supplier_va_pct, supplier_confirmed, sales!inner(id, order_id, bill_date, status, bill_no)")
         .gte("sales.bill_date", from)
         .lte("sales.bill_date", to)
         .eq("sales.status", "confirmed");
@@ -673,10 +673,24 @@ export default function ReportsPage() {
   const gold   = metalSection(items, GOLD_METALS);
   const silver = metalSection(items, SILVER_METALS);
 
-  // Touch analysis (must come after gold is computed)
-  const avgSoldTouchPct = gold.grossWt    > 0 ? (gold.pureWt / gold.grossWt) * 100 : 0;
-  const avgCostTouchPct = oldGoldBuyWt    > 0 ? (oldGoldBuyPureWt / oldGoldBuyWt) * 100 : 0;
-  const touchSpreadPct  = avgSoldTouchPct - avgCostTouchPct;
+  // Touch analysis — suspense gold items only
+  // Sold touch = purity_pct + va_pct (what we billed customer for, including VA)
+  // Cost touch = supplier_va_pct (what supplier credits us at settlement)
+  const suspenseGoldItems = items.filter(i => i.is_suspense && GOLD_METALS.includes(i.metal));
+  const suspTotalGross    = suspenseGoldItems.reduce((s: number, i: any) => s + Number(i.gross_wt || 0), 0);
+  const suspSoldPureWt    = suspenseGoldItems.reduce((s: number, i: any) => s + Number(i.gross_wt || 0) * (Number(i.purity_pct || 0) + Number(i.va_pct || 0)) / 100, 0);
+  const suspConfirmed     = suspenseGoldItems.filter((i: any) => i.supplier_confirmed && Number(i.supplier_va_pct) > 0);
+  const suspCostGross     = suspConfirmed.reduce((s: number, i: any) => s + Number(i.gross_wt || 0), 0);
+  const suspCostPureWt    = suspConfirmed.reduce((s: number, i: any) => s + Number(i.gross_wt || 0) * Number(i.supplier_va_pct || 0) / 100, 0);
+  const avgSoldTouchPct   = suspTotalGross > 0 ? (suspSoldPureWt / suspTotalGross) * 100 : 0;
+  const avgCostTouchPct   = suspCostGross  > 0 ? (suspCostPureWt  / suspCostGross)  * 100 : 0;
+  const touchSpreadPct    = avgSoldTouchPct - avgCostTouchPct;
+  const touchSpreadGrams  = suspConfirmed.reduce((s: number, i: any) => {
+    const gross = Number(i.gross_wt || 0);
+    const sold  = Number(i.purity_pct || 0) + Number(i.va_pct || 0);
+    const cost  = Number(i.supplier_va_pct || 0);
+    return s + gross * (sold - cost) / 100;
+  }, 0);
   const mprItems = items.filter(i => i.metal === "silver_mpr");
   const mprRevenue = mprItems.reduce((s, i) => s + Number(i.line_total||0), 0);
 
@@ -849,14 +863,14 @@ export default function ReportsPage() {
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-line text-sm">
                 <div className="px-4 py-4">
-                  <p className="text-xs text-ink-dim mb-1">Avg Sold Touch</p>
+                  <p className="text-xs text-ink-dim mb-1">Avg Sold Touch (purity + VA%)</p>
                   <p className="text-2xl font-bold text-gold">{avgSoldTouchPct > 0 ? avgSoldTouchPct.toFixed(2) : "—"}<span className="text-sm font-normal text-ink-dim ml-0.5">%</span></p>
-                  <p className="text-xs text-ink-dim mt-1">{grams(gold.grossWt)} gross → {grams(gold.pureWt)} pure</p>
+                  <p className="text-xs text-ink-dim mt-1">{suspenseGoldItems.length} suspense item{suspenseGoldItems.length !== 1 ? "s" : ""}</p>
                 </div>
                 <div className="px-4 py-4">
-                  <p className="text-xs text-ink-dim mb-1">Avg Cost Touch (old metal bought)</p>
+                  <p className="text-xs text-ink-dim mb-1">Avg Cost Touch (supplier VA%)</p>
                   <p className="text-2xl font-bold text-ink">{avgCostTouchPct > 0 ? avgCostTouchPct.toFixed(2) : "—"}<span className="text-sm font-normal text-ink-dim ml-0.5">%</span></p>
-                  <p className="text-xs text-ink-dim mt-1">{grams(oldGoldBuyWt)} gross → {grams(oldGoldBuyPureWt)} pure</p>
+                  <p className="text-xs text-ink-dim mt-1">{suspConfirmed.length} settled item{suspConfirmed.length !== 1 ? "s" : ""}</p>
                 </div>
                 <div className="px-4 py-4">
                   <p className="text-xs text-ink-dim mb-1">Touch Spread (Sold − Cost)</p>
@@ -873,12 +887,12 @@ export default function ReportsPage() {
                 </div>
                 <div className="px-4 py-4">
                   <p className="text-xs text-ink-dim mb-1">Touch Spread Value</p>
-                  {avgCostTouchPct > 0 && avgSoldTouchPct > 0 && gold.grossWt > 0 ? (
+                  {touchSpreadGrams !== 0 ? (
                     <>
-                      <p className={clsx("text-2xl font-bold", touchSpreadPct >= 0 ? "text-ok" : "text-err")}>
-                        {grams(Math.abs(gold.grossWt * touchSpreadPct / 100))}
+                      <p className={clsx("text-2xl font-bold", touchSpreadGrams >= 0 ? "text-ok" : "text-err")}>
+                        {grams(Math.abs(touchSpreadGrams))}
                       </p>
-                      <p className="text-xs text-ink-dim mt-1">pure gold {touchSpreadPct >= 0 ? "gained" : "lost"} on touch spread</p>
+                      <p className="text-xs text-ink-dim mt-1">pure gold {touchSpreadGrams >= 0 ? "gained" : "lost"} on touch spread</p>
                     </>
                   ) : (
                     <p className="text-sm text-ink-dim mt-2">—</p>
