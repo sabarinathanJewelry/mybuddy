@@ -2121,7 +2121,12 @@ export default function ReportsPage() {
         }
         const rows = Array.from(monthMap.entries())
           .sort((a, b) => b[0].localeCompare(a[0]))
-          .map(([ym, d]) => ({ ym, ...d, profitG: d.soldPure - d.costPure }));
+          .map(([ym, d]) => ({
+            ym, ...d,
+            profitG:      d.soldPure - d.costPure,
+            avgSoldTouch: d.grossWt > 0 ? (d.soldPure / d.grossWt) * 100 : 0,
+            avgCostTouch: d.grossWt > 0 ? (d.costPure / d.grossWt) * 100 : 0,
+          }));
 
         const totGross  = rows.reduce((s, r) => s + r.grossWt,  0);
         const totSold   = rows.reduce((s, r) => s + r.soldPure, 0);
@@ -2172,44 +2177,54 @@ export default function ReportsPage() {
 
             <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[580px]">
+                <table className="w-full text-sm min-w-[780px]">
                   <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                     <th className="text-left px-4 py-2.5">Month</th>
                     <th className="text-right px-3 py-2.5">Items</th>
                     <th className="text-right px-3 py-2.5">Gross Wt</th>
-                    <th className="text-right px-3 py-2.5">Sold Pure</th>
-                    <th className="text-right px-3 py-2.5">Cost Pure</th>
+                    <th className="text-right px-3 py-2.5">Sold Touch</th>
+                    <th className="text-right px-3 py-2.5">Cost Touch</th>
+                    <th className="text-right px-3 py-2.5">Spread</th>
                     <th className="text-right px-3 py-2.5">Profit (g)</th>
                     {touchRate > 0 && <th className="text-right px-3 py-2.5">Profit (₹)</th>}
                   </tr></thead>
                   <tbody>
-                    {rows.map(r => (
-                      <tr key={r.ym} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                        <td className="px-4 py-2.5 font-medium">{fmtYM(r.ym)}</td>
-                        <td className="px-3 py-2.5 text-right text-ink-dim">{r.count}</td>
-                        <td className="px-3 py-2.5 text-right font-mono">{grams(r.grossWt)}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-info">{grams(r.soldPure)}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-err">{grams(r.costPure)}</td>
-                        <td className="px-3 py-2.5 text-right font-mono font-semibold text-ok">{grams(r.profitG)}</td>
-                        {touchRate > 0 && <td className="px-3 py-2.5 text-right font-mono text-ok">{inr(r.profitG * touchRate)}</td>}
-                      </tr>
-                    ))}
+                    {rows.map(r => {
+                      const spread = r.avgSoldTouch - r.avgCostTouch;
+                      return (
+                        <tr key={r.ym} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                          <td className="px-4 py-2.5 font-medium">{fmtYM(r.ym)}</td>
+                          <td className="px-3 py-2.5 text-right text-ink-dim">{r.count}</td>
+                          <td className="px-3 py-2.5 text-right font-mono">{grams(r.grossWt)}</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-info">{r.avgSoldTouch.toFixed(2)}%</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-err">{r.avgCostTouch.toFixed(2)}%</td>
+                          <td className="px-3 py-2.5 text-right font-mono font-semibold text-ok">+{spread.toFixed(2)}%</td>
+                          <td className="px-3 py-2.5 text-right font-mono font-semibold text-ok">{grams(r.profitG)}</td>
+                          {touchRate > 0 && <td className="px-3 py-2.5 text-right font-mono text-ok">{inr(r.profitG * touchRate)}</td>}
+                        </tr>
+                      );
+                    })}
                     {rows.length === 0 && (
-                      <tr><td colSpan={touchRate > 0 ? 7 : 6} className="px-4 py-8 text-center text-ink-dim">
+                      <tr><td colSpan={touchRate > 0 ? 8 : 7} className="px-4 py-8 text-center text-ink-dim">
                         No settled suspense items yet. Run migration 126 if sold touch shows 0%.
                       </td></tr>
                     )}
-                    {rows.length > 0 && (
-                      <tr className="border-t-2 border-line bg-canvas font-semibold">
-                        <td className="px-4 py-2.5">Total</td>
-                        <td className="px-3 py-2.5 text-right text-ink-dim">{rows.reduce((s, r) => s + r.count, 0)}</td>
-                        <td className="px-3 py-2.5 text-right font-mono">{grams(totGross)}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-info">{grams(totSold)}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-err">{grams(totCost)}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-ok">{grams(totProfit)}</td>
-                        {touchRate > 0 && <td className="px-3 py-2.5 text-right font-mono text-ok">{inr(totProfit * touchRate)}</td>}
-                      </tr>
-                    )}
+                    {rows.length > 0 && (() => {
+                      const avgSold = totGross > 0 ? (totSold / totGross) * 100 : 0;
+                      const avgCost = totGross > 0 ? (totCost / totGross) * 100 : 0;
+                      return (
+                        <tr className="border-t-2 border-line bg-canvas font-semibold">
+                          <td className="px-4 py-2.5">Total / Avg</td>
+                          <td className="px-3 py-2.5 text-right text-ink-dim">{rows.reduce((s, r) => s + r.count, 0)}</td>
+                          <td className="px-3 py-2.5 text-right font-mono">{grams(totGross)}</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-info">{avgSold.toFixed(2)}%</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-err">{avgCost.toFixed(2)}%</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-ok">+{(avgSold - avgCost).toFixed(2)}%</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-ok">{grams(totProfit)}</td>
+                          {touchRate > 0 && <td className="px-3 py-2.5 text-right font-mono text-ok">{inr(totProfit * touchRate)}</td>}
+                        </tr>
+                      );
+                    })()}
                   </tbody>
                 </table>
               </div>
