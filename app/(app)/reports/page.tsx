@@ -145,7 +145,7 @@ function useSalesDetail(from: string, to: string) {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("sales")
-        .select("*, customers(name), sale_items(metal, net_wt, line_total, gst_pct, making_amt, stone_amt, diamond_amt)")
+        .select("*, customers(name), sale_items(metal, gross_wt, net_wt, purity_pct, va_pct, line_total, gst_pct, making_amt, stone_amt, diamond_amt)")
         .gte("bill_date", from).lte("bill_date", to).eq("status","confirmed").order("bill_date");
       if (error) throw error;
       return (data ?? []) as any[];
@@ -1971,6 +1971,7 @@ export default function ReportsPage() {
               <th className="text-left px-3 py-2.5">Customer</th>
               <th className="text-right px-3 py-2.5 text-gold">Gold (g)</th>
               <th className="text-right px-3 py-2.5 text-ink-mid">Silver (g)</th>
+              <th className="text-right px-3 py-2.5 text-info">VA%</th>
               <th className="text-right px-3 py-2.5 text-ok">Making</th>
               <th className="text-right px-3 py-2.5 text-warn">GST</th>
               <th className="text-right px-3 py-2.5">{t("total")}</th>
@@ -1978,9 +1979,13 @@ export default function ReportsPage() {
             <tbody>
               {(salesDetail as any[]).map((s: any) => {
                 const its = s.sale_items ?? [];
-                const billGoldG = its.filter((i: any) => GOLD_METALS.includes(i.metal)).reduce((a: number, i: any) => a + Number(i.net_wt||0), 0);
-                const billSilvG = its.filter((i: any) => SILVER_METALS.includes(i.metal)).reduce((a: number, i: any) => a + Number(i.net_wt||0), 0);
+                const goldIts = its.filter((i: any) => GOLD_METALS.includes(i.metal) && Number(i.purity_pct) > 0);
+                const billGoldG  = its.filter((i: any) => GOLD_METALS.includes(i.metal)).reduce((a: number, i: any) => a + Number(i.net_wt||0), 0);
+                const billSilvG  = its.filter((i: any) => SILVER_METALS.includes(i.metal)).reduce((a: number, i: any) => a + Number(i.net_wt||0), 0);
                 const billMaking = its.reduce((a: number, i: any) => a + Number(i.making_amt||0), 0);
+                const vaGross    = goldIts.reduce((a: number, i: any) => a + Number(i.gross_wt||0), 0);
+                const vaWtd      = goldIts.reduce((a: number, i: any) => a + Number(i.gross_wt||0) * Number(i.va_pct||0), 0);
+                const avgVa      = vaGross > 0 ? vaWtd / vaGross : null;
                 return (
                   <tr key={s.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
                     <td className="px-4 py-2.5 font-mono text-info">{s.bill_no}</td>
@@ -1988,13 +1993,14 @@ export default function ReportsPage() {
                     <td className="px-3 py-2.5">{s.customers?.name ?? "—"}</td>
                     <td className="px-3 py-2.5 text-right font-mono text-gold">{billGoldG > 0 ? grams(billGoldG) : "—"}</td>
                     <td className="px-3 py-2.5 text-right font-mono text-ink-mid">{billSilvG > 0 ? grams(billSilvG) : "—"}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-info">{avgVa !== null ? `${avgVa.toFixed(2)}%` : "—"}</td>
                     <td className="px-3 py-2.5 text-right font-mono text-ok">{billMaking > 0 ? inr(billMaking) : "—"}</td>
                     <td className="px-3 py-2.5 text-right text-warn">{inr(s.gst_amount ?? 0)}</td>
                     <td className="px-3 py-2.5 text-right font-mono font-semibold">{inr(Number(s.total))}</td>
                   </tr>
                 );
               })}
-              {!salesDetail.length && <tr><td colSpan={8} className="px-4 py-8 text-center text-ink-dim">{t("no_data")}</td></tr>}
+              {!salesDetail.length && <tr><td colSpan={9} className="px-4 py-8 text-center text-ink-dim">{t("no_data")}</td></tr>}
             </tbody>
           </table>
         </div>
