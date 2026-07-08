@@ -1863,7 +1863,8 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       {tab === "suspense" && !isLoading && (
         <div className="space-y-3">
           <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[800px]">
               <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                 <th className="px-3 py-2.5 w-8">
                   <input type="checkbox"
@@ -2016,9 +2017,10 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                     )}
                   </Fragment>
                 ))}
-                {!view?.suspense.length && <tr><td colSpan={8} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
+                {!view?.suspense.length && <tr><td colSpan={10} className="px-4 py-6 text-center text-ink-dim">{t("no_data")}</td></tr>}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* Batch settlement panel */}
