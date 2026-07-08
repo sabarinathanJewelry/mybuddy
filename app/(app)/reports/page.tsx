@@ -276,6 +276,7 @@ function useYearSoldItems(fyFrom: string, fyTo: string) {
         .gte("sales.bill_date", fyFrom)
         .lte("sales.bill_date", fyTo)
         .eq("sales.status", "confirmed")
+        .gt("purity_pct", 0)
         .in("metal", [...GOLD_METALS, ...SILVER_METALS]);
       if (error) throw error;
       return (data ?? []) as any[];
@@ -295,6 +296,7 @@ function useYearPurchaseDirect(fyFrom: string, fyTo: string) {
         .lte("purchase_date", fyTo)
         .eq("is_return", false)
         .eq("is_adjustment", false)
+        .gt("purity_pct", 0)
         .in("metal", [...GOLD_METALS, ...SILVER_METALS]);
       if (error) throw error;
       return (data ?? []) as any[];
@@ -2305,14 +2307,16 @@ export default function ReportsPage() {
                     <thead>
                       <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
                         <th className="text-left px-4 py-2" rowSpan={2}>Month</th>
-                        <th colSpan={3} className="text-center px-3 py-1.5 border-l border-line text-gold">Gold</th>
-                        <th colSpan={3} className="text-center px-3 py-1.5 border-l border-line">Silver</th>
+                        <th colSpan={4} className="text-center px-3 py-1.5 border-l border-line text-gold">Gold</th>
+                        <th colSpan={4} className="text-center px-3 py-1.5 border-l border-line">Silver</th>
                       </tr>
                       <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
-                        <th className="text-right px-3 py-1.5 border-l border-line">Sold%</th>
+                        <th className="text-right px-3 py-1.5 border-l border-line">Gross Wt</th>
+                        <th className="text-right px-3 py-1.5">Sold%</th>
                         <th className="text-right px-3 py-1.5">Purchase%</th>
                         <th className="text-right px-3 py-1.5">Spread</th>
-                        <th className="text-right px-3 py-1.5 border-l border-line">Sold%</th>
+                        <th className="text-right px-3 py-1.5 border-l border-line">Gross Wt</th>
+                        <th className="text-right px-3 py-1.5">Sold%</th>
                         <th className="text-right px-3 py-1.5">Purchase%</th>
                         <th className="text-right px-3 py-1.5">Spread</th>
                       </tr>
@@ -2331,12 +2335,14 @@ export default function ReportsPage() {
                         return (
                           <tr key={ym} className={clsx("border-b border-line last:border-0 hover:bg-canvas/50", !hasData && "opacity-30")}>
                             <td className="px-4 py-2 font-medium">{fmtYM(ym)}</td>
-                            <td className="px-3 py-2 text-right font-mono text-info border-l border-line">{gSold !== null ? `${gSold.toFixed(2)}%` : "—"}</td>
+                            <td className="px-3 py-2 text-right font-mono text-ink-dim border-l border-line">{g && g.soldGross > 0 ? grams(g.soldGross) : "—"}</td>
+                            <td className="px-3 py-2 text-right font-mono text-info">{gSold !== null ? `${gSold.toFixed(2)}%` : "—"}</td>
                             <td className="px-3 py-2 text-right font-mono text-err">{gPurch !== null ? `${gPurch.toFixed(2)}%` : "—"}</td>
                             <td className="px-3 py-2 text-right font-mono font-semibold">
                               {gSpread !== null ? <span className={gSpread >= 0 ? "text-ok" : "text-err"}>{gSpread >= 0 ? "+" : ""}{gSpread.toFixed(2)}%</span> : "—"}
                             </td>
-                            <td className="px-3 py-2 text-right font-mono text-info border-l border-line">{sSold !== null ? `${sSold.toFixed(2)}%` : "—"}</td>
+                            <td className="px-3 py-2 text-right font-mono text-ink-dim border-l border-line">{s && s.soldGross > 0 ? grams(s.soldGross) : "—"}</td>
+                            <td className="px-3 py-2 text-right font-mono text-info">{sSold !== null ? `${sSold.toFixed(2)}%` : "—"}</td>
                             <td className="px-3 py-2 text-right font-mono text-err">{sPurch !== null ? `${sPurch.toFixed(2)}%` : "—"}</td>
                             <td className="px-3 py-2 text-right font-mono font-semibold">
                               {sSpread !== null ? <span className={sSpread >= 0 ? "text-ok" : "text-err"}>{sSpread >= 0 ? "+" : ""}{sSpread.toFixed(2)}%</span> : "—"}
@@ -2347,12 +2353,14 @@ export default function ReportsPage() {
                       {(gSoldG > 0 || gPurchG > 0 || sSoldG > 0 || sPurchG > 0) && (
                         <tr className="border-t-2 border-line bg-canvas font-semibold text-xs">
                           <td className="px-4 py-2">FY Average</td>
-                          <td className="px-3 py-2 text-right font-mono text-info border-l border-line">{avgGSold  > 0 ? `${avgGSold.toFixed(2)}%`  : "—"}</td>
+                          <td className="px-3 py-2 text-right font-mono text-ink-dim border-l border-line">{grams(gSoldG)}</td>
+                          <td className="px-3 py-2 text-right font-mono text-info">{avgGSold  > 0 ? `${avgGSold.toFixed(2)}%`  : "—"}</td>
                           <td className="px-3 py-2 text-right font-mono text-err">{avgGPurch > 0 ? `${avgGPurch.toFixed(2)}%` : "—"}</td>
                           <td className="px-3 py-2 text-right font-mono">
                             {avgGSold > 0 && avgGPurch > 0 ? <span className={avgGSold - avgGPurch >= 0 ? "text-ok" : "text-err"}>{avgGSold - avgGPurch >= 0 ? "+" : ""}{(avgGSold - avgGPurch).toFixed(2)}%</span> : "—"}
                           </td>
-                          <td className="px-3 py-2 text-right font-mono text-info border-l border-line">{avgSSold  > 0 ? `${avgSSold.toFixed(2)}%`  : "—"}</td>
+                          <td className="px-3 py-2 text-right font-mono text-ink-dim border-l border-line">{grams(sSoldG)}</td>
+                          <td className="px-3 py-2 text-right font-mono text-info">{avgSSold  > 0 ? `${avgSSold.toFixed(2)}%`  : "—"}</td>
                           <td className="px-3 py-2 text-right font-mono text-err">{avgSPurch > 0 ? `${avgSPurch.toFixed(2)}%` : "—"}</td>
                           <td className="px-3 py-2 text-right font-mono">
                             {avgSSold > 0 && avgSPurch > 0 ? <span className={avgSSold - avgSPurch >= 0 ? "text-ok" : "text-err"}>{avgSSold - avgSPurch >= 0 ? "+" : ""}{(avgSSold - avgSPurch).toFixed(2)}%</span> : "—"}
