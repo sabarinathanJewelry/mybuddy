@@ -89,7 +89,7 @@
 
 ### Touch Analysis (Reports → Touch Profit tab)
 - **FY Monthly Touch Table**: comprehensive sold touch% vs purchase touch% per month for gold and silver separately; FY year selector; gross weight column for each metal so volumes are transparent
-  - Sold touch = weighted avg of (purity% + VA%) for all confirmed gold/silver sale_items where purity_pct > 0
+  - Sold touch = weighted avg of effective touch for all confirmed gold/silver sale_items with gross_wt > 0; effective purity = purity_pct if > 0, else pure_wt/gross_wt × 100 (fallback so gross wt matches P&L); items with no purity info excluded from touch% only, still counted in gross wt
   - Purchase touch = weighted avg of supplier_purchases.purity_pct (direct) + sale_items.supplier_va_pct (confirmed suspense, not yet converted) — no double counting
   - **Avg Gold VA% column**: weighted avg VA% per month for gold items only (gold wt > 0, va_pct not null) using `Σ(gross_wt × va_pct) / Σ(gross_wt)`; also shown in FY average row and summary cards
   - Summary cards: Avg Gold Sold Touch, Avg Gold VA%, Avg Gold Purchase Touch, Avg Silver Sold Touch, Avg Silver Purchase Touch

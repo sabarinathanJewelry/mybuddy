@@ -272,11 +272,11 @@ function useYearSoldItems(fyFrom: string, fyTo: string) {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("sale_items")
-        .select("metal, gross_wt, purity_pct, va_pct, sales!inner(bill_date)")
+        .select("metal, gross_wt, pure_wt, purity_pct, va_pct, sales!inner(bill_date)")
         .gte("sales.bill_date", fyFrom)
         .lte("sales.bill_date", fyTo)
         .eq("sales.status", "confirmed")
-        .gt("purity_pct", 0)
+        .gt("gross_wt", 0)
         .in("metal", [...GOLD_METALS, ...SILVER_METALS]);
       if (error) throw error;
       return (data ?? []) as any[];
@@ -291,12 +291,12 @@ function useYearPurchaseDirect(fyFrom: string, fyTo: string) {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("supplier_purchases")
-        .select("metal, gross_wt, purity_pct, purchase_date")
+        .select("metal, gross_wt, pure_wt, purity_pct, purchase_date")
         .gte("purchase_date", fyFrom)
         .lte("purchase_date", fyTo)
         .eq("is_return", false)
         .eq("is_adjustment", false)
-        .gt("purity_pct", 0)
+        .gt("gross_wt", 0)
         .in("metal", [...GOLD_METALS, ...SILVER_METALS]);
       if (error) throw error;
       return (data ?? []) as any[];
@@ -2194,43 +2194,59 @@ export default function ReportsPage() {
       {/* ── TOUCH PROFIT TAB ─────────────────────────────────────── */}
       {tab === "touch" && (() => {
         // ── FY-wide comprehensive touch analysis ──────────────────────────────
-        type Acc = { soldGross: number; soldPure: number; purchGross: number; purchPure: number };
-        const emptyAcc = (): Acc => ({ soldGross: 0, soldPure: 0, purchGross: 0, purchPure: 0 });
+        // totalGross = all items with gross_wt > 0 (matches P&L gross wt)
+        // soldGross  = items where effective purity could be determined (touch denominator)
+        type Acc = { totalGross: number; soldGross: number; soldPure: number; purchGross: number; purchPure: number };
+        const emptyAcc = (): Acc => ({ totalGross: 0, soldGross: 0, soldPure: 0, purchGross: 0, purchPure: 0 });
         const gMap = new Map<string, Acc>();
         const sMap = new Map<string, Acc>();
 
-        const addSold = (map: Map<string, Acc>, ym: string, gross: number, touch: number) => {
-          const p = map.get(ym) ?? emptyAcc();
-          map.set(ym, { ...p, soldGross: p.soldGross + gross, soldPure: p.soldPure + gross * touch / 100 });
-        };
-        const addPurch = (map: Map<string, Acc>, ym: string, gross: number, touch: number) => {
-          const p = map.get(ym) ?? emptyAcc();
-          map.set(ym, { ...p, purchGross: p.purchGross + gross, purchPure: p.purchPure + gross * touch / 100 });
+        // Effective purity: prefer purity_pct; fall back to pure_wt/gross_wt when purity_pct is 0
+        const effectivePurity = (item: any): number => {
+          const pp = Number(item.purity_pct || 0);
+          if (pp > 0) return pp;
+          const gw = Number(item.gross_wt || 0);
+          const pw = Number(item.pure_wt  || 0);
+          return gw > 0 && pw > 0 ? (pw / gw) * 100 : 0;
         };
 
         for (const item of yearSoldItems) {
           const ym = (item.sales as any)?.bill_date?.slice(0, 7);
           if (!ym) continue;
-          const gross = Number(item.gross_wt || 0);
-          const touch = Number(item.purity_pct || 0) + Number(item.va_pct || 0);
-          if (GOLD_METALS.includes(item.metal)) addSold(gMap, ym, gross, touch);
-          else if (SILVER_METALS.includes(item.metal)) addSold(sMap, ym, gross, touch);
+          const gross  = Number(item.gross_wt || 0);
+          const purity = effectivePurity(item);
+          const touch  = purity > 0 ? purity + Number(item.va_pct || 0) : 0;
+          const map    = GOLD_METALS.includes(item.metal) ? gMap : SILVER_METALS.includes(item.metal) ? sMap : null;
+          if (!map) continue;
+          const p = map.get(ym) ?? emptyAcc();
+          map.set(ym, {
+            ...p,
+            totalGross: p.totalGross + gross,
+            soldGross:  purity > 0 ? p.soldGross + gross : p.soldGross,
+            soldPure:   purity > 0 ? p.soldPure  + gross * touch / 100 : p.soldPure,
+          });
         }
         for (const item of yearPurchDirect) {
-          const ym = (item.purchase_date as string)?.slice(0, 7);
+          const ym    = (item.purchase_date as string)?.slice(0, 7);
           if (!ym) continue;
-          const gross = Number(item.gross_wt || 0);
-          const touch = Number(item.purity_pct || 0);
-          if (GOLD_METALS.includes(item.metal)) addPurch(gMap, ym, gross, touch);
-          else if (SILVER_METALS.includes(item.metal)) addPurch(sMap, ym, gross, touch);
+          const gross  = Number(item.gross_wt || 0);
+          const purity = effectivePurity(item);
+          if (purity <= 0) continue;
+          const map = GOLD_METALS.includes(item.metal) ? gMap : SILVER_METALS.includes(item.metal) ? sMap : null;
+          if (!map) continue;
+          const p = map.get(ym) ?? emptyAcc();
+          map.set(ym, { ...p, purchGross: p.purchGross + gross, purchPure: p.purchPure + gross * purity / 100 });
         }
         for (const item of yearPurchSusp) {
-          const ym = (item.sales as any)?.bill_date?.slice(0, 7);
+          const ym   = (item.sales as any)?.bill_date?.slice(0, 7);
           if (!ym) continue;
           const gross = Number(item.gross_wt || 0);
           const touch = Number(item.supplier_va_pct || 0);
-          if (GOLD_METALS.includes(item.metal)) addPurch(gMap, ym, gross, touch);
-          else if (SILVER_METALS.includes(item.metal)) addPurch(sMap, ym, gross, touch);
+          if (touch <= 0) continue;
+          const map = GOLD_METALS.includes(item.metal) ? gMap : SILVER_METALS.includes(item.metal) ? sMap : null;
+          if (!map) continue;
+          const p = map.get(ym) ?? emptyAcc();
+          map.set(ym, { ...p, purchGross: p.purchGross + gross, purchPure: p.purchPure + gross * touch / 100 });
         }
 
         // Apr(touchYear)…Mar(touchYear+1)
@@ -2239,10 +2255,10 @@ export default function ReportsPage() {
         for (let m = 1; m <= 3; m++) fyMonths.push(`${touchYear + 1}-${String(m).padStart(2, "0")}`);
 
         // FY totals
-        let gSoldG = 0, gSoldP = 0, gPurchG = 0, gPurchP = 0;
-        let sSoldG = 0, sSoldP = 0, sPurchG = 0, sPurchP = 0;
-        for (const [, v] of gMap) { gSoldG += v.soldGross; gSoldP += v.soldPure; gPurchG += v.purchGross; gPurchP += v.purchPure; }
-        for (const [, v] of sMap) { sSoldG += v.soldGross; sSoldP += v.soldPure; sPurchG += v.purchGross; sPurchP += v.purchPure; }
+        let gTotalG = 0, gSoldG = 0, gSoldP = 0, gPurchG = 0, gPurchP = 0;
+        let sTotalG = 0, sSoldG = 0, sSoldP = 0, sPurchG = 0, sPurchP = 0;
+        for (const [, v] of gMap) { gTotalG += v.totalGross; gSoldG += v.soldGross; gSoldP += v.soldPure; gPurchG += v.purchGross; gPurchP += v.purchPure; }
+        for (const [, v] of sMap) { sTotalG += v.totalGross; sSoldG += v.soldGross; sSoldP += v.soldPure; sPurchG += v.purchGross; sPurchP += v.purchPure; }
         const avgGSold  = gSoldG  > 0 ? gSoldP  / gSoldG  * 100 : 0;
         const avgGPurch = gPurchG > 0 ? gPurchP / gPurchG * 100 : 0;
         const avgSSold  = sSoldG  > 0 ? sSoldP  / sSoldG  * 100 : 0;
@@ -2354,18 +2370,18 @@ export default function ReportsPage() {
                         const sPurch = s && s.purchGross > 0 ? (s.purchPure / s.purchGross) * 100 : null;
                         const gSpread = gSold !== null && gPurch !== null ? gSold - gPurch : null;
                         const sSpread = sSold !== null && sPurch !== null ? sSold - sPurch : null;
-                        const hasData = gSold !== null || gPurch !== null || sSold !== null || sPurch !== null;
+                        const hasData = (g && g.totalGross > 0) || (s && s.totalGross > 0) || gPurch !== null || sPurch !== null;
                         return (
                           <tr key={ym} className={clsx("border-b border-line last:border-0 hover:bg-canvas/50", !hasData && "opacity-30")}>
                             <td className="px-4 py-2 font-medium">{fmtYM(ym)}</td>
-                            <td className="px-3 py-2 text-right font-mono text-ink-dim border-l border-line">{g && g.soldGross > 0 ? grams(g.soldGross) : "—"}</td>
+                            <td className="px-3 py-2 text-right font-mono text-ink-dim border-l border-line">{g && g.totalGross > 0 ? grams(g.totalGross) : "—"}</td>
                             <td className="px-3 py-2 text-right font-mono text-info">{gSold !== null ? `${gSold.toFixed(2)}%` : "—"}</td>
                             <td className="px-3 py-2 text-right font-mono text-info">{(() => { const va = vaMonthMap.get(ym); return va && va.wt > 0 ? `${(va.wtdVa / va.wt).toFixed(2)}%` : "—"; })()}</td>
                             <td className="px-3 py-2 text-right font-mono text-err">{gPurch !== null ? `${gPurch.toFixed(2)}%` : "—"}</td>
                             <td className="px-3 py-2 text-right font-mono font-semibold">
                               {gSpread !== null ? <span className={gSpread >= 0 ? "text-ok" : "text-err"}>{gSpread >= 0 ? "+" : ""}{gSpread.toFixed(2)}%</span> : "—"}
                             </td>
-                            <td className="px-3 py-2 text-right font-mono text-ink-dim border-l border-line">{s && s.soldGross > 0 ? grams(s.soldGross) : "—"}</td>
+                            <td className="px-3 py-2 text-right font-mono text-ink-dim border-l border-line">{s && s.totalGross > 0 ? grams(s.totalGross) : "—"}</td>
                             <td className="px-3 py-2 text-right font-mono text-info">{sSold !== null ? `${sSold.toFixed(2)}%` : "—"}</td>
                             <td className="px-3 py-2 text-right font-mono text-err">{sPurch !== null ? `${sPurch.toFixed(2)}%` : "—"}</td>
                             <td className="px-3 py-2 text-right font-mono font-semibold">
@@ -2377,14 +2393,14 @@ export default function ReportsPage() {
                       {(gSoldG > 0 || gPurchG > 0 || sSoldG > 0 || sPurchG > 0) && (
                         <tr className="border-t-2 border-line bg-canvas font-semibold text-xs">
                           <td className="px-4 py-2">FY Average</td>
-                          <td className="px-3 py-2 text-right font-mono text-ink-dim border-l border-line">{grams(gSoldG)}</td>
+                          <td className="px-3 py-2 text-right font-mono text-ink-dim border-l border-line">{grams(gTotalG)}</td>
                           <td className="px-3 py-2 text-right font-mono text-info">{avgGSold  > 0 ? `${avgGSold.toFixed(2)}%`  : "—"}</td>
                           <td className="px-3 py-2 text-right font-mono text-info">{avgFyVa > 0 ? `${avgFyVa.toFixed(2)}%` : "—"}</td>
                           <td className="px-3 py-2 text-right font-mono text-err">{avgGPurch > 0 ? `${avgGPurch.toFixed(2)}%` : "—"}</td>
                           <td className="px-3 py-2 text-right font-mono">
                             {avgGSold > 0 && avgGPurch > 0 ? <span className={avgGSold - avgGPurch >= 0 ? "text-ok" : "text-err"}>{avgGSold - avgGPurch >= 0 ? "+" : ""}{(avgGSold - avgGPurch).toFixed(2)}%</span> : "—"}
                           </td>
-                          <td className="px-3 py-2 text-right font-mono text-ink-dim border-l border-line">{grams(sSoldG)}</td>
+                          <td className="px-3 py-2 text-right font-mono text-ink-dim border-l border-line">{grams(sTotalG)}</td>
                           <td className="px-3 py-2 text-right font-mono text-info">{avgSSold  > 0 ? `${avgSSold.toFixed(2)}%`  : "—"}</td>
                           <td className="px-3 py-2 text-right font-mono text-err">{avgSPurch > 0 ? `${avgSPurch.toFixed(2)}%` : "—"}</td>
                           <td className="px-3 py-2 text-right font-mono">
