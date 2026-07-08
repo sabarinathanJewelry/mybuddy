@@ -1910,7 +1910,12 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                           }}
                           className="accent-gold" />
                       </td>
-                      <td className="px-4 py-2.5 font-mono text-info">{s.bill_no}</td>
+                      <td className="px-4 py-2.5">
+                        <Link href={`/sales/${s.sale_id}/edit?back=/suppliers/${id}`}
+                          className="font-mono text-info hover:underline underline-offset-2">
+                          {s.bill_no}
+                        </Link>
+                      </td>
                       <td className="px-3 py-2.5 text-ink-dim">{shortDate(s.bill_date)}</td>
                       <td className="px-3 py-2.5">{s.description}</td>
                       <td className="px-3 py-2.5 text-right">{grams(s.gross_wt ?? 0)}</td>
