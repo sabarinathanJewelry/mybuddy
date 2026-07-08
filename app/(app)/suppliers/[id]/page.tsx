@@ -1902,12 +1902,12 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                       <td className="px-3 py-2.5 text-right">{grams(s.gross_wt ?? 0)}</td>
                       <td className="px-3 py-2.5 text-right hidden sm:table-cell">
                         {s.purity_pct
-                          ? <span className="text-ink font-mono">{Number(s.purity_pct).toFixed(1)}%</span>
+                          ? <span className="text-ink font-mono">{(Number(s.purity_pct) + Number(s.va_pct || 0)).toFixed(2)}%</span>
                           : <span className="text-ink-dim">—</span>}
                       </td>
                       <td className="px-3 py-2.5 text-right hidden sm:table-cell">
                         {s.supplier_va_pct > 0
-                          ? <span className={`font-mono font-semibold ${s.supplier_va_pct < (s.purity_pct ?? 0) ? "text-ok" : "text-warn"}`}>{Number(s.supplier_va_pct).toFixed(1)}%</span>
+                          ? <span className={`font-mono font-semibold ${s.supplier_va_pct < (Number(s.purity_pct) + Number(s.va_pct || 0)) ? "text-ok" : "text-warn"}`}>{Number(s.supplier_va_pct).toFixed(1)}%</span>
                           : <span className="text-ink-dim">—</span>}
                       </td>
                       <td className="px-3 py-2.5 text-right">
