@@ -2,7 +2,7 @@
 
 import { Fragment, use, useState } from "react";
 import Link from "next/link";
-import { useSupplier360, useSaveSupplierPurchase, useUpdateSupplierPurchase, useDeleteSupplierPurchase, useSaveSupplierPayment, useUpdateSupplierPayment, useDeleteSupplierPayment, useConfirmSuspenseVa, useConfirmSuspenseBatch, useUpsertSupplier, useConvertSuspenseToPurchase, useSaveMetalDispatch, useUpdateMetalDispatch, useDeleteMetalDispatch, useSaveStockOut, useUpdateStockOut, useDeleteStockOut } from "@/modules/suppliers/api";
+import { useSupplier360, useSaveSupplierPurchase, useUpdateSupplierPurchase, useDeleteSupplierPurchase, useSaveSupplierPayment, useUpdateSupplierPayment, useDeleteSupplierPayment, useConfirmSuspenseVa, useConfirmSuspenseBatch, useUpsertSupplier, useConvertSuspenseToPurchase, useSaveMetalDispatch, useUpdateMetalDispatch, useDeleteMetalDispatch, useSaveStockOut, useUpdateStockOut, useDeleteStockOut, useUpdateLinkedPurchase } from "@/modules/suppliers/api";
 import { useGlobalDate } from "@/stores/global-date";
 import { useT } from "@/i18n";
 import { inr, grams, shortDate } from "@/lib/format";
@@ -217,10 +217,13 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
     setEditingPaymentId(null);
   }
 
+  const updateLinkedPurchase = useUpdateLinkedPurchase();
+
   // Suspense VA% + cash settlement editing
   const [editingVa, setEditingVa] = useState<{
     id: string; gross_wt: number; purity_pct: number; va_pct: number;
     cash_amt: number; cash_paid_now: number; bill_no: string;
+    isConverted?: boolean; description?: string;
   } | null>(null);
 
   // Cash balance — opening + cash-mode purchases + suspense cash bills + cut_rate − paid
@@ -388,6 +391,16 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
       cash_amt: editingVa.cash_amt, cash_paid_now: editingVa.cash_paid_now,
       pay_date: globalDate, bill_no: editingVa.bill_no,
     });
+    if (editingVa.isConverted && editingVa.va_pct > 0) {
+      await updateLinkedPurchase.mutateAsync({
+        supplierId: id,
+        description: editingVa.description ?? "",
+        billNo: editingVa.bill_no,
+        va_pct: editingVa.va_pct,
+        gross_wt: editingVa.gross_wt,
+        cash_amt: editingVa.cash_amt,
+      });
+    }
     setEditingVa(null);
   }
 
@@ -1923,7 +1936,14 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                       </td>
                       <td className="px-3 py-2.5 text-right">
                         {s.supplier_converted ? (
-                          <span className="text-xs text-ok font-medium">✓ In Purchases</span>
+                          <div className="flex items-center gap-2 justify-end flex-wrap">
+                            <span className="text-xs text-ok font-medium">✓ In Purchases</span>
+                            <button
+                              onClick={() => setEditingVa({ id: s.id, gross_wt: s.gross_wt ?? 0, purity_pct: s.purity_pct ?? 92, va_pct: s.supplier_va_pct ?? 0, cash_amt: s.supplier_cash_amt ?? 0, cash_paid_now: 0, bill_no: s.bill_no ?? "", isConverted: true, description: s.description ?? "" })}
+                              className="text-xs text-warn hover:underline">
+                              Edit
+                            </button>
+                          </div>
                         ) : !s.supplier_confirmed ? (
                           <button
                             onClick={() => setEditingVa({ id: s.id, gross_wt: s.gross_wt ?? 0, purity_pct: s.purity_pct ?? 92, va_pct: 0, cash_amt: s.supplier_cash_amt ?? 0, cash_paid_now: 0, bill_no: s.bill_no ?? "" })}
@@ -1955,6 +1975,11 @@ export default function Supplier360Page({ params }: { params: Promise<{ id: stri
                       <tr className="border-b border-line bg-canvas/50">
                         <td colSpan={8} className="px-4 py-3">
                           <form onSubmit={handleConfirmVa} className="space-y-3">
+                            {editingVa?.isConverted && (
+                              <p className="text-xs text-warn bg-warn/10 border border-warn/20 rounded-lg2 px-3 py-1.5">
+                                This item is linked to a purchase entry — both will be updated on save.
+                              </p>
+                            )}
                             <div className="flex items-end gap-3 flex-wrap">
                               <div>
                                 <label className="text-xs text-ink-dim block mb-1">Gross Wt</label>

@@ -280,6 +280,37 @@ export function useConvertSuspenseToPurchase() {
   });
 }
 
+export function useUpdateLinkedPurchase() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      supplierId, description, billNo, va_pct, gross_wt, cash_amt,
+    }: {
+      supplierId: string; description: string; billNo: string;
+      va_pct: number; gross_wt: number; cash_amt: number;
+    }) => {
+      const client = supabase();
+      const pureWt = parseFloat((gross_wt * va_pct / 100).toFixed(4));
+      const { data: rows } = await client.from("supplier_purchases")
+        .select("id")
+        .eq("supplier_id", supplierId)
+        .eq("description", description)
+        .ilike("notes", `%${billNo}%`)
+        .limit(1);
+      if (rows && rows.length > 0) {
+        const { error } = await client.from("supplier_purchases").update({
+          purity_pct: va_pct,
+          pure_wt: pureWt,
+          amount: cash_amt,
+        }).eq("id", rows[0].id);
+        if (error) throw error;
+      }
+      return supplierId;
+    },
+    onSuccess: (supplierId) => qc.invalidateQueries({ queryKey: ["supplier-360", supplierId] }),
+  });
+}
+
 export function useSaveMetalDispatch() {
   const qc = useQueryClient();
   return useMutation({
