@@ -17,11 +17,12 @@ export async function GET(req: NextRequest) {
   const token     = searchParams.get("hub.verify_token");
   const challenge = searchParams.get("hub.challenge");
 
+  console.log("[WA webhook] GET verify — mode:", mode, "token match:", token === VERIFY_TOKEN, "env set:", !!VERIFY_TOKEN);
+
   if (mode === "subscribe" && token === VERIFY_TOKEN) {
-    console.log("[WA webhook] Verified");
     return new NextResponse(challenge, { status: 200 });
   }
-  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return NextResponse.json({ error: "Forbidden", hint: !VERIFY_TOKEN ? "WHATSAPP_VERIFY_TOKEN not set" : "token mismatch" }, { status: 403 });
 }
 
 // POST: Inbound messages → upsert lead + store message
