@@ -50,7 +50,9 @@ function usePnlPurchases(from: string, to: string) {
         .from("supplier_purchases")
         .select("metal, gross_wt, pure_wt, rate, amount")
         .gte("purchase_date", from)
-        .lte("purchase_date", to);
+        .lte("purchase_date", to)
+        .eq("is_return", false)
+        .eq("is_adjustment", false);
       if (error) throw error;
       return (data ?? []) as any[];
     },
@@ -341,7 +343,88 @@ function useSuspenseTouchProfit() {
   });
 }
 
-// Physical metal dispatches to suppliers/goldsmiths in the period
+// WAC v2 — includes settled supplier purchases + 22K purity approx for exchange gold
+function useMetalWACv2() {
+  return useQuery({
+    queryKey: ["metal-wac-v2"],
+    queryFn: async () => {
+      const client = supabase();
+      const [
+        { data: bullion  },
+        { data: intake   },
+        { data: exchPay  },
+        { data: suppPurch },
+      ] = await Promise.all([
+        client.from("bullion_trades").select("metal, pure_wt, total_amount").eq("trade_type", "buy"),
+        client.from("old_metal_intake").select("metal, pure_wt, payout_amount").gt("payout_amount", 0),
+        client.from("sale_payments").select("mode, amount, metal_wt").in("mode", ["old_gold", "old_silver"]).gt("amount", 0),
+        client.from("supplier_purchases")
+          .select("metal, pure_wt, amount")
+          .eq("is_return", false)
+          .eq("is_adjustment", false)
+          .gt("amount", 0)
+          .in("metal", [...GOLD_METALS, ...SILVER_METALS]),
+      ]);
+      function calcWac(items: { pure_wt: any; cost: any }[]) {
+        const wt   = items.reduce((s, i) => s + Number(i.pure_wt || 0), 0);
+        const cost = items.reduce((s, i) => s + Number(i.cost    || 0), 0);
+        return { wt, cost, rate: wt > 0 ? cost / wt : 0 };
+      }
+      const goldItems = [
+        ...(bullion   ?? []).filter((t: any) => t.metal === "gold")              .map((t: any) => ({ pure_wt: t.pure_wt,                        cost: t.total_amount  })),
+        ...(intake    ?? []).filter((i: any) => (i.metal as string).startsWith("gold"))   .map((i: any) => ({ pure_wt: i.pure_wt,                        cost: i.payout_amount })),
+        ...(exchPay   ?? []).filter((p: any) => p.mode === "old_gold")           .map((p: any) => ({ pure_wt: Number(p.metal_wt) * 0.9167,       cost: p.amount        })),
+        ...(suppPurch ?? []).filter((p: any) => GOLD_METALS.includes(p.metal))   .map((p: any) => ({ pure_wt: p.pure_wt,                        cost: p.amount        })),
+      ];
+      const silvItems = [
+        ...(bullion   ?? []).filter((t: any) => t.metal === "silver")            .map((t: any) => ({ pure_wt: t.pure_wt,                        cost: t.total_amount  })),
+        ...(intake    ?? []).filter((i: any) => (i.metal as string).startsWith("silver")) .map((i: any) => ({ pure_wt: i.pure_wt,                        cost: i.payout_amount })),
+        ...(exchPay   ?? []).filter((p: any) => p.mode === "old_silver")         .map((p: any) => ({ pure_wt: Number(p.metal_wt) * 0.9999,       cost: p.amount        })),
+        ...(suppPurch ?? []).filter((p: any) => SILVER_METALS.includes(p.metal)) .map((p: any) => ({ pure_wt: p.pure_wt,                        cost: p.amount        })),
+      ];
+      return { gold: calcWac(goldItems), silver: calcWac(silvItems) };
+    },
+  });
+}
+
+function useInventorySnapshot(date: string) {
+  return useQuery({
+    queryKey: ["inv-snapshot", date],
+    enabled: !!date,
+    retry: false,
+    queryFn: async () => {
+      try {
+        const { data } = await supabase()
+          .from("metal_inventory_snapshots")
+          .select("metal, pure_wt")
+          .eq("snapshot_date", date);
+        const g = (data ?? []).find((r: any) => r.metal === "gold")?.pure_wt   ?? 0;
+        const s = (data ?? []).find((r: any) => r.metal === "silver")?.pure_wt ?? 0;
+        return { gold: Number(g), silver: Number(s) };
+      } catch {
+        return { gold: 0, silver: 0 };
+      }
+    },
+  });
+}
+
+function useSaveInventorySnapshot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ date, goldPureWt, silverPureWt }: { date: string; goldPureWt: number; silverPureWt: number }) => {
+      const client = supabase();
+      const [r1, r2] = await Promise.all([
+        client.from("metal_inventory_snapshots").upsert({ snapshot_date: date, metal: "gold",   pure_wt: goldPureWt,   wac_rate: 0 }, { onConflict: "snapshot_date,metal" }),
+        client.from("metal_inventory_snapshots").upsert({ snapshot_date: date, metal: "silver", pure_wt: silverPureWt, wac_rate: 0 }, { onConflict: "snapshot_date,metal" }),
+      ]);
+      if (r1.error) throw r1.error;
+      if (r2.error) throw r2.error;
+    },
+    onSuccess: (_: any, { date }: { date: string; goldPureWt: number; silverPureWt: number }) =>
+      qc.invalidateQueries({ queryKey: ["inv-snapshot", date] }),
+  });
+}
+
 function useMetalDispatches(from: string, to: string) {
   return useQuery({
     queryKey: ["metal-dispatches-period", from, to],
@@ -651,7 +734,7 @@ export default function ReportsPage() {
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [tab, setTab]     = useState<"pnl" | "detail" | "products" | "expenses" | "items" | "kolusu" | "touch">("pnl");
+  const [tab, setTab]     = useState<"pnl" | "pnl2" | "detail" | "products" | "expenses" | "items" | "kolusu" | "touch">("pnl");
   const [kolusuPureRate,       setKolusuPureRate]       = useState(263);
   const [kolusuBoardRate,      setKolusuBoardRate]      = useState(285);
   const [kolusuSuspenseMargin, setKolusuSuspenseMargin] = useState(2);
@@ -667,6 +750,8 @@ export default function ReportsPage() {
   const [mergeTo, setMergeTo]       = useState("");
   const [purchVaGold,   setPurchVaGold]   = useState<number | "">(0);
   const [purchVaSilver, setPurchVaSilver] = useState<number | "">(0);
+  const [v2OpenGoldG,  setV2OpenGoldG]   = useState<number | "">("");
+  const [v2OpenSilvG,  setV2OpenSilvG]   = useState<number | "">("");
 
   const renameProduct = useRenameProduct();
   const mergeProducts = useMergeProducts();
@@ -711,6 +796,9 @@ export default function ReportsPage() {
   const { data: ordersReport = [] }                                 = useOrdersReport(range.from, range.to);
   const { data: allCutRates = [] }                                  = useAllCutRates();
   const { data: suspenseTouchData = [] }                            = useSuspenseTouchProfit();
+  const { data: wacV2Data }                                         = useMetalWACv2();
+  const { data: invSnapshot }                                       = useInventorySnapshot(range.from);
+  const saveSnapshotMut                                             = useSaveInventorySnapshot();
   const [touchRate, setTouchRate]   = useState(0);
   const [touchYear, setTouchYear]   = useState(() => {
     const m = now.getMonth() + 1;
@@ -852,6 +940,49 @@ export default function ReportsPage() {
   const grossProfit   = totalRevenue - totalCogs;
   const netProfit     = effectiveGrossProfit - totalExpenses;
 
+  // ── V2 P&L computations ──────────────────────────────────────────────────────
+
+  const v2WacGold     = wacV2Data?.gold.rate   ?? 0;
+  const v2WacSilver   = wacV2Data?.silver.rate ?? 0;
+
+  // Revenue: MPR GST correctly extracted per item
+  const mprGstV2      = mprItems.reduce((s: number, i: any) => {
+    const r = Number(i.gst_pct || 3) / 100;
+    return s + Number(i.line_total || 0) * r / (1 + r);
+  }, 0);
+  const mprRevV2      = mprRevenue - mprGstV2;
+  const v2Revenue     = gold.revenueExGst + silver.revenueExGst + mprRevV2;
+  const v2GstTotal    = gold.gstAmt + silver.gstAmt + mprGstV2;
+
+  // COGS = WAC × pure grams sold (accrual-based, not period acquisition)
+  const v2GoldCogs    = gold.pureWt  * v2WacGold;
+  const v2SilvCogs    = silver.pureWt * v2WacSilver;
+  const v2TotalCogs   = v2GoldCogs + v2SilvCogs;
+  const v2GrossProfit = v2Revenue - v2TotalCogs;
+
+  // VA direct from va_pct field — not residual
+  const v2GoldVa      = (items as any[]).filter(i => GOLD_METALS.includes(i.metal)).reduce((s: number, i: any) => {
+    const vp = Number(i.va_pct ?? 0);
+    return vp > 0 ? s + Number(i.gross_wt || 0) * vp / 100 * Number(i.rate || 0) : s;
+  }, 0);
+  const v2SilvVa      = (items as any[]).filter(i => SILVER_METALS.includes(i.metal)).reduce((s: number, i: any) => {
+    const vp = Number(i.va_pct ?? 0);
+    return vp > 0 ? s + Number(i.gross_wt || 0) * vp / 100 * Number(i.rate || 0) : s;
+  }, 0);
+  const v2Service     = gold.makingAmt + v2GoldVa + gold.stoneAmt + silver.makingAmt + v2SilvVa + silver.stoneAmt;
+  const v2NetProfit   = v2GrossProfit - totalExpenses;
+
+  // Inventory movement
+  const oldSilvBuyPureWt = (oldMetalBuys as any[]).filter(x => (x.metal ?? "").startsWith("silver")).reduce((s: number, x: any) => s + Number(x.pure_wt || 0), 0);
+  const openGoldPure     = Number(v2OpenGoldG)  || (invSnapshot?.gold   ?? 0);
+  const openSilvPure     = Number(v2OpenSilvG)  || (invSnapshot?.silver ?? 0);
+  const inGoldPure       = goldPurchases.pureWt  + oldGoldBuyPureWt + exchGoldWt * 0.9167;
+  const inSilvPure       = silverPurchases.pureWt + oldSilvBuyPureWt;
+  const outGoldPure      = gold.pureWt  + bullionSellGoldWt + dispatchGoldWt;
+  const outSilvPure      = silver.pureWt + bullionSellSilvWt + dispatchSilvWt;
+  const closeGoldPure    = openGoldPure + inGoldPure - outGoldPure;
+  const closeSilvPure    = openSilvPure + inSilvPure - outSilvPure;
+
   return (
     <div className="max-w-5xl mx-auto space-y-5">
       <h1 className="text-xl font-bold">{t("reports")}</h1>
@@ -892,7 +1023,7 @@ export default function ReportsPage() {
 
       {/* Tabs */}
       <div className="flex border-b border-line gap-1">
-        {([["pnl", "P&L Report"], ["detail", "Sales Detail"], ["products", "Product Mix"], ["expenses", "Expenses"], ["items", "Item Search"], ["kolusu", "Kolusu P&L"], ["touch", "Touch Profit"]] as const).map(([k, label]) => (
+        {([["pnl", "P&L Report"], ["pnl2", "P&L V2"], ["detail", "Sales Detail"], ["products", "Product Mix"], ["expenses", "Expenses"], ["items", "Item Search"], ["kolusu", "Kolusu P&L"], ["touch", "Touch Profit"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={clsx("px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
               tab === k ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink")}>
@@ -2552,6 +2683,304 @@ export default function ReportsPage() {
           </div>
         );
       })()}
+
+      {/* ── P&L V2 TAB ──────────────────────────────────────────────────── */}
+      {tab === "pnl2" && !isLoading && (
+        <div className="space-y-5">
+
+          {/* What V2 fixes */}
+          <div className="bg-info/5 border border-info/20 rounded-xl px-4 py-3 text-xs text-info">
+            <p className="font-semibold text-sm mb-1 text-info">P&L V2 — Audit-Corrected Report</p>
+            <div className="grid sm:grid-cols-2 gap-x-6 gap-y-0.5">
+              <p>• COGS = WAC × pure grams sold (not period acquisition cost)</p>
+              <p>• MPR revenue correctly strips embedded GST</p>
+              <p>• VA income = direct from va_pct × gross_wt × rate (not residual)</p>
+              <p>• Supplier purchases exclude returns + adjustments</p>
+              <p>• WAC includes settled supplier purchases (new in V2)</p>
+              <p>• Exchange gold uses 22K purity approximation in WAC</p>
+            </div>
+          </div>
+
+          {/* Summary strip */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: "Revenue (excl GST)", value: inr(v2Revenue),     color: "text-ink" },
+              { label: "COGS (WAC method)",  value: inr(v2TotalCogs),   color: "text-err" },
+              { label: "Gross Profit",       value: inr(v2GrossProfit), color: v2GrossProfit >= 0 ? "text-ok" : "text-err" },
+              { label: "Net Profit",         value: inr(v2NetProfit),   color: v2NetProfit   >= 0 ? "text-ok" : "text-err" },
+            ].map(s => (
+              <div key={s.label} className="bg-white rounded-xl border border-line p-4 shadow-soft">
+                <p className="text-xs text-ink-dim">{s.label}</p>
+                <p className={clsx("text-lg font-bold mt-0.5", s.color)}>{s.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* WAC v2 */}
+          <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+            <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-gold bg-gold/5">
+              Weighted Average Cost V2 — includes settled supplier purchases
+            </div>
+            {v2WacGold === 0 && (
+              <div className="px-4 py-2 bg-warn/5 border-b border-warn/20 text-xs text-warn">
+                Gold WAC is zero — no settled supplier purchases with amount &gt; 0 found. COGS shows zero until supplier settlements are recorded.
+              </div>
+            )}
+            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-line text-sm">
+              <div className="px-4 py-3">
+                <p className="text-xs text-ink-dim">Gold WAC v2</p>
+                <p className="font-bold text-gold">{v2WacGold > 0 ? `${inr(v2WacGold)}/g` : "—"}</p>
+                <p className="text-[10px] text-ink-dim mt-0.5">V1: {goldWAC > 0 ? `${inr(goldWAC)}/g` : "—"}</p>
+              </div>
+              <div className="px-4 py-3">
+                <p className="text-xs text-ink-dim">Silver WAC v2</p>
+                <p className="font-bold text-ink-mid">{v2WacSilver > 0 ? `${inr(v2WacSilver)}/g` : "—"}</p>
+                <p className="text-[10px] text-ink-dim mt-0.5">V1: {silverWAC > 0 ? `${inr(silverWAC)}/g` : "—"}</p>
+              </div>
+              <div className="px-4 py-3">
+                <p className="text-xs text-ink-dim">Gold COGS</p>
+                <p className="font-semibold text-err">{v2GoldCogs > 0 ? inr(v2GoldCogs) : "—"}</p>
+                <p className="text-[10px] text-ink-dim mt-0.5">{grams(gold.pureWt)} × {inr(v2WacGold)}/g</p>
+              </div>
+              <div className="px-4 py-3">
+                <p className="text-xs text-ink-dim">Silver COGS</p>
+                <p className="font-semibold text-err">{v2SilvCogs > 0 ? inr(v2SilvCogs) : "—"}</p>
+                <p className="text-[10px] text-ink-dim mt-0.5">{grams(silver.pureWt)} × {inr(v2WacSilver)}/g</p>
+              </div>
+            </div>
+            <div className="px-4 py-2 border-t border-dashed border-line text-[10px] text-ink-dim">
+              WAC sources: bullion buys + old metal intake + exchange (22K approx) + settled supplier purchases. All-time, no date filter.
+            </div>
+          </div>
+
+          {/* Revenue */}
+          <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+            <div className="px-4 py-2.5 border-b border-line font-semibold text-sm">Revenue (V2)</div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-line text-sm">
+              <div className="px-4 py-3">
+                <p className="text-xs text-ink-dim">Gold (excl GST)</p>
+                <p className="font-semibold text-gold">{inr(gold.revenueExGst)}</p>
+                <p className="text-[10px] text-ink-dim mt-0.5">{gold.count} items · {grams(gold.grossWt)}</p>
+              </div>
+              <div className="px-4 py-3">
+                <p className="text-xs text-ink-dim">Silver (excl GST)</p>
+                <p className="font-semibold text-ink-mid">{inr(silver.revenueExGst)}</p>
+                <p className="text-[10px] text-ink-dim mt-0.5">{silver.count} items · {grams(silver.grossWt)}</p>
+              </div>
+              <div className="px-4 py-3">
+                <p className="text-xs text-ink-dim">Silver MPR (excl GST)</p>
+                <p className="font-semibold text-info">{inr(mprRevV2)}</p>
+                {mprGstV2 > 0.01 && <p className="text-[10px] text-warn mt-0.5">GST extracted: {inr(mprGstV2)} (V1 missed this)</p>}
+              </div>
+              <div className="px-4 py-3">
+                <p className="text-xs text-ink-dim">Total Revenue (excl GST)</p>
+                <p className="text-lg font-bold">{inr(v2Revenue)}</p>
+                <p className="text-[10px] text-ink-dim mt-0.5">GST: {inr(v2GstTotal)}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Service Income — direct VA */}
+          <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+            <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-ok bg-ok/5">
+              Service Income (V2 — VA = gross_wt × va_pct% × rate, not residual)
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-line text-sm">
+              <div className="px-4 py-3">
+                <p className="text-xs text-ink-dim">Gold Making</p>
+                <p className="font-semibold text-ok">{inr(gold.makingAmt)}</p>
+              </div>
+              <div className="px-4 py-3">
+                <p className="text-xs text-ink-dim">Gold VA (direct)</p>
+                <p className="font-semibold text-ok">{inr(v2GoldVa)}</p>
+                {Math.abs(v2GoldVa - Math.max(0, gold.vaAmt)) > 100 && (
+                  <p className="text-[10px] text-warn mt-0.5">V1 residual: {inr(Math.max(0, gold.vaAmt))}</p>
+                )}
+              </div>
+              <div className="px-4 py-3">
+                <p className="text-xs text-ink-dim">Silver Making + VA</p>
+                <p className="font-semibold text-ok">{inr(silver.makingAmt + v2SilvVa)}</p>
+              </div>
+              <div className="px-4 py-3">
+                <p className="text-xs text-ink-dim">Stone / Diamond</p>
+                <p className="font-semibold text-info">{inr(gold.stoneAmt + silver.stoneAmt)}</p>
+              </div>
+            </div>
+            <div className="px-4 py-3 border-t border-line bg-ok/5 flex items-center justify-between">
+              <span className="text-sm text-ink-dim">Total Service Income (V2):</span>
+              <span className="text-lg font-bold text-ok">{inr(v2Service)}</span>
+            </div>
+          </div>
+
+          {/* Inventory Movement */}
+          <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+            <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-warn bg-warn/5">
+              Inventory Movement — {MONTHS[month - 1]} {year} (pure weight, grams)
+            </div>
+            <div className="px-4 py-3 border-b border-dashed border-line bg-canvas/50">
+              <p className="text-xs font-semibold text-ink-dim mb-2">Opening Stock (enter + save to persist across sessions)</p>
+              <div className="flex items-center gap-4 flex-wrap">
+                <label className="flex items-center gap-2 text-xs text-ink-dim">
+                  Gold pure (g)
+                  <input
+                    type="number" min="0" step="0.001"
+                    value={v2OpenGoldG}
+                    placeholder={String(invSnapshot?.gold ?? 0)}
+                    onChange={e => setV2OpenGoldG(e.target.value === "" ? "" : Number(e.target.value))}
+                    className="w-28 border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold text-ink"
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-xs text-ink-dim">
+                  Silver pure (g)
+                  <input
+                    type="number" min="0" step="0.001"
+                    value={v2OpenSilvG}
+                    placeholder={String(invSnapshot?.silver ?? 0)}
+                    onChange={e => setV2OpenSilvG(e.target.value === "" ? "" : Number(e.target.value))}
+                    className="w-28 border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold text-ink"
+                  />
+                </label>
+                <button
+                  disabled={saveSnapshotMut.isPending}
+                  onClick={() => saveSnapshotMut.mutate({
+                    date: range.from,
+                    goldPureWt:   Number(v2OpenGoldG)  || openGoldPure,
+                    silverPureWt: Number(v2OpenSilvG) || openSilvPure,
+                  })}
+                  className="px-3 py-1 text-xs bg-gold text-white rounded-lg2 hover:bg-gold/90 disabled:opacity-50">
+                  {saveSnapshotMut.isPending ? "Saving..." : "Save Opening Stock"}
+                </button>
+                {saveSnapshotMut.isSuccess && <span className="text-xs text-ok">Saved for {range.from}</span>}
+                {saveSnapshotMut.isError && <span className="text-xs text-err">Error — run migration 127 first</span>}
+              </div>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                  <th className="text-left px-4 py-2">Movement</th>
+                  <th className="text-right px-3 py-2 text-gold">Gold (pure g)</th>
+                  <th className="text-right px-4 py-2">Silver (pure g)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {([
+                  { label: "Opening Stock",              note: "start of period",                 gold: openGoldPure,          silv: openSilvPure,          neutral: true },
+                  { label: "+ Supplier Purchases",       note: "excl returns + adjustments",      gold: goldPurchases.pureWt,   silv: silverPurchases.pureWt, neutral: false },
+                  { label: "+ Old Metal Bought",         note: "Metal Flow → Intake",             gold: oldGoldBuyPureWt,       silv: oldSilvBuyPureWt,       neutral: false },
+                  { label: "+ Exchange Received",        note: "22K approx for gold",             gold: exchGoldWt * 0.9167,   silv: exchSilvWt * 0.9999,   neutral: false },
+                  { label: "− Sold to Customers",       note: "confirmed sale items",             gold: -gold.pureWt,           silv: -silver.pureWt,         neutral: false },
+                  { label: "− Dispatched to Suppliers", note: "metal_dispatches",                 gold: -dispatchGoldWt,        silv: -dispatchSilvWt,        neutral: false },
+                  { label: "− Bullion Sold",            note: "bullion_trades sell",              gold: -bullionSellGoldWt,     silv: -bullionSellSilvWt,     neutral: false },
+                ] as const).map((r, i) => (
+                  <tr key={i} className={clsx("border-b border-line/50 last:border-0", r.neutral && "bg-canvas/50 font-semibold")}>
+                    <td className="px-4 py-2.5 text-sm">
+                      {r.label}
+                      <span className="ml-2 text-[10px] text-ink-dim">{r.note}</span>
+                    </td>
+                    <td className={clsx("px-3 py-2.5 text-right font-mono text-xs", r.gold < 0 ? "text-err" : r.gold > 0 ? "text-gold" : "text-ink-dim")}>
+                      {r.gold !== 0 ? `${r.gold >= 0 ? "+" : ""}${r.gold.toFixed(3)}` : "—"}
+                    </td>
+                    <td className={clsx("px-4 py-2.5 text-right font-mono text-xs", r.silv < 0 ? "text-err" : r.silv > 0 ? "text-ink-mid" : "text-ink-dim")}>
+                      {r.silv !== 0 ? `${r.silv >= 0 ? "+" : ""}${r.silv.toFixed(3)}` : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-line bg-canvas font-semibold text-sm">
+                  <td className="px-4 py-2.5">Closing Stock (estimate)</td>
+                  <td className={clsx("px-3 py-2.5 text-right font-mono text-xs", closeGoldPure < 0 ? "text-err" : "text-gold")}>
+                    {closeGoldPure.toFixed(3)} g
+                    {closeGoldPure < 0 && <span className="ml-1 text-warn text-[10px]">check opening stock</span>}
+                  </td>
+                  <td className={clsx("px-4 py-2.5 text-right font-mono text-xs", closeSilvPure < 0 ? "text-err" : "text-ink-mid")}>
+                    {closeSilvPure.toFixed(3)} g
+                  </td>
+                </tr>
+                {(v2WacGold > 0 || v2WacSilver > 0) && (
+                  <tr className="border-t border-line text-xs text-ink-dim">
+                    <td className="px-4 py-2">Closing Value at WAC v2</td>
+                    <td className="px-3 py-2 text-right font-mono">{closeGoldPure > 0 && v2WacGold > 0 ? inr(closeGoldPure * v2WacGold) : "—"}</td>
+                    <td className="px-4 py-2 text-right font-mono">{closeSilvPure > 0 && v2WacSilver > 0 ? inr(closeSilvPure * v2WacSilver) : "—"}</td>
+                  </tr>
+                )}
+              </tfoot>
+            </table>
+            <div className="px-4 py-2 bg-canvas/30 border-t border-line text-[10px] text-ink-dim">
+              Opening stock must be entered manually and saved. Exchange gold purity assumed 22K (91.67%). Dispatches treated as pure weight.
+            </div>
+          </div>
+
+          {/* P&L Waterfall */}
+          <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+            <div className="px-4 py-2.5 border-b border-line font-semibold text-sm">Profit & Loss — V2 Statement</div>
+            <div className="divide-y divide-line text-sm">
+              {([
+                { label: "Revenue (incl GST)",         value: v2Revenue + v2GstTotal,  indent: false, bold: false, color: "" },
+                { label: "  Less: GST Collected",      value: -v2GstTotal,             indent: true,  bold: false, color: "text-warn" },
+                { label: "Net Revenue (excl GST)",     value: v2Revenue,               indent: false, bold: true,  color: "text-ink" },
+                { label: "  Less: Gold COGS at WAC",   value: -v2GoldCogs,             indent: true,  bold: false, color: v2WacGold   > 0 ? "text-err" : "text-warn" },
+                { label: "  Less: Silver COGS at WAC", value: -v2SilvCogs,             indent: true,  bold: false, color: v2WacSilver > 0 ? "text-err" : "text-warn" },
+                { label: "Gross Profit",               value: v2GrossProfit,           indent: false, bold: true,  color: v2GrossProfit >= 0 ? "text-ok" : "text-err" },
+                { label: "  Less: Operating Expenses", value: -totalExpenses,          indent: true,  bold: false, color: "text-err" },
+                { label: "Net Profit",                 value: v2NetProfit,             indent: false, bold: true,  color: v2NetProfit   >= 0 ? "text-ok" : "text-err" },
+              ] as const).map((row, i) => (
+                <div key={i} className={clsx("flex items-center justify-between px-4 py-3", row.bold && "bg-canvas/50")}>
+                  <span className={clsx(row.indent && "pl-4 text-ink-dim", row.bold && "font-semibold")}>
+                    {row.label}
+                    {row.label.includes("COGS") && v2WacGold === 0 && (
+                      <span className="ml-2 text-[10px] text-warn">WAC not set</span>
+                    )}
+                  </span>
+                  <span className={clsx("font-mono", row.bold && "text-base font-bold", row.color)}>
+                    {row.value < 0 ? `(${inr(Math.abs(row.value))})` : inr(row.value)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* V1 vs V2 comparison */}
+          <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+            <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-info bg-info/5">
+              V1 vs V2 Comparison — {MONTHS[month - 1]} {year}
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                  <th className="text-left px-4 py-2">Metric</th>
+                  <th className="text-right px-3 py-2">V1 (current)</th>
+                  <th className="text-right px-3 py-2">V2 (corrected)</th>
+                  <th className="text-right px-4 py-2">Difference</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { label: "Revenue (excl GST)",  v1: totalRevenue,          v2: v2Revenue     },
+                  { label: "GST Collected",        v1: totalGst,              v2: v2GstTotal    },
+                  { label: "COGS / Metal Cost",    v1: effectivePurchaseCost, v2: v2TotalCogs   },
+                  { label: "Gross Profit",         v1: effectiveGrossProfit,  v2: v2GrossProfit },
+                  { label: "Net Profit",           v1: netProfit,             v2: v2NetProfit   },
+                  { label: "Gold VA Income",       v1: Math.max(0, gold.vaAmt), v2: v2GoldVa   },
+                ].map((r, i) => {
+                  const diff = r.v2 - r.v1;
+                  return (
+                    <tr key={i} className="border-b border-line/50 last:border-0 hover:bg-canvas/30">
+                      <td className="px-4 py-2.5 font-medium">{r.label}</td>
+                      <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{inr(r.v1)}</td>
+                      <td className="px-3 py-2.5 text-right font-mono font-semibold">{inr(r.v2)}</td>
+                      <td className={clsx("px-4 py-2.5 text-right font-mono text-xs", Math.abs(diff) < 1 ? "text-ink-dim" : diff > 0 ? "text-ok" : "text-err")}>
+                        {Math.abs(diff) < 1 ? "—" : `${diff > 0 ? "+" : ""}${inr(diff)}`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+      )}
     </div>
   );
 }

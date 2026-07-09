@@ -87,6 +87,21 @@
 - Investment tracking
 - Additional/variable income entry
 
+### P&L V2 (Reports → P&L V2 tab)
+- **Audit-corrected P&L** fixing 5 critical issues found in V1:
+  1. COGS = WAC × pure grams sold (accrual method, not period acquisition cash flows)
+  2. MPR revenue correctly strips embedded 3% GST before adding to revenue
+  3. VA income = direct formula `Σ(gross_wt × va_pct% × rate)` — not a residual absorbing data errors
+  4. Supplier purchases exclude returns (`is_return=true`) and adjustments (`is_adjustment=true`) — this fix also applies to V1
+  5. WAC v2 includes settled supplier purchases (amount > 0) in addition to bullion buys + old metal + exchange
+- **WAC V2** widget: shows V2 gold/silver WAC alongside V1 for comparison; warns when WAC is zero
+- **Revenue section**: gold + silver + MPR all excl-GST correctly; shows MPR GST extracted (V1 missed this)
+- **Service Income V2**: making charges + direct VA + stone/diamond; flags difference vs V1 residual VA
+- **Inventory Movement section**: opening stock (manually entered and saved as `metal_inventory_snapshots`) + in (purchases + old metal + exchange) − out (sold + dispatched + bullion sold) = closing stock estimate; closing value at WAC v2; save button persists opening stock by period date
+- **P&L Waterfall**: clean revenue → COGS → gross profit → expenses → net profit statement
+- **V1 vs V2 comparison table**: side-by-side for Revenue, GST, COGS, Gross Profit, Net Profit, Gold VA Income with difference column
+- Requires migrations 127 (metal_inventory_snapshots table) and 128 (metal column on supplier_payments)
+
 ### Touch Analysis (Reports → Touch Profit tab)
 - **FY Monthly Touch Table**: comprehensive sold touch% vs purchase touch% per month for gold and silver separately; FY year selector; gross weight column for each metal so volumes are transparent
   - Sold touch = weighted avg of effective touch for all confirmed gold/silver sale_items with gross_wt > 0; effective purity = purity_pct if > 0, else pure_wt/gross_wt × 100 (fallback so gross wt matches P&L); items with no purity info excluded from touch% only, still counted in gross wt
