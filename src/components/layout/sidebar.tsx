@@ -38,6 +38,7 @@ const NAV = [
   { href: "/attendance",   icon: "🕐", key: "nav_attendance" as const },
   { href: "/goldsmith",    icon: "⚒️",  key: "nav_goldsmith" as const },
   { href: "/social",         icon: "📲", key: "nav_social" as const },
+  { href: "/leads",          icon: "🎯", key: "nav_leads"  as const },
 ];
 
 const ADMIN_NAV = [

@@ -1,7 +1,7 @@
 # MyBuddy ERP — Feature Document
 
 > Sabarinathan Jewellery ERP System  
-> Last updated: 2026-06-27
+> Last updated: 2026-07-09
 
 ---
 
@@ -307,7 +307,37 @@
 - Staff read-only access
 
 ### Social
-- Social media links/contacts page
+- Instagram Auto-DM: keyword-triggered DM replies to Instagram comments (`/social`)
+- Rules: keyword, match type (contains/exact), reply text, trigger count tracking
+
+### Lead Inbox (`/leads`) *(New — 2026-07-09)*
+Multi-channel WhatsApp + Instagram + Messenger lead management CRM.
+
+**Architecture:**
+- `whatsapp_leads` table: one row per unique sender per channel (wa_id + channel unique)
+- `whatsapp_messages` table: every inbound/outbound message with direction, status, sent_by
+- `app/api/whatsapp/webhook` — GET: Meta webhook verification; POST: inbound message handler
+- `app/api/whatsapp/send` — POST: sends WhatsApp reply via Cloud API, records outbound message
+
+**UI features:**
+- Split-panel: lead list (left) + chat view (right)
+- Status tabs: All / New / Hot / Warm / Cold / Converted / Lost
+- Status badge with colour coding per lead
+- Channel icon (💬 WhatsApp, 📸 Instagram, 💙 Messenger)
+- Assign to staff dropdown (per lead)
+- Notes field (inline edit per lead)
+- Chat bubble UI: outbound = gold right-aligned, inbound = white left-aligned
+- Reply box with Enter-to-send (Shift+Enter for newline); WhatsApp only for now
+- Auto-scroll to latest message; 5-second polling for new messages
+
+**Required env vars:**
+- `WHATSAPP_VERIFY_TOKEN` — secret string entered in Meta webhook setup
+- `WHATSAPP_ACCESS_TOKEN` — permanent token from Meta System User
+- `WHATSAPP_PHONE_NUMBER_ID` — from WhatsApp Manager (694983870354081 for production)
+
+**Required migration:** `db/migrations/129_whatsapp_leads.sql`
+
+**Setup status:** Meta Business Verification in review (submitted 2026-07-09). After approval: migrate +91 73053 93916, enable Coexistence in WhatsApp Manager, set webhook URL to `https://<domain>/api/whatsapp/webhook`.
 
 ---
 
