@@ -335,9 +335,22 @@ Multi-channel WhatsApp + Instagram + Messenger lead management CRM.
 - `WHATSAPP_ACCESS_TOKEN` — permanent token from Meta System User
 - `WHATSAPP_PHONE_NUMBER_ID` — from WhatsApp Manager (694983870354081 for production)
 
+**WhatsApp Coexistence Setup page (`/admin/whatsapp-setup`):**
+- Loads Facebook JS SDK and launches Embedded Signup with `featureType: 'whatsapp_business_app_onboarding'`
+- After login, displays `WHATSAPP_PHONE_NUMBER_ID` and `WHATSAPP_WABA_ID` to copy to Vercel
+- `app/api/whatsapp/connect` — POST: exchanges Embedded Signup auth code for user token, fetches WABA + phone number IDs
+- Requires `FACEBOOK_APP_SECRET` env var in Vercel
+
+**Required env vars:**
+- `WHATSAPP_VERIFY_TOKEN` — secret string entered in Meta webhook setup
+- `WHATSAPP_ACCESS_TOKEN` — permanent token from Meta System User
+- `WHATSAPP_PHONE_NUMBER_ID` — from WhatsApp Manager or Coexistence setup page (694983870354081 for production)
+- `WHATSAPP_WABA_ID` — WhatsApp Business Account ID (populated after Coexistence setup)
+- `FACEBOOK_APP_SECRET` — from Meta App → Settings → Basic (needed for auth code exchange)
+
 **Required migration:** `db/migrations/129_whatsapp_leads.sql`
 
-**Setup status:** Meta Business Verification in review (submitted 2026-07-09). After approval: migrate +91 73053 93916, enable Coexistence in WhatsApp Manager, set webhook URL to `https://<domain>/api/whatsapp/webhook`.
+**Setup status:** Meta Business Verification complete (2026-07-09). Use `/admin/whatsapp-setup` to connect +91 73053 93916 via Embedded Signup Coexistence flow. After setup, subscribe webhook to: `messages`, `smb_message_echoes`, `smb_app_state_sync`, `history`.
 
 ---
 
