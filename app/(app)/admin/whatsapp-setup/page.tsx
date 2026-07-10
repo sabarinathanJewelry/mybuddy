@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 
-const FB_APP_ID = "468979614795589";
-const FB_CONFIG_ID = "1513891609861996";
+const FB_APP_ID = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID ?? "468979614795589";
+const FB_CONFIG_ID = process.env.NEXT_PUBLIC_FACEBOOK_CONFIG_ID ?? "1513891609861996";
 
 type ConnectResult = {
   phone_number_id: string;

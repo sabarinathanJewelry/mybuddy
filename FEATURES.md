@@ -347,6 +347,8 @@ Multi-channel WhatsApp + Instagram + Messenger lead management CRM.
 - `WHATSAPP_PHONE_NUMBER_ID` — from WhatsApp Manager or Coexistence setup page (694983870354081 for production)
 - `WHATSAPP_WABA_ID` — WhatsApp Business Account ID (populated after Coexistence setup)
 - `FACEBOOK_APP_SECRET` — from Meta App → Settings → Basic (needed for auth code exchange)
+- `NEXT_PUBLIC_FACEBOOK_APP_ID` — Meta App ID (defaults to 468979614795589; set if different)
+- `NEXT_PUBLIC_FACEBOOK_CONFIG_ID` — Embedded Signup Configuration ID (defaults to 1513891609861996)
 
 **Required migration:** `db/migrations/129_whatsapp_leads.sql`
 
