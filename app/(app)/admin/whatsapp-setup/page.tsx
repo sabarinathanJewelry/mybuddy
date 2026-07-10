@@ -24,6 +24,7 @@ export default function WhatsAppSetupPage() {
   const [step, setStep] = useState<StepState>("idle");
   const [result, setResult] = useState<ConnectResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sdkReady, setSdkReady] = useState(false);
   const sdkLoaded = useRef(false);
 
   useEffect(() => {
@@ -37,6 +38,7 @@ export default function WhatsAppSetupPage() {
         xfbml: true,
         version: "v22.0",
       });
+      setSdkReady(true);
     };
 
     const script = document.createElement("script");
@@ -74,8 +76,8 @@ export default function WhatsAppSetupPage() {
   }, []);
 
   function launchEmbeddedSignup() {
-    if (!window.FB) {
-      setError("Facebook SDK not loaded yet. Please wait a moment and try again.");
+    if (!sdkReady || !window.FB) {
+      setError("Facebook SDK is still loading. Please wait a moment and try again.");
       return;
     }
     setError(null);
@@ -146,12 +148,13 @@ export default function WhatsAppSetupPage() {
 
           <button
             onClick={launchEmbeddedSignup}
-            disabled={step === "connecting" || step === "exchanging"}
+            disabled={!sdkReady || step === "connecting" || step === "exchanging"}
             className="w-full py-2.5 px-4 rounded-lg2 bg-[#1877F2] text-white text-sm font-medium hover:bg-[#166FE5] disabled:opacity-50 transition-colors"
           >
-            {step === "connecting" && "Opening Facebook login…"}
-            {step === "exchanging" && "Verifying with Meta…"}
-            {(step === "idle" || step === "error") && "Connect with Facebook"}
+            {!sdkReady && "Loading Facebook SDK…"}
+            {sdkReady && step === "connecting" && "Opening Facebook login…"}
+            {sdkReady && step === "exchanging" && "Verifying with Meta…"}
+            {sdkReady && (step === "idle" || step === "error") && "Connect with Facebook"}
           </button>
 
           <p className="text-xs text-ink-dim">
