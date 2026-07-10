@@ -52,8 +52,9 @@ const ADMIN_NAV = [
   { href: "/admin/sop",            icon: "📋", key: "nav_sop" as const },
   { href: "/admin/careers",        icon: "💼", key: "nav_careers" as const },
   { href: "/admin/kpi",            icon: "📊", key: "nav_kpi" as const },
-  { href: "/admin/security",       icon: "🔐", key: "nav_security" as const },
-  { href: "/my-security-code",     icon: "🔢", key: "nav_security_code" as const },
+  { href: "/admin/security",        icon: "🔐", key: "nav_security" as const },
+  { href: "/my-security-code",      icon: "🔢", key: "nav_security_code" as const },
+  { href: "/admin/whatsapp-setup",  icon: "📱", key: "nav_whatsapp_setup" as const },
 ];
 
 function useRepairAlertCount(enabled: boolean) {
