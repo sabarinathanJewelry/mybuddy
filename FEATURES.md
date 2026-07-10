@@ -338,7 +338,8 @@ Multi-channel WhatsApp + Instagram + Messenger lead management CRM.
 **WhatsApp Coexistence Setup page (`/admin/whatsapp-setup`):**
 - Loads Facebook JS SDK and launches Embedded Signup with `featureType: 'whatsapp_business_app_onboarding'`
 - After login, displays `WHATSAPP_PHONE_NUMBER_ID` and `WHATSAPP_WABA_ID` to copy to Vercel
-- `app/api/whatsapp/connect` — POST: exchanges Embedded Signup auth code for user token, fetches WABA + phone number IDs
+- `app/api/whatsapp/oauth-callback` — GET: receives OAuth redirect from Facebook, exchanges code for token, fetches WABA + phone number IDs, redirects back to setup page with results
+- No Facebook JS SDK required — uses direct OAuth URL redirect flow
 - Requires `FACEBOOK_APP_SECRET` env var in Vercel
 
 **Required env vars:**
