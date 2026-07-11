@@ -99,6 +99,8 @@ export default function DashboardPage() {
     }
   }, [isSubadmin, allowedModules, router]);
 
+  if (isSubadmin && allowedModules.length > 0) return null;
+
   function toggle(v: boolean) {
     setSmart(v);
     localStorage.setItem(PREF_KEY, v ? "smart" : "classic");
