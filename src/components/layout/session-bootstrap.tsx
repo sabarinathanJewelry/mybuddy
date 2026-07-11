@@ -87,7 +87,7 @@ export default function SessionBootstrap({ children }: { children: React.ReactNo
       setReady(true);
     }
 
-    init();
+    init().catch(() => setReady(true));
 
     // Re-fetch profile on window focus so permission changes take effect without re-login
     function onFocus() { loadProfile().then(p => { if (p) setProfile(p); }); }
