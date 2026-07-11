@@ -36,10 +36,11 @@ export default function KioskProvider({
     if (!loading && !hasAnySeq) unlock();
   }, [loading, hasAnySeq, unlock]);
 
-  // Staff on personal devices are never locked — kiosk is only for the shared shop screen
+  // Staff and restricted subadmins on personal devices are never locked
   useEffect(() => {
     if (profile?.role === "staff") unlock();
-  }, [profile?.role, unlock]);
+    if (profile?.role === "subadmin" && (profile?.allowed_modules?.length ?? 0) > 0) unlock();
+  }, [profile?.role, profile?.allowed_modules, unlock]);
 
   // When locked (and sequence is set), redirect to /attendance
   useEffect(() => {
