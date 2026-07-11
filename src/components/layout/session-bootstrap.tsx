@@ -66,6 +66,18 @@ export default function SessionBootstrap({ children }: { children: React.ReactNo
         }
         setProfile(profile);
         if (profile.language) setLang(profile.language as "en" | "ta");
+
+        // Restricted subadmin: enforce allowed_modules on every hard load
+        if (profile.role === "subadmin" && (profile.allowed_modules?.length ?? 0) > 0) {
+          const mods = profile.allowed_modules!;
+          const path = window.location.pathname;
+          const allowed = mods.some(m => path === `/${m}` || path.startsWith(`/${m}/`));
+          if (!allowed) {
+            router.replace(`/${mods[0]}`);
+            setReady(true);
+            return;
+          }
+        }
       }
 
       const rate = await fetchRateForDate(globalDate);
