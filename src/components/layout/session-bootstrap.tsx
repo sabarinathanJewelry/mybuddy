@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/stores/auth";
 import { useBoardRate } from "@/stores/board-rate";
@@ -26,6 +26,7 @@ async function fetchRateForDate(date: string) {
 export default function SessionBootstrap({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
   const profile = useAuth((s) => s.profile);
   const setProfile = useAuth((s) => s.setProfile);
   const setRate = useBoardRate((s) => s.setRate);
@@ -106,6 +107,18 @@ export default function SessionBootstrap({ children }: { children: React.ReactNo
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // After a restricted-subadmin redirect, init() returns early without calling
+  // setReady(true). Watch pathname: once the navigation lands on an allowed path,
+  // complete the ready sequence here.
+  useEffect(() => {
+    if (ready) return;
+    if (!profile) return;
+    if (profile.role !== "subadmin" || (profile.allowed_modules?.length ?? 0) === 0) return;
+    const mods = profile.allowed_modules!;
+    const allowed = mods.some((m: string) => pathname === `/${m}` || pathname.startsWith(`/${m}/`));
+    if (allowed) setReady(true);
+  }, [pathname, ready, profile]);
 
   // Reload board rate whenever global date changes
   useEffect(() => {
