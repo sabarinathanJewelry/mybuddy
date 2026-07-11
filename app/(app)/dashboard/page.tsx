@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/stores/auth";
 
@@ -80,20 +81,40 @@ const SECTIONS: Section[] = [
 ];
 
 export default function DashboardPage() {
+  const router = useRouter();
   const profile = useAuth((s) => s.profile);
   const isAdmin = profile?.role === "admin";
+  const isSubadmin = profile?.role === "subadmin";
+  const allowedModules: string[] = profile?.allowed_modules ?? [];
   const [smart, setSmart] = useState(true);
 
   useEffect(() => {
     setSmart(localStorage.getItem(PREF_KEY) !== "classic");
   }, []);
 
+  // Subadmin with restricted modules: redirect to first allowed module
+  useEffect(() => {
+    if (isSubadmin && allowedModules.length > 0) {
+      router.replace(`/${allowedModules[0]}`);
+    }
+  }, [isSubadmin, allowedModules, router]);
+
   function toggle(v: boolean) {
     setSmart(v);
     localStorage.setItem(PREF_KEY, v ? "smart" : "classic");
   }
 
-  const sections = SECTIONS.filter(s => !s.adminOnly || isAdmin);
+  function canAccessCard(href: string) {
+    if (!isSubadmin) return true;
+    if (allowedModules.length === 0) return false;
+    const slug = href.replace(/^\//, "");
+    return allowedModules.includes(slug);
+  }
+
+  const sections = SECTIONS
+    .filter(s => !s.adminOnly || isAdmin)
+    .map(s => ({ ...s, cards: s.cards.filter(c => canAccessCard(c.href)) }))
+    .filter(s => s.cards.length > 0);
 
   if (!smart) {
     return (
