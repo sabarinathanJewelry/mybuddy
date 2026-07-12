@@ -322,12 +322,15 @@ Multi-channel WhatsApp + Instagram + Messenger lead management CRM.
 **UI features:**
 - Split-panel: lead list (left) + chat view (right)
 - Status tabs: All / New / Hot / Warm / Cold / Converted / Lost
-- Status badge with colour coding per lead
+- Status badge + category badge (Gold / Silver / Diamond / Repair / Reel / Walk-in / General / Other) in lead list
 - Channel icon (💬 WhatsApp, 📸 Instagram, 💙 Messenger)
-- Assign to staff dropdown (per lead)
+- Category dropdown + Status dropdown + Assign to staff dropdown (per lead header)
+- Source field (inline edit) — free text e.g. "Reel - Gold Chain Jan 2026", "Instagram Bio", "Referral"
 - Notes field (inline edit per lead)
-- Chat bubble UI: outbound = gold right-aligned, inbound = white left-aligned
-- Reply box with Enter-to-send (Shift+Enter for newline); WhatsApp only for now
+- Chat bubble UI: inbound = white left-aligned, outbound = gold right-aligned (monitor-only view)
+- Monitor-only mode — no reply box; reply from WhatsApp Business App
+- Auto-links lead to existing customer by matching last 10 digits of phone; auto-creates new customer if no match
+- Customer name shown as clickable link to customer page in lead detail header
 - Auto-scroll to latest message; 5-second polling for new messages
 
 **Required env vars:**
@@ -351,7 +354,7 @@ Multi-channel WhatsApp + Instagram + Messenger lead management CRM.
 - `NEXT_PUBLIC_FACEBOOK_APP_ID` — Meta App ID (defaults to 468979614795589; set if different)
 - `NEXT_PUBLIC_FACEBOOK_CONFIG_ID` — Embedded Signup Configuration ID (defaults to 1513891609861996)
 
-**Required migration:** `db/migrations/129_whatsapp_leads.sql`
+**Required migrations:** `db/migrations/129_whatsapp_leads.sql`, `db/migrations/130_leads_category_source.sql`, `db/migrations/131_leads_customer_id.sql`
 
 **Setup status:** Meta Business Verification complete (2026-07-09). Use `/admin/whatsapp-setup` to connect +91 73053 93916 via Embedded Signup Coexistence flow. After setup, subscribe webhook to: `messages`, `smb_message_echoes`, `smb_app_state_sync`, `history`.
 

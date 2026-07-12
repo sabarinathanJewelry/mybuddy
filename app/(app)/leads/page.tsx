@@ -2,12 +2,13 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { shortDate } from "@/lib/format";
-import { useAuth } from "@/stores/auth";
 
 type Channel = "whatsapp" | "instagram" | "messenger";
 type LeadStatus = "new" | "hot" | "warm" | "cold" | "converted" | "lost";
+type LeadCategory = "gold" | "silver" | "diamond" | "repair" | "reel" | "walkin" | "general" | "other";
 
 type Lead = {
   id: string;
@@ -15,7 +16,10 @@ type Lead = {
   channel: Channel;
   display_name: string | null;
   status: LeadStatus;
+  category: LeadCategory | null;
+  source: string | null;
   assigned_to: string | null;
+  customer_id: string | null;
   last_message_at: string | null;
   notes: string | null;
   created_at: string;
@@ -40,6 +44,28 @@ const STATUS_COLORS: Record<LeadStatus, string> = {
   cold:      "bg-slate-100 text-slate-600",
   converted: "bg-green-100 text-green-700",
   lost:      "bg-zinc-100 text-zinc-500",
+};
+
+const CATEGORY_LABELS: Record<LeadCategory, string> = {
+  gold:    "Gold",
+  silver:  "Silver",
+  diamond: "Diamond",
+  repair:  "Repair",
+  reel:    "Reel",
+  walkin:  "Walk-in",
+  general: "General",
+  other:   "Other",
+};
+
+const CATEGORY_COLORS: Record<LeadCategory, string> = {
+  gold:    "bg-amber-100 text-amber-700",
+  silver:  "bg-slate-100 text-slate-600",
+  diamond: "bg-sky-100 text-sky-700",
+  repair:  "bg-orange-100 text-orange-700",
+  reel:    "bg-purple-100 text-purple-700",
+  walkin:  "bg-teal-100 text-teal-700",
+  general: "bg-zinc-100 text-zinc-500",
+  other:   "bg-zinc-100 text-zinc-500",
 };
 
 const CHANNEL_ICON: Record<Channel, string> = {
@@ -93,6 +119,21 @@ function useMessages(leadId: string | null) {
   });
 }
 
+function useCustomerName(customerId: string | null) {
+  return useQuery<{ id: string; name: string } | null>({
+    queryKey: ["customer_name", customerId],
+    enabled: !!customerId,
+    queryFn: async () => {
+      const { data } = await supabase()
+        .from("customers")
+        .select("id, name")
+        .eq("id", customerId!)
+        .single();
+      return data ?? null;
+    },
+  });
+}
+
 function useStaff() {
   return useQuery<Profile[]>({
     queryKey: ["staff_profiles"],
@@ -108,28 +149,31 @@ function useStaff() {
 }
 
 export default function LeadsPage() {
-  const qc      = useQueryClient();
-  const profile = useAuth((s) => s.profile);
+  const qc = useQueryClient();
 
-  const [tab,          setTab]          = useState<LeadStatus | "all">("all");
-  const [selectedId,   setSelectedId]   = useState<string | null>(null);
-  const [replyText,    setReplyText]    = useState("");
-  const [notesText,    setNotesText]    = useState("");
-  const [editingNotes, setEditingNotes] = useState(false);
+  const [tab,           setTab]           = useState<LeadStatus | "all">("all");
+  const [selectedId,    setSelectedId]    = useState<string | null>(null);
+  const [notesText,     setNotesText]     = useState("");
+  const [editingNotes,  setEditingNotes]  = useState(false);
+  const [sourceText,    setSourceText]    = useState("");
+  const [editingSource, setEditingSource] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const { data: leads = [],    isLoading: leadsLoading } = useLeads(tab);
   const { data: messages = [], isLoading: msgsLoading  } = useMessages(selectedId);
   const { data: staff   = [] }                            = useStaff();
-
   const selectedLead = leads.find((l) => l.id === selectedId) ?? null;
+  const { data: customer }                                = useCustomerName(selectedLead?.customer_id ?? null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   useEffect(() => {
-    if (selectedLead) setNotesText(selectedLead.notes ?? "");
+    if (selectedLead) {
+      setNotesText(selectedLead.notes ?? "");
+      setSourceText(selectedLead.source ?? "");
+    }
   }, [selectedLead?.id]);
 
   const updateLead = useMutation({
@@ -143,24 +187,14 @@ export default function LeadsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["whatsapp_leads"] }),
   });
 
-  const sendReply = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/whatsapp/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leadId: selectedId, text: replyText, sentBy: profile?.id }),
-      });
-      if (!res.ok) throw new Error("Send failed");
-    },
-    onSuccess: () => {
-      setReplyText("");
-      qc.invalidateQueries({ queryKey: ["whatsapp_messages", selectedId] });
-    },
-  });
-
   function saveNotes() {
     updateLead.mutate({ notes: notesText });
     setEditingNotes(false);
+  }
+
+  function saveSource() {
+    updateLead.mutate({ source: sourceText || null });
+    setEditingSource(false);
   }
 
   function formatTime(ts: string) {
@@ -232,11 +266,15 @@ export default function LeadsPage() {
                     {formatListTime(lead.last_message_at)}
                   </span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-ink-dim truncate max-w-[160px]">
-                    +{lead.wa_id}
-                  </span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${STATUS_COLORS[lead.status]}`}>
+                <div className="flex items-center justify-between gap-1">
+                  {lead.category ? (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${CATEGORY_COLORS[lead.category]}`}>
+                      {CATEGORY_LABELS[lead.category]}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-ink-dim truncate max-w-[100px]">+{lead.wa_id}</span>
+                  )}
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${STATUS_COLORS[lead.status]}`}>
                     {lead.status}
                   </span>
                 </div>
@@ -257,8 +295,30 @@ export default function LeadsPage() {
                 {CHANNEL_ICON[selectedLead.channel]}{" "}
                 {selectedLead.display_name ?? `+${selectedLead.wa_id}`}
               </p>
-              <p className="text-xs text-ink-dim">+{selectedLead.wa_id}</p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-xs text-ink-dim">+{selectedLead.wa_id}</span>
+                {customer && (
+                  <Link
+                    href={`/customers/${customer.id}`}
+                    className="text-xs text-gold underline underline-offset-2 hover:text-gold/80"
+                  >
+                    {customer.name}
+                  </Link>
+                )}
+              </div>
             </div>
+
+            {/* Category */}
+            <select
+              value={selectedLead.category ?? ""}
+              onChange={(e) => updateLead.mutate({ category: (e.target.value || null) as LeadCategory | null })}
+              className="text-xs border border-line rounded-lg2 px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-gold"
+            >
+              <option value="">Category…</option>
+              {(Object.keys(CATEGORY_LABELS) as LeadCategory[]).map((c) => (
+                <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+              ))}
+            </select>
 
             {/* Status */}
             <select
@@ -317,8 +377,32 @@ export default function LeadsPage() {
             <div ref={bottomRef} />
           </div>
 
-          {/* Notes bar */}
-          <div className="border-t border-line px-4 py-2 bg-canvas shrink-0">
+          {/* Notes + Source bar */}
+          <div className="border-t border-line px-4 py-2 bg-canvas shrink-0 space-y-1.5">
+            {/* Source */}
+            {editingSource ? (
+              <div className="flex gap-2">
+                <input
+                  value={sourceText}
+                  onChange={(e) => setSourceText(e.target.value)}
+                  placeholder="Source (e.g. Reel - Gold Chain Jan 2026, Instagram Bio, Referral)"
+                  className={inp}
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === "Enter") saveSource(); }}
+                />
+                <button onClick={saveSource} className="px-3 py-1.5 bg-gold text-white text-xs rounded-lg2 shrink-0">Save</button>
+                <button onClick={() => { setEditingSource(false); setSourceText(selectedLead.source ?? ""); }} className="px-3 py-1.5 border border-line text-xs rounded-lg2 shrink-0">Cancel</button>
+              </div>
+            ) : (
+              <button onClick={() => setEditingSource(true)} className="text-xs text-ink-dim hover:text-ink w-full text-left">
+                {selectedLead.source
+                  ? <span><span className="font-medium text-ink-dim">Source:</span> {selectedLead.source}</span>
+                  : <span className="italic">+ Add source (reel, referral, etc.)…</span>
+                }
+              </button>
+            )}
+
+            {/* Notes */}
             {editingNotes ? (
               <div className="flex gap-2">
                 <input
@@ -328,24 +412,11 @@ export default function LeadsPage() {
                   className={inp}
                   autoFocus
                 />
-                <button
-                  onClick={saveNotes}
-                  className="px-3 py-1.5 bg-gold text-white text-xs rounded-lg2 shrink-0"
-                >
-                  Save
-                </button>
-                <button
-                  onClick={() => { setEditingNotes(false); setNotesText(selectedLead.notes ?? ""); }}
-                  className="px-3 py-1.5 border border-line text-xs rounded-lg2 shrink-0"
-                >
-                  Cancel
-                </button>
+                <button onClick={saveNotes} className="px-3 py-1.5 bg-gold text-white text-xs rounded-lg2 shrink-0">Save</button>
+                <button onClick={() => { setEditingNotes(false); setNotesText(selectedLead.notes ?? ""); }} className="px-3 py-1.5 border border-line text-xs rounded-lg2 shrink-0">Cancel</button>
               </div>
             ) : (
-              <button
-                onClick={() => setEditingNotes(true)}
-                className="text-xs text-ink-dim hover:text-ink w-full text-left"
-              >
+              <button onClick={() => setEditingNotes(true)} className="text-xs text-ink-dim hover:text-ink w-full text-left">
                 {selectedLead.notes
                   ? <span><span className="font-medium text-ink-dim">Note:</span> {selectedLead.notes}</span>
                   : <span className="italic">+ Add note…</span>
@@ -354,36 +425,11 @@ export default function LeadsPage() {
             )}
           </div>
 
-          {/* Reply input — only for WhatsApp */}
-          <div className="border-t border-line px-4 py-3 bg-canvas shrink-0">
-            {selectedLead.channel === "whatsapp" ? (
-              <div className="flex gap-2">
-                <textarea
-                  value={replyText}
-                  onChange={(e) => setReplyText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      if (replyText.trim()) sendReply.mutate();
-                    }
-                  }}
-                  placeholder="Type a reply… (Enter to send)"
-                  rows={2}
-                  className={`${inp} resize-none`}
-                />
-                <button
-                  onClick={() => sendReply.mutate()}
-                  disabled={!replyText.trim() || sendReply.isPending}
-                  className="px-4 bg-gold text-white rounded-lg2 text-sm font-medium disabled:opacity-50 shrink-0"
-                >
-                  {sendReply.isPending ? "…" : "Send"}
-                </button>
-              </div>
-            ) : (
-              <p className="text-xs text-ink-dim text-center py-1">
-                Replies for {selectedLead.channel} coming soon.
-              </p>
-            )}
+          {/* Monitor-only notice */}
+          <div className="border-t border-line px-4 py-2 bg-zinc-50 shrink-0">
+            <p className="text-xs text-ink-dim text-center">
+              Monitor only — reply from WhatsApp Business App
+            </p>
           </div>
         </div>
       ) : (

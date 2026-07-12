@@ -67,6 +67,44 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true });
 }
 
+// Match phone by last 10 digits to handle country code variations
+function last10(phone: string) {
+  return phone.replace(/\D/g, "").slice(-10);
+}
+
+async function resolveCustomer(db: ReturnType<typeof adminSupabase>, waId: string, name: string | null) {
+  const digits10 = last10(waId);
+
+  // Try to find existing customer by phone
+  const { data: customers } = await db
+    .from("customers")
+    .select("id, name, phone")
+    .not("phone", "is", null);
+
+  const matched = (customers ?? []).find(
+    (c: any) => c.phone && last10(c.phone) === digits10
+  );
+
+  if (matched) return matched.id as string;
+
+  // No match — create a new customer
+  const { data: newCust, error } = await db
+    .from("customers")
+    .insert({
+      name: name ?? `WA +${waId}`,
+      phone: waId,
+      opening_balance: 0,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    console.error("[WA webhook] create customer failed:", error);
+    return null;
+  }
+  return newCust.id as string;
+}
+
 async function upsertLead(
   waId: string,
   channel: string,
@@ -79,7 +117,7 @@ async function upsertLead(
 
   const { data: existing } = await db
     .from("whatsapp_leads")
-    .select("id")
+    .select("id, customer_id")
     .eq("wa_id", waId)
     .eq("channel", channel)
     .maybeSingle();
@@ -87,19 +125,30 @@ async function upsertLead(
   let leadId: string;
 
   if (existing) {
-    await db
-      .from("whatsapp_leads")
-      .update({
-        last_message_at: ts,
-        updated_at: new Date().toISOString(),
-        ...(name ? { display_name: name } : {}),
-      })
-      .eq("id", existing.id);
+    const patch: Record<string, any> = {
+      last_message_at: ts,
+      updated_at: new Date().toISOString(),
+    };
+    if (name) patch.display_name = name;
+    // Link customer if not already linked
+    if (!existing.customer_id) {
+      const customerId = await resolveCustomer(db, waId, name);
+      if (customerId) patch.customer_id = customerId;
+    }
+    await db.from("whatsapp_leads").update(patch).eq("id", existing.id);
     leadId = existing.id;
   } else {
+    const customerId = await resolveCustomer(db, waId, name);
     const { data: newLead, error } = await db
       .from("whatsapp_leads")
-      .insert({ wa_id: waId, channel, display_name: name, status: "new", last_message_at: ts })
+      .insert({
+        wa_id: waId,
+        channel,
+        display_name: name,
+        status: "new",
+        last_message_at: ts,
+        ...(customerId ? { customer_id: customerId } : {}),
+      })
       .select("id")
       .single();
     if (error || !newLead) {
