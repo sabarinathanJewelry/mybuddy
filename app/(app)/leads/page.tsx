@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { shortDate } from "@/lib/format";
+import { useAuth } from "@/stores/auth";
 
 type Channel = "whatsapp" | "instagram" | "messenger";
 type LeadStatus = "new" | "hot" | "warm" | "cold" | "converted" | "lost";
@@ -85,6 +86,51 @@ const STATUS_TABS: { key: LeadStatus | "all"; label: string }[] = [
 ];
 
 const inp = "w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
+
+function ReplyBox({ leadId }: { leadId: string }) {
+  const profile = useAuth((s) => s.profile);
+  const qc = useQueryClient();
+  const [text, setText] = useState("");
+  const send = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/whatsapp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId, text, sentBy: profile?.id }),
+      });
+      if (!res.ok) throw new Error("Send failed");
+    },
+    onSuccess: () => {
+      setText("");
+      qc.invalidateQueries({ queryKey: ["whatsapp_messages", leadId] });
+    },
+  });
+
+  return (
+    <div className="flex gap-2">
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            if (text.trim()) send.mutate();
+          }
+        }}
+        placeholder="Type a reply… (Enter to send)"
+        rows={2}
+        className={`${inp} resize-none`}
+      />
+      <button
+        onClick={() => send.mutate()}
+        disabled={!text.trim() || send.isPending}
+        className="px-4 bg-gold text-white rounded-lg2 text-sm font-medium disabled:opacity-50 shrink-0"
+      >
+        {send.isPending ? "…" : "Send"}
+      </button>
+    </div>
+  );
+}
 
 function useLeads(status: LeadStatus | "all") {
   return useQuery<Lead[]>({
@@ -425,11 +471,15 @@ export default function LeadsPage() {
             )}
           </div>
 
-          {/* Monitor-only notice */}
-          <div className="border-t border-line px-4 py-2 bg-zinc-50 shrink-0">
-            <p className="text-xs text-ink-dim text-center">
-              Monitor only — reply from WhatsApp Business App
-            </p>
+          {/* Reply input */}
+          <div className="border-t border-line px-4 py-3 bg-canvas shrink-0">
+            {selectedLead.channel === "whatsapp" ? (
+              <ReplyBox leadId={selectedLead.id} />
+            ) : (
+              <p className="text-xs text-ink-dim text-center py-1">
+                Replies for {selectedLead.channel} coming soon.
+              </p>
+            )}
           </div>
         </div>
       ) : (
