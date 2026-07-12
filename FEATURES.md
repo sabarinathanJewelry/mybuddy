@@ -331,6 +331,7 @@ Multi-channel WhatsApp + Instagram + Messenger lead management CRM.
 - Monitor-only mode — no reply box; reply from WhatsApp Business App
 - Auto-links lead to existing customer by matching last 10 digits of phone; auto-creates new customer if no match
 - Customer name shown as clickable link to customer page in lead detail header
+- Customer 360 page (`/customers/[id]`) has a WhatsApp tab showing all conversations and messages for that customer
 - Auto-scroll to latest message; 5-second polling for new messages
 
 **Required env vars:**

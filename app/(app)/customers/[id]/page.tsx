@@ -2,12 +2,40 @@
 
 import { Fragment, use, useState } from "react";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 import { useCustomer, useCustomer360, useAddPayment, useUpdatePayment, useDeletePayment, useApplyAdvanceToOrder } from "@/modules/customers/api";
 import { useT } from "@/i18n";
 import { inr, grams, shortDate } from "@/lib/format";
 import { useGlobalDate } from "@/stores/global-date";
+import { supabase } from "@/lib/supabase/client";
 
-const TABS = ["statement", "sales", "orders", "payments", "writeoffs", "info"] as const;
+function useCustomerWhatsApp(customerId: string) {
+  return useQuery({
+    queryKey: ["customer_whatsapp", customerId],
+    queryFn: async () => {
+      const { data: leads } = await supabase()
+        .from("whatsapp_leads")
+        .select("id, wa_id, display_name, status, category, source, last_message_at")
+        .eq("customer_id", customerId)
+        .order("last_message_at", { ascending: false });
+      if (!leads?.length) return [];
+
+      const leadIds = leads.map((l) => l.id);
+      const { data: messages } = await supabase()
+        .from("whatsapp_messages")
+        .select("id, lead_id, direction, body, created_at, status")
+        .in("lead_id", leadIds)
+        .order("created_at", { ascending: true });
+
+      return leads.map((lead) => ({
+        ...lead,
+        messages: (messages ?? []).filter((m) => m.lead_id === lead.id),
+      }));
+    },
+  });
+}
+
+const TABS = ["statement", "sales", "orders", "payments", "writeoffs", "info", "whatsapp"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function Customer360Page({ params }: { params: Promise<{ id: string }> }) {
@@ -20,6 +48,7 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
   const updatePayment = useUpdatePayment();
   const deletePayment = useDeletePayment();
   const applyAdvance = useApplyAdvanceToOrder();
+  const { data: waConversations = [] } = useCustomerWhatsApp(id);
   const globalDate = useGlobalDate((s) => s.date);
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [newPayment, setNewPayment] = useState({ pay_date: globalDate, mode: "cash", amount: 0, direction: "in", notes: "" });
@@ -83,7 +112,7 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
                 : "border-transparent text-ink-dim hover:text-ink"
             }`}
           >
-            {tab_ === "statement" ? "Statement" : tab_ === "writeoffs" ? t("writeoff") : t(`nav_${tab_}` as any) || tab_}
+            {tab_ === "statement" ? "Statement" : tab_ === "writeoffs" ? t("writeoff") : tab_ === "whatsapp" ? "💬 WhatsApp" : t(`nav_${tab_}` as any) || tab_}
           </button>
         ))}
       </div>
@@ -482,6 +511,60 @@ export default function Customer360Page({ params }: { params: Promise<{ id: stri
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* WhatsApp tab */}
+      {tab === "whatsapp" && (
+        <div className="space-y-4">
+          {waConversations.length === 0 ? (
+            <p className="text-sm text-ink-dim text-center py-10">No WhatsApp messages yet.</p>
+          ) : (
+            waConversations.map((conv) => (
+              <div key={conv.id} className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+                <div className="flex items-center gap-3 px-4 py-3 border-b border-line bg-canvas">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-ink">💬 +{conv.wa_id}</p>
+                    <p className="text-xs text-ink-dim">
+                      {conv.last_message_at ? shortDate(conv.last_message_at.split("T")[0]) : ""}
+                      {conv.source ? ` · ${conv.source}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {conv.category && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium capitalize">
+                        {conv.category}
+                      </span>
+                    )}
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium capitalize">
+                      {conv.status}
+                    </span>
+                    <Link href="/leads" className="text-xs text-gold hover:underline">Open →</Link>
+                  </div>
+                </div>
+                <div className="px-4 py-3 space-y-2 max-h-72 overflow-y-auto bg-zinc-50">
+                  {conv.messages.length === 0 ? (
+                    <p className="text-xs text-ink-dim text-center py-4">No messages.</p>
+                  ) : (
+                    conv.messages.map((msg) => (
+                      <div key={msg.id} className={`flex ${msg.direction === "outbound" ? "justify-end" : "justify-start"}`}>
+                        <div className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm shadow-soft ${
+                          msg.direction === "outbound"
+                            ? "bg-gold text-white rounded-br-sm"
+                            : "bg-white text-ink rounded-bl-sm border border-line"
+                        }`}>
+                          <p className="whitespace-pre-wrap break-words">{msg.body}</p>
+                          <p className={`text-[10px] mt-0.5 text-right ${msg.direction === "outbound" ? "text-white/70" : "text-ink-dim"}`}>
+                            {new Date(msg.created_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       )}
 
