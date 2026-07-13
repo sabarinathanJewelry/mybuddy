@@ -1076,11 +1076,26 @@ export default function DailySheetPage() {
   const closingCash  = cashPos?.closingCash ?? null;
   const hasOpening   = cashPos !== null && cashPos !== undefined;
 
+  const refreshAll = () => {
+    qc.invalidateQueries({ queryKey: ["daily-sheet"] });
+    qc.invalidateQueries({ queryKey: ["position"] });
+    qc.invalidateQueries({ queryKey: ["day-sales-ledger"] });
+    qc.invalidateQueries({ queryKey: ["day-cashflow"] });
+    qc.invalidateQueries({ queryKey: ["date-cash-pos"] });
+    qc.invalidateQueries({ queryKey: ["cash_count"] });
+  };
+
   return (
     <div className="max-w-3xl mx-auto space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-ink">{t("daily_sheet")}</h1>
-        <span className="text-sm text-ink-dim">{date}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-ink-dim">{date}</span>
+          <button onClick={refreshAll} title="Refresh"
+            className="text-xs px-3 py-1.5 rounded-lg2 border border-line text-ink-dim hover:text-ink hover:bg-canvas transition-colors">
+            ⟳ Refresh
+          </button>
+        </div>
       </div>
 
       {/* Tab switcher */}

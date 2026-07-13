@@ -363,7 +363,7 @@ Multi-channel WhatsApp + Instagram + Messenger lead management CRM.
 
 ## Reports
 
-- Daily Sheet: date-wise sales summary
+- Daily Sheet: date-wise sales summary; header Refresh button re-fetches all Daily Sheet queries (summary, cash book, cash flow, cash count) without a full page reload
 - Product Mix: items by description per metal type
 - Expenses by Category: monthly expense breakdown
 - Metal Flow reports
