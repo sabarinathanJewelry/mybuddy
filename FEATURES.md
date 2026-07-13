@@ -155,6 +155,7 @@
 - Kolusu sale module (staff-accessible)
 - Exchange return routing to kolusu stock when condition = good
 - Return to box: "Return" button per box records kolusu weight + cover weight back into the specific box; shown in history in blue with "Return" label
+- Delete sale entry: "Delete" button per sale transaction row (ledger) removes a duplicate/mistaken entry and adds its weight + qty back to the originating box
 
 ### Goldsmith
 - Goldsmith job tracking

@@ -332,6 +332,29 @@ export default function KolusuPage() {
     },
   });
 
+  // Delete sale transaction — adds the weight/qty back to its box
+  const deleteSaleTx = useMutation({
+    mutationFn: async (tx: KolusuTransaction) => {
+      const client = supabase();
+      const { data: box, error: fetchErr } = await client.from("kolusu_boxes")
+        .select("current_gross_wt_g, current_qty").eq("id", tx.box_id).single();
+      if (fetchErr) throw fetchErr;
+      const { error: boxErr } = await client.from("kolusu_boxes").update({
+        current_gross_wt_g: parseFloat((box.current_gross_wt_g + tx.total_wt_g).toFixed(3)),
+        current_qty: box.current_qty + Math.abs(tx.qty_change),
+        updated_at: new Date().toISOString(),
+      }).eq("id", tx.box_id);
+      if (boxErr) throw boxErr;
+      const { error: delErr } = await client.from("kolusu_transactions").delete().eq("id", tx.id);
+      if (delErr) throw delErr;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["kolusu_boxes"] });
+      qc.invalidateQueries({ queryKey: ["kolusu_transactions"] });
+      setEditSaleTxId(null);
+    },
+  });
+
   // Direct box weight/qty correction
   const [editBoxId, setEditBoxId]   = useState<string | null>(null);
   const [editForm, setEditForm]     = useState({ gross_wt_g: 0, qty: 0, reason: "" });
@@ -1231,6 +1254,16 @@ export default function KolusuPage() {
                                   : "border-line text-ink-dim hover:border-gold hover:text-gold"
                               )}>
                               {isTransferring ? "Cancel" : "Transfer"}
+                            </button>
+                            <button
+                              disabled={deleteSaleTx.isPending}
+                              onClick={() => {
+                                if (window.confirm(`Delete this entry? ${grams(tx.total_wt_g)} will be added back to Box ${tx.kolusu_boxes?.box_no ?? ""}.`)) {
+                                  deleteSaleTx.mutate(tx);
+                                }
+                              }}
+                              className="text-xs px-2 py-1 rounded-lg2 border border-line text-err hover:border-err hover:bg-err/5 transition-colors disabled:opacity-50">
+                              Delete
                             </button>
                           </div>
                         )}
