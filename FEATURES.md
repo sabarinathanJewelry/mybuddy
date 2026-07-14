@@ -68,7 +68,7 @@
 - Cash chit: monthly payment tracking
 - Gold chit: weight-based with board_rate at payment time
 - **Smart Gold Chit print**: "அச்சிடு" button per deposit row opens a Tamil receipt overlay — shop header (சபரிநாதன் நகைக்கடை), receipt number, date, customer name, metal, gross weight, purity, credited weight, notes, signature lines; "அச்சிடு / Print" triggers `window.print()` which hides all other content and prints only the receipt
-- Chit payment edit (corrects wrong amount, recalculates grams)
+- Chit payment edit (corrects wrong amount, recalculates grams); edit mode also lets you change the payment mode (Cash/UPI/Bank/Advance) — reverses the old mode's ledger entry (cash_ledger/bank_ledger delete, or an advance-credit reversal) and applies the new one at the (possibly also-updated) amount; disabled for "Split" entries since those span multiple modes
 - Chit payment delete (reverses grams from customer balance + clears ledger entries)
 - Chit bonus payments
 

@@ -53,6 +53,7 @@ export default function ChitsPage() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editAmount, setEditAmount] = useState(0);
+  const [editMode, setEditMode] = useState("cash");
 
   const [showBonusForm, setShowBonusForm] = useState(false);
   const [bonusCustomer, setBonusCustomer] = useState<Customer | null>(null);
@@ -77,8 +78,8 @@ export default function ChitsPage() {
     setNotes(""); setSplits([newSplit(globalDate)]); setShowForm(false);
   }
 
-  function startEdit(p: any) { setEditingId(p.id); setEditAmount(Number(p.amount)); }
-  function cancelEdit() { setEditingId(null); setEditAmount(0); }
+  function startEdit(p: any) { setEditingId(p.id); setEditAmount(Number(p.amount)); setEditMode(p.mode); }
+  function cancelEdit() { setEditingId(null); setEditAmount(0); setEditMode("cash"); }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows = (payments as any[]) ?? [];
@@ -107,7 +108,7 @@ export default function ChitsPage() {
   });
 
   const updatePayment = useMutation({
-    mutationFn: async ({ id, newAmount }: { id: string; newAmount: number }) => {
+    mutationFn: async ({ id, newAmount, newMode }: { id: string; newAmount: number; newMode: string }) => {
       const client = supabase();
       const row = rows.find((p: any) => p.id === id);
       if (!row) throw new Error("Row not found");
@@ -117,9 +118,10 @@ export default function ChitsPage() {
       const newGrams = storedRate > 0 ? parseFloat((newAmount / storedRate).toFixed(4)) : oldGrams;
       const deltaGrams = newGrams - oldGrams;
       const deltaAmount = newAmount - Number(row.amount);
+      const modeChanged = newMode !== row.mode;
 
       const { error } = await client.from("chit_payments")
-        .update({ amount: newAmount, metal_grams: newGrams }).eq("id", id);
+        .update({ amount: newAmount, metal_grams: newGrams, mode: newMode }).eq("id", id);
       if (error) throw error;
 
       const balanceField = row.metal_type === "gold" ? "gold_balance_g" : "silver_balance_g";
@@ -130,18 +132,53 @@ export default function ChitsPage() {
         .update({ [balanceField]: parseFloat((current + deltaGrams).toFixed(4)) })
         .eq("id", row.customer_id);
 
+      if (!modeChanged) {
+        if (row.mode === "cash") {
+          await client.from("cash_ledger").update({ amount: newAmount })
+            .eq("ref_type", "chit_payment").eq("ref_id", id);
+        } else if (row.mode === "upi" || row.mode === "bank") {
+          await client.from("bank_ledger").update({ amount: newAmount })
+            .eq("ref_type", "chit_payment").eq("ref_id", id);
+        } else if (row.mode === "advance" && Math.abs(deltaAmount) > 0.01) {
+          await client.from("payments").insert({
+            pay_date: row.pay_date, direction: deltaAmount > 0 ? "out" : "in",
+            mode: "advance", amount: Math.abs(deltaAmount),
+            customer_id: row.customer_id, is_advance: true,
+            notes: `Chit payment correction (${row.metal_type})`,
+          });
+        }
+        return;
+      }
+
+      // Mode changed — reverse the old mode's ledger effect, then apply the new one at newAmount.
+      const desc = `Chit (${row.metal_type}): ${row.customers?.name ?? "customer"}`;
       if (row.mode === "cash") {
-        await client.from("cash_ledger").update({ amount: newAmount })
-          .eq("ref_type", "chit_payment").eq("ref_id", id);
+        await client.from("cash_ledger").delete().eq("ref_type", "chit_payment").eq("ref_id", id);
       } else if (row.mode === "upi" || row.mode === "bank") {
-        await client.from("bank_ledger").update({ amount: newAmount })
-          .eq("ref_type", "chit_payment").eq("ref_id", id);
-      } else if (row.mode === "advance" && Math.abs(deltaAmount) > 0.01) {
+        await client.from("bank_ledger").delete().eq("ref_type", "chit_payment").eq("ref_id", id);
+      } else if (row.mode === "advance") {
         await client.from("payments").insert({
-          pay_date: row.pay_date, direction: deltaAmount > 0 ? "out" : "in",
-          mode: "advance", amount: Math.abs(deltaAmount),
-          customer_id: row.customer_id, is_advance: true,
-          notes: `Chit payment correction (${row.metal_type})`,
+          pay_date: row.pay_date, direction: "in", mode: "advance",
+          amount: Number(row.amount), customer_id: row.customer_id, is_advance: true,
+          notes: `Chit payment mode change — reversed from advance (${row.metal_type})`,
+        });
+      }
+
+      if (newMode === "cash") {
+        await client.from("cash_ledger").insert({
+          tx_date: row.pay_date, direction: "in", amount: newAmount,
+          description: desc, ref_type: "chit_payment", ref_id: id,
+        });
+      } else if (newMode === "upi" || newMode === "bank") {
+        await client.from("bank_ledger").insert({
+          tx_date: row.pay_date, direction: "in", amount: newAmount,
+          description: desc, ref_type: "chit_payment", ref_id: id,
+        });
+      } else if (newMode === "advance") {
+        await client.from("payments").insert({
+          pay_date: row.pay_date, direction: "out", mode: "advance",
+          amount: newAmount, customer_id: row.customer_id, is_advance: true,
+          notes: `Chit payment (${row.metal_type}) — mode changed to advance`,
         });
       }
     },
@@ -443,10 +480,22 @@ export default function ChitsPage() {
                         className="w-28 border border-gold rounded px-2 py-1 text-sm font-mono text-right focus:outline-none focus:ring-1 focus:ring-gold" />
                     </td>
                     <td className="px-3 py-2 text-right font-mono text-gold">{previewGrams}g</td>
-                    <td className="px-3 py-2.5 text-ink-dim capitalize">{p.mode === "advance" ? "Advance" : p.mode === "split" ? "Split" : p.mode}</td>
+                    <td className="px-3 py-2.5">
+                      {p.mode === "split" ? (
+                        <span className="text-ink-dim capitalize">Split</span>
+                      ) : (
+                        <select value={editMode} onChange={(e) => setEditMode(e.target.value)}
+                          className="border border-gold rounded px-1.5 py-1 text-xs capitalize focus:outline-none focus:ring-1 focus:ring-gold">
+                          <option value="cash">Cash</option>
+                          <option value="upi">UPI</option>
+                          <option value="bank">Bank</option>
+                          <option value="advance">Advance</option>
+                        </select>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
                       <button disabled={updatePayment.isPending || editAmount <= 0}
-                        onClick={() => updatePayment.mutate({ id: p.id, newAmount: editAmount })}
+                        onClick={() => updatePayment.mutate({ id: p.id, newAmount: editAmount, newMode: p.mode === "split" ? p.mode : editMode })}
                         className="bg-gold text-white text-xs px-3 py-1 rounded disabled:opacity-50 mr-1">
                         {updatePayment.isPending ? "…" : "Save"}
                       </button>
