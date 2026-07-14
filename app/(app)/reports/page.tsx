@@ -398,12 +398,83 @@ function useInventorySnapshot(date: string) {
           .from("metal_inventory_snapshots")
           .select("metal, pure_wt")
           .eq("snapshot_date", date);
-        const g = (data ?? []).find((r: any) => r.metal === "gold")?.pure_wt   ?? 0;
-        const s = (data ?? []).find((r: any) => r.metal === "silver")?.pure_wt ?? 0;
-        return { gold: Number(g), silver: Number(s) };
+        const g = (data ?? []).find((r: any) => r.metal === "gold")?.pure_wt;
+        const s = (data ?? []).find((r: any) => r.metal === "silver")?.pure_wt;
+        return { gold: g != null ? Number(g) : null, silver: s != null ? Number(s) : null };
       } catch {
-        return { gold: 0, silver: 0 };
+        return { gold: null, silver: null };
       }
+    },
+  });
+}
+
+// Gold Stock section — latest recorded stock on or before a given date (vault + outer, all categories).
+// `exact: false` means no entry exists that far back — we fell back to the earliest entry
+// available (even if it's after the requested date), so the figure is dated, not the true opening.
+function useGoldStockOpening(onOrBeforeDate: string) {
+  return useQuery({
+    queryKey: ["gold-stock-opening", onOrBeforeDate],
+    enabled: !!onOrBeforeDate,
+    queryFn: async () => {
+      const client = supabase();
+      const { data: beforeRows } = await client
+        .from("gold_stock_entries")
+        .select("entry_date")
+        .lte("entry_date", onOrBeforeDate)
+        .order("entry_date", { ascending: false })
+        .limit(1);
+      let latestDate = beforeRows?.[0]?.entry_date as string | undefined;
+      let exact = true;
+      if (!latestDate) {
+        exact = false;
+        const { data: earliestRows } = await client
+          .from("gold_stock_entries")
+          .select("entry_date")
+          .gt("entry_date", onOrBeforeDate)
+          .order("entry_date", { ascending: true })
+          .limit(1);
+        latestDate = earliestRows?.[0]?.entry_date as string | undefined;
+      }
+      if (!latestDate) return { weight: 0, date: null as string | null, exact: true };
+      const { data: rows } = await client
+        .from("gold_stock_entries")
+        .select("total_weight_g, untagged_weight_g")
+        .eq("entry_date", latestDate);
+      const weight = (rows ?? []).reduce((s: number, r: any) =>
+        s + Number(r.total_weight_g || 0) + Number(r.untagged_weight_g || 0), 0);
+      return { weight: parseFloat(weight.toFixed(3)), date: latestDate, exact };
+    },
+  });
+}
+
+// Kolusu (silver anklet) boxes — reconstructed opening stock as of a given date,
+// working backward from the live current total using transactions since that date.
+// `exact: false` means the requested date is before any box existed in the system —
+// the figure is really the stock as of `trackedFrom` (earliest box creation), not asOfDate.
+function useKolusuOpening(asOfDate: string) {
+  return useQuery({
+    queryKey: ["kolusu-opening", asOfDate],
+    enabled: !!asOfDate,
+    queryFn: async () => {
+      const client = supabase();
+      const [{ data: boxes }, { data: txs }] = await Promise.all([
+        client.from("kolusu_boxes").select("current_gross_wt_g, created_at"),
+        client.from("kolusu_transactions").select("qty_change, raw_wt_g, total_wt_g, tx_date").gte("tx_date", asOfDate),
+      ]);
+      const curTotal = (boxes ?? []).reduce((s: number, b: any) => s + Number(b.current_gross_wt_g || 0), 0);
+      let addedWt = 0, soldTotal = 0;
+      for (const tx of (txs ?? []) as any[]) {
+        if (tx.qty_change === 0) continue; // correction entries — no weight movement
+        if (tx.qty_change > 0) addedWt += Number(tx.raw_wt_g || 0);
+        else soldTotal += Number(tx.total_wt_g || 0);
+      }
+      const weight = parseFloat((curTotal - addedWt + soldTotal).toFixed(3));
+      const trackedFrom = (boxes ?? [])
+        .map((b: any) => (b.created_at as string | null)?.slice(0, 10))
+        .filter((d): d is string => !!d)
+        .sort()[0] ?? null;
+      const exact = !trackedFrom || asOfDate >= trackedFrom;
+      return { weight, exact, trackedFrom };
     },
   });
 }
@@ -798,6 +869,8 @@ export default function ReportsPage() {
   const { data: suspenseTouchData = [] }                            = useSuspenseTouchProfit();
   const { data: wacV2Data }                                         = useMetalWACv2();
   const { data: invSnapshot }                                       = useInventorySnapshot(range.from);
+  const { data: goldStockOpen }                                     = useGoldStockOpening(range.from);
+  const { data: kolusuOpen }                                        = useKolusuOpening(range.from);
   const saveSnapshotMut                                             = useSaveInventorySnapshot();
   const [touchRate, setTouchRate]   = useState(0);
   const [touchYear, setTouchYear]   = useState(() => {
@@ -974,8 +1047,9 @@ export default function ReportsPage() {
 
   // Inventory movement
   const oldSilvBuyPureWt = (oldMetalBuys as any[]).filter(x => (x.metal ?? "").startsWith("silver")).reduce((s: number, x: any) => s + Number(x.pure_wt || 0), 0);
-  const openGoldPure     = Number(v2OpenGoldG)  || (invSnapshot?.gold   ?? 0);
-  const openSilvPure     = Number(v2OpenSilvG)  || (invSnapshot?.silver ?? 0);
+  // Priority: manual override this session > saved snapshot > domain source (Gold Stock / Kolusu)
+  const openGoldPure     = Number(v2OpenGoldG)  || invSnapshot?.gold   || (goldStockOpen?.weight ?? 0);
+  const openSilvPure     = Number(v2OpenSilvG)  || invSnapshot?.silver || (kolusuOpen?.weight ?? 0);
   const inGoldPure       = goldPurchases.pureWt  + oldGoldBuyPureWt + exchGoldWt * 0.9167;
   const inSilvPure       = silverPurchases.pureWt + oldSilvBuyPureWt;
   const outGoldPure      = gold.pureWt  + bullionSellGoldWt + dispatchGoldWt;
@@ -2818,28 +2892,45 @@ export default function ReportsPage() {
               Inventory Movement — {MONTHS[month - 1]} {year} (pure weight, grams)
             </div>
             <div className="px-4 py-3 border-b border-dashed border-line bg-canvas/50">
-              <p className="text-xs font-semibold text-ink-dim mb-2">Opening Stock (enter + save to persist across sessions)</p>
+              <p className="text-xs font-semibold text-ink-dim mb-2">Opening Stock (defaults below — override + save to persist)</p>
               <div className="flex items-center gap-4 flex-wrap">
                 <label className="flex items-center gap-2 text-xs text-ink-dim">
                   Gold pure (g)
                   <input
                     type="number" min="0" step="0.001"
                     value={v2OpenGoldG}
-                    placeholder={String(invSnapshot?.gold ?? 0)}
+                    placeholder={String(invSnapshot?.gold ?? goldStockOpen?.weight ?? 0)}
                     onChange={e => setV2OpenGoldG(e.target.value === "" ? "" : Number(e.target.value))}
                     className="w-28 border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold text-ink"
                   />
                 </label>
+                {!invSnapshot?.gold && goldStockOpen?.date && (
+                  goldStockOpen.exact ? (
+                    <span className="text-[10px] text-ink-dim -ml-2">from Gold Stock, {shortDate(goldStockOpen.date)}</span>
+                  ) : (
+                    <span className="text-[10px] text-warn -ml-2">⚠ no Gold Stock entry on/before {shortDate(range.from)} — using earliest available, {shortDate(goldStockOpen.date)}</span>
+                  )
+                )}
+                {!invSnapshot?.gold && !goldStockOpen?.date && (
+                  <span className="text-[10px] text-warn -ml-2">⚠ no Gold Stock entries recorded yet — opening defaults to 0</span>
+                )}
                 <label className="flex items-center gap-2 text-xs text-ink-dim">
                   Silver pure (g)
                   <input
                     type="number" min="0" step="0.001"
                     value={v2OpenSilvG}
-                    placeholder={String(invSnapshot?.silver ?? 0)}
+                    placeholder={String(invSnapshot?.silver ?? kolusuOpen?.weight ?? 0)}
                     onChange={e => setV2OpenSilvG(e.target.value === "" ? "" : Number(e.target.value))}
                     className="w-28 border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold text-ink"
                   />
                 </label>
+                {!invSnapshot?.silver && kolusuOpen && (
+                  kolusuOpen.exact ? (
+                    <span className="text-[10px] text-ink-dim -ml-2">from Kolusu, as of {shortDate(range.from)}</span>
+                  ) : (
+                    <span className="text-[10px] text-warn -ml-2">⚠ Kolusu tracking starts {shortDate(kolusuOpen.trackedFrom!)} — figure is stock as of then, not {shortDate(range.from)}</span>
+                  )
+                )}
                 <button
                   disabled={saveSnapshotMut.isPending}
                   onClick={() => saveSnapshotMut.mutate({
@@ -2907,7 +2998,7 @@ export default function ReportsPage() {
               </tfoot>
             </table>
             <div className="px-4 py-2 bg-canvas/30 border-t border-line text-[10px] text-ink-dim">
-              Opening stock must be entered manually and saved. Exchange gold purity assumed 22K (91.67%). Dispatches treated as pure weight.
+              Opening stock defaults: Gold from the Gold Stock section's latest entry on/before the period start; Silver from Kolusu boxes reconstructed as of the period start. Save a value above to override with a dedicated snapshot. Exchange gold purity assumed 22K (91.67%). Dispatches treated as pure weight.
             </div>
           </div>
 

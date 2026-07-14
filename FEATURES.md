@@ -97,7 +97,8 @@
 - **WAC V2** widget: shows V2 gold/silver WAC alongside V1 for comparison; warns when WAC is zero
 - **Revenue section**: gold + silver + MPR all excl-GST correctly; shows MPR GST extracted (V1 missed this)
 - **Service Income V2**: making charges + direct VA + stone/diamond; flags difference vs V1 residual VA
-- **Inventory Movement section**: opening stock (manually entered and saved as `metal_inventory_snapshots`) + in (purchases + old metal + exchange) − out (sold + dispatched + bullion sold) = closing stock estimate; closing value at WAC v2; save button persists opening stock by period date
+- **Inventory Movement section**: opening stock defaults — Gold from the Gold Stock section's latest entry on/before the period start date; Silver from Kolusu boxes reconstructed as of the period start (current box totals minus movements since that date); either can be overridden and saved as a dedicated `metal_inventory_snapshots` row per period. Then + in (purchases + old metal + exchange) − out (sold + dispatched + bullion sold) = closing stock estimate; closing value at WAC v2
+  - **Missing-history handling**: if no Gold Stock entry exists on/before the period start (e.g. tracking only began partway through the year), falls back to the earliest entry that does exist and shows a warning naming that date instead of silently defaulting to 0. If the period start predates the earliest Kolusu box's creation date, the Silver opening figure is labeled as stock "as of {earliest box date}" with a warning rather than being presented as an exact figure for the requested date
 - **P&L Waterfall**: clean revenue → COGS → gross profit → expenses → net profit statement
 - **V1 vs V2 comparison table**: side-by-side for Revenue, GST, COGS, Gross Profit, Net Profit, Gold VA Income with difference column
 - Requires migrations 127 (metal_inventory_snapshots table) and 128 (metal column on supplier_payments)
