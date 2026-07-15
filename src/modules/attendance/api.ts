@@ -283,7 +283,7 @@ export function useDeleteStaff() {
 export function useMarkPresentDay() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ bio_user_id, date, shift }: { bio_user_id: string; date: string; shift: "boys" | "girls" | "helper" }) => {
+    mutationFn: async ({ bio_user_id, date, shift, override }: { bio_user_id: string; date: string; shift: "boys" | "girls" | "helper"; override?: boolean }) => {
       const client = supabase();
       const { data: existing, error: checkErr } = await client
         .from("attendance_logs")
@@ -293,7 +293,16 @@ export function useMarkPresentDay() {
         .lte("punch_time", `${date}T23:59:59+05:30`)
         .limit(1);
       if (checkErr) throw checkErr;
-      if (existing && existing.length > 0) throw new Error("Punches already exist for this date");
+      if (existing && existing.length > 0) {
+        if (!override) throw new Error("Punches already exist for this date");
+        const { error: delErr } = await client
+          .from("attendance_logs")
+          .delete()
+          .eq("bio_user_id", bio_user_id)
+          .gte("punch_time", `${date}T00:00:00+05:30`)
+          .lte("punch_time", `${date}T23:59:59+05:30`);
+        if (delErr) throw delErr;
+      }
 
       const checkOutTime = shift === "girls" ? "20:30:00" : shift === "helper" ? "18:00:00" : "21:30:00";
       const { error } = await client.from("attendance_logs").insert([

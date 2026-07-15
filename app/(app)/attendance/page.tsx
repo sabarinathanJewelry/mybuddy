@@ -1654,11 +1654,11 @@ function StaffTab() {
     setMarkPresentMsg(null);
   }
 
-  async function saveMarkPresent(s: StaffMember) {
+  async function saveMarkPresent(s: StaffMember, override = false) {
     if (!markPresentDate) return;
     try {
-      await markPresent.mutateAsync({ bio_user_id: s.bio_user_id, date: markPresentDate, shift: s.shift ?? "boys" });
-      setMarkPresentMsg({ ok: true, text: `Marked present for ${markPresentDate}.` });
+      await markPresent.mutateAsync({ bio_user_id: s.bio_user_id, date: markPresentDate, shift: s.shift ?? "boys", override });
+      setMarkPresentMsg({ ok: true, text: `Marked present for ${markPresentDate}${override ? " (existing punches replaced)" : ""}.` });
       setMarkPresentDate("");
     } catch (e) {
       setMarkPresentMsg({ ok: false, text: (e as Error).message });
@@ -1897,6 +1897,18 @@ function StaffTab() {
                           </button>
                           <button onClick={() => { setMarkPresentFor(null); setMarkPresentMsg(null); }}
                             className="border border-line text-xs px-3 py-1.5 rounded-lg2">Cancel</button>
+                          {markPresentMsg && !markPresentMsg.ok && markPresentMsg.text.includes("already exist") && (
+                            <button
+                              onClick={() => {
+                                if (confirm(`This deletes the existing punch(es) for ${s.name} on ${markPresentDate} and replaces them with a clean present day. Continue?`)) {
+                                  saveMarkPresent(s, true);
+                                }
+                              }}
+                              disabled={markPresent.isPending}
+                              className="bg-err text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40">
+                              Override
+                            </button>
+                          )}
                           {markPresentMsg && (
                             <span className={`text-xs font-medium ${markPresentMsg.ok ? "text-ok" : "text-err"}`}>
                               {markPresentMsg.text}
@@ -1904,7 +1916,7 @@ function StaffTab() {
                           )}
                         </div>
                       </div>
-                      <p className="text-[10px] text-ink-dim mt-1.5">Inserts a check-in at 09:30 and a check-out at the end of their shift for that date — for days worked before device/kiosk access was set up.</p>
+                      <p className="text-[10px] text-ink-dim mt-1.5">Inserts a check-in at 09:30 and a check-out at the end of their shift for that date — for days worked before device/kiosk access was set up. If punches already exist for that date (e.g. a wrong-time test punch), use Override to replace them.</p>
                     </td>
                   </tr>
                 )}
