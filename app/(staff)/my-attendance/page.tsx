@@ -12,11 +12,12 @@ import {
   useLastSyncTime,
   useMyKyc, useUpsertKyc, KYC_DOCS,
   useStaffTasks, useCompleteTask, useCreateTask,
+  useMyLateFineWaivers,
   type PermissionRequest, type LeaveRequest, type OutsideDuty, type StaffTask,
 } from "@/modules/attendance/api";
 import NotificationBell from "@/components/ui/notification-bell";
 import { parseKolusuChat } from "@/lib/kolusu-parse";
-import { inr } from "@/lib/format";
+import { inr, shortDate } from "@/lib/format";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const IST_MS = 5.5 * 3600000;
@@ -152,6 +153,9 @@ export default function MyAttendancePage() {
     p.permission_date.startsWith(thisMonth) && (p.status === "pending" || p.status === "approved")
   ).length;
   const canRequest = usedThisMonth < 2;
+
+  // Late fine waivers
+  const { data: myFineWaivers = [] } = useMyLateFineWaivers(staff?.bio_user_id ?? null);
 
   // Leave requests
   const { data: myLeaves = [], refetch: refetchLeaves } = useMyLeaveRequests(staff?.bio_user_id ?? null);
@@ -560,10 +564,12 @@ export default function MyAttendancePage() {
     },
   });
 
-  // Only count late minutes on/after fine_from_date (if set)
+  // Only count late minutes on/after fine_from_date (if set), excluding waived days
   const fineFromDate = fineSettings?.fine_from_date ?? "";
+  const waivedDateSet = new Set(myFineWaivers.map(w => w.fine_date));
   const totalLateMins = rows
     .filter(r => !fineFromDate || r.date >= fineFromDate)
+    .filter(r => !waivedDateSet.has(r.date))
     .reduce((s, r) => s + r.late_minutes, 0);
 
   const netLateMins = fineSettings?.equalize_ot
@@ -1028,6 +1034,25 @@ export default function MyAttendancePage() {
               <p className="text-xl font-bold text-err">−₹{monthFine.toFixed(0)}</p>
             </div>
           )}
+
+          {/* Waived late fines this month */}
+          {(() => {
+            const waiversThisMonth = myFineWaivers.filter(w => w.fine_date.slice(0, 7) === month);
+            if (waiversThisMonth.length === 0) return null;
+            return (
+              <div className="bg-ok/5 border border-ok/20 rounded-xl px-4 py-3 space-y-1.5">
+                <p className="text-xs text-ok font-semibold">Late Fine Waived</p>
+                {waiversThisMonth.map(w => (
+                  <div key={w.id} className="text-[11px] text-ink-dim flex flex-wrap gap-x-2">
+                    <span className="font-mono text-ink">{shortDate(w.fine_date)}</span>
+                    <span className="font-mono text-ok">{inr(w.waived_amount)}</span>
+                    {w.reason && <span>— {w.reason}</span>}
+                    <span>by {w.waived_by_name ?? "admin"}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
 
           {/* Weekend absence alert */}
           {(() => {

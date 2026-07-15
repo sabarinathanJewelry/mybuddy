@@ -277,6 +277,38 @@ export function useDeleteStaff() {
   });
 }
 
+// Manually mark a staff member present for a day with no biometric punch
+// (e.g. joined before kiosk/device access was set up) by inserting a synthetic
+// check-in/check-out pair at the shop-open time and their shift's end time.
+export function useMarkPresentDay() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ bio_user_id, date, shift }: { bio_user_id: string; date: string; shift: "boys" | "girls" | "helper" }) => {
+      const client = supabase();
+      const { data: existing, error: checkErr } = await client
+        .from("attendance_logs")
+        .select("id")
+        .eq("bio_user_id", bio_user_id)
+        .gte("punch_time", `${date}T00:00:00+05:30`)
+        .lte("punch_time", `${date}T23:59:59+05:30`)
+        .limit(1);
+      if (checkErr) throw checkErr;
+      if (existing && existing.length > 0) throw new Error("Punches already exist for this date");
+
+      const checkOutTime = shift === "girls" ? "20:30:00" : shift === "helper" ? "18:00:00" : "21:30:00";
+      const { error } = await client.from("attendance_logs").insert([
+        { bio_user_id, punch_time: `${date}T09:30:00+05:30`, punch_status: 0 },
+        { bio_user_id, punch_time: `${date}T${checkOutTime}+05:30`, punch_status: 1 },
+      ]);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["monthly-attendance"] });
+    },
+  });
+}
+
 export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[] = []) {
   const extraKey = extraBioIds.join(",");
   return useQuery<MonthlyEmployeeSummary[]>({
@@ -303,7 +335,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
 
       const staffRes = await client
         .from("staff")
-        .select("bio_user_id, name, designation, active, shift, monthly_salary, allowed_leaves, equalize_ot")
+        .select("bio_user_id, name, designation, active, shift, monthly_salary, allowed_leaves, equalize_ot, join_date")
         .eq("active", true)
         .order("name");
       if (staffRes.error) throw staffRes.error;
@@ -316,7 +348,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
         if (missing.length > 0) {
           const { data: extra } = await client
             .from("staff")
-            .select("bio_user_id, name, designation, active, shift, monthly_salary, allowed_leaves, equalize_ot")
+            .select("bio_user_id, name, designation, active, shift, monthly_salary, allowed_leaves, equalize_ot, join_date")
             .in("bio_user_id", missing);
           staff = [...staff, ...(extra ?? [])];
         }
@@ -428,10 +460,19 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
           return { date, first_in: firstIn, last_out: lastOut, is_late, late_minutes, ot_minutes, effective_hours, punch_count: dayPunches.length, lunch_minutes, double_punch_detected };
         });
 
+        // New joiners: only count days from their join date onward — days before that
+        // never existed for them and shouldn't count as absences.
+        const joinDate = (s.join_date as string | null) ?? null;
+        const effectiveStart = joinDate && joinDate > `${month}-01` ? joinDate : `${month}-01`;
+        const staffTotalDays = joinDate && joinDate > lastDay
+          ? 0
+          : Math.max(0, Math.round((new Date(lastDay).getTime() - new Date(effectiveStart).getTime()) / 86400000) + 1);
+
         // Aggregate totals from daily
         let present_days = 0, late_days = 0, total_late_minutes = 0, total_ot_minutes = 0;
         let days_no_lunch = 0, days_lunch_spare = 0, days_lunch_over = 0, days_double_punch = 0;
         for (const d of daily) {
+          if (d.date < effectiveStart) continue; // before this staff member joined
           if (!d.first_in) continue;
           present_days++;
           if (d.is_late) { late_days++; total_late_minutes += d.late_minutes; }
@@ -442,10 +483,10 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
           else if (d.lunch_minutes >= 60) days_lunch_spare++;
         }
 
-        const absent_days       = Math.max(0, totalDays - present_days);
+        const absent_days       = Math.max(0, staffTotalDays - present_days);
         const allowed_leaves    = (s.allowed_leaves as number) ?? 1;
         const excess_leave_days = Math.max(0, absent_days - allowed_leaves);
-        const per_day_salary    = totalDays > 0 ? ((s.monthly_salary as number) ?? 0) / totalDays : 0;
+        const per_day_salary    = staffTotalDays > 0 ? ((s.monthly_salary as number) ?? 0) / staffTotalDays : 0;
         const leave_deduction   = excess_leave_days * per_day_salary;
 
         return {
@@ -456,7 +497,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
           monthly_salary:    (s.monthly_salary as number) ?? 0,
           equalize_ot:       (s.equalize_ot as boolean) ?? false,
           allowed_leaves,
-          total_days:        totalDays,
+          total_days:        staffTotalDays,
           present_days,
           absent_days,
           late_days,
@@ -762,7 +803,7 @@ export function useMyMonthlyLeaveCount(monthKey: string) {
       if (!user) return 0;
       const { data: staffRow } = await supabase()
         .from("staff")
-        .select("bio_user_id")
+        .select("bio_user_id, join_date")
         .eq("user_id", user.id)
         .maybeSingle();
       if (!staffRow?.bio_user_id) return 0;
@@ -779,9 +820,13 @@ export function useMyMonthlyLeaveCount(monthKey: string) {
       const isCurrentMonth = todayYr === year && todayMo === mon;
       const lastDay = isCurrentMonth ? today.getUTCDate() : new Date(year, mon, 0).getDate();
 
-      // Build set of Mon–Sat dates elapsed so far this month
+      // Don't count days before this staff member joined
+      const joinDate = (staffRow.join_date as string | null) ?? null;
+      const firstDay = joinDate && joinDate.slice(0, 7) === monthKey ? Number(joinDate.slice(8, 10)) : 1;
+
+      // Build set of Mon–Sat dates elapsed so far this month (from join date if later)
       const workingDates = new Set<string>();
-      for (let d = 1; d <= lastDay; d++) {
+      for (let d = firstDay; d <= lastDay; d++) {
         const dt = new Date(Date.UTC(year, mon - 1, d));
         if (dt.getUTCDay() !== 0) {
           workingDates.add(`${year}-${String(mon).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
@@ -972,6 +1017,89 @@ export function useApprovedLeavesByMonth(month: string) {
         .lte("leave_date", end)
         .eq("status", "approved");
       return (data ?? []) as { bio_user_id: string; leave_date: string }[];
+    },
+  });
+}
+
+// ── Late fine waivers ─────────────────────────────────────────────────────────
+// Admin can void a specific day's late fine; kept as an audit trail visible both
+// in the admin Monthly attendance view and to the affected staff member.
+
+export type LateFineWaiver = {
+  id: string;
+  bio_user_id: string;
+  fine_date: string;
+  late_minutes: number;
+  waived_amount: number;
+  fine_mode: string | null;
+  reason: string | null;
+  waived_by_name: string | null;
+  created_at: string;
+};
+
+export function useLateFineWaiversByMonth(month: string) {
+  return useQuery<LateFineWaiver[]>({
+    queryKey: ["fine-waivers-month", month],
+    enabled: !!month,
+    queryFn: async () => {
+      const [y, m] = month.split("-");
+      const start = `${month}-01`;
+      const end   = `${month}-${new Date(Number(y), Number(m), 0).getDate()}`;
+      const { data, error } = await supabase()
+        .from("late_fine_waivers")
+        .select("id, bio_user_id, fine_date, late_minutes, waived_amount, fine_mode, reason, waived_by_name, created_at")
+        .gte("fine_date", start)
+        .lte("fine_date", end);
+      if (error) throw error;
+      return (data ?? []) as LateFineWaiver[];
+    },
+  });
+}
+
+export function useWaiveLateFine() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ bio_user_id, staff_name, fine_date, late_minutes, waived_amount, fine_mode, reason, waived_by_name }: {
+      bio_user_id: string; staff_name: string; fine_date: string; late_minutes: number;
+      waived_amount: number; fine_mode: "day" | "minute"; reason?: string; waived_by_name?: string | null;
+    }) => {
+      const client = supabase();
+      const { data: { user } } = await client.auth.getUser();
+
+      const { error } = await client.from("late_fine_waivers").insert({
+        bio_user_id, staff_name, fine_date, late_minutes, waived_amount, fine_mode,
+        reason: reason || null, waived_by: user?.id ?? null, waived_by_name: waived_by_name ?? null,
+      });
+      if (error) throw error;
+
+      await client.from("app_notifications").insert({
+        for_bio_user_id: bio_user_id,
+        title: "Late Fine Waived",
+        body: `Your late fine of ₹${Math.round(waived_amount)} for ${fine_date} has been waived${reason ? ` — ${reason}` : ""}.`,
+        ref_type: "fine_waiver",
+        ref_id: null,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["fine-waivers-month"] });
+      qc.invalidateQueries({ queryKey: ["app-notifications"] });
+    },
+  });
+}
+
+export function useMyLateFineWaivers(bio_user_id: string | null) {
+  return useQuery<LateFineWaiver[]>({
+    queryKey: ["my-fine-waivers", bio_user_id],
+    enabled: !!bio_user_id,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("late_fine_waivers")
+        .select("id, bio_user_id, fine_date, late_minutes, waived_amount, fine_mode, reason, waived_by_name, created_at")
+        .eq("bio_user_id", bio_user_id!)
+        .order("fine_date", { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      return (data ?? []) as LateFineWaiver[];
     },
   });
 }

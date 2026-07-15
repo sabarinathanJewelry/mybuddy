@@ -7,7 +7,7 @@ import NotificationBell from "@/components/ui/notification-bell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import {
-  useAttendanceByDate, useStaff, useUpdateStaff, useDeleteStaff,
+  useAttendanceByDate, useStaff, useUpdateStaff, useDeleteStaff, useMarkPresentDay,
   useMonthlyAttendanceSummary, useAllPermissions, useDecidePermission,
   useKioskSequence, useSaveKioskSequence, useKioskSecret, useSaveKioskSecret, useLastSyncTime,
   useAdminKioskSequences, useSaveUserKioskSequence,
@@ -15,6 +15,7 @@ import {
   useMyStaffProfile, useSubmitLeaveRequest, useDecideLeaveRequest, useDeleteLeaveRequest, useWeekoffBioIdsByDate,
   useStaffAdvances, useSaveStaffAdvance, useUpdateStaffAdvance, useDeleteStaffAdvance,
   useApprovedPermsByDate, useApprovedPermsByMonth, useApprovedLeavesByMonth,
+  useLateFineWaiversByMonth, useWaiveLateFine, type LateFineWaiver,
   useOutsideDutiesByDate, useOutsideDutiesByMonth, useAllOutsideDuties,
   useCreateOutsideDuty, useDecideOutsideDuty,
   useAllKyc, useVerifyKyc, KYC_DOCS,
@@ -91,6 +92,11 @@ function MonthlyTab() {
   const { data: monthPerms  = [] } = useApprovedPermsByMonth(month);
   const { data: monthLeaves = [] } = useApprovedLeavesByMonth(month);
   const { data: monthDuties = [] } = useOutsideDutiesByMonth(month);
+  const { data: monthWaivers = [] } = useLateFineWaiversByMonth(month);
+  const waiveFine = useWaiveLateFine();
+  const adminName = useAuth(s => s.profile?.display_name ?? null);
+  const [waiveTarget, setWaiveTarget] = useState<{ bio_user_id: string; date: string; late_minutes: number } | null>(null);
+  const [waiveReason, setWaiveReason] = useState("");
   const update = useUpdateStaff();
   const qc     = useQueryClient();
 
@@ -147,6 +153,13 @@ function MonthlyTab() {
   function dutyDates(bio_user_id: string): Set<string> {
     return new Set(monthDuties.filter(d => d.bio_user_id === bio_user_id).map(d => d.duty_date));
   }
+  // Dates where admin has waived that day's late fine
+  function waivedDates(bio_user_id: string): Set<string> {
+    return new Set(monthWaivers.filter(w => w.bio_user_id === bio_user_id).map(w => w.fine_date));
+  }
+  function staffWaivers(bio_user_id: string): LateFineWaiver[] {
+    return monthWaivers.filter(w => w.bio_user_id === bio_user_id).sort((a, b) => b.fine_date.localeCompare(a.fine_date));
+  }
   function staffFineRange(bio_user_id: string) {
     return staffFineRanges[bio_user_id] ?? { from: fineFromDate, to: "" };
   }
@@ -154,16 +167,38 @@ function MonthlyTab() {
     const r = staffFineRange(bio_user_id);
     return (!r.from || date >= r.from) && (!r.to || date <= r.to);
   }
-  // Late days excluding permission-forgiven and outside-duty days
+  // Late days excluding permission-forgiven, outside-duty, and waived days
   function effectiveLateDays(r: MonthlyEmployeeSummary): number {
     const pd = permDates(r.bio_user_id);
     const dd = dutyDates(r.bio_user_id);
-    return r.daily.filter(d => d.is_late && !pd.has(d.date) && !dd.has(d.date) && inFineRange(d.date, r.bio_user_id)).length;
+    const wd = waivedDates(r.bio_user_id);
+    return r.daily.filter(d => d.is_late && !pd.has(d.date) && !dd.has(d.date) && !wd.has(d.date) && inFineRange(d.date, r.bio_user_id)).length;
   }
   function effectiveLateMins(r: MonthlyEmployeeSummary): number {
     const pd = permDates(r.bio_user_id);
     const dd = dutyDates(r.bio_user_id);
-    return r.daily.filter(d => d.is_late && !pd.has(d.date) && !dd.has(d.date) && inFineRange(d.date, r.bio_user_id)).reduce((s, d) => s + d.late_minutes, 0);
+    const wd = waivedDates(r.bio_user_id);
+    return r.daily.filter(d => d.is_late && !pd.has(d.date) && !dd.has(d.date) && !wd.has(d.date) && inFineRange(d.date, r.bio_user_id)).reduce((s, d) => s + d.late_minutes, 0);
+  }
+  // Fine amount for a single day (before any waiver) — for per-day display
+  function dayFineAmount(bio_user_id: string, late_minutes: number): number {
+    const mode = staffFM(bio_user_id);
+    const amt  = staffFA(bio_user_id);
+    return mode === "day" ? amt : amt * late_minutes;
+  }
+  async function saveWaiveFine(r: MonthlyEmployeeSummary, date: string, late_minutes: number) {
+    await waiveFine.mutateAsync({
+      bio_user_id: r.bio_user_id,
+      staff_name: r.name,
+      fine_date: date,
+      late_minutes,
+      waived_amount: dayFineAmount(r.bio_user_id, late_minutes),
+      fine_mode: staffFM(r.bio_user_id),
+      reason: waiveReason || undefined,
+      waived_by_name: adminName,
+    });
+    setWaiveTarget(null);
+    setWaiveReason("");
   }
   // Weekend absences without approved leave
   function weekendAbsentDays(r: MonthlyEmployeeSummary): string[] {
@@ -674,6 +709,7 @@ function MonthlyTab() {
                                     <th className="text-right py-1 px-2 font-medium">Hours</th>
                                     <th className="text-center py-1 px-2 font-medium">Lunch</th>
                                     <th className="text-right py-1 px-2 font-medium">Late</th>
+                                    <th className="text-right py-1 px-2 font-medium text-err">Fine</th>
                                     <th className="text-right py-1 px-2 font-medium">OT</th>
                                   </tr>
                                 </thead>
@@ -719,6 +755,22 @@ function MonthlyTab() {
                                       <td className={`py-1 px-2 text-right font-medium ${d.late_minutes > 0 ? "text-warn" : "text-ink-dim"}`}>
                                         {d.late_minutes > 0 ? `${d.late_minutes}m` : "—"}
                                       </td>
+                                      <td className="py-1 px-2 text-right">
+                                        {(() => {
+                                          if (!d.is_late) return <span className="text-ink-dim">—</span>;
+                                          const isWaived = waivedDates(r.bio_user_id).has(d.date);
+                                          if (isWaived) return <span className="text-[10px] font-semibold text-ok">Waived</span>;
+                                          const forgiven = permDates(r.bio_user_id).has(d.date) || dutyDates(r.bio_user_id).has(d.date) || !inFineRange(d.date, r.bio_user_id);
+                                          if (forgiven) return <span className="text-ink-dim">—</span>;
+                                          return (
+                                            <div className="flex items-center justify-end gap-1.5">
+                                              <span className="font-mono text-err">{inr(dayFineAmount(r.bio_user_id, d.late_minutes))}</span>
+                                              <button onClick={() => { setWaiveTarget({ bio_user_id: r.bio_user_id, date: d.date, late_minutes: d.late_minutes }); setWaiveReason(""); }}
+                                                className="text-[9px] text-gold hover:underline shrink-0">Waive</button>
+                                            </div>
+                                          );
+                                        })()}
+                                      </td>
                                       <td className={`py-1 px-2 text-right font-medium ${d.ot_minutes > 0 ? "text-ok" : "text-ink-dim"}`}>
                                         {d.ot_minutes > 0 ? formatMins(d.ot_minutes) : "—"}
                                       </td>
@@ -726,6 +778,43 @@ function MonthlyTab() {
                                   ))}
                                 </tbody>
                               </table>
+
+                              {waiveTarget?.bio_user_id === r.bio_user_id && (
+                                <div className="mt-2 p-2.5 border border-gold/40 bg-gold/5 rounded-lg2 flex flex-wrap items-center gap-2">
+                                  <span className="text-ink-dim">
+                                    Waive {inr(dayFineAmount(r.bio_user_id, waiveTarget.late_minutes))} fine for {dayLabel(waiveTarget.date)}?
+                                  </span>
+                                  <input value={waiveReason} onChange={e => setWaiveReason(e.target.value)}
+                                    placeholder="Reason (optional)" className={inp + " w-40 text-xs"} />
+                                  <button
+                                    onClick={() => saveWaiveFine(r, waiveTarget.date, waiveTarget.late_minutes)}
+                                    disabled={waiveFine.isPending}
+                                    className="bg-gold text-white text-xs px-3 py-1 rounded-lg2 disabled:opacity-50">
+                                    {waiveFine.isPending ? "Saving…" : "Confirm Waive"}
+                                  </button>
+                                  <button onClick={() => { setWaiveTarget(null); setWaiveReason(""); }}
+                                    className="border border-line text-xs px-3 py-1 rounded-lg2">Cancel</button>
+                                  {waiveFine.isError && <span className="text-err text-[10px] w-full">{(waiveFine.error as Error).message}</span>}
+                                </div>
+                              )}
+
+                              {staffWaivers(r.bio_user_id).length > 0 && (
+                                <div className="mt-3">
+                                  <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide mb-1.5">Waived Fines — {monthLabel(month)}</p>
+                                  <div className="space-y-1">
+                                    {staffWaivers(r.bio_user_id).map(w => (
+                                      <div key={w.id} className="flex items-center gap-2 text-xs text-ink-dim flex-wrap">
+                                        <span className="font-mono">{shortDate(w.fine_date)}</span>
+                                        <span className="font-mono text-ok">{inr(w.waived_amount)}</span>
+                                        {w.reason && <span>— {w.reason}</span>}
+                                        <span className="text-[10px]">
+                                          by {w.waived_by_name ?? "admin"} on {new Date(w.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
 
                             {/* Salary split card */}
@@ -1527,6 +1616,7 @@ function StaffTab() {
   const { data: staff = [], isLoading } = useStaff();
   const update = useUpdateStaff();
   const del    = useDeleteStaff();
+  const markPresent = useMarkPresentDay();
   const [editing, setEditing]       = useState<string | null>(null);
   const [form, setForm]             = useState<Partial<StaffMember>>({});
   const [showInactive, setShowInactive] = useState(false);
@@ -1535,6 +1625,9 @@ function StaffTab() {
   const [loginPwd, setLoginPwd]     = useState("");
   const [loginSaving, setLoginSaving] = useState(false);
   const [loginMsg, setLoginMsg]     = useState<{ ok: boolean; text: string } | null>(null);
+  const [markPresentFor, setMarkPresentFor] = useState<string | null>(null);
+  const [markPresentDate, setMarkPresentDate] = useState("");
+  const [markPresentMsg, setMarkPresentMsg]   = useState<{ ok: boolean; text: string } | null>(null);
 
   const visible = showInactive ? staff : staff.filter((s) => s.active);
 
@@ -1546,12 +1639,30 @@ function StaffTab() {
       department: s.department,
       phone: s.phone,
       shift: s.shift ?? "boys",
+      join_date: s.join_date,
     });
   }
 
   async function saveEdit(bio_user_id: string) {
     await update.mutateAsync({ bio_user_id, ...form });
     setEditing(null);
+  }
+
+  function openMarkPresent(s: StaffMember) {
+    setMarkPresentFor(s.bio_user_id);
+    setMarkPresentDate("");
+    setMarkPresentMsg(null);
+  }
+
+  async function saveMarkPresent(s: StaffMember) {
+    if (!markPresentDate) return;
+    try {
+      await markPresent.mutateAsync({ bio_user_id: s.bio_user_id, date: markPresentDate, shift: s.shift ?? "boys" });
+      setMarkPresentMsg({ ok: true, text: `Marked present for ${markPresentDate}.` });
+      setMarkPresentDate("");
+    } catch (e) {
+      setMarkPresentMsg({ ok: false, text: (e as Error).message });
+    }
   }
 
   async function toggleActive(s: StaffMember) {
@@ -1638,7 +1749,10 @@ function StaffTab() {
                 <tr className={`border-b border-line last:border-0 hover:bg-canvas/50 ${!s.active ? "opacity-50" : ""}`}>
                   <td className="px-4 py-2.5 text-ink-dim text-xs">{i + 1}</td>
                   <td className="px-3 py-2.5 text-ink-dim text-xs font-mono">{s.bio_user_id}</td>
-                  <td className="px-3 py-2.5 font-medium">{s.name}</td>
+                  <td className="px-3 py-2.5 font-medium">
+                    {s.name}
+                    {s.join_date && <span className="block text-[10px] font-normal text-ink-dim">Joined {shortDate(s.join_date)}</span>}
+                  </td>
                   <td className="px-3 py-2.5 text-ink-dim hidden md:table-cell">{s.designation || "—"}</td>
                   <td className="px-3 py-2.5 text-ink-dim hidden sm:table-cell">{s.department || "—"}</td>
                   <td className="px-3 py-2.5 text-ink-dim hidden lg:table-cell">{s.phone || "—"}</td>
@@ -1676,6 +1790,7 @@ function StaffTab() {
                   <td className="px-3 py-2.5 text-right">
                     <div className="flex gap-2 justify-end">
                       <button onClick={() => startEdit(s)} className="text-xs text-gold hover:underline">Edit</button>
+                      <button onClick={() => openMarkPresent(s)} className="text-xs text-info hover:underline">Mark Present</button>
                       <button onClick={() => toggleActive(s)}
                         className={`text-xs hover:underline ${s.active ? "text-warn" : "text-ok"}`}>
                         {s.active ? "Deactivate" : "Activate"}
@@ -1750,6 +1865,11 @@ function StaffTab() {
                             <option value="helper">Helper (till 6:00 PM)</option>
                           </select>
                         </div>
+                        <div>
+                          <label className="text-xs text-ink-dim block mb-1">Joined</label>
+                          <input type="date" value={form.join_date ?? ""} onChange={e => setForm(f => ({ ...f, join_date: e.target.value || null }))}
+                            className={inp + " w-40"} />
+                        </div>
                         <div className="flex gap-2">
                           <button onClick={() => saveEdit(s.bio_user_id)} disabled={update.isPending}
                             className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40">Save</button>
@@ -1757,6 +1877,34 @@ function StaffTab() {
                             className="border border-line text-xs px-3 py-1.5 rounded-lg2">Cancel</button>
                         </div>
                       </div>
+                    </td>
+                  </tr>
+                )}
+
+                {markPresentFor === s.bio_user_id && (
+                  <tr className="border-b border-line bg-info/5">
+                    <td colSpan={10} className="px-4 py-3">
+                      <div className="flex flex-wrap gap-3 items-end">
+                        <div>
+                          <label className="text-xs text-ink-dim block mb-1">Mark {s.name} present on</label>
+                          <input type="date" value={markPresentDate} onChange={e => setMarkPresentDate(e.target.value)}
+                            className={inp + " w-40"} />
+                        </div>
+                        <div className="flex gap-2 items-center">
+                          <button onClick={() => saveMarkPresent(s)} disabled={markPresent.isPending || !markPresentDate}
+                            className="bg-info text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40">
+                            {markPresent.isPending ? "Saving…" : "Save"}
+                          </button>
+                          <button onClick={() => { setMarkPresentFor(null); setMarkPresentMsg(null); }}
+                            className="border border-line text-xs px-3 py-1.5 rounded-lg2">Cancel</button>
+                          {markPresentMsg && (
+                            <span className={`text-xs font-medium ${markPresentMsg.ok ? "text-ok" : "text-err"}`}>
+                              {markPresentMsg.text}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-ink-dim mt-1.5">Inserts a check-in at 09:30 and a check-out at the end of their shift for that date — for days worked before device/kiosk access was set up.</p>
                     </td>
                   </tr>
                 )}
