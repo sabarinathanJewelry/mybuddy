@@ -33,6 +33,7 @@ export async function middleware(request: NextRequest) {
   const role = session?.user?.app_metadata?.role as string | undefined;
   const isStaff    = role === "staff";
   const isSubadmin = role === "subadmin";
+  const isSignage  = role === "signage";
 
   // Public routes — no auth required
   if (pathname.startsWith("/apply")) return supabaseResponse;
@@ -48,7 +49,9 @@ export async function middleware(request: NextRequest) {
   }
 
   // MFA gate — non-staff users with 2FA enabled must verify on each new device
-  const mfaEnabled = !isStaff && session?.user?.app_metadata?.mfa_enabled === true;
+  // (signage accounts are exempt too — same reasoning as staff: a narrowly-scoped
+  // restricted login, not worth the friction)
+  const mfaEnabled = !isStaff && !isSignage && session?.user?.app_metadata?.mfa_enabled === true;
   const mfaVerified = request.cookies.get("mfa_verified")?.value === session?.user?.id;
   const isMfaExemptPath =
     pathname === "/verify-otp" ||
@@ -79,6 +82,12 @@ export async function middleware(request: NextRequest) {
   const staffAllowedPaths = ["/my-attendance", "/my-repairs", "/kolusu-sale"];
   if (isStaff && !staffAllowedPaths.includes(pathname) && !pathname.startsWith("/api/")) {
     return NextResponse.redirect(new URL("/my-attendance", request.url));
+  }
+
+  // Signage-only login: locked to /admin/signage/* — nothing else in the ERP
+  // (this also handles their post-login redirect from /login, same as staff above)
+  if (isSignage && !pathname.startsWith("/admin/signage/") && !pathname.startsWith("/api/")) {
+    return NextResponse.redirect(new URL("/admin/signage/playlists", request.url));
   }
 
   // Sub-admin: block /admin/* routes (admin-only pages)

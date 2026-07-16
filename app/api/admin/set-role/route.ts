@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { userId, role } = await request.json();
-  if (!userId || !["staff", "subadmin"].includes(role)) {
+  if (!userId || !["staff", "subadmin", "signage"].includes(role)) {
     return NextResponse.json({ error: "Invalid userId or role" }, { status: 400 });
   }
 

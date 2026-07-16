@@ -5,7 +5,7 @@ import { create } from "zustand";
 export interface Profile {
   id: string;
   display_name: string;
-  role: "admin" | "staff" | "subadmin";
+  role: "admin" | "staff" | "subadmin" | "signage";
   language: string;
   repair_access?: boolean;
   incentive_access?: boolean;

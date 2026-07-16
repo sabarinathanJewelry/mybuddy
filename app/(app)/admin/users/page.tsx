@@ -47,7 +47,7 @@ export default function AdminUsersPage() {
   });
 
   const setRole = useMutation({
-    mutationFn: async ({ userId, role }: { userId: string; role: "staff" | "subadmin" }) => {
+    mutationFn: async ({ userId, role }: { userId: string; role: "staff" | "subadmin" | "signage" }) => {
       const client = supabase();
       const { data: { session } } = await client.auth.getSession();
       const res = await fetch("/api/admin/set-role", {
@@ -142,12 +142,14 @@ where id = '<user-uuid>';`}
                 <th className="text-center px-3 py-2.5">Incentive</th>
                 <th className="text-center px-3 py-2.5">Kolusu</th>
                 <th className="text-center px-3 py-2.5">Sub-Admin</th>
+                <th className="text-center px-3 py-2.5">Signage</th>
                 <th className="text-center px-3 py-2.5">Status</th>
               </tr>
             </thead>
             <tbody>
               {(profiles as any[])?.map((p) => {
                 const isSubadmin = p.role === "subadmin";
+                const isSignageRole = p.role === "signage";
                 const isModulesOpen = expandedModules === p.id;
                 const mods: string[] = p.allowed_modules ?? [];
 
@@ -161,6 +163,8 @@ where id = '<user-uuid>';`}
                             ? "bg-gold/10 text-gold-dark"
                             : isSubadmin
                             ? "bg-info/15 text-info"
+                            : isSignageRole
+                            ? "bg-ok/10 text-ok"
                             : "bg-canvas text-ink-dim"
                         }`}>
                           {p.role}
@@ -253,6 +257,31 @@ where id = '<user-uuid>';`}
                               </button>
                             )}
                           </div>
+                        )}
+                      </td>
+                      {/* Signage-only role */}
+                      <td className="px-3 py-2.5 text-center">
+                        {p.role === "admin" ? (
+                          <span className="text-xs text-gold">—</span>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              if (confirm(isSignageRole
+                                ? `Remove ${p.display_name}'s signage-only access and set them back to staff?`
+                                : `Restrict ${p.display_name} to only the Signage pages (playlists/channels/devices)? They will lose access to everything else.`
+                              )) {
+                                setRole.mutate({ userId: p.id, role: isSignageRole ? "staff" : "signage" });
+                              }
+                            }}
+                            disabled={setRole.isPending}
+                            className={`text-xs px-2.5 py-1 rounded-full border transition-colors disabled:opacity-40 ${
+                              isSignageRole
+                                ? "bg-ok/10 border-ok/30 text-ok hover:bg-err/10 hover:border-err/30 hover:text-err"
+                                : "border-line text-ink-dim hover:border-ok hover:text-ok"
+                            }`}
+                          >
+                            {isSignageRole ? "Signage-only" : "Restrict"}
+                          </button>
                         )}
                       </td>
                       {/* Deactivate / Reactivate */}

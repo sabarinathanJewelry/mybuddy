@@ -138,6 +138,7 @@ export default function Sidebar() {
   const profile = useAuth((s) => s.profile);
   const isAdmin    = profile?.role === "admin";
   const isSubadmin = profile?.role === "subadmin";
+  const isSignageOnly = profile?.role === "signage";
   const allowedModules: string[] = profile?.allowed_modules ?? [];
 
   function canAccess(slug: string) {
@@ -182,8 +183,8 @@ export default function Sidebar() {
         )}
       </div>
 
-      {/* Search — only when expanded */}
-      {!collapsed && (
+      {/* Search — only when expanded, not relevant for a one-page signage login */}
+      {!collapsed && !isSignageOnly && (
         <div className="px-3 pt-2.5 pb-1">
           <input
             type="text"
@@ -197,7 +198,17 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
-        {filtered ? (
+        {isSignageOnly ? (
+          // Signage-only login: this is the only page they can reach (enforced in
+          // middleware.ts) — no point showing the rest of the ERP nav
+          <NavItem
+            href="/admin/signage/playlists"
+            icon="📺"
+            label="Signage"
+            collapsed={collapsed}
+            active={pathname.startsWith("/admin/signage")}
+          />
+        ) : filtered ? (
           // Search results — flat list, no dividers
           filtered.length > 0 ? filtered.map(item => (
             <NavItem
