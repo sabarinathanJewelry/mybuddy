@@ -92,7 +92,7 @@ type DayRow = {
   lunch_minutes: number | null;
 };
 
-type StaffInfo = { bio_user_id: string; name: string; shift: string };
+type StaffInfo = { bio_user_id: string; name: string; shift: string; join_date: string | null };
 
 type PageTab = "today" | "monthly" | "requests" | "incentive" | "chat" | "policies" | "kyc" | "tasks" | "weekoffs" | "payslip";
 
@@ -287,7 +287,7 @@ export default function MyAttendancePage() {
     });
     client
       .from("staff")
-      .select("bio_user_id, name, shift")
+      .select("bio_user_id, name, shift, join_date")
       .single()
       .then(({ data, error }) => {
         if (error || !data) setError("Could not load your staff record.");
@@ -331,6 +331,7 @@ export default function MyAttendancePage() {
         for (let i = 0; i < totalDays; i++) {
           const d = new Date(Date.UTC(year, mon - 1, 1 + i));
           const date = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+          if (staff.join_date && date < staff.join_date) continue; // before this staff member joined
           const raw = [...(byDate.get(date) ?? [])].sort();
           const { deduped, double_punch } = deduplicatePunches(raw);
 
