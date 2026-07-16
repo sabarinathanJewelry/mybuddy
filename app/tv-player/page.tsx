@@ -55,7 +55,7 @@ function ZonePlayer({ zone }: { zone: PlayoutZone }) {
           src={item.media_url}
           autoPlay muted playsInline
           onEnded={() => setIndex((i) => (i + 1) % items.length)}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          style={{ width: "100%", height: "100%", objectFit: "contain" }}
         />
       </div>
     );
@@ -63,7 +63,7 @@ function ZonePlayer({ zone }: { zone: PlayoutZone }) {
 
   return (
     <div style={style}>
-      <img key={item.media_url} src={item.media_url} style={{ width: "100%", height: "100%", objectFit: "cover" }} alt="" />
+      <img key={item.media_url} src={item.media_url} style={{ width: "100%", height: "100%", objectFit: "contain" }} alt="" />
     </div>
   );
 }

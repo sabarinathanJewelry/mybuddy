@@ -152,6 +152,14 @@ const LAYOUT_PRESETS: Record<LayoutPreset, Omit<ChannelZone, "id" | "channel_id"
     { zone_index: 0, x_pct: 0, y_pct: 0, w_pct: 80, h_pct: 100 },
     { zone_index: 1, x_pct: 80, y_pct: 0, w_pct: 20, h_pct: 100 },
   ],
+  v_30_70: [
+    { zone_index: 0, x_pct: 0, y_pct: 0, w_pct: 30, h_pct: 100 },
+    { zone_index: 1, x_pct: 30, y_pct: 0, w_pct: 70, h_pct: 100 },
+  ],
+  v_70_30: [
+    { zone_index: 0, x_pct: 0, y_pct: 0, w_pct: 70, h_pct: 100 },
+    { zone_index: 1, x_pct: 70, y_pct: 0, w_pct: 30, h_pct: 100 },
+  ],
 };
 
 export const LAYOUT_PRESET_LABELS: Record<LayoutPreset, string> = {
@@ -161,6 +169,8 @@ export const LAYOUT_PRESET_LABELS: Record<LayoutPreset, string> = {
   v_50_50: "Vertical 50 / 50",
   v_20_80: "Vertical 20 / 80",
   v_80_20: "Vertical 80 / 20",
+  v_30_70: "Vertical 30 / 70",
+  v_70_30: "Vertical 70 / 30",
 };
 
 export function useChannels() {

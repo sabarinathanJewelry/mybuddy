@@ -33,7 +33,7 @@ export interface ChannelZone {
   h_pct: number;
 }
 
-export type LayoutPreset = "full" | "h_50_50" | "h_70_30" | "v_50_50" | "v_20_80" | "v_80_20";
+export type LayoutPreset = "full" | "h_50_50" | "h_70_30" | "v_50_50" | "v_20_80" | "v_80_20" | "v_30_70" | "v_70_30";
 
 export interface Device {
   id: string;
