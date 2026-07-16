@@ -93,6 +93,7 @@ export type MonthlyEmployeeSummary = {
   monthly_salary: number;
   allowed_leaves: number;
   equalize_ot: boolean;
+  join_date: string | null;
   total_days: number;
   present_days: number;
   absent_days: number;
@@ -432,8 +433,14 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
         const shiftEndMin = sh === "girls" ? 20 * 60 + 30 : sh === "helper" ? 18 * 60 : 21 * 60 + 30;
         const byDate = byUserByDate.get(s.bio_user_id) ?? new Map<string, string[]>();
 
+        // New joiners: only build/count days from their join date onward — days before
+        // that never existed for them and shouldn't show as (or count toward) absences.
+        const joinDate = (s.join_date as string | null) ?? null;
+        const effectiveStart = joinDate && joinDate > `${month}-01` ? joinDate : `${month}-01`;
+        const staffDates = joinDate ? allDates.filter((date) => date >= effectiveStart) : allDates;
+
         // Build per-day detail
-        const daily: DailyAttendance[] = allDates.map((date) => {
+        const daily: DailyAttendance[] = staffDates.map((date) => {
           const rawDayPunches = [...(byDate.get(date) ?? [])].sort();
           const { deduped: dayPunches, double_punch_detected } = deduplicatePunches(rawDayPunches);
           const firstIn  = dayPunches[0] ?? null;
@@ -469,19 +476,14 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
           return { date, first_in: firstIn, last_out: lastOut, is_late, late_minutes, ot_minutes, effective_hours, punch_count: dayPunches.length, lunch_minutes, double_punch_detected };
         });
 
-        // New joiners: only count days from their join date onward — days before that
-        // never existed for them and shouldn't count as absences.
-        const joinDate = (s.join_date as string | null) ?? null;
-        const effectiveStart = joinDate && joinDate > `${month}-01` ? joinDate : `${month}-01`;
         const staffTotalDays = joinDate && joinDate > lastDay
           ? 0
           : Math.max(0, Math.round((new Date(lastDay).getTime() - new Date(effectiveStart).getTime()) / 86400000) + 1);
 
-        // Aggregate totals from daily
+        // Aggregate totals from daily (already pre-filtered to effectiveStart..lastDay)
         let present_days = 0, late_days = 0, total_late_minutes = 0, total_ot_minutes = 0;
         let days_no_lunch = 0, days_lunch_spare = 0, days_lunch_over = 0, days_double_punch = 0;
         for (const d of daily) {
-          if (d.date < effectiveStart) continue; // before this staff member joined
           if (!d.first_in) continue;
           present_days++;
           if (d.is_late) { late_days++; total_late_minutes += d.late_minutes; }
@@ -505,6 +507,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
           shift:             ((s.shift as string) ?? "boys") as "boys" | "girls",
           monthly_salary:    (s.monthly_salary as number) ?? 0,
           equalize_ot:       (s.equalize_ot as boolean) ?? false,
+          join_date:         joinDate,
           allowed_leaves,
           total_days:        staffTotalDays,
           present_days,
