@@ -36,10 +36,15 @@ export default function KioskProvider({
     if (!loading && !hasAnySeq) unlock();
   }, [loading, hasAnySeq, unlock]);
 
-  // Staff and restricted subadmins on personal devices are never locked
+  // Staff, restricted subadmins, and signage-only logins on personal devices are
+  // never locked — the kiosk board is for the shared physical attendance tablet.
+  // Without this, a signage login gets stuck in a redirect loop: KioskProvider
+  // force-navigates to /attendance, middleware bounces signage logins away from
+  // it (not under /admin/signage/*), KioskProvider immediately retries.
   useEffect(() => {
     if (profile?.role === "staff") unlock();
     if (profile?.role === "subadmin" && (profile?.allowed_modules?.length ?? 0) > 0) unlock();
+    if (profile?.role === "signage") unlock();
   }, [profile?.role, profile?.allowed_modules, unlock]);
 
   // When locked (and sequence is set), redirect to /attendance
@@ -49,9 +54,10 @@ export default function KioskProvider({
     }
   }, [isLocked, loading, hasAnySeq, pathname, router]);
 
-  // Inactivity auto-lock — only when unlocked and any sequence is configured
+  // Inactivity auto-lock — only when unlocked and any sequence is configured.
+  // Exempt signage-only logins too, same reasoning as the unlock effect above.
   useEffect(() => {
-    if (isLocked || !hasAnySeq) return;
+    if (isLocked || !hasAnySeq || profile?.role === "signage") return;
 
     const resetTimer = () => {
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -66,7 +72,7 @@ export default function KioskProvider({
       events.forEach((e) => window.removeEventListener(e, resetTimer));
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [isLocked, hasAnySeq, lock]);
+  }, [isLocked, hasAnySeq, lock, profile?.role]);
 
   if (loading) {
     return (
