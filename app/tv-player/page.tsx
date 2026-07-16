@@ -78,7 +78,38 @@ function PairingScreen({ code }: { code: string }) {
   );
 }
 
+// Prevents the TV's screensaver/sleep from kicking in while this page is open.
+// The OS only sees "no remote input," not that content is actively playing, so
+// without this it would screensaver over the signage after a few idle minutes.
+// Re-acquires on visibility change, since the Wake Lock API auto-releases when
+// the page is backgrounded (e.g. briefly, during an app switch).
+function useScreenWakeLock() {
+  useEffect(() => {
+    if (!("wakeLock" in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+
+    async function acquire() {
+      try {
+        lock = await (navigator as any).wakeLock.request("screen");
+      } catch {
+        // Some WebViews reject this outside a user gesture or when hidden — harmless, will retry.
+      }
+    }
+    acquire();
+
+    function handleVisibility() {
+      if (document.visibilityState === "visible") acquire();
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      lock?.release().catch(() => {});
+    };
+  }, []);
+}
+
 export default function TvPlayerPage() {
+  useScreenWakeLock();
   const [playout, setPlayout] = useState<PlayoutResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const credsRef = useRef<{ device_id: string; device_secret: string } | null>(null);
