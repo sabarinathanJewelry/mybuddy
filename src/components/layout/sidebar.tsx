@@ -55,6 +55,7 @@ const ADMIN_NAV = [
   { href: "/admin/security",        icon: "🔐", key: "nav_security" as const },
   { href: "/my-security-code",      icon: "🔢", key: "nav_security_code" as const },
   { href: "/admin/whatsapp-setup",  icon: "📱", key: "nav_whatsapp_setup" as const },
+  { href: "/admin/signage/playlists", icon: "📺", key: "nav_signage" as const },
 ];
 
 function useRepairAlertCount(enabled: boolean) {

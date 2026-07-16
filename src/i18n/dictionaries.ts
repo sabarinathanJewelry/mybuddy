@@ -53,8 +53,14 @@ const en = {
   nav_security: "Security",
   nav_security_code: "Security Code",
   nav_whatsapp_setup: "WhatsApp Setup",
+  nav_signage: "Signage",
   nav_logout: "Logout",
   nav_info: "Info",
+
+  // Signage
+  signage_playlists: "Playlists",
+  signage_channels: "Channels",
+  signage_devices: "Devices",
 
   // Common
   save: "Save",

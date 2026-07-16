@@ -1,0 +1,15 @@
+{
+  "name": "mybuddy-signage-tv",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Android TV wrapper for the MyBuddy signage player (/tv-player on the main web app). Thin Capacitor shell only — all UI/logic lives in the Next.js app.",
+  "scripts": {
+    "android": "npx cap open android",
+    "sync": "npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/core": "^8.4.0"
+  }
+}
