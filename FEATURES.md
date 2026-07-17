@@ -103,11 +103,13 @@
 - **V1 vs V2 comparison table**: side-by-side for Revenue, GST, COGS, Gross Profit, Net Profit, Gold VA Income with difference column
 - Requires migrations 127 (metal_inventory_snapshots table) and 128 (metal column on supplier_payments)
 
-### Reports page visual pass (P&L Report tab)
-- **Shared presentational components** (`SectionCard`, `StatCard`, `StatGrid`) introduced in `reports/page.tsx`, built from the existing token classes only (no new colors/shadows/radii, no shadcn) — consolidates ~35 duplicated `bg-white rounded-xl border border-line shadow-soft` card divs and ~6 independently-duplicated stat-tile blocks across the file into reusable pieces; applied first to the P&L Report tab's Summary Strip and Gold Touch Analysis panel (unified value size + `tabular-nums` on all figures)
+### Reports page visual pass (all 8 tabs)
+- **Shared presentational components** (`SectionCard`, `StatCard`, `StatGrid`, `HeroStat`) in `reports/page.tsx`, built from the existing token classes only (no new colors/shadows/radii, no shadcn) — consolidates ~35 duplicated card divs and ~6 independently-duplicated stat-tile blocks into reusable pieces
+- **Hero/secondary layout**: each tab now features one large "hero" stat (the number that answers "how did we do") above a row of smaller secondary tiles, instead of a uniform grid where every figure has equal visual weight — `HeroStat` is always full-width (never placed in a narrow multi-column grid) so long ₹ lakh/crore values always have room, with `break-words` as a safety net (wraps to a second line rather than overflowing if ever too tight, e.g. smallest phone widths)
+  - P&L Report: Net Profit · P&L V2: Net Profit (V2) · Sales Detail: Total Sales (new — this tab had no summary before) · Product Mix: Total Revenue (new) · Expenses: Total Expenses (previously just another card in the category grid) · Item Search: Total Amount · Kolusu P&L: Total Margin · Touch Profit: Gold Touch Spread (Sold − Purchase, new derived stat)
+  - Hero tint (`bg-ok/5`/`bg-err/5`/`bg-gold/5`) gives an instant profit/loss read on top of the text color
 - **Sticky table headers**: Sales Detail and Item Search tabs (the two tables with unbounded/large row counts) keep their column headers visible while scrolling
 - Tab bar wrapped in `overflow-x-auto` so the 8 report tabs scroll instead of wrapping on narrower screens
-- Remaining tabs (P&L V2, Sales Detail, Product Mix, Expenses, Item Search, Kolusu P&L, Touch Profit) still use their original inline styling — rolling the same components out to them is a straightforward follow-up
 
 ### Touch Analysis (Reports → Touch Profit tab)
 - **FY Monthly Touch Table**: comprehensive sold touch% vs purchase touch% per month for gold and silver separately; FY year selector; gross weight column for each metal so volumes are transparent

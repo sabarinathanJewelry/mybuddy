@@ -622,6 +622,21 @@ function StatGrid({ stats, cols = "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6", s
   );
 }
 
+// Full-width featured stat — never placed in a narrow multi-column grid, so a large
+// value (7-8 digit ₹ figures) always has room, unlike a StatCard squeezed into 6 columns.
+function HeroStat({ label, value, color = "text-ink", sub, tint }: {
+  label: string; value: string; color?: string; sub?: string; tint?: "ok" | "err" | "gold" | "info";
+}) {
+  const tintClass = tint === "ok" ? "bg-ok/5" : tint === "err" ? "bg-err/5" : tint === "gold" ? "bg-gold/5" : tint === "info" ? "bg-info/5" : "bg-white";
+  return (
+    <div className={clsx("rounded-xl border border-line shadow-soft p-6", tintClass)}>
+      <p className="text-sm text-ink-dim font-medium">{label}</p>
+      <p className={clsx("text-3xl sm:text-4xl font-bold mt-1 tabular-nums break-words", color)}>{value}</p>
+      {sub && <p className="text-sm text-ink-dim mt-1.5">{sub}</p>}
+    </div>
+  );
+}
+
 function MetalCard({ title, color, data }: {
   title: string; color: string;
   data: ReturnType<typeof metalSection>;
@@ -1151,14 +1166,17 @@ export default function ReportsPage() {
         <div className="space-y-5">
 
           {/* Summary strip */}
-          <StatGrid stats={[
-            { label: "Revenue (excl GST)",                                       value: inr(totalRevenue),            color: "text-ink" },
-            { label: "GST Collected",                                            value: inr(totalGst),                color: "text-warn" },
-            { label: hasWac ? "Metal Cost (Period)" : "Supplier Purchases", value: inr(effectivePurchaseCost),  color: "text-err" },
-            { label: hasWac ? "Bullion Trading Profit" : "Old Metal Bought",     value: hasWac ? inr(bullionTradingProfit) : inr(totalOldMetalCost), color: hasWac ? (bullionTradingProfit >= 0 ? "text-ok" : "text-err") : "text-err" },
-            { label: "Gross Profit",                                             value: inr(effectiveGrossProfit),    color: effectiveGrossProfit >= 0 ? "text-ok" : "text-err" },
-            { label: "Net Profit",                                               value: inr(netProfit),               color: netProfit >= 0 ? "text-ok" : "text-err" },
-          ]} />
+          <div className="space-y-3">
+            <HeroStat label="Net Profit" value={inr(netProfit)} color={netProfit >= 0 ? "text-ok" : "text-err"}
+              tint={netProfit >= 0 ? "ok" : "err"} />
+            <StatGrid stats={[
+              { label: "Revenue (excl GST)",                                       value: inr(totalRevenue),            color: "text-ink" },
+              { label: "GST Collected",                                            value: inr(totalGst),                color: "text-warn" },
+              { label: hasWac ? "Metal Cost (Period)" : "Supplier Purchases", value: inr(effectivePurchaseCost),  color: "text-err" },
+              { label: hasWac ? "Bullion Trading Profit" : "Old Metal Bought",     value: hasWac ? inr(bullionTradingProfit) : inr(totalOldMetalCost), color: hasWac ? (bullionTradingProfit >= 0 ? "text-ok" : "text-err") : "text-err" },
+              { label: "Gross Profit",                                             value: inr(effectiveGrossProfit),    color: effectiveGrossProfit >= 0 ? "text-ok" : "text-err" },
+            ]} cols="grid-cols-2 sm:grid-cols-4" />
+          </div>
 
           {/* Touch Analysis */}
           {(avgSoldTouchPct > 0 || avgCostTouchPct > 0) && (
@@ -1973,6 +1991,26 @@ export default function ReportsPage() {
             <p className="text-ink-dim text-sm text-center py-10">No confirmed sales in this period.</p>
           ) : (
             <>
+              {(() => {
+                const rev = (pred: (i: any) => boolean) => (productItems as any[]).filter(pred).reduce((s, i) => s + Number(i.line_total || 0), 0);
+                const goldRev  = rev((i: any) => GOLD_METALS.includes(i.metal) && !Number(i.diamond_amt));
+                const silvRev  = rev((i: any) => SILVER_METALS.includes(i.metal) && !Number(i.diamond_amt));
+                const mprRev   = rev((i: any) => i.metal === "silver_mpr" && !Number(i.diamond_amt));
+                const diaRev   = rev((i: any) => Number(i.diamond_amt) > 0);
+                const totalRev = goldRev + silvRev + mprRev + diaRev;
+                return (
+                  <div className="space-y-3">
+                    <HeroStat label="Total Revenue" value={inr(totalRev)} color="text-ink" tint="gold"
+                      sub={`${productItems.length} item${productItems.length !== 1 ? "s" : ""}`} />
+                    <StatGrid stats={[
+                      { label: "Gold Revenue",    value: inr(goldRev), color: "text-gold" },
+                      { label: "Silver Revenue",  value: inr(silvRev), color: "text-ink-mid" },
+                      { label: "Silver MPR Revenue", value: inr(mprRev), color: "text-info" },
+                      { label: "Diamond Revenue", value: inr(diaRev),  color: "text-purple-600" },
+                    ]} cols="grid-cols-2 sm:grid-cols-4" />
+                  </div>
+                );
+              })()}
               <ProductTable
                 title="Gold Items"
                 color="text-gold bg-gold/5"
@@ -2024,19 +2062,15 @@ export default function ReportsPage() {
             const total = (expenses as any[]).reduce((s: number, e: any) => s + Number(e.amount || 0), 0);
             return (
               <>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {cats.map(([cat, d]) => (
-                    <div key={cat} className="bg-white rounded-xl border border-line p-4 shadow-soft">
-                      <p className="text-xs text-ink-dim">{cat}</p>
-                      <p className="text-lg font-bold text-err mt-0.5">{inr(d.total)}</p>
-                      <p className="text-xs text-ink-dim mt-0.5">{d.count} entry{d.count !== 1 ? "ies" : "y"}</p>
-                    </div>
-                  ))}
-                  <div className="bg-white rounded-xl border border-gold/30 p-4 shadow-soft">
-                    <p className="text-xs text-ink-dim">Total Expenses</p>
-                    <p className="text-lg font-bold text-err mt-0.5">{inr(total)}</p>
-                    <p className="text-xs text-ink-dim mt-0.5">{(expenses as any[]).length} entries</p>
-                  </div>
+                <div className="space-y-3">
+                  <HeroStat label="Total Expenses" value={inr(total)} color="text-err" tint="err"
+                    sub={`${(expenses as any[]).length} entries across ${cats.length} categor${cats.length !== 1 ? "ies" : "y"}`} />
+                  <StatGrid stats={cats.map(([cat, d]) => ({
+                    label: cat,
+                    value: inr(d.total),
+                    color: "text-err",
+                    sub: `${d.count} entry${d.count !== 1 ? "ies" : "y"}`,
+                  }))} cols="grid-cols-2 sm:grid-cols-3 lg:grid-cols-4" />
                 </div>
 
                 {/* Category-wise detail tables */}
@@ -2115,18 +2149,14 @@ export default function ReportsPage() {
             return (
               <>
                 {/* Summary strip */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {[
-                    { label: "Items Found", value: String(totalQty) },
+                <div className="space-y-3">
+                  <HeroStat label="Total Amount" value={inr(totalAmt)} color="text-ink" tint="gold"
+                    sub={`${totalQty} item${totalQty !== 1 ? "s" : ""} found`} />
+                  <StatGrid stats={[
+                    { label: "Items Found",  value: String(totalQty) },
                     { label: "Gross Weight", value: grams(totalWt) },
                     { label: "Net Weight",   value: grams(totalNetWt) },
-                    { label: "Total Amount", value: inr(totalAmt) },
-                  ].map(s => (
-                    <div key={s.label} className="bg-white rounded-xl border border-line p-4 shadow-soft">
-                      <p className="text-xs text-ink-dim">{s.label}</p>
-                      <p className="text-lg font-bold mt-0.5">{s.value}</p>
-                    </div>
-                  ))}
+                  ]} cols="grid-cols-3" />
                 </div>
 
                 {/* Results table */}
@@ -2191,7 +2221,22 @@ export default function ReportsPage() {
       )}
 
       {/* ── SALES DETAIL TAB ────────────────────────────────────── */}
-      {tab === "detail" && (
+      {tab === "detail" && (() => {
+        const detailGoldG  = (salesDetail as any[]).reduce((s, sale) => s + (sale.sale_items ?? []).filter((i: any) => GOLD_METALS.includes(i.metal)).reduce((a: number, i: any) => a + Number(i.net_wt||0), 0), 0);
+        const detailSilvG  = (salesDetail as any[]).reduce((s, sale) => s + (sale.sale_items ?? []).filter((i: any) => SILVER_METALS.includes(i.metal)).reduce((a: number, i: any) => a + Number(i.net_wt||0), 0), 0);
+        const detailGst    = (salesDetail as any[]).reduce((s, sale) => s + Number(sale.gst_amount || 0), 0);
+        const detailTotal  = (salesDetail as any[]).reduce((s, sale) => s + Number(sale.total || 0), 0);
+        return (
+        <div className="space-y-5">
+          <div className="space-y-3">
+            <HeroStat label="Total Sales" value={inr(detailTotal)} color="text-ink" tint="gold"
+              sub={`${salesDetail.length} bill${salesDetail.length !== 1 ? "s" : ""}`} />
+            <StatGrid stats={[
+              { label: "Gold Sold",   value: grams(detailGoldG), color: "text-gold" },
+              { label: "Silver Sold", value: grams(detailSilvG), color: "text-ink-mid" },
+              { label: "GST Collected", value: inr(detailGst),   color: "text-warn" },
+            ]} cols="grid-cols-2 sm:grid-cols-3" />
+          </div>
         <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="sticky top-0 z-10 bg-canvas text-xs text-ink-dim border-b border-line">
@@ -2233,7 +2278,9 @@ export default function ReportsPage() {
             </tbody>
           </table>
         </div>
-      )}
+        </div>
+        );
+      })()}
 
       {/* ── KOLUSU P&L TAB ──────────────────────────────────────── */}
       {tab === "kolusu" && (() => {
@@ -2315,18 +2362,14 @@ export default function ReportsPage() {
             </div>
 
             {/* Summary strip */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { label: "Total Revenue",   value: inr(grandRevenue),  color: "text-ink" },
-                { label: "Own Stock Margin",value: inr(ownTotalMargin), color: ownTotalMargin >= 0 ? "text-ok" : "text-err" },
-                { label: "Suspense Margin", value: inr(suspTotalMargin), color: "text-ok" },
-                { label: "Total Margin",    value: inr(grandMargin),    color: grandMargin >= 0 ? "text-ok" : "text-err" },
-              ].map(s => (
-                <div key={s.label} className="bg-white rounded-xl border border-line p-4 shadow-soft">
-                  <p className="text-xs text-ink-dim">{s.label}</p>
-                  <p className={clsx("text-lg font-bold mt-0.5", s.color)}>{s.value}</p>
-                </div>
-              ))}
+            <div className="space-y-3">
+              <HeroStat label="Total Margin" value={inr(grandMargin)} color={grandMargin >= 0 ? "text-ok" : "text-err"}
+                tint={grandMargin >= 0 ? "ok" : "err"} />
+              <StatGrid stats={[
+                { label: "Total Revenue",    value: inr(grandRevenue),    color: "text-ink" },
+                { label: "Own Stock Margin", value: inr(ownTotalMargin),  color: ownTotalMargin >= 0 ? "text-ok" : "text-err" },
+                { label: "Suspense Margin",  value: inr(suspTotalMargin), color: "text-ok" },
+              ]} cols="grid-cols-2 sm:grid-cols-3" />
             </div>
 
             {/* Own stock table */}
@@ -2553,20 +2596,24 @@ export default function ReportsPage() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                {[
-                  { label: "Avg Gold Sold Touch",      value: avgGSold,  color: "text-gold" },
-                  { label: "Avg Gold VA%",             value: avgFyVa,   color: "text-info" },
-                  { label: "Avg Gold Purchase Touch",  value: avgGPurch, color: "text-err"  },
-                  { label: "Avg Silver Sold Touch",    value: avgSSold,  color: "text-ink"  },
-                  { label: "Avg Silver Purchase Touch",value: avgSPurch, color: "text-err"  },
-                ].map(({ label, value, color }) => (
-                  <div key={label} className="bg-canvas border border-line rounded-xl px-4 py-3">
-                    <p className="text-xs text-ink-dim mb-1">{label}</p>
-                    <p className={`text-xl font-bold font-mono ${color}`}>{value > 0 ? `${value.toFixed(2)}%` : "—"}</p>
+              {(() => {
+                const goldSpread = avgGSold > 0 && avgGPurch > 0 ? avgGSold - avgGPurch : null;
+                return (
+                  <div className="space-y-3">
+                    <HeroStat label="Gold Touch Spread (Sold − Purchase)"
+                      value={goldSpread !== null ? `${goldSpread >= 0 ? "+" : ""}${goldSpread.toFixed(2)}%` : "—"}
+                      color={goldSpread === null ? "text-ink" : goldSpread >= 0 ? "text-ok" : "text-err"}
+                      tint={goldSpread === null ? undefined : goldSpread >= 0 ? "ok" : "err"} />
+                    <StatGrid stats={[
+                      { label: "Avg Gold Sold Touch",       value: avgGSold  > 0 ? `${avgGSold.toFixed(2)}%`  : "—", color: "text-gold" },
+                      { label: "Avg Gold VA%",              value: avgFyVa   > 0 ? `${avgFyVa.toFixed(2)}%`   : "—", color: "text-info" },
+                      { label: "Avg Gold Purchase Touch",   value: avgGPurch > 0 ? `${avgGPurch.toFixed(2)}%` : "—", color: "text-err"  },
+                      { label: "Avg Silver Sold Touch",     value: avgSSold  > 0 ? `${avgSSold.toFixed(2)}%`  : "—", color: "text-ink"  },
+                      { label: "Avg Silver Purchase Touch", value: avgSPurch > 0 ? `${avgSPurch.toFixed(2)}%` : "—", color: "text-err"  },
+                    ]} cols="grid-cols-2 sm:grid-cols-5" />
                   </div>
-                ))}
-              </div>
+                );
+              })()}
 
               <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
                 <div className="overflow-x-auto">
@@ -2800,18 +2847,14 @@ export default function ReportsPage() {
           </div>
 
           {/* Summary strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
+          <div className="space-y-3">
+            <HeroStat label="Net Profit (V2)" value={inr(v2NetProfit)} color={v2NetProfit >= 0 ? "text-ok" : "text-err"}
+              tint={v2NetProfit >= 0 ? "ok" : "err"} />
+            <StatGrid stats={[
               { label: "Revenue (excl GST)", value: inr(v2Revenue),     color: "text-ink" },
               { label: "COGS (WAC method)",  value: inr(v2TotalCogs),   color: "text-err" },
               { label: "Gross Profit",       value: inr(v2GrossProfit), color: v2GrossProfit >= 0 ? "text-ok" : "text-err" },
-              { label: "Net Profit",         value: inr(v2NetProfit),   color: v2NetProfit   >= 0 ? "text-ok" : "text-err" },
-            ].map(s => (
-              <div key={s.label} className="bg-white rounded-xl border border-line p-4 shadow-soft">
-                <p className="text-xs text-ink-dim">{s.label}</p>
-                <p className={clsx("text-lg font-bold mt-0.5", s.color)}>{s.value}</p>
-              </div>
-            ))}
+            ]} cols="grid-cols-2 sm:grid-cols-3" />
           </div>
 
           {/* WAC v2 */}
