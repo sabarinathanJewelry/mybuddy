@@ -10,6 +10,7 @@ export interface Profile {
   repair_access?: boolean;
   incentive_access?: boolean;
   kolusu_access?: boolean;
+  conduct_note_access?: boolean;
   allowed_modules?: string[];
 }
 

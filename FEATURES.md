@@ -188,6 +188,14 @@
 - **Mark Present (Staff tab)**: per-staff "Mark Present" action inserts a synthetic check-in (09:30) + check-out (end of their shift) pair into `attendance_logs` for a chosen date — for days actually worked before kiosk/device punch access was set up (e.g. a new joiner's first day(s)); refuses to run if punches already exist for that date unless an explicit "Override" is confirmed, which deletes the existing (e.g. wrong-time test) punches for that date first and replaces them with the clean present pair
 - **Per-day late fine + Waive**: the Monthly tab's expanded Daily Attendance table now shows a ₹ Fine column per late day (day-mode or minute-mode, per-staff rate) with a "Waive" action; confirming (with optional reason) records the waiver in `late_fine_waivers` (date, amount, late minutes, who waived it, reason) and excludes that day from the month's fine/late-day totals going forward. A "Waived Fines" list under the day table shows the waiver history for that staff member. Waiving also sends an `app_notifications` alert to the specific staff member, and their own `/my-attendance` Monthly tab shows a durable "Late Fine Waived" history list (independent of notification read-state) with the date, amount, reason, and who waived it — visible to both admin and the staff member
 
+### Staff Conduct Notes (`/staff-conduct`)
+- Designated reviewers log notes about other staff — dress code/grooming, general conduct, or a predefined category (`conduct_categories` table, admin-manageable add/delete list, seeded with Dress Code / Grooming / Customer Handling / Punctuality / Other)
+- **Reviewer access**: new `profiles.conduct_note_access` boolean flag, same pattern as `repair_access`/`incentive_access`/`kolusu_access` — admin toggles it per staff member from `/admin/users` ("Conduct" column). `/staff-conduct` is added to `middleware.ts`'s staff-allowed-paths so a staff-role login with this flag can actually reach the page
+- **Logging a note never auto-deducts pay** — a note just sits as "Pending" until admin reviews it and either **Apply Fine** (enters a ₹ amount) or **Dismiss**, mirroring the existing `late_fine_waivers` "human always decides" trust model rather than an automatic fine table
+- Non-admin reviewers only see notes *they* personally logged (client-side filtered by `noted_by`); admin/subadmin see everything for the selected month
+- Schema: `db/migrations/137_staff_conduct_notes.sql` — `conduct_notes` denormalizes `staff_name` (avoids a relational join, matching `late_fine_waivers`' pattern), uses the same permissive `auth_all` RLS as the repair/incentive/kolusu access flags (those are UI-level gates, not RLS-level — kept consistent rather than introducing a new fine-grained policy for one feature)
+- Not yet wired into Payroll's auto-fill or the KPI Dashboard — applying a fine here is a record only; admin currently has to manually carry it into the Payroll Fine column if desired
+
 ### Attendance (Staff)
 - Smart home view: card grid for staff on `/my-attendance`
 - Today tab: clock-in/out times, hours worked, lunch duration
@@ -522,3 +530,5 @@ Manual digital signage: staff upload images/videos (generated however they like 
 | 133 | `133_signage_system.sql` | Digital signage: playlists, channels/zones, devices (originally also poster templates/posters, see 134) |
 | 134 | `134_remove_ai_poster_generation.sql` | Removes AI poster generation (poster_templates/posters tables, board_rates trigger) — signage is manual-upload only |
 | 135 | `135_signage_media_storage_policies.sql` | RLS policies on storage.objects for the signage-media bucket (uploads need this even on a "Public" bucket) |
+| 136 | `136_signage_role.sql` | New `profiles.role = 'signage'` value for signage-only restricted logins |
+| 137 | `137_staff_conduct_notes.sql` | Staff conduct/dress-code notes: conduct_categories, conduct_notes, profiles.conduct_note_access flag |

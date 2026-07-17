@@ -54,6 +54,7 @@ const en = {
   nav_security_code: "Security Code",
   nav_whatsapp_setup: "WhatsApp Setup",
   nav_signage: "Signage",
+  nav_conduct_notes: "Staff Conduct",
   nav_logout: "Logout",
   nav_info: "Info",
 

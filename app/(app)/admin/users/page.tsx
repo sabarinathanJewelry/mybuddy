@@ -46,6 +46,14 @@ export default function AdminUsersPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["profiles"] }),
   });
 
+  const toggleConductAccess = useMutation({
+    mutationFn: async ({ id, value }: { id: string; value: boolean }) => {
+      const { error } = await supabase().from("profiles").update({ conduct_note_access: value }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["profiles"] }),
+  });
+
   const setRole = useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: "staff" | "subadmin" | "signage" }) => {
       const client = supabase();
@@ -141,6 +149,7 @@ where id = '<user-uuid>';`}
                 <th className="text-center px-3 py-2.5">Repairs</th>
                 <th className="text-center px-3 py-2.5">Incentive</th>
                 <th className="text-center px-3 py-2.5">Kolusu</th>
+                <th className="text-center px-3 py-2.5">Conduct</th>
                 <th className="text-center px-3 py-2.5">Sub-Admin</th>
                 <th className="text-center px-3 py-2.5">Signage</th>
                 <th className="text-center px-3 py-2.5">Status</th>
@@ -222,6 +231,22 @@ where id = '<user-uuid>';`}
                             }`}
                           >
                             {p.kolusu_access ? "On" : "Off"}
+                          </button>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        {p.role === "admin" ? (
+                          <span className="text-xs text-gold">Always</span>
+                        ) : (
+                          <button
+                            onClick={() => toggleConductAccess.mutate({ id: p.id, value: !p.conduct_note_access })}
+                            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                              p.conduct_note_access
+                                ? "bg-ok/10 border-ok/30 text-ok"
+                                : "border-line text-ink-dim hover:border-gold hover:text-gold"
+                            }`}
+                          >
+                            {p.conduct_note_access ? "On" : "Off"}
                           </button>
                         )}
                       </td>
