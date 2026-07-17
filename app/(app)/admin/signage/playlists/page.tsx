@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useT } from "@/i18n";
 import { supabase } from "@/lib/supabase/client";
+import { compressImage } from "@/lib/compress-image";
 import { SignageTabs } from "@/components/signage/signage-tabs";
 import {
   usePlaylists, useCreatePlaylist, useDeletePlaylist,
@@ -53,9 +54,17 @@ function AddItemForm({ playlistId, nextOrderIndex }: { playlistId: string; nextO
     try {
       setUploading(true);
       const client = supabase();
-      const ext = file.name.split(".").pop();
+      let body: Blob = file;
+      let ext = file.name.split(".").pop();
+      // Images should never realistically hit 50MB, but compress rather than
+      // reject if one does — TV-resolution sized (2560px), not the tiny 900px
+      // preset used for repair-photo thumbnails elsewhere in the app.
+      if (itemType === "image" && file.size > 50 * 1024 * 1024) {
+        body = await compressImage(file, 2560, 0.85);
+        ext = "jpg";
+      }
       const path = `${playlistId}/${Date.now()}.${ext}`;
-      const { error: upErr } = await client.storage.from("signage-media").upload(path, file, { upsert: true });
+      const { error: upErr } = await client.storage.from("signage-media").upload(path, body, { upsert: true });
       if (upErr) throw new Error(`Upload failed: ${upErr.message}. Ensure the "signage-media" bucket exists and is Public.`);
       const { data: { publicUrl } } = client.storage.from("signage-media").getPublicUrl(path);
       await addItem.mutateAsync({

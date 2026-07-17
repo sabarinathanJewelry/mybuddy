@@ -48,12 +48,17 @@ function ZonePlayer({ zone }: { zone: PlayoutZone }) {
   if (!item || !item.media_url) return <div style={style} />;
 
   if (item.item_type === "video") {
+    // Unmuted autoplay only works inside the packaged Android TV app, where
+    // MainActivity disables the WebView's "media requires user gesture" policy.
+    // In a plain browser tab, Chrome/Firefox block unmuted autoplay entirely
+    // (the video will sit paused until the visitor interacts with the page
+    // once) — that's a browser policy, not a bug in this code.
     return (
       <div style={style}>
         <video
           key={item.media_url}
           src={item.media_url}
-          autoPlay muted playsInline
+          autoPlay playsInline
           onEnded={() => setIndex((i) => (i + 1) % items.length)}
           style={{ width: "100%", height: "100%", objectFit: "contain" }}
         />

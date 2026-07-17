@@ -13,5 +13,11 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+        // Chrome's WebView blocks unmuted <video autoPlay> unless the page had a
+        // prior user gesture — there's no remote-control "click" on a signage TV,
+        // so playlist videos would otherwise never get sound. This is our own
+        // controlled kiosk shell, so it's safe to disable that requirement here.
+        getBridge().getWebView().getSettings().setMediaPlaybackRequiresUserGesture(false);
     }
 }

@@ -2,6 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
+import { storagePath } from "@/lib/compress-image";
 import type {
   Playlist, PlaylistItem, PlaylistItemType, Channel, ChannelZone, Device, LayoutPreset,
 } from "./types";
@@ -100,8 +101,14 @@ export function useDeletePlaylistItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, playlistId }: { id: string; playlistId: string }) => {
-      const { error } = await supabase().from("playlist_items").delete().eq("id", id);
+      const client = supabase();
+      const { data: item } = await client.from("playlist_items").select("media_url").eq("id", id).single();
+      const { error } = await client.from("playlist_items").delete().eq("id", id);
       if (error) throw error;
+      if (item?.media_url) {
+        const path = storagePath(item.media_url, "signage-media");
+        if (path) await client.storage.from("signage-media").remove([path]);
+      }
       return playlistId;
     },
     onSuccess: (playlistId) => {
