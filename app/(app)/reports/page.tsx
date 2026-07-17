@@ -600,24 +600,24 @@ function SectionCard({ title, tone = "default", className, children }: {
   );
 }
 
-function StatCard({ label, value, color = "text-ink", sub, bordered = true }: {
-  label: string; value: string; color?: string; sub?: string; bordered?: boolean;
+function StatCard({ label, value, color = "text-ink", sub, bordered = true, size = "sm" }: {
+  label: string; value: string; color?: string; sub?: string; bordered?: boolean; size?: "sm" | "lg";
 }) {
   return (
     <div className={bordered ? "bg-white rounded-xl border border-line shadow-soft p-4" : "px-4 py-4"}>
       <p className="text-xs text-ink-dim">{label}</p>
-      <p className={clsx("text-2xl font-bold mt-0.5 tabular-nums", color)}>{value}</p>
+      <p className={clsx(size === "lg" ? "text-2xl" : "text-lg", "font-bold mt-0.5 tabular-nums break-words", color)}>{value}</p>
       {sub && <p className="text-xs text-ink-dim mt-1">{sub}</p>}
     </div>
   );
 }
 
-function StatGrid({ stats, cols = "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" }: {
-  stats: { label: string; value: string; color?: string; sub?: string }[]; cols?: string;
+function StatGrid({ stats, cols = "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6", size = "sm" }: {
+  stats: { label: string; value: string; color?: string; sub?: string }[]; cols?: string; size?: "sm" | "lg";
 }) {
   return (
     <div className={clsx("grid gap-3", cols)}>
-      {stats.map(s => <StatCard key={s.label} {...s} />)}
+      {stats.map(s => <StatCard key={s.label} {...s} size={size} />)}
     </div>
   );
 }
@@ -1164,10 +1164,10 @@ export default function ReportsPage() {
           {(avgSoldTouchPct > 0 || avgCostTouchPct > 0) && (
             <SectionCard title={`Gold Touch Analysis — ${MONTHS[month - 1]} ${year}`} tone="gold" className="overflow-x-auto">
               <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-line text-sm">
-                <StatCard bordered={false} label="Avg Sold Touch (purity + VA%)" color="text-gold"
+                <StatCard bordered={false} size="lg" label="Avg Sold Touch (purity + VA%)" color="text-gold"
                   value={avgSoldTouchPct > 0 ? `${avgSoldTouchPct.toFixed(2)}%` : "—"}
                   sub={`${suspenseGoldItems.length} suspense item${suspenseGoldItems.length !== 1 ? "s" : ""}`} />
-                <StatCard bordered={false} label="Avg Cost Touch (supplier VA%)" color="text-ink"
+                <StatCard bordered={false} size="lg" label="Avg Cost Touch (supplier VA%)" color="text-ink"
                   value={avgCostTouchPct > 0 ? `${avgCostTouchPct.toFixed(2)}%` : "—"}
                   sub={`${suspConfirmed.length} settled item${suspConfirmed.length !== 1 ? "s" : ""}`} />
                 <div className="px-4 py-4">
