@@ -936,16 +936,17 @@ export default function ReportsPage() {
   const { data: kolusuItems = [],  isLoading: loadingKolusu }      = useKolusuItems(range.from, range.to);
   const { data: kolusuRateAvg }                                     = useKolusuBoardRateAvg(range.from, range.to);
 
-  // Auto-fill Kolusu rate fields from this period's actual average board rate — but only
-  // while the user hasn't manually overridden them, so a background refetch never clobbers
-  // an intentional edit. Re-applies whenever the period's computed average changes.
-  const lastAutoKolusuRates = useRef<{ board: number; pure: number } | null>(null);
+  // Auto-fill Kolusu rate fields from this period's actual average board rate — applied
+  // once per distinct period so a manual edit within the same period is never clobbered
+  // by an unrelated background refetch, but switching to a new period always re-applies.
+  const lastAppliedKolusuPeriod = useRef<string | null>(null);
   useEffect(() => {
-    if (!kolusuRateAvg) return;
-    setKolusuBoardRate(cur => !lastAutoKolusuRates.current || cur === lastAutoKolusuRates.current.board ? kolusuRateAvg.avgBoard : cur);
-    setKolusuPureRate(cur => !lastAutoKolusuRates.current || cur === lastAutoKolusuRates.current.pure ? kolusuRateAvg.avgPure : cur);
-    lastAutoKolusuRates.current = { board: kolusuRateAvg.avgBoard, pure: kolusuRateAvg.avgPure };
-  }, [kolusuRateAvg]);
+    const periodKey = `${range.from}|${range.to}`;
+    if (!kolusuRateAvg || lastAppliedKolusuPeriod.current === periodKey) return;
+    setKolusuBoardRate(kolusuRateAvg.avgBoard);
+    setKolusuPureRate(kolusuRateAvg.avgPure);
+    lastAppliedKolusuPeriod.current = periodKey;
+  }, [kolusuRateAvg, range.from, range.to]);
   const { data: itemResults = [], isFetching: itemSearching }      = useItemSearch(itemTerm, itemFrom, itemTo);
   const { data: wacData }                                           = useMetalWAC();
   const { data: cutRatePayments = [] }                              = useCutRatePayments(range.from, range.to);
