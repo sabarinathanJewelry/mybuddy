@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useT } from "@/i18n";
@@ -119,6 +119,28 @@ function useKolusuItems(from: string, to: string) {
         .ilike("description", "%KOLUSU%");
       if (error) throw error;
       return (data ?? []) as any[];
+    },
+  });
+}
+
+// Average silver board rate + pure silver rate over the period, from board_rates history —
+// used as a smart default for Kolusu P&L's manually-editable rate fields.
+function useKolusuBoardRateAvg(from: string, to: string) {
+  return useQuery({
+    queryKey: ["kolusu-board-rate-avg", from, to],
+    enabled: !!from && !!to,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("board_rates")
+        .select("silver, silver_pure")
+        .gte("effective_date", from)
+        .lte("effective_date", to);
+      if (error) throw error;
+      const rows = data ?? [];
+      if (rows.length === 0) return null;
+      const avgBoard = rows.reduce((s, r: any) => s + Number(r.silver || 0), 0) / rows.length;
+      const avgPure  = rows.reduce((s, r: any) => s + Number(r.silver_pure || 0), 0) / rows.length;
+      return { avgBoard: Math.round(avgBoard), avgPure: Math.round(avgPure) };
     },
   });
 }
@@ -912,6 +934,18 @@ export default function ReportsPage() {
   const { data: exchangePayments = [] }                             = useSaleExchangePayments(range.from, range.to);
   const { data: productItems = [] }                                 = useProductItems(range.from, range.to);
   const { data: kolusuItems = [],  isLoading: loadingKolusu }      = useKolusuItems(range.from, range.to);
+  const { data: kolusuRateAvg }                                     = useKolusuBoardRateAvg(range.from, range.to);
+
+  // Auto-fill Kolusu rate fields from this period's actual average board rate — but only
+  // while the user hasn't manually overridden them, so a background refetch never clobbers
+  // an intentional edit. Re-applies whenever the period's computed average changes.
+  const lastAutoKolusuRates = useRef<{ board: number; pure: number } | null>(null);
+  useEffect(() => {
+    if (!kolusuRateAvg) return;
+    setKolusuBoardRate(cur => !lastAutoKolusuRates.current || cur === lastAutoKolusuRates.current.board ? kolusuRateAvg.avgBoard : cur);
+    setKolusuPureRate(cur => !lastAutoKolusuRates.current || cur === lastAutoKolusuRates.current.pure ? kolusuRateAvg.avgPure : cur);
+    lastAutoKolusuRates.current = { board: kolusuRateAvg.avgBoard, pure: kolusuRateAvg.avgPure };
+  }, [kolusuRateAvg]);
   const { data: itemResults = [], isFetching: itemSearching }      = useItemSearch(itemTerm, itemFrom, itemTo);
   const { data: wacData }                                           = useMetalWAC();
   const { data: cutRatePayments = [] }                              = useCutRatePayments(range.from, range.to);
@@ -2328,6 +2362,15 @@ export default function ReportsPage() {
             {/* Rate config */}
             <div className="bg-white rounded-xl border border-line shadow-soft px-4 py-3">
               <p className="text-xs font-medium text-ink-dim uppercase tracking-wide mb-3">Calculation Rates (editable)</p>
+              {kolusuRateAvg ? (
+                <p className="text-xs text-info mb-3">
+                  Pure Silver Rate and Board Rate auto-filled from this period's average board rate history. Edit either field to override.
+                </p>
+              ) : (
+                <p className="text-xs text-warn mb-3">
+                  No board rate history found for this period — using the last-used rates. Set them manually below if needed.
+                </p>
+              )}
               <div className="flex flex-wrap gap-5 text-sm">
                 <div>
                   <label className="block text-xs text-ink-dim mb-1">Pure Silver Rate (₹/g)</label>

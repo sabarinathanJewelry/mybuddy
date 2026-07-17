@@ -110,6 +110,7 @@
   - Hero tint (`bg-ok/5`/`bg-err/5`/`bg-gold/5`) gives an instant profit/loss read on top of the text color
 - **Sticky table headers**: Sales Detail and Item Search tabs (the two tables with unbounded/large row counts) keep their column headers visible while scrolling
 - Tab bar wrapped in `overflow-x-auto` so the 8 report tabs scroll instead of wrapping on narrower screens
+- **Kolusu P&L auto-filled rates**: "Pure Silver Rate" and "Board Rate" inputs now default to the selected period's actual average from `board_rates` (`silver_pure`/`silver` columns) instead of a static hardcoded guess (previously always 263/285 regardless of period) — still manually editable; an edited value survives background refetches and persists until the period is changed, at which point it re-syncs to the new period's average. Shows a warning instead when no board rate history exists for the selected period
 
 ### Touch Analysis (Reports → Touch Profit tab)
 - **FY Monthly Touch Table**: comprehensive sold touch% vs purchase touch% per month for gold and silver separately; FY year selector; gross weight column for each metal so volumes are transparent
