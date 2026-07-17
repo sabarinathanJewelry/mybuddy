@@ -194,7 +194,7 @@
 - **Logging a note never auto-deducts pay** — a note just sits as "Pending" until admin reviews it and either **Apply Fine** (enters a ₹ amount) or **Dismiss**, mirroring the existing `late_fine_waivers` "human always decides" trust model rather than an automatic fine table
 - Non-admin reviewers only see notes *they* personally logged (client-side filtered by `noted_by`); admin/subadmin see everything for the selected month
 - Schema: `db/migrations/137_staff_conduct_notes.sql` — `conduct_notes` denormalizes `staff_name` (avoids a relational join, matching `late_fine_waivers`' pattern), uses the same permissive `auth_all` RLS as the repair/incentive/kolusu access flags (those are UI-level gates, not RLS-level — kept consistent rather than introducing a new fine-grained policy for one feature)
-- Not yet wired into Payroll's auto-fill or the KPI Dashboard — applying a fine here is a record only; admin currently has to manually carry it into the Payroll Fine column if desired
+- **KPI impact**: each non-dismissed conduct note (pending or fined — the deduction isn't conditional on whether admin also applied a fine) subtracts `CONDUCT_NOTE_KPI_PENALTY_PCT` (5 percentage points, `src/modules/staff-conduct/api.ts`) from that staff member's KPI Achievement % for the month, floored at 0. Wired into both `/admin/kpi` (shows a red "-N% (N notes)" line under the achievement badge) and `/my-kpi` (staff sees the same deduction + reason on their own score). Dismissed notes don't count. Not yet wired into Payroll's auto-fill — applying a fine is still a record only; admin currently has to manually carry the ₹ amount into the Payroll Fine column if desired
 
 ### Attendance (Staff)
 - Smart home view: card grid for staff on `/my-attendance`

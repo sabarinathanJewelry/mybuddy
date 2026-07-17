@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase/client";
 import { inr } from "@/lib/format";
 import { useMonthlyAttendanceSummary } from "@/modules/attendance/api";
 import { calcItemIncentive } from "@/modules/kpi/incentive-master";
+import { useConductNoteCounts, CONDUCT_NOTE_KPI_PENALTY_PCT } from "@/modules/staff-conduct/api";
 import { clsx } from "clsx";
 
 const inp = "border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
@@ -48,6 +49,7 @@ interface StaffKpi {
   lateDays: number;
   weightTarget: number;
   achievementPct: number | null;
+  conductNoteCount: number;
 }
 
 export default function AdminKpiPage() {
@@ -65,6 +67,7 @@ export default function AdminKpiPage() {
   });
 
   const { data: attSummary = [] } = useMonthlyAttendanceSummary(month);
+  const { data: conductCounts = {} } = useConductNoteCounts(month);
 
   const { data: sales = [] } = useQuery<Sale[]>({
     queryKey: ["kpi-sales", month],
@@ -132,6 +135,13 @@ export default function AdminKpiPage() {
 
       const att = attSummary.find(a => a.bio_user_id === staff.bio_user_id);
       const weightTarget = targets.find(t => t.staff_id === staff.id)?.weight_target ?? 0;
+      const conductNoteCount = conductCounts[staff.id] ?? 0;
+      const rawAchievementPct = weightTarget > 0 ? (netWt / weightTarget) * 100 : null;
+      // Conduct notes deduct from Achievement % regardless of whether admin applied
+      // a fine — the KPI hit isn't conditional on the fine decision. Floored at 0.
+      const achievementPct = rawAchievementPct !== null
+        ? Math.max(0, rawAchievementPct - conductNoteCount * CONDUCT_NOTE_KPI_PENALTY_PCT)
+        : null;
 
       return {
         staff,
@@ -144,10 +154,11 @@ export default function AdminKpiPage() {
         totalDays:   att?.total_days   ?? 0,
         lateDays:    att?.late_days    ?? 0,
         weightTarget,
-        achievementPct: weightTarget > 0 ? (netWt / weightTarget) * 100 : null,
+        achievementPct,
+        conductNoteCount,
       };
     });
-  }, [staffList, sales, attSummary, targets]);
+  }, [staffList, sales, attSummary, targets, conductCounts]);
 
   const totals = useMemo(() => ({
     bills:           kpiRows.reduce((s, r) => s + r.billsSp1 + r.billsSp2, 0),
@@ -294,6 +305,11 @@ export default function AdminKpiPage() {
                             {Math.round(row.achievementPct)}%
                           </span>
                           <span className="text-[10px] text-ink-dim">{row.netWt.toFixed(2)}g / {row.weightTarget.toFixed(2)}g</span>
+                          {row.conductNoteCount > 0 && (
+                            <span className="text-[10px] text-err" title="Conduct notes reduce Achievement %">
+                              -{row.conductNoteCount * CONDUCT_NOTE_KPI_PENALTY_PCT}% ({row.conductNoteCount} note{row.conductNoteCount > 1 ? "s" : ""})
+                            </span>
+                          )}
                         </div>
                       ) : <span className="text-ink-dim text-xs">—</span>}
                     </td>

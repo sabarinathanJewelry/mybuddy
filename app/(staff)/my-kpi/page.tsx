@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { inr } from "@/lib/format";
 import { calcItemIncentive } from "@/modules/kpi/incentive-master";
+import { useConductNoteCounts, CONDUCT_NOTE_KPI_PENALTY_PCT } from "@/modules/staff-conduct/api";
 import { clsx } from "clsx";
 
 function monthLabel(m: string) {
@@ -140,12 +141,20 @@ export default function MyKpiPage() {
     };
   }, [sales, myStaff]);
 
+  const { data: conductCounts = {} } = useConductNoteCounts(month);
+  const myConductNoteCount = myStaff?.id ? (conductCounts[myStaff.id] ?? 0) : 0;
+
   const attPct = attData && attData.workDays > 0
     ? Math.round((attData.presentDays / attData.workDays) * 100)
     : null;
 
-  const achievementPct = myTarget && myTarget > 0 && summary
-    ? Math.round((summary.totalNetWt / myTarget) * 100)
+  const rawAchievementPct = myTarget && myTarget > 0 && summary
+    ? (summary.totalNetWt / myTarget) * 100
+    : null;
+  // Conduct notes deduct from Achievement % regardless of whether admin applied
+  // a fine — see src/modules/staff-conduct/api.ts.
+  const achievementPct = rawAchievementPct !== null
+    ? Math.round(Math.max(0, rawAchievementPct - myConductNoteCount * CONDUCT_NOTE_KPI_PENALTY_PCT))
     : null;
 
   const visibleBills = showAll ? billRows : billRows.filter(r => r.saleInc > 0);
@@ -238,6 +247,11 @@ export default function MyKpiPage() {
                       <p className={clsx("text-xs font-semibold mt-1", achievementPct >= 100 ? "text-ok" : achievementPct >= 70 ? "text-warn" : "text-err")}>
                         {achievementPct}% — {summary?.totalNetWt.toFixed(3)}g / {myTarget?.toFixed(3)}g
                       </p>
+                      {myConductNoteCount > 0 && (
+                        <p className="text-[11px] text-err mt-1">
+                          -{myConductNoteCount * CONDUCT_NOTE_KPI_PENALTY_PCT}% from {myConductNoteCount} conduct note{myConductNoteCount > 1 ? "s" : ""} this month
+                        </p>
+                      )}
                     </>
                   )}
                 </div>

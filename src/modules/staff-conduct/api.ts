@@ -76,6 +76,30 @@ function nextMonth(month: string) {
   return `${next}-01`;
 }
 
+// Percentage points knocked off KPI Achievement % per conduct note that month.
+// Dismissed notes don't count (admin ruled it out); pending and fined both do —
+// the KPI hit isn't conditional on whether a fine was also applied.
+export const CONDUCT_NOTE_KPI_PENALTY_PCT = 5;
+
+// staff_id -> count of non-dismissed notes for the month, for KPI deduction.
+export function useConductNoteCounts(month: string) {
+  return useQuery<Record<string, number>>({
+    queryKey: ["conduct-note-counts", month],
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("conduct_notes")
+        .select("staff_id, status")
+        .gte("note_date", `${month}-01`)
+        .lt("note_date", nextMonth(month))
+        .neq("status", "dismissed");
+      if (error) throw error;
+      const counts: Record<string, number> = {};
+      for (const row of data ?? []) counts[row.staff_id] = (counts[row.staff_id] ?? 0) + 1;
+      return counts;
+    },
+  });
+}
+
 export function useAddConductNote() {
   const qc = useQueryClient();
   return useMutation({
