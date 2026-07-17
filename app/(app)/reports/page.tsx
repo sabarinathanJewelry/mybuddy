@@ -584,6 +584,44 @@ function purchaseSection(purchases: any[], metals: string[]) {
 
 // ── sub-components ────────────────────────────────────────────────────────────
 
+function SectionCard({ title, tone = "default", className, children }: {
+  title?: string; tone?: "default" | "gold" | "warn"; className?: string; children: React.ReactNode;
+}) {
+  const toneClass = tone === "gold" ? "text-gold bg-gold/5" : tone === "warn" ? "text-warn bg-warn/5" : "text-ink bg-canvas/50";
+  return (
+    <div className={clsx("bg-white rounded-xl border border-line shadow-soft", className)}>
+      {title && (
+        <div className={clsx("px-4 py-2.5 border-b border-line font-semibold text-sm", toneClass)}>
+          {title}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+function StatCard({ label, value, color = "text-ink", sub, bordered = true }: {
+  label: string; value: string; color?: string; sub?: string; bordered?: boolean;
+}) {
+  return (
+    <div className={bordered ? "bg-white rounded-xl border border-line shadow-soft p-4" : "px-4 py-4"}>
+      <p className="text-xs text-ink-dim">{label}</p>
+      <p className={clsx("text-2xl font-bold mt-0.5 tabular-nums", color)}>{value}</p>
+      {sub && <p className="text-xs text-ink-dim mt-1">{sub}</p>}
+    </div>
+  );
+}
+
+function StatGrid({ stats, cols = "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6" }: {
+  stats: { label: string; value: string; color?: string; sub?: string }[]; cols?: string;
+}) {
+  return (
+    <div className={clsx("grid gap-3", cols)}>
+      {stats.map(s => <StatCard key={s.label} {...s} />)}
+    </div>
+  );
+}
+
 function MetalCard({ title, color, data }: {
   title: string; color: string;
   data: ReturnType<typeof metalSection>;
@@ -1096,10 +1134,10 @@ export default function ReportsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-line gap-1">
+      <div className="flex border-b border-line gap-1 overflow-x-auto">
         {([["pnl", "P&L Report"], ["pnl2", "P&L V2"], ["detail", "Sales Detail"], ["products", "Product Mix"], ["expenses", "Expenses"], ["items", "Item Search"], ["kolusu", "Kolusu P&L"], ["touch", "Touch Profit"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
-            className={clsx("px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+            className={clsx("px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap",
               tab === k ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink")}>
             {label}
           </button>
@@ -1113,44 +1151,30 @@ export default function ReportsPage() {
         <div className="space-y-5">
 
           {/* Summary strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            {[
-              { label: "Revenue (excl GST)",                                       value: inr(totalRevenue),            color: "text-ink" },
-              { label: "GST Collected",                                            value: inr(totalGst),                color: "text-warn" },
-              { label: hasWac ? "Metal Cost (Period)" : "Supplier Purchases", value: inr(effectivePurchaseCost),  color: "text-err" },
-              { label: hasWac ? "Bullion Trading Profit" : "Old Metal Bought",     value: hasWac ? inr(bullionTradingProfit) : inr(totalOldMetalCost), color: hasWac ? (bullionTradingProfit >= 0 ? "text-ok" : "text-err") : "text-err" },
-              { label: "Gross Profit",                                             value: inr(effectiveGrossProfit),    color: effectiveGrossProfit >= 0 ? "text-ok" : "text-err" },
-              { label: "Net Profit",                                               value: inr(netProfit),               color: netProfit >= 0 ? "text-ok" : "text-err" },
-            ].map(s => (
-              <div key={s.label} className="bg-white rounded-xl border border-line p-4 shadow-soft">
-                <p className="text-xs text-ink-dim">{s.label}</p>
-                <p className={clsx("text-lg font-bold mt-0.5", s.color)}>{s.value}</p>
-              </div>
-            ))}
-          </div>
+          <StatGrid stats={[
+            { label: "Revenue (excl GST)",                                       value: inr(totalRevenue),            color: "text-ink" },
+            { label: "GST Collected",                                            value: inr(totalGst),                color: "text-warn" },
+            { label: hasWac ? "Metal Cost (Period)" : "Supplier Purchases", value: inr(effectivePurchaseCost),  color: "text-err" },
+            { label: hasWac ? "Bullion Trading Profit" : "Old Metal Bought",     value: hasWac ? inr(bullionTradingProfit) : inr(totalOldMetalCost), color: hasWac ? (bullionTradingProfit >= 0 ? "text-ok" : "text-err") : "text-err" },
+            { label: "Gross Profit",                                             value: inr(effectiveGrossProfit),    color: effectiveGrossProfit >= 0 ? "text-ok" : "text-err" },
+            { label: "Net Profit",                                               value: inr(netProfit),               color: netProfit >= 0 ? "text-ok" : "text-err" },
+          ]} />
 
           {/* Touch Analysis */}
           {(avgSoldTouchPct > 0 || avgCostTouchPct > 0) && (
-            <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
-              <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-gold bg-gold/5">
-                Gold Touch Analysis — {MONTHS[month - 1]} {year}
-              </div>
+            <SectionCard title={`Gold Touch Analysis — ${MONTHS[month - 1]} ${year}`} tone="gold" className="overflow-x-auto">
               <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-line text-sm">
-                <div className="px-4 py-4">
-                  <p className="text-xs text-ink-dim mb-1">Avg Sold Touch (purity + VA%)</p>
-                  <p className="text-2xl font-bold text-gold">{avgSoldTouchPct > 0 ? avgSoldTouchPct.toFixed(2) : "—"}<span className="text-sm font-normal text-ink-dim ml-0.5">%</span></p>
-                  <p className="text-xs text-ink-dim mt-1">{suspenseGoldItems.length} suspense item{suspenseGoldItems.length !== 1 ? "s" : ""}</p>
-                </div>
-                <div className="px-4 py-4">
-                  <p className="text-xs text-ink-dim mb-1">Avg Cost Touch (supplier VA%)</p>
-                  <p className="text-2xl font-bold text-ink">{avgCostTouchPct > 0 ? avgCostTouchPct.toFixed(2) : "—"}<span className="text-sm font-normal text-ink-dim ml-0.5">%</span></p>
-                  <p className="text-xs text-ink-dim mt-1">{suspConfirmed.length} settled item{suspConfirmed.length !== 1 ? "s" : ""}</p>
-                </div>
+                <StatCard bordered={false} label="Avg Sold Touch (purity + VA%)" color="text-gold"
+                  value={avgSoldTouchPct > 0 ? `${avgSoldTouchPct.toFixed(2)}%` : "—"}
+                  sub={`${suspenseGoldItems.length} suspense item${suspenseGoldItems.length !== 1 ? "s" : ""}`} />
+                <StatCard bordered={false} label="Avg Cost Touch (supplier VA%)" color="text-ink"
+                  value={avgCostTouchPct > 0 ? `${avgCostTouchPct.toFixed(2)}%` : "—"}
+                  sub={`${suspConfirmed.length} settled item${suspConfirmed.length !== 1 ? "s" : ""}`} />
                 <div className="px-4 py-4">
                   <p className="text-xs text-ink-dim mb-1">Touch Spread (Sold − Cost)</p>
                   {avgCostTouchPct > 0 && avgSoldTouchPct > 0 ? (
                     <>
-                      <p className={clsx("text-2xl font-bold", touchSpreadPct >= 0 ? "text-ok" : "text-err")}>
+                      <p className={clsx("text-2xl font-bold tabular-nums", touchSpreadPct >= 0 ? "text-ok" : "text-err")}>
                         {touchSpreadPct >= 0 ? "+" : ""}{touchSpreadPct.toFixed(2)}<span className="text-sm font-normal ml-0.5">%</span>
                       </p>
                       <p className="text-xs text-ink-dim mt-1">{touchSpreadPct >= 0 ? "Selling higher purity than buying" : "Buying higher purity than selling"}</p>
@@ -1163,7 +1187,7 @@ export default function ReportsPage() {
                   <p className="text-xs text-ink-dim mb-1">Touch Spread Value</p>
                   {touchSpreadGrams !== 0 ? (
                     <>
-                      <p className={clsx("text-2xl font-bold", touchSpreadGrams >= 0 ? "text-ok" : "text-err")}>
+                      <p className={clsx("text-2xl font-bold tabular-nums", touchSpreadGrams >= 0 ? "text-ok" : "text-err")}>
                         {grams(Math.abs(touchSpreadGrams))}
                       </p>
                       <p className="text-xs text-ink-dim mt-1">pure gold {touchSpreadGrams >= 0 ? "gained" : "lost"} on touch spread</p>
@@ -1173,7 +1197,7 @@ export default function ReportsPage() {
                   )}
                 </div>
               </div>
-            </div>
+            </SectionCard>
           )}
 
           {/* Gold section */}
@@ -2113,7 +2137,7 @@ export default function ReportsPage() {
                   </div>
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                      <tr className="sticky top-0 z-10 bg-canvas text-xs text-ink-dim border-b border-line">
                         <th className="text-left px-4 py-2">Date</th>
                         <th className="text-left px-3 py-2">Bill No</th>
                         <th className="text-left px-3 py-2">Customer</th>
@@ -2135,9 +2159,9 @@ export default function ReportsPage() {
                             <td className="px-3 py-2.5">{customer?.name ?? "—"}</td>
                             <td className="px-3 py-2.5 font-medium">{item.description || "—"}</td>
                             <td className="px-3 py-2.5 text-right text-xs text-ink-dim uppercase">{item.metal || "—"}</td>
-                            <td className="px-3 py-2.5 text-right font-mono text-xs">{Number(item.gross_wt) > 0 ? grams(Number(item.gross_wt)) : "—"}</td>
-                            <td className="px-3 py-2.5 text-right font-mono text-xs">{Number(item.net_wt) > 0 ? grams(Number(item.net_wt)) : "—"}</td>
-                            <td className="px-4 py-2.5 text-right font-mono font-semibold">{inr(Number(item.line_total || 0))}</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-xs tabular-nums">{Number(item.gross_wt) > 0 ? grams(Number(item.gross_wt)) : "—"}</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-xs tabular-nums">{Number(item.net_wt) > 0 ? grams(Number(item.net_wt)) : "—"}</td>
+                            <td className="px-4 py-2.5 text-right font-mono font-semibold tabular-nums">{inr(Number(item.line_total || 0))}</td>
                           </tr>
                         );
                       })}
@@ -2145,9 +2169,9 @@ export default function ReportsPage() {
                     <tfoot>
                       <tr className="bg-canvas/50 border-t border-line font-semibold text-sm">
                         <td colSpan={5} className="px-4 py-2.5">Total</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(totalWt)}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-xs">{grams(totalNetWt)}</td>
-                        <td className="px-4 py-2.5 text-right font-mono font-bold">{inr(totalAmt)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-xs tabular-nums">{grams(totalWt)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-xs tabular-nums">{grams(totalNetWt)}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold tabular-nums">{inr(totalAmt)}</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -2170,7 +2194,7 @@ export default function ReportsPage() {
       {tab === "detail" && (
         <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+            <thead><tr className="sticky top-0 z-10 bg-canvas text-xs text-ink-dim border-b border-line">
               <th className="text-left px-4 py-2.5">{t("bill_no")}</th>
               <th className="text-left px-3 py-2.5">{t("date")}</th>
               <th className="text-left px-3 py-2.5">Customer</th>
@@ -2196,12 +2220,12 @@ export default function ReportsPage() {
                     <td className="px-4 py-2.5 font-mono text-info">{s.bill_no}</td>
                     <td className="px-3 py-2.5 text-ink-dim">{shortDate(s.bill_date)}</td>
                     <td className="px-3 py-2.5">{s.customers?.name ?? "—"}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-gold">{billGoldG > 0 ? grams(billGoldG) : "—"}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-ink-mid">{billSilvG > 0 ? grams(billSilvG) : "—"}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-info">{avgVa !== null ? `${avgVa.toFixed(2)}%` : "—"}</td>
-                    <td className="px-3 py-2.5 text-right font-mono text-ok">{billMaking > 0 ? inr(billMaking) : "—"}</td>
-                    <td className="px-3 py-2.5 text-right text-warn">{inr(s.gst_amount ?? 0)}</td>
-                    <td className="px-3 py-2.5 text-right font-mono font-semibold">{inr(Number(s.total))}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-gold tabular-nums">{billGoldG > 0 ? grams(billGoldG) : "—"}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-ink-mid tabular-nums">{billSilvG > 0 ? grams(billSilvG) : "—"}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-info tabular-nums">{avgVa !== null ? `${avgVa.toFixed(2)}%` : "—"}</td>
+                    <td className="px-3 py-2.5 text-right font-mono text-ok tabular-nums">{billMaking > 0 ? inr(billMaking) : "—"}</td>
+                    <td className="px-3 py-2.5 text-right text-warn tabular-nums">{inr(s.gst_amount ?? 0)}</td>
+                    <td className="px-3 py-2.5 text-right font-mono font-semibold tabular-nums">{inr(Number(s.total))}</td>
                   </tr>
                 );
               })}
