@@ -110,6 +110,7 @@ export default function MyAttendancePage() {
   const [canSeeRepairs, setCanSeeRepairs]     = useState(false);
   const [canSeeIncentive, setCanSeeIncentive] = useState(false);
   const [canLogKolusu, setCanLogKolusu]       = useState(false);
+  const [canSeeConductNotes, setCanSeeConductNotes] = useState(false);
   const [showGoogleReview, setShowGoogleReview] = useState(false);
   const [smartView, setSmartView] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
@@ -277,10 +278,11 @@ export default function MyAttendancePage() {
       if (user) {
         setSenderId(user.id);
         const { data: profile } = await client
-          .from("profiles").select("repair_access, incentive_access, kolusu_access, display_name, role").eq("id", user.id).single();
+          .from("profiles").select("repair_access, incentive_access, kolusu_access, conduct_note_access, display_name, role").eq("id", user.id).single();
         if (profile?.repair_access === true) setCanSeeRepairs(true);
         if (profile?.incentive_access === true) setCanSeeIncentive(true);
         if (profile?.kolusu_access === true) setCanLogKolusu(true);
+        if (profile?.conduct_note_access === true) setCanSeeConductNotes(true);
         if (profile?.display_name) setSenderName(profile.display_name);
         if (profile?.role) setSenderRole(profile.role);
       }
@@ -656,6 +658,12 @@ export default function MyAttendancePage() {
               Kolusu Sale
             </Link>
           )}
+          {canSeeConductNotes && (
+            <Link href="/staff-conduct"
+              className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-gold hover:border-gold transition-colors">
+              Staff Conduct
+            </Link>
+          )}
           <button onClick={() => setShowGoogleReview(true)}
             className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-gold hover:border-gold transition-colors">
             ⭐ Review
@@ -753,13 +761,14 @@ export default function MyAttendancePage() {
           </div>
 
           {/* Section: Shop Tools */}
-          {(canSeeRepairs || canLogKolusu) && (
+          {(canSeeRepairs || canLogKolusu || canSeeConductNotes) && (
             <div>
               <p className="text-[11px] font-bold tracking-widest text-ink-dim uppercase mb-2">Shop Tools</p>
               <div className="grid grid-cols-3 gap-3">
                 {[
                   ...(canSeeRepairs  ? [{ icon: "🔧", label: "Repairs",      href: "/my-repairs" }] : []),
                   ...(canLogKolusu   ? [{ icon: "🏷️", label: "Kolusu Sale",  href: "/kolusu-sale" }] : []),
+                  ...(canSeeConductNotes ? [{ icon: "🎽", label: "Staff Conduct", href: "/staff-conduct" }] : []),
                   { icon: "⭐", label: "Review", action: () => setShowGoogleReview(true) },
                 ].map(c => (
                   "href" in c
@@ -777,7 +786,7 @@ export default function MyAttendancePage() {
               </div>
             </div>
           )}
-          {!(canSeeRepairs || canLogKolusu) && (
+          {!(canSeeRepairs || canLogKolusu || canSeeConductNotes) && (
             <div>
               <p className="text-[11px] font-bold tracking-widest text-ink-dim uppercase mb-2">Shop Tools</p>
               <div className="grid grid-cols-3 gap-3">
