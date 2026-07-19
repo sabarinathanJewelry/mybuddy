@@ -1,0 +1,2 @@
+ALTER TABLE profiles
+  ADD COLUMN IF NOT EXISTS walkin_counter_access BOOLEAN NOT NULL DEFAULT FALSE;

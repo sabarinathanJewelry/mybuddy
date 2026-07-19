@@ -278,7 +278,7 @@ export default function MyAttendancePage() {
       if (user) {
         setSenderId(user.id);
         const { data: profile } = await client
-          .from("profiles").select("repair_access, incentive_access, kolusu_access, conduct_note_access, display_name, role").eq("id", user.id).single();
+          .from("profiles").select("repair_access, incentive_access, kolusu_access, conduct_note_access, walkin_counter_access, display_name, role").eq("id", user.id).single();
         if (profile?.repair_access === true) setCanSeeRepairs(true);
         if (profile?.incentive_access === true) setCanSeeIncentive(true);
         if (profile?.kolusu_access === true) setCanLogKolusu(true);

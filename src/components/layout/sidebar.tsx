@@ -151,6 +151,7 @@ export default function Sidebar() {
   const canSeeIncentive   = isAdmin || profile?.incentive_access === true;
   const canSeeKolusuSale  = isAdmin || profile?.kolusu_access === true;
   const canSeeConductNotes = isAdmin || profile?.conduct_note_access === true;
+  const canSeeWalkins = isAdmin || profile?.walkin_counter_access === true;
   const { data: repairAlerts = 0 } = useRepairAlertCount(canSeeRepairs);
   const [search, setSearch] = useState("");
 
@@ -167,6 +168,7 @@ export default function Sidebar() {
       ...(canSeeIncentive   ? [{ href: "/my-incentive", icon: "🎯",  label: t("nav_my_incentive") }] : []),
       ...(canSeeKolusuSale  ? [{ href: "/kolusu-sale",  icon: "🏷️", label: t("nav_kolusu_sale")  }] : []),
       ...(canSeeConductNotes ? [{ href: "/staff-conduct", icon: "🎽", label: t("nav_conduct_notes") }] : []),
+      ...(!canAccess("walkins") && canSeeWalkins ? [{ href: "/walkins", icon: "🚶", label: t("nav_walkins") }] : []),
       { href: "/weekoffs",      icon: "📅", label: t("nav_weekoffs") },
       { href: "/google-review", icon: "⭐", label: t("nav_google_review") },
       ...(isAdmin ? ADMIN_NAV.map(item => ({ href: item.href, icon: item.icon, label: t(item.key), isAdmin: true })) : []),
@@ -303,6 +305,16 @@ export default function Sidebar() {
                 label={t("nav_conduct_notes")}
                 collapsed={collapsed}
                 active={pathname.startsWith("/staff-conduct")}
+              />
+            )}
+
+            {!canAccess("walkins") && canSeeWalkins && (
+              <NavItem
+                href="/walkins"
+                icon="🚶"
+                label={t("nav_walkins")}
+                collapsed={collapsed}
+                active={pathname.startsWith("/walkins")}
               />
             )}
 

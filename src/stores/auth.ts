@@ -11,6 +11,7 @@ export interface Profile {
   incentive_access?: boolean;
   kolusu_access?: boolean;
   conduct_note_access?: boolean;
+  walkin_counter_access?: boolean;
   allowed_modules?: string[];
 }
 

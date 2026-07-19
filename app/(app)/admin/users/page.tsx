@@ -54,6 +54,14 @@ export default function AdminUsersPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["profiles"] }),
   });
 
+  const toggleWalkinAccess = useMutation({
+    mutationFn: async ({ id, value }: { id: string; value: boolean }) => {
+      const { error } = await supabase().from("profiles").update({ walkin_counter_access: value }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["profiles"] }),
+  });
+
   const setRole = useMutation({
     mutationFn: async ({ userId, role }: { userId: string; role: "staff" | "subadmin" | "signage" }) => {
       const client = supabase();
@@ -150,6 +158,7 @@ where id = '<user-uuid>';`}
                 <th className="text-center px-3 py-2.5">Incentive</th>
                 <th className="text-center px-3 py-2.5">Kolusu</th>
                 <th className="text-center px-3 py-2.5">Conduct</th>
+                <th className="text-center px-3 py-2.5">Walk-in</th>
                 <th className="text-center px-3 py-2.5">Sub-Admin</th>
                 <th className="text-center px-3 py-2.5">Signage</th>
                 <th className="text-center px-3 py-2.5">Status</th>
@@ -252,6 +261,22 @@ where id = '<user-uuid>';`}
                       </td>
                       <td className="px-3 py-2.5 text-center">
                         {p.role === "admin" ? (
+                          <span className="text-xs text-gold">Always</span>
+                        ) : (
+                          <button
+                            onClick={() => toggleWalkinAccess.mutate({ id: p.id, value: !p.walkin_counter_access })}
+                            className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                              p.walkin_counter_access
+                                ? "bg-ok/10 border-ok/30 text-ok"
+                                : "border-line text-ink-dim hover:border-gold hover:text-gold"
+                            }`}
+                          >
+                            {p.walkin_counter_access ? "On" : "Off"}
+                          </button>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        {p.role === "admin" ? (
                           <span className="text-xs text-gold">—</span>
                         ) : (
                           <div className="flex items-center justify-center gap-1.5">
@@ -340,7 +365,7 @@ where id = '<user-uuid>';`}
                     {/* Module permission grid */}
                     {isSubadmin && isModulesOpen && (
                       <tr key={`${p.id}-modules`} className="border-b border-line bg-canvas/60">
-                        <td colSpan={6} className="px-4 py-4">
+                        <td colSpan={7} className="px-4 py-4">
                           <p className="text-xs font-semibold text-ink mb-3">
                             Module access for <span className="text-info">{p.display_name}</span>
                             <span className="ml-2 text-ink-dim font-normal">({mods.length} module{mods.length !== 1 ? "s" : ""} enabled)</span>

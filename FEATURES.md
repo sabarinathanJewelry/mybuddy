@@ -198,6 +198,12 @@
 - **KPI impact**: each non-dismissed conduct note (pending or fined — the deduction isn't conditional on whether admin also applied a fine) subtracts `CONDUCT_NOTE_KPI_PENALTY_PCT` (5 percentage points, `src/modules/staff-conduct/api.ts`) from that staff member's KPI Achievement % for the month, floored at 0. Wired into both `/admin/kpi` (shows a red "-N% (N notes)" line under the achievement badge) and `/my-kpi` (staff sees the same deduction + reason on their own score). Dismissed notes don't count. Not yet wired into Payroll's auto-fill — applying a fine is still a record only; admin currently has to manually carry the ₹ amount into the Payroll Fine column if desired
 - **`staff` table RLS exception** (`db/migrations/138_conduct_reviewer_staff_select.sql`): migration 030's `staff_select` policy restricts any `role='staff'` login to their own row (the `staff` table also holds salary data), which silently emptied the reviewer's staff picker — a staff-role reviewer could only ever see themselves in the dropdown. Added an `EXISTS (... profiles.conduct_note_access = true)` exception alongside the existing "admin sees all / staff sees own row" conditions
 
+### Walk-in Counter Staff Access (`/walkins`)
+- `profiles.walkin_counter_access` boolean flag (same pattern as `conduct_note_access`) — admin toggles it per staff member from `/admin/users` ("Walk-in" column)
+- `/walkins` added to `middleware.ts` `staffAllowedPaths` so a staff-role login with this flag can reach the page
+- Sidebar shows the Walk-in nav item for any user where `canSeeWalkins = isAdmin || profile?.walkin_counter_access === true`; guarded with `!canAccess("walkins")` to avoid duplicate entries for admin (who already sees it via the main NAV array)
+- Schema: `db/migrations/139_walkin_counter_access.sql` — `walkin_counter_access BOOLEAN NOT NULL DEFAULT FALSE` on `profiles`
+
 ### Attendance (Staff)
 - Smart home view: card grid for staff on `/my-attendance`
 - Today tab: clock-in/out times, hours worked, lunch duration
