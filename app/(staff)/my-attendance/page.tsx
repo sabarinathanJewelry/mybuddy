@@ -293,9 +293,9 @@ export default function MyAttendancePage() {
       .from("staff")
       .select("bio_user_id, name, shift, join_date")
       .maybeSingle()
-      .then(({ data, error }) => {
-        if (error) setError("Could not load your staff record.");
-        else if (data) setStaff(data as StaffInfo);
+      .then(({ data }) => {
+        if (data) setStaff(data as StaffInfo);
+        else setLoading(false);
       });
   }, []);
 
