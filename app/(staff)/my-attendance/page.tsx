@@ -292,10 +292,10 @@ export default function MyAttendancePage() {
     client
       .from("staff")
       .select("bio_user_id, name, shift, join_date")
-      .single()
+      .maybeSingle()
       .then(({ data, error }) => {
-        if (error || !data) setError("Could not load your staff record.");
-        else setStaff(data as StaffInfo);
+        if (error) setError("Could not load your staff record.");
+        else if (data) setStaff(data as StaffInfo);
       });
   }, []);
 
