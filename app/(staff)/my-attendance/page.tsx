@@ -275,28 +275,44 @@ export default function MyAttendancePage() {
   // Fetch staff info once on mount
   useEffect(() => {
     const client = supabase();
-    client.auth.getUser().then(async ({ data: { user } }) => {
-      if (user) {
-        setSenderId(user.id);
-        const { data: profile } = await client
-          .from("profiles").select("repair_access, incentive_access, kolusu_access, conduct_note_access, walkin_counter_access, display_name, role").eq("id", user.id).single();
-        if (profile?.repair_access === true) setCanSeeRepairs(true);
-        if (profile?.incentive_access === true) setCanSeeIncentive(true);
-        if (profile?.kolusu_access === true) setCanLogKolusu(true);
-        if (profile?.conduct_note_access === true) setCanSeeConductNotes(true);
-        if (profile?.walkin_counter_access === true) setCanSeeWalkins(true);
-        if (profile?.display_name) setSenderName(profile.display_name);
-        if (profile?.role) setSenderRole(profile.role);
-      }
-    });
-    client
-      .from("staff")
-      .select("bio_user_id, name, shift, join_date")
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data) setStaff(data as StaffInfo);
+    async function init() {
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) { setLoading(false); return; }
+
+      setSenderId(user.id);
+      const { data: profile } = await client
+        .from("profiles").select("repair_access, incentive_access, kolusu_access, conduct_note_access, walkin_counter_access, display_name, role").eq("id", user.id).single();
+      if (profile?.repair_access === true) setCanSeeRepairs(true);
+      if (profile?.incentive_access === true) setCanSeeIncentive(true);
+      if (profile?.kolusu_access === true) setCanLogKolusu(true);
+      if (profile?.conduct_note_access === true) setCanSeeConductNotes(true);
+      if (profile?.walkin_counter_access === true) setCanSeeWalkins(true);
+      if (profile?.display_name) setSenderName(profile.display_name);
+      if (profile?.role) setSenderRole(profile.role);
+
+      // Use explicit filters to avoid maybeSingle() failing for staff with
+      // conduct_note_access=true (RLS lets them see all rows, causing multiple-row error)
+      const bioUserId = (user.app_metadata as any)?.bio_user_id;
+
+      // Prefer user_id column match (reliable, JWT-independent)
+      const { data: byUserId } = await client
+        .from("staff").select("bio_user_id, name, shift, join_date")
+        .eq("user_id", user.id).maybeSingle();
+
+      if (byUserId) {
+        setStaff(byUserId as StaffInfo);
+      } else if (bioUserId) {
+        // Fallback: match via bio_user_id from JWT app_metadata
+        const { data: byBioId } = await client
+          .from("staff").select("bio_user_id, name, shift, join_date")
+          .eq("bio_user_id", String(bioUserId)).maybeSingle();
+        if (byBioId) setStaff(byBioId as StaffInfo);
         else setLoading(false);
-      });
+      } else {
+        setLoading(false);
+      }
+    }
+    init().catch(() => setLoading(false));
   }, []);
 
   // Fetch attendance whenever month or staff changes
