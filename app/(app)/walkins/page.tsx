@@ -212,8 +212,8 @@ export default function WalkinsPage() {
                 { key: "scheme_entry",     label: "Scheme Entry Customer" },
                 { key: "new_scheme",       label: "New Scheme Customer" },
               ] as { key: keyof Summary; label: string }[]).map(({ key, label }) => (
-                <div key={key} className="flex items-center gap-2">
-                  <label className="text-sm text-ink w-40 shrink-0">{label}</label>
+                <div key={key}>
+                  <label className="text-xs text-ink-dim block mb-1">{label}</label>
                   {num(key)}
                 </div>
               ))}
