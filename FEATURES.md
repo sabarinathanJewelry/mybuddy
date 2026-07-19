@@ -202,6 +202,7 @@
 - `profiles.walkin_counter_access` boolean flag (same pattern as `conduct_note_access`) — admin toggles it per staff member from `/admin/users` ("Walk-in" column)
 - `/walkins` added to `middleware.ts` `staffAllowedPaths` so a staff-role login with this flag can reach the page
 - Sidebar shows the Walk-in nav item for any user where `canSeeWalkins = isAdmin || profile?.walkin_counter_access === true`; guarded with `!canAccess("walkins")` to avoid duplicate entries for admin (who already sees it via the main NAV array)
+- Staff smart-home page (`/my-attendance`): Walk-in Counter appears in the "Shop Tools" card grid (smart view) and as a header link (classic view), same pattern as `canSeeConductNotes`
 - Schema: `db/migrations/139_walkin_counter_access.sql` — `walkin_counter_access BOOLEAN NOT NULL DEFAULT FALSE` on `profiles`
 
 ### Attendance (Staff)
