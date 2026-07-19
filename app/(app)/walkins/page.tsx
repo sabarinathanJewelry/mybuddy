@@ -16,6 +16,10 @@ interface Summary {
   gold_walkout: number;
   silver_walkout: number;
   other_walkout: number;
+  order_gold: number;
+  service_customer: number;
+  scheme_entry: number;
+  new_scheme: number;
   notes: string;
 }
 
@@ -23,6 +27,7 @@ const blank = (date: string): Summary => ({
   summary_date: date,
   gold_walkin: 0, silver_walkin: 0, other_walkin: 0,
   gold_walkout: 0, silver_walkout: 0, other_walkout: 0,
+  order_gold: 0, service_customer: 0, scheme_entry: 0, new_scheme: 0,
   notes: "",
 });
 
@@ -67,6 +72,10 @@ export default function WalkinsPage() {
         gold_walkout: data.gold_walkout,
         silver_walkout: data.silver_walkout,
         other_walkout: data.other_walkout,
+        order_gold: data.order_gold,
+        service_customer: data.service_customer,
+        scheme_entry: data.scheme_entry,
+        new_scheme: data.new_scheme,
         notes: data.notes || null,
       };
       // Upsert: if a record for this date exists, update it
@@ -128,20 +137,35 @@ export default function WalkinsPage() {
 
       {/* Today quick stats */}
       {today && (
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-          {[
-            { label: "Gold Walk-in", val: today.gold_walkin, color: "text-gold" },
-            { label: "Silver Walk-in", val: today.silver_walkin, color: "text-ink-mid" },
-            { label: "Other Walk-in", val: today.other_walkin, color: "text-ink-dim" },
-            { label: "Gold Walk-out", val: today.gold_walkout, color: "text-err" },
-            { label: "Silver Walk-out", val: today.silver_walkout, color: "text-err" },
-            { label: "Other Walk-out", val: today.other_walkout, color: "text-err" },
-          ].map((s) => (
-            <div key={s.label} className="bg-white rounded-xl border border-line p-3 shadow-soft text-center">
-              <p className="text-xs text-ink-dim mb-1 leading-tight">{s.label}</p>
-              <p className={`text-2xl font-bold ${s.color}`}>{s.val ?? 0}</p>
-            </div>
-          ))}
+        <div className="space-y-2">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+            {[
+              { label: "Gold Walk-in", val: today.gold_walkin, color: "text-gold" },
+              { label: "Silver Walk-in", val: today.silver_walkin, color: "text-ink-mid" },
+              { label: "Other Walk-in", val: today.other_walkin, color: "text-ink-dim" },
+              { label: "Gold Walk-out", val: today.gold_walkout, color: "text-err" },
+              { label: "Silver Walk-out", val: today.silver_walkout, color: "text-err" },
+              { label: "Other Walk-out", val: today.other_walkout, color: "text-err" },
+            ].map((s) => (
+              <div key={s.label} className="bg-white rounded-xl border border-line p-3 shadow-soft text-center">
+                <p className="text-xs text-ink-dim mb-1 leading-tight">{s.label}</p>
+                <p className={`text-2xl font-bold ${s.color}`}>{s.val ?? 0}</p>
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              { label: "Order Gold", val: today.order_gold, color: "text-gold" },
+              { label: "Service Customer", val: today.service_customer, color: "text-info" },
+              { label: "Scheme Entry", val: today.scheme_entry, color: "text-ok" },
+              { label: "New Scheme", val: today.new_scheme, color: "text-warn" },
+            ].map((s) => (
+              <div key={s.label} className="bg-white rounded-xl border border-line p-3 shadow-soft text-center">
+                <p className="text-xs text-ink-dim mb-1 leading-tight">{s.label}</p>
+                <p className={`text-2xl font-bold ${s.color}`}>{s.val ?? 0}</p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -177,6 +201,23 @@ export default function WalkinsPage() {
             {num("gold_walkout")}
             {num("silver_walkout")}
             {num("other_walkout")}
+          </div>
+
+          <div className="border-t border-line pt-3 space-y-2">
+            <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide">Customer Types</p>
+            <div className="grid grid-cols-2 gap-3">
+              {([
+                { key: "order_gold",       label: "Order Gold" },
+                { key: "service_customer", label: "Service Customer" },
+                { key: "scheme_entry",     label: "Scheme Entry Customer" },
+                { key: "new_scheme",       label: "New Scheme Customer" },
+              ] as { key: keyof Summary; label: string }[]).map(({ key, label }) => (
+                <div key={key} className="flex items-center gap-2">
+                  <label className="text-sm text-ink w-40 shrink-0">{label}</label>
+                  {num(key)}
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Totals preview */}
@@ -226,6 +267,10 @@ export default function WalkinsPage() {
                 <th className="text-center px-2 py-2.5">Other Out</th>
                 <th className="text-center px-2 py-2.5">Total In</th>
                 <th className="text-center px-2 py-2.5">Total Out</th>
+                <th className="text-center px-2 py-2.5">Order Gold</th>
+                <th className="text-center px-2 py-2.5">Service</th>
+                <th className="text-center px-2 py-2.5">Scheme Entry</th>
+                <th className="text-center px-2 py-2.5">New Scheme</th>
                 <th className="px-2 py-2.5" />
               </tr>
             </thead>
@@ -241,6 +286,10 @@ export default function WalkinsPage() {
                   <td className="px-2 py-2.5 text-center text-err">{r.other_walkout ?? 0}</td>
                   <td className="px-2 py-2.5 text-center font-bold text-ok">{(r.gold_walkin ?? 0) + (r.silver_walkin ?? 0) + (r.other_walkin ?? 0)}</td>
                   <td className="px-2 py-2.5 text-center font-bold text-err">{(r.gold_walkout ?? 0) + (r.silver_walkout ?? 0) + (r.other_walkout ?? 0)}</td>
+                  <td className="px-2 py-2.5 text-center text-gold">{r.order_gold ?? 0}</td>
+                  <td className="px-2 py-2.5 text-center text-info">{r.service_customer ?? 0}</td>
+                  <td className="px-2 py-2.5 text-center text-ok">{r.scheme_entry ?? 0}</td>
+                  <td className="px-2 py-2.5 text-center text-warn">{r.new_scheme ?? 0}</td>
                   <td className="px-2 py-2.5">
                     <button
                       onClick={() => { setFormDate(r.summary_date); setShowForm(true); }}
@@ -249,7 +298,7 @@ export default function WalkinsPage() {
                 </tr>
               ))}
               {!rows.length && (
-                <tr><td colSpan={10} className="px-4 py-8 text-center text-ink-dim">{t("no_data")}</td></tr>
+                <tr><td colSpan={14} className="px-4 py-8 text-center text-ink-dim">{t("no_data")}</td></tr>
               )}
             </tbody>
           </table>
