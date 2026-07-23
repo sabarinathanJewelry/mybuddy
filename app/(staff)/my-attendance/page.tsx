@@ -111,7 +111,8 @@ export default function MyAttendancePage() {
   const [canSeeIncentive, setCanSeeIncentive] = useState(false);
   const [canLogKolusu, setCanLogKolusu]       = useState(false);
   const [canSeeConductNotes, setCanSeeConductNotes] = useState(false);
-  const [canSeeWalkins, setCanSeeWalkins] = useState(false);
+  const [canSeeWalkins, setCanSeeWalkins]       = useState(false);
+  const [canSeePhotoShoot, setCanSeePhotoShoot] = useState(false);
   const [showGoogleReview, setShowGoogleReview] = useState(false);
   const [smartView, setSmartView] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
@@ -281,12 +282,13 @@ export default function MyAttendancePage() {
 
       setSenderId(user.id);
       const { data: profile } = await client
-        .from("profiles").select("repair_access, incentive_access, kolusu_access, conduct_note_access, walkin_counter_access, display_name, role").eq("id", user.id).single();
+        .from("profiles").select("repair_access, incentive_access, kolusu_access, conduct_note_access, walkin_counter_access, photo_shoot_access, display_name, role").eq("id", user.id).single();
       if (profile?.repair_access === true) setCanSeeRepairs(true);
       if (profile?.incentive_access === true) setCanSeeIncentive(true);
       if (profile?.kolusu_access === true) setCanLogKolusu(true);
       if (profile?.conduct_note_access === true) setCanSeeConductNotes(true);
       if (profile?.walkin_counter_access === true) setCanSeeWalkins(true);
+      if (profile?.photo_shoot_access === true) setCanSeePhotoShoot(true);
       if (profile?.display_name) setSenderName(profile.display_name);
       if (profile?.role) setSenderRole(profile.role);
 
@@ -688,6 +690,12 @@ export default function MyAttendancePage() {
               Walk-in Counter
             </Link>
           )}
+          {canSeePhotoShoot && (
+            <Link href="/photo-shoot"
+              className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-gold hover:border-gold transition-colors">
+              Photo Shoot
+            </Link>
+          )}
           <button onClick={() => setShowGoogleReview(true)}
             className="text-xs text-ink-dim border border-line rounded-lg2 px-3 py-1.5 hover:text-gold hover:border-gold transition-colors">
             ⭐ Review
@@ -785,15 +793,16 @@ export default function MyAttendancePage() {
           </div>
 
           {/* Section: Shop Tools */}
-          {(canSeeRepairs || canLogKolusu || canSeeConductNotes || canSeeWalkins) && (
+          {(canSeeRepairs || canLogKolusu || canSeeConductNotes || canSeeWalkins || canSeePhotoShoot) && (
             <div>
               <p className="text-[11px] font-bold tracking-widest text-ink-dim uppercase mb-2">Shop Tools</p>
               <div className="grid grid-cols-3 gap-3">
                 {[
-                  ...(canSeeRepairs  ? [{ icon: "🔧", label: "Repairs",      href: "/my-repairs" }] : []),
-                  ...(canLogKolusu   ? [{ icon: "🏷️", label: "Kolusu Sale",  href: "/kolusu-sale" }] : []),
-                  ...(canSeeConductNotes ? [{ icon: "🎽", label: "Staff Conduct", href: "/staff-conduct" }] : []),
-                  ...(canSeeWalkins  ? [{ icon: "🚶", label: "Walk-in Counter", href: "/walkins" }] : []),
+                  ...(canSeeRepairs      ? [{ icon: "🔧", label: "Repairs",        href: "/my-repairs" }] : []),
+                  ...(canLogKolusu       ? [{ icon: "🏷️", label: "Kolusu Sale",    href: "/kolusu-sale" }] : []),
+                  ...(canSeeConductNotes ? [{ icon: "🎽", label: "Staff Conduct",  href: "/staff-conduct" }] : []),
+                  ...(canSeeWalkins      ? [{ icon: "🚶", label: "Walk-in Counter",href: "/walkins" }] : []),
+                  ...(canSeePhotoShoot   ? [{ icon: "📸", label: "Photo Shoot",    href: "/photo-shoot" }] : []),
                   { icon: "⭐", label: "Review", action: () => setShowGoogleReview(true) },
                 ].map(c => (
                   "href" in c
@@ -811,7 +820,7 @@ export default function MyAttendancePage() {
               </div>
             </div>
           )}
-          {!(canSeeRepairs || canLogKolusu || canSeeConductNotes || canSeeWalkins) && (
+          {!(canSeeRepairs || canLogKolusu || canSeeConductNotes || canSeeWalkins || canSeePhotoShoot) && (
             <div>
               <p className="text-[11px] font-bold tracking-widest text-ink-dim uppercase mb-2">Shop Tools</p>
               <div className="grid grid-cols-3 gap-3">
