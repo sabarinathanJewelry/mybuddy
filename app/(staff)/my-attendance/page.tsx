@@ -11,7 +11,7 @@ import {
   useMyOutsideDuties, useCreateOutsideDuty,
   useLastSyncTime,
   useMyKyc, useUpsertKyc, KYC_DOCS,
-  useStaffTasks, useCompleteTask, useCreateTask,
+  useStaffTasks, useCompleteTask, useCreateTask, fmtTaskTime,
   useMyLateFineWaivers,
   type PermissionRequest, type LeaveRequest, type OutsideDuty, type StaffTask,
 } from "@/modules/attendance/api";
@@ -2010,7 +2010,7 @@ function StaffTasksTab({ tasks, staffName, bioUserId, todayStr }: {
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"pending" | "completed" | "all">("pending");
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ title: "", description: "", due_date: todayStr });
+  const [createForm, setCreateForm] = useState({ title: "", description: "", due_date: todayStr, due_time: "" });
   const [reminderDismissed, setReminderDismissed] = useState(false);
   const [notifPerm, setNotifPerm] = useState<NotificationPermission | "unsupported">("unsupported");
 
@@ -2053,8 +2053,9 @@ function StaffTasksTab({ tasks, staffName, bioUserId, todayStr }: {
       assigned_to: bioUserId,
       created_by: bioUserId,
       due_date: createForm.due_date,
+      due_time: createForm.due_time || undefined,
     });
-    setCreateForm({ title: "", description: "", due_date: todayStr });
+    setCreateForm({ title: "", description: "", due_date: todayStr, due_time: "" });
     setShowCreate(false);
   }
 
@@ -2129,6 +2130,12 @@ function StaffTasksTab({ tasks, staffName, bioUserId, todayStr }: {
                   onChange={e => setCreateForm(f => ({ ...f, due_date: e.target.value }))}
                   className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
               </div>
+              <div>
+                <label className="text-xs text-ink-dim block mb-1">Due Time (optional)</label>
+                <input type="time" value={createForm.due_time}
+                  onChange={e => setCreateForm(f => ({ ...f, due_time: e.target.value }))}
+                  className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+              </div>
             </div>
           </div>
           <div className="flex gap-2">
@@ -2180,7 +2187,7 @@ function StaffTasksTab({ tasks, staffName, bioUserId, todayStr }: {
                 </div>
 
                 <div className="flex items-center gap-3 text-xs text-ink-dim pl-5">
-                  <span>Due <span className={`font-medium ${isOverdue ? "text-err" : isDueToday ? "text-warn" : "text-ink"}`}>{task.due_date}</span></span>
+                  <span>Due <span className={`font-medium ${isOverdue ? "text-err" : isDueToday ? "text-warn" : "text-ink"}`}>{task.due_date}{task.due_time ? ` at ${fmtTaskTime(task.due_time)}` : ""}</span></span>
                   {task.status === "completed" && task.completed_at && (
                     <span className="text-ok">Completed {new Date(task.completed_at).toLocaleDateString("en-IN")}</span>
                   )}

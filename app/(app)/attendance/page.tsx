@@ -22,7 +22,7 @@ import {
   useShopExceptionForDate, useUpsertShopException, useDeleteShopException,
   useMySpecialRequests, useAllSpecialRequests, useCreateSpecialRequest, useDecideSpecialRequest, useDeleteSpecialRequest,
   SPECIAL_REQUEST_CATEGORIES,
-  useStaffTasks, useCreateTask, useDeleteTask, useReopenTask,
+  useStaffTasks, useCreateTask, useDeleteTask, useReopenTask, fmtTaskTime,
   type StaffMember, type MonthlyEmployeeSummary, type PermissionRequest, type KioskTap,
   type LeaveRequest, type OutsideDuty, type StaffKyc, type SpecialRequest, type StaffTask,
 } from "@/modules/attendance/api";
@@ -3607,7 +3607,7 @@ function TasksAdminTab({ isAdmin, myBioUserId }: { isAdmin: boolean; myBioUserId
   }, [reminderWindow?.lsKey]);
 
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ title: "", description: "", assigned_to: "", due_date: today });
+  const [form, setForm] = useState({ title: "", description: "", assigned_to: "", due_date: today, due_time: "" });
   const [filter, setFilter] = useState<"pending" | "completed" | "all">("pending");
 
   const filtered = tasks.filter(t => filter === "all" || t.status === filter);
@@ -3622,8 +3622,9 @@ function TasksAdminTab({ isAdmin, myBioUserId }: { isAdmin: boolean; myBioUserId
       assigned_to: form.assigned_to,
       created_by: myBioUserId ?? "admin",
       due_date: form.due_date,
+      due_time: form.due_time || undefined,
     });
-    setForm({ title: "", description: "", assigned_to: "", due_date: today });
+    setForm({ title: "", description: "", assigned_to: "", due_date: today, due_time: "" });
     setShowForm(false);
   }
 
@@ -3704,6 +3705,11 @@ function TasksAdminTab({ isAdmin, myBioUserId }: { isAdmin: boolean; myBioUserId
               <input required type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
                 className={inpCls + " w-full"} />
             </div>
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Due Time (optional)</label>
+              <input type="time" value={form.due_time} onChange={e => setForm(f => ({ ...f, due_time: e.target.value }))}
+                className={inpCls + " w-full"} />
+            </div>
           </div>
           <div className="flex gap-2">
             <button type="submit" disabled={createTask.isPending}
@@ -3777,7 +3783,7 @@ function TasksAdminTab({ isAdmin, myBioUserId }: { isAdmin: boolean; myBioUserId
                   </div>
                   <div className="flex items-center gap-3 mt-1 flex-wrap text-xs text-ink-dim">
                     <span>Assigned to <span className="font-medium text-ink">{(task.staff as any)?.name ?? task.assigned_to}</span></span>
-                    <span>Due <span className={`font-medium ${isOverdue ? "text-err" : isDueToday ? "text-warn" : "text-ink"}`}>{task.due_date}</span></span>
+                    <span>Due <span className={`font-medium ${isOverdue ? "text-err" : isDueToday ? "text-warn" : "text-ink"}`}>{task.due_date}{task.due_time ? ` at ${fmtTaskTime(task.due_time)}` : ""}</span></span>
                     {task.status === "completed" && task.completed_at && (
                       <span className="text-ok">Completed {new Date(task.completed_at).toLocaleDateString("en-IN")}</span>
                     )}

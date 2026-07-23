@@ -1685,6 +1685,13 @@ export function useVerifyKyc() {
 
 // ── Staff Tasks ───────────────────────────────────────────────────────────────
 
+export function fmtTaskTime(t: string | null | undefined): string {
+  if (!t) return "";
+  const [h, m] = t.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
 export type StaffTask = {
   id: string;
   title: string;
@@ -1692,6 +1699,7 @@ export type StaffTask = {
   assigned_to: string;
   created_by: string;
   due_date: string;
+  due_time: string | null;
   status: "pending" | "completed";
   completed_at: string | null;
   completed_note: string | null;
@@ -1730,6 +1738,7 @@ export function useCreateTask() {
       assigned_to: string;
       created_by: string;
       due_date: string;
+      due_time?: string;
     }) => {
       const client = supabase();
       const { error } = await client.from("staff_tasks").insert({
@@ -1738,9 +1747,11 @@ export function useCreateTask() {
         assigned_to: payload.assigned_to,
         created_by: payload.created_by,
         due_date: payload.due_date,
+        due_time: payload.due_time || null,
       });
       if (error) throw error;
-      const taskBody = `You have a new task: "${payload.title}" — due ${payload.due_date}.`;
+      const timeStr = payload.due_time ? ` at ${fmtTaskTime(payload.due_time)}` : "";
+      const taskBody = `You have a new task: "${payload.title}" — due ${payload.due_date}${timeStr}.`;
       await client.from("app_notifications").insert({
         for_bio_user_id: payload.assigned_to,
         title: "New Task Assigned",

@@ -45,12 +45,22 @@ export async function GET(req: NextRequest) {
   // Fetch pending tasks due today, tomorrow, or overdue
   const { data: tasks } = await db
     .from("staff_tasks")
-    .select("title, assigned_to, due_date")
+    .select("title, assigned_to, due_date, due_time")
     .eq("status", "pending")
     .lte("due_date", tomorrow);
 
   if (!tasks?.length) {
     return NextResponse.json({ ok: true, sent: 0 });
+  }
+
+  function fmtTime(t: string | null): string {
+    if (!t) return "";
+    const [h, m] = t.split(":").map(Number);
+    return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+  }
+
+  function taskLabel(t: { title: string; due_time?: string | null }): string {
+    return t.due_time ? `${t.title} at ${fmtTime(t.due_time)}` : t.title;
   }
 
   // Bucket tasks
@@ -59,9 +69,9 @@ export async function GET(req: NextRequest) {
   const tomorrowByStaff: Record<string, string[]> = {};
 
   for (const t of tasks) {
-    if (t.due_date < today)       (overdueByStaff[t.assigned_to]  ??= []).push(t.title);
-    else if (t.due_date === today) (todayByStaff[t.assigned_to]   ??= []).push(t.title);
-    else                           (tomorrowByStaff[t.assigned_to] ??= []).push(t.title);
+    if (t.due_date < today)       (overdueByStaff[t.assigned_to]  ??= []).push(taskLabel(t));
+    else if (t.due_date === today) (todayByStaff[t.assigned_to]   ??= []).push(taskLabel(t));
+    else                           (tomorrowByStaff[t.assigned_to] ??= []).push(taskLabel(t));
   }
 
   const allBioIds = [...new Set(tasks.map((t) => t.assigned_to))];
