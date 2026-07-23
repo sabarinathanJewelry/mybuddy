@@ -45,7 +45,7 @@ export default function SessionBootstrap({ children }: { children: React.ReactNo
       if (!session) return null;
       const { data: profile } = await client
         .from("profiles")
-        .select("id, display_name, role, language, repair_access, incentive_access, kolusu_access, conduct_note_access, walkin_counter_access, allowed_modules, is_active")
+        .select("id, display_name, role, language, repair_access, incentive_access, kolusu_access, conduct_note_access, walkin_counter_access, photo_shoot_access, allowed_modules, is_active")
         .eq("id", session.user.id)
         .single();
       return profile;

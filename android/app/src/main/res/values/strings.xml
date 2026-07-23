@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">MyBuddy</string>
-    <string name="title_activity_main">MyBuddy</string>
+    <string name="app_name">HR Sabarinathan</string>
+    <string name="title_activity_main">HR Sabarinathan</string>
     <string name="package_name">com.sabarinathanjewellery.mybuddy</string>
     <string name="custom_url_scheme">com.sabarinathanjewellery.mybuddy</string>
 </resources>

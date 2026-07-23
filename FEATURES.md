@@ -497,6 +497,20 @@ Manual digital signage: staff upload images/videos (generated however they like 
 
 ---
 
+## Photo Shoot Tracker (`/photo-shoot`)
+
+Tracks showcase items taken out for product photography and returned, with pipeline planning for upcoming shoots.
+
+- **Sections**: configurable product categories (Antique Haram, Gold Haram, Necklace, Bangles, Earrings, Chains, Rings, Pendant, Other) — admin can add/rename/hide via the Sections tab
+- **Today tab**: quick check-out form (tag ID auto-uppercased, section picker, optional product name), live groups for Planned / Currently Out / Returned with timestamps and duration; Enter key submits checkout
+- **Pipeline tab**: plan items for future dates; shows grouped by date; items planned for today surface in the Today tab under "Planned for Today" with one-tap Check Out / Skip
+- **History tab**: date picker + daily summary (total out, returned, still out) grouped by section with per-item checkout→return times and duration
+- **Access control**: admin always sees it; staff with `profiles.photo_shoot_access = true` see it (toggle from `/admin/users`); `photo_shoot_access` added to profiles in migration 142
+- **DB**: `photo_sections` (id, name, sort_order, active) and `photo_shoot_log` (id, tag_id, product_name, section_id, shoot_date, status, checked_out_at, checked_in_at) — migration `142_photo_shoot_tracker.sql`
+- **RLS**: all authenticated users can read; staff can insert their own rows and update their own rows; admin/subadmin can update/delete any row and manage sections
+
+---
+
 ## Infrastructure
 
 ### i18n

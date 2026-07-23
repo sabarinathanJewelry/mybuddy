@@ -12,6 +12,7 @@ export interface Profile {
   kolusu_access?: boolean;
   conduct_note_access?: boolean;
   walkin_counter_access?: boolean;
+  photo_shoot_access?: boolean;
   allowed_modules?: string[];
 }
 
