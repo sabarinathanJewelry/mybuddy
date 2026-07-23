@@ -497,6 +497,19 @@ Manual digital signage: staff upload images/videos (generated however they like 
 
 ---
 
+## Staff Task Reminders (Cron)
+
+Daily push notifications for staff tasks, fired at 9 AM IST (3:30 AM UTC) via Vercel Cron.
+
+- **Staff notifications**: each staff member receives a push for tasks due today/overdue ("Tasks Need Attention") and a separate push for tasks due tomorrow ("Task Due Tomorrow"); tasks are grouped so one push covers multiple tasks
+- **Admin/subadmin notifications**: a single summary push ("Staff Task Summary") listing overdue count · due-today count · due-tomorrow count across all staff
+- **Route**: `GET /api/cron/task-reminders` — secured by `Authorization: Bearer CRON_SECRET` (Vercel sets this automatically; check is skipped in local dev when the var is absent)
+- **Schedule**: `"30 3 * * *"` in `vercel.json` crons config
+- **Lookup chain**: `staff_tasks.assigned_to` (bio_user_id) → `staff.user_id` → `web_push_subscriptions` for delivery; admin IDs come from `profiles` where `role IN ('admin','subadmin')`
+- No new migration needed — uses existing `staff_tasks`, `staff`, `web_push_subscriptions`, and `profiles` tables
+
+---
+
 ## Photo Shoot Tracker (`/photo-shoot`)
 
 Tracks showcase items taken out for product photography and returned, with pipeline planning for upcoming shoots.
