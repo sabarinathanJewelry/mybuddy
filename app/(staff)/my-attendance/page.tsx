@@ -70,6 +70,7 @@ function dayLabel(dateStr: string) {
 interface ChatMessage {
   id: string; sender_id: string; sender_name: string;
   message: string; is_deleted: boolean; edited_at: string | null; created_at: string;
+  reply_to_id: string | null;
 }
 function chatTime(ts: string) {
   return new Date(ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
@@ -141,6 +142,9 @@ export default function MyAttendancePage() {
   const [editingId, setEditingId]       = useState<string | null>(null);
   const [editText, setEditText]         = useState("");
   const chatBottomRef                   = useRef<HTMLDivElement>(null);
+  const [replyTo, setReplyTo]           = useState<ChatMessage | null>(null);
+  const [mentionStaff, setMentionStaff] = useState<string[]>([]);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
 
   const { data: lastSyncIso }   = useLastSyncTime();
 
@@ -464,6 +468,8 @@ export default function MyAttendancePage() {
     client.from("chat_messages")
       .select("*").order("created_at", { ascending: true }).limit(200)
       .then(({ data }) => setChatMessages((data ?? []) as ChatMessage[]));
+    client.from("staff").select("name")
+      .then(({ data }) => setMentionStaff((data ?? []).map((s: any) => s.name)));
 
     const channel = client.channel("staff_chat")
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, (payload) => {
@@ -511,12 +517,48 @@ export default function MyAttendancePage() {
     }
   }, [tab, senderId]);
 
+  function handleChatInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const val = e.target.value;
+    setChatInput(val);
+    const match = val.match(/@(\S*)$/);
+    setMentionQuery(match ? match[1] : null);
+  }
+
+  function insertMention(name: string) {
+    const newVal = chatInput.replace(/@\S*$/, `@${name} `);
+    setChatInput(newVal);
+    setMentionQuery(null);
+  }
+
+  function renderMessage(text: string): React.ReactNode {
+    if (!mentionStaff.length) return <span className="whitespace-pre-wrap break-words">{text}</span>;
+    const escaped = [...mentionStaff]
+      .sort((a, b) => b.length - a.length)
+      .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const re = new RegExp(`(@(?:${escaped.join("|")}))`, "gi");
+    const parts: React.ReactNode[] = [];
+    let last = 0;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(text)) !== null) {
+      if (match.index > last) parts.push(text.slice(last, match.index));
+      parts.push(<span key={match.index} className="font-semibold text-gold-dark">{match[0]}</span>);
+      last = re.lastIndex;
+    }
+    if (last < text.length) parts.push(text.slice(last));
+    return <span className="whitespace-pre-wrap break-words">{parts.length ? parts : text}</span>;
+  }
+
   async function sendChatMessage() {
     if (!chatInput.trim() || !senderId || !senderName) return;
     setChatSending(true);
     const client = supabase();
     const msg = chatInput.trim();
-    await client.from("chat_messages").insert({ sender_id: senderId, sender_name: senderName, message: msg });
+    await client.from("chat_messages").insert({
+      sender_id: senderId, sender_name: senderName, message: msg,
+      reply_to_id: replyTo?.id ?? null,
+    });
+    setReplyTo(null);
+    setMentionQuery(null);
 
     // Auto-log kolusu sale if staff has kolusu_access and message matches KS / kolusu format
     if (canLogKolusu) {
@@ -1569,13 +1611,30 @@ export default function MyAttendancePage() {
                       ) : m.is_deleted ? (
                         "This message was deleted"
                       ) : (
-                        <span className="whitespace-pre-wrap break-words">{m.message}</span>
+                        <>
+                          {m.reply_to_id && (() => {
+                            const orig = chatMessages.find((x) => x.id === m.reply_to_id);
+                            return (
+                              <div className={`text-xs px-2 py-1 rounded-lg mb-1.5 border-l-2 ${isOwn ? "bg-white/20 border-white/50" : "bg-canvas border-gold"}`}>
+                                <span className={`font-semibold block ${isOwn ? "text-white/90" : "text-gold-dark"}`}>{orig?.sender_name ?? "Unknown"}</span>
+                                <span className={`block truncate max-w-[200px] ${isOwn ? "text-white/70" : "text-ink-dim"}`}>
+                                  {orig?.is_deleted ? "Message deleted" : orig?.message ?? "Message not found"}
+                                </span>
+                              </div>
+                            );
+                          })()}
+                          {renderMessage(m.message)}
+                        </>
                       )}
                     </div>
                     <div className={`flex items-center gap-2 mt-0.5 px-1 ${isOwn ? "flex-row-reverse" : "flex-row"}`}>
                       <span className="text-[10px] text-ink-dim">{chatTime(m.created_at)}</span>
                       {m.edited_at && !m.is_deleted && (
                         <span className="text-[10px] text-ink-dim">(edited)</span>
+                      )}
+                      {!m.is_deleted && (
+                        <button onClick={() => setReplyTo(m)}
+                          className="text-[10px] text-ink-dim hover:text-info">Reply</button>
                       )}
                       {canEdit && editingId !== m.id && (
                         <button onClick={() => { setEditingId(m.id); setEditText(m.message); }}
@@ -1599,11 +1658,34 @@ export default function MyAttendancePage() {
 
           {/* Input */}
           <div className="shrink-0">
+            {replyTo && (
+              <div className="flex items-center gap-2 bg-canvas border border-line rounded-xl px-3 py-2 mb-2">
+                <div className="flex-1 border-l-2 border-gold pl-2 min-w-0">
+                  <span className="text-xs font-semibold text-gold-dark block">{replyTo.sender_name}</span>
+                  <span className="text-ink-dim text-xs truncate block">{replyTo.message}</span>
+                </div>
+                <button onClick={() => setReplyTo(null)} className="text-ink-dim hover:text-err text-sm shrink-0">✕</button>
+              </div>
+            )}
+            {mentionQuery !== null && (
+              <div className="bg-white border border-line rounded-xl shadow-soft py-1 mb-2 max-h-36 overflow-y-auto">
+                {mentionStaff.filter((n) => n.toLowerCase().includes(mentionQuery.toLowerCase())).map((name) => (
+                  <button key={name} onMouseDown={(e) => { e.preventDefault(); insertMention(name); }}
+                    className="block w-full text-left text-sm px-3 py-1.5 hover:bg-canvas">
+                    <span className="font-medium text-gold-dark">@{name}</span>
+                  </button>
+                ))}
+                {mentionStaff.filter((n) => n.toLowerCase().includes(mentionQuery.toLowerCase())).length === 0 && (
+                  <p className="text-xs text-ink-dim px-3 py-2">No staff match</p>
+                )}
+              </div>
+            )}
             <div className="flex gap-2 bg-white border border-line rounded-xl px-3 py-2">
               <input
                 value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
+                onChange={handleChatInputChange}
                 onKeyDown={(e) => {
+                  if (e.key === "Escape" && mentionQuery !== null) { setMentionQuery(null); return; }
                   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
                 }}
                 placeholder={senderName ? `Message as ${senderName}…` : "Loading…"}

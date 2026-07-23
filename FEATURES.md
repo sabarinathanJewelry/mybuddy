@@ -319,6 +319,9 @@
 ### Chat
 - Staff-to-admin messaging (in-app)
 - Chat moderation for admin
+- **Reply (WhatsApp-style)**: tap Reply on any message to quote it; quoted bubble shown above the reply in the thread
+- **@mention**: type `@` to open a staff picker; selected name highlighted gold in rendered messages
+- Migration 144: `reply_to_id UUID` column on `chat_messages`
 
 ### Notices / Announcements
 - Admin posts notices visible to all staff
