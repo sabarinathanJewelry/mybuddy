@@ -892,6 +892,7 @@ export default function ReportsPage() {
   const [itemFrom, setItemFrom]     = useState("");
   const [itemTo, setItemTo]         = useState("");
   const [mergeMode, setMergeMode]   = useState(false);
+  const [closedExpCats, setClosedExpCats] = useState<Set<string>>(new Set());
   const [mergeSelected, setMergeSelected] = useState<Set<string>>(new Set());
   const [mergeTo, setMergeTo]       = useState("");
   const [purchVaGold,   setPurchVaGold]   = useState<number | "">(0);
@@ -1136,8 +1137,8 @@ export default function ReportsPage() {
   // Inventory movement
   const oldSilvBuyPureWt = (oldMetalBuys as any[]).filter(x => (x.metal ?? "").startsWith("silver")).reduce((s: number, x: any) => s + Number(x.pure_wt || 0), 0);
   // Priority: manual override this session > saved snapshot > domain source (Gold Stock / Kolusu)
-  const openGoldPure     = Number(v2OpenGoldG)  || invSnapshot?.gold   || (goldStockOpen?.weight ?? 0);
-  const openSilvPure     = Number(v2OpenSilvG)  || invSnapshot?.silver || (kolusuOpen?.weight ?? 0);
+  const openGoldPure     = Number(v2OpenGoldG)  || invSnapshot?.gold   || (goldStockOpen?.weight ?? 0) * 0.9167;
+  const openSilvPure     = Number(v2OpenSilvG)  || invSnapshot?.silver || (kolusuOpen?.weight ?? 0) * 0.65;
   const inGoldPure       = goldPurchases.pureWt  + oldGoldBuyPureWt + exchGoldWt * 0.9167;
   const inSilvPure       = silverPurchases.pureWt + oldSilvBuyPureWt;
   const outGoldPure      = gold.pureWt  + bullionSellGoldWt + dispatchGoldWt;
@@ -1539,26 +1540,55 @@ export default function ReportsPage() {
             <div className="px-4 py-2.5 border-b border-line font-semibold text-sm text-err bg-err/5">
               Operating Expenses
             </div>
-            {expenses.length > 0 ? (
-              <table className="w-full text-sm">
-                <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
-                  <th className="text-left px-4 py-2">Date</th>
-                  <th className="text-left px-3 py-2">Description</th>
-                  <th className="text-left px-3 py-2">Category</th>
-                  <th className="text-right px-3 py-2">Amount</th>
-                </tr></thead>
-                <tbody>
-                  {(expenses as any[]).map((e, i) => (
-                    <tr key={i} className="border-b border-line last:border-0 hover:bg-canvas/50">
-                      <td className="px-4 py-2 text-ink-dim">{shortDate(e.exp_date)}</td>
-                      <td className="px-3 py-2">{e.description || "—"}</td>
-                      <td className="px-3 py-2 text-ink-dim">{e.expense_categories?.name || "—"}</td>
-                      <td className="px-3 py-2 text-right font-mono text-err">{inr(e.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
+            {expenses.length > 0 ? (() => {
+              const groups = groupExpensesByCategory(expenses as any[]);
+              const allClosed = groups.every(([k]) => closedExpCats.has(k));
+              return (
+                <>
+                  <div className="px-4 py-1.5 border-b border-line flex justify-end">
+                    <button
+                      onClick={() => setClosedExpCats(allClosed ? new Set() : new Set(groups.map(([k]) => k)))}
+                      className="text-xs text-ink-dim hover:text-ink"
+                    >
+                      {allClosed ? "Expand all" : "Collapse all"}
+                    </button>
+                  </div>
+                  {groups.map(([catName, { total, items }]) => {
+                    const isClosed = closedExpCats.has(catName);
+                    return (
+                      <div key={catName} className="border-b border-line last:border-0">
+                        <button
+                          onClick={() => setClosedExpCats(prev => {
+                            const next = new Set(prev);
+                            if (isClosed) next.delete(catName); else next.add(catName);
+                            return next;
+                          })}
+                          className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-left hover:bg-canvas/50"
+                        >
+                          <span className={clsx("text-[10px] transition-transform text-ink-dim", !isClosed && "rotate-90")}>▶</span>
+                          <span className="font-medium flex-1">{catName}</span>
+                          <span className="text-xs text-ink-dim mr-2">{items.length} item{items.length !== 1 ? "s" : ""}</span>
+                          <span className="font-mono text-err font-semibold">{inr(total)}</span>
+                        </button>
+                        {!isClosed && (
+                          <table className="w-full text-xs">
+                            <tbody>
+                              {items.map((e: any, i: number) => (
+                                <tr key={i} className="border-t border-line/40 hover:bg-canvas/30">
+                                  <td className="pl-8 pr-3 py-2 text-ink-dim w-24">{shortDate(e.exp_date)}</td>
+                                  <td className="px-3 py-2 text-ink-mid">{e.description || "—"}</td>
+                                  <td className="px-3 py-2 text-right font-mono text-err">{inr(e.amount)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    );
+                  })}
+                </>
+              );
+            })() : (
               <p className="px-4 py-6 text-center text-ink-dim text-sm">No expenses in this period</p>
             )}
             <div className="px-4 py-3 border-t border-line bg-err/5 text-right">
@@ -3066,7 +3096,7 @@ export default function ReportsPage() {
               </thead>
               <tbody>
                 {([
-                  { label: "Opening Stock",              note: "start of period",                 gold: openGoldPure,          silv: openSilvPure,          neutral: true },
+                  { label: "Opening Stock",              note: "22K × 91.67% / 65-touch × 65%",  gold: openGoldPure,          silv: openSilvPure,          neutral: true },
                   { label: "+ Supplier Purchases",       note: "excl returns + adjustments",      gold: goldPurchases.pureWt,   silv: silverPurchases.pureWt, neutral: false },
                   { label: "+ Old Metal Bought",         note: "Metal Flow → Intake",             gold: oldGoldBuyPureWt,       silv: oldSilvBuyPureWt,       neutral: false },
                   { label: "+ Exchange Received",        note: "22K approx for gold",             gold: exchGoldWt * 0.9167,   silv: exchSilvWt * 0.9999,   neutral: false },
@@ -3109,7 +3139,7 @@ export default function ReportsPage() {
               </tfoot>
             </table>
             <div className="px-4 py-2 bg-canvas/30 border-t border-line text-[10px] text-ink-dim">
-              Opening stock defaults: Gold from the Gold Stock section's latest entry on/before the period start; Silver from Kolusu boxes reconstructed as of the period start. Save a value above to override with a dedicated snapshot. Exchange gold purity assumed 22K (91.67%). Dispatches treated as pure weight.
+              Opening stock defaults: Gold from Gold Stock (gross) × 91.67% for 22K purity; Silver from Kolusu boxes (gross) × 65% for 65-touch purity. If you saved a snapshot earlier with the raw gross weight, re-save to get the corrected pure weight. Exchange gold also uses 91.67%. Dispatches treated as pure weight.
             </div>
           </div>
 
