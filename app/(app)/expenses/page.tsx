@@ -280,6 +280,168 @@ function ExpenseTable({
   );
 }
 
+// ── Grouped expense table (category accordion) ───────────────────────────────
+function GroupedExpenseTable({
+  expenses, categories, editingId, editForm, setEditForm, onStartEdit, onSaveEdit, onDelete, editPending,
+}: {
+  expenses: any[]; categories: any[];
+  editingId: string | null; editForm: any; setEditForm: (f: any) => void;
+  onStartEdit: (e: any) => void; onSaveEdit: () => void; onDelete: (id: string) => void;
+  editPending: boolean;
+}) {
+  const grandTotal = expenses.reduce((s: number, e: any) => s + (e.amount ?? 0), 0);
+
+  // Build groups sorted by total desc
+  const groupMap = new Map<string, { name: string; items: any[] }>();
+  expenses.forEach((e: any) => {
+    const key  = e.category_id ?? "__none__";
+    const name = e.expense_categories?.name ?? "Uncategorized";
+    if (!groupMap.has(key)) groupMap.set(key, { name, items: [] });
+    groupMap.get(key)!.items.push(e);
+  });
+  const groups = [...groupMap.entries()]
+    .map(([key, g]) => ({ key, ...g, total: g.items.reduce((s, e) => s + (e.amount ?? 0), 0) }))
+    .sort((a, b) => b.total - a.total);
+
+  const [openCats, setOpenCats] = useState<Set<string>>(() => new Set(groups.map(g => g.key)));
+  const allOpen = openCats.size === groups.length;
+
+  function toggle(key: string) {
+    setOpenCats(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
+  }
+
+  if (!expenses.length) {
+    return (
+      <div className="bg-white rounded-xl border border-line shadow-soft px-4 py-8 text-center text-ink-dim text-sm">
+        No expenses found.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {/* Expand/collapse all */}
+      <div className="flex justify-end">
+        <button
+          onClick={() => setOpenCats(allOpen ? new Set() : new Set(groups.map(g => g.key)))}
+          className="text-xs text-ink-dim hover:text-info">
+          {allOpen ? "Collapse all" : "Expand all"}
+        </button>
+      </div>
+
+      <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
+        {groups.map((g, gi) => {
+          const isOpen = openCats.has(g.key);
+          return (
+            <div key={g.key} className={gi > 0 ? "border-t border-line" : ""}>
+              {/* Category header row */}
+              <button
+                onClick={() => toggle(g.key)}
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-canvas/60 transition-colors text-left">
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] text-ink-dim transition-transform inline-block ${isOpen ? "rotate-90" : ""}`}>▶</span>
+                  <span className="font-semibold text-sm">{g.name}</span>
+                  <span className="text-xs text-ink-dim bg-canvas px-1.5 py-0.5 rounded-full">{g.items.length}</span>
+                </div>
+                <span className="font-mono font-semibold text-err">{inr(g.total)}</span>
+              </button>
+
+              {/* Items */}
+              {isOpen && (
+                <div className="border-t border-line/60">
+                  <table className="w-full text-sm" style={{ minWidth: "480px" }}>
+                    <tbody>
+                      {g.items.map((exp: any) => (
+                        <Fragment key={exp.id}>
+                          <tr className="border-b border-line/40 last:border-0 hover:bg-canvas/30">
+                            <td className="pl-8 pr-3 py-2 text-xs text-ink-dim w-24 whitespace-nowrap">{shortDate(exp.exp_date)}</td>
+                            <td className="px-3 py-2">
+                              <div>{exp.description}</div>
+                              {exp.notes && <div className="text-[11px] text-ink-dim mt-0.5">{exp.notes}</div>}
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono text-err whitespace-nowrap">{inr(exp.amount)}</td>
+                            <td className="px-3 py-2 capitalize text-ink-dim text-xs">{exp.mode}</td>
+                            <td className="px-3 py-2 text-right whitespace-nowrap">
+                              <div className="flex items-center justify-end gap-2">
+                                <button onClick={() => onStartEdit(exp)} className="text-xs text-gold hover:underline">Edit</button>
+                                <button onClick={() => { if (window.confirm("Delete this expense?")) onDelete(exp.id); }}
+                                  className="text-xs text-err hover:underline">Del</button>
+                              </div>
+                            </td>
+                          </tr>
+                          {editingId === exp.id && (
+                            <tr className="border-b border-line bg-canvas/50">
+                              <td colSpan={5} className="px-4 py-3">
+                                <form onSubmit={(e) => { e.preventDefault(); onSaveEdit(); }}
+                                  className="flex items-end gap-3 flex-wrap">
+                                  <div>
+                                    <label className="text-xs text-ink-dim block mb-1">Date</label>
+                                    <input type="date" value={editForm.exp_date}
+                                      onChange={(e) => setEditForm({ ...editForm, exp_date: e.target.value })}
+                                      className={inp} />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-ink-dim block mb-1">Category</label>
+                                    <select value={editForm.category_id}
+                                      onChange={(e) => setEditForm({ ...editForm, category_id: e.target.value })}
+                                      className={inp}>
+                                      <option value="">— None —</option>
+                                      {(categories as any[])?.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    </select>
+                                  </div>
+                                  <div className="flex-1 min-w-40">
+                                    <label className="text-xs text-ink-dim block mb-1">Description</label>
+                                    <input required value={editForm.description}
+                                      onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                                      className={`${inp} w-full`} autoFocus />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-ink-dim block mb-1">Amount (₹)</label>
+                                    <input type="number" step="0.01" value={editForm.amount || ""}
+                                      onChange={(e) => setEditForm({ ...editForm, amount: parseFloat(e.target.value) || 0 })}
+                                      className={`${inp} w-32`} />
+                                  </div>
+                                  <div>
+                                    <label className="text-xs text-ink-dim block mb-1">Mode</label>
+                                    <select value={editForm.mode}
+                                      onChange={(e) => setEditForm({ ...editForm, mode: e.target.value })}
+                                      className={inp}>
+                                      <option value="cash">Cash</option>
+                                      <option value="bank">Bank</option>
+                                    </select>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button type="submit" disabled={editPending}
+                                      className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40">Save</button>
+                                    <button type="button" onClick={() => onStartEdit(null)}
+                                      className="border border-line text-xs px-3 py-1.5 rounded-lg2">Cancel</button>
+                                  </div>
+                                </form>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Grand total */}
+        <div className="flex items-center justify-between border-t-2 border-line px-4 py-3 bg-canvas/70">
+          <span className="text-xs font-medium text-ink-dim">
+            Total · {expenses.length} items · {groups.length} categories
+          </span>
+          <span className="font-mono font-semibold text-err">{inr(grandTotal)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function ExpensesPage() {
   const t = useT();
@@ -622,7 +784,7 @@ export default function ExpensesPage() {
           {allLoading ? (
             <p className="text-ink-dim text-sm">{t("loading")}</p>
           ) : (
-            <ExpenseTable
+            <GroupedExpenseTable
               expenses={allExpenses as any[]}
               categories={categories}
               editingId={editingId}
