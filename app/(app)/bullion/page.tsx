@@ -174,6 +174,9 @@ export default function BullionPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editPayId, setEditPayId]   = useState<string | null>(null);
+  const [editPayDate, setEditPayDate] = useState("");
+  const [editPayAmt, setEditPayAmt]   = useState(0);
 
   function resetForm() {
     setSupplier(null); setPartyName(""); setGrossWt(0); setPureWt(0); setRatePerG(0); setTotalAmt(0);
@@ -330,6 +333,30 @@ export default function BullionPage() {
       qc.invalidateQueries({ queryKey: ["bullion_trades"] });
       setPayingTradeId(null); setPayAmount(0); setPayDate(globalDate);
       setOffsetWt(0); setOffsetRate(0);
+    },
+  });
+
+  const updateBullionPayment = useMutation({
+    mutationFn: async ({ payId, tradeId, oldDate, oldAmount, oldMode }: {
+      payId: string; tradeId: string; oldDate: string; oldAmount: number; oldMode: string;
+    }) => {
+      const client = supabase();
+      const newDate = editPayDate;
+      const newAmt  = editPayAmt;
+      const { error } = await client.from("bullion_payments")
+        .update({ pay_date: newDate, amount: newAmt }).eq("id", payId);
+      if (error) throw error;
+      if (oldMode !== "balance_offset") {
+        const ledger = oldMode === "cash" ? "cash_ledger" : "bank_ledger";
+        await client.from(ledger)
+          .update({ tx_date: newDate, amount: newAmt })
+          .eq("ref_type", "bullion").eq("ref_id", tradeId)
+          .eq("tx_date", oldDate).eq("amount", oldAmount);
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["bullion_trades"] });
+      setEditPayId(null);
     },
   });
 
@@ -856,19 +883,52 @@ export default function BullionPage() {
                               {((r.bullion_payments ?? []) as any[])
                                 .slice()
                                 .sort((a: any, b: any) => a.pay_date > b.pay_date ? 1 : -1)
-                                .map((p: any, i: number) => (
-                                  <tr key={p.id}>
-                                    <td className="pr-6 py-0.5 text-ink-dim">{i + 1}</td>
-                                    <td className="pr-6 py-0.5">{shortDate(p.pay_date)}</td>
-                                    <td className={`pr-6 py-0.5 text-right font-mono ${p.mode === "balance_offset" ? "text-info" : "text-ok"}`}>
-                                      {inr(Number(p.amount))}
-                                    </td>
-                                    <td className="py-0.5 capitalize text-ink-dim">
-                                      {p.mode === "balance_offset" ? "Offset" : p.mode}
-                                      {p.notes ? <span className="ml-1 text-ink-dim">({p.notes})</span> : null}
-                                    </td>
-                                  </tr>
-                                ))}
+                                .map((p: any, i: number) => {
+                                  const isEditingPay = editPayId === p.id;
+                                  return (
+                                    <tr key={p.id}>
+                                      <td className="pr-4 py-0.5 text-ink-dim">{i + 1}</td>
+                                      <td className="pr-4 py-0.5">
+                                        {isEditingPay ? (
+                                          <input type="date" value={editPayDate}
+                                            onChange={(e) => setEditPayDate(e.target.value)}
+                                            className="border border-gold rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                                        ) : shortDate(p.pay_date)}
+                                      </td>
+                                      <td className={`pr-4 py-0.5 text-right font-mono ${p.mode === "balance_offset" ? "text-info" : "text-ok"}`}>
+                                        {isEditingPay ? (
+                                          <input type="number" step="0.01" value={editPayAmt || ""}
+                                            onFocus={(e) => e.target.select()}
+                                            onChange={(e) => setEditPayAmt(parseFloat(e.target.value) || 0)}
+                                            className="border border-gold rounded px-1.5 py-0.5 text-xs w-28 text-right font-mono focus:outline-none focus:ring-1 focus:ring-gold" />
+                                        ) : inr(Number(p.amount))}
+                                      </td>
+                                      <td className="pr-4 py-0.5 capitalize text-ink-dim">
+                                        {p.mode === "balance_offset" ? "Offset" : p.mode}
+                                        {p.notes ? <span className="ml-1">({p.notes})</span> : null}
+                                      </td>
+                                      <td className="py-0.5 whitespace-nowrap">
+                                        {isEditingPay ? (
+                                          <>
+                                            <button
+                                              disabled={updateBullionPayment.isPending || !editPayDate || editPayAmt <= 0}
+                                              onClick={() => updateBullionPayment.mutate({
+                                                payId: p.id, tradeId: r.id,
+                                                oldDate: p.pay_date, oldAmount: Number(p.amount), oldMode: p.mode,
+                                              })}
+                                              className="text-xs text-ok font-semibold mr-2 disabled:opacity-40">
+                                              {updateBullionPayment.isPending ? "…" : "Save"}
+                                            </button>
+                                            <button onClick={() => setEditPayId(null)} className="text-xs text-ink-dim">Cancel</button>
+                                          </>
+                                        ) : (
+                                          <button onClick={() => { setEditPayId(p.id); setEditPayDate(p.pay_date); setEditPayAmt(Number(p.amount)); }}
+                                            className="text-xs text-ink-dim hover:text-info">Edit</button>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
                             </tbody>
                           </table>
                         )}
