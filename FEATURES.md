@@ -15,6 +15,7 @@
 - Customer balance formula: `opening_balance − total_sales + payments_in − payments_out + writeoffs`
 
 ### Sales
+- **Balance column in sales list**: each row shows Due (red) / Adv (blue) / ✓ based on `sale.total − sum(sale_payments.amount)`; returned bills show no balance
 - **Bill Return**: mark a sale as returned (status = 'returned') — automatically excluded from customer balance; returned bills shown with strikethrough + "Returned" badge; undo available; no ledger reversal (payments already made become advance credit on customer account)
 - Multi-item sale entry (Gold 22K / 18K / 24K / Silver / Diamond series)
 - Per-item: gross weight, stone weight, net weight, purity, rate, VA%, making amount, stone value, diamond (carats or direct amount)

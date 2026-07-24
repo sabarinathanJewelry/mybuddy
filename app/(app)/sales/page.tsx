@@ -95,6 +95,7 @@ export default function SalesPage() {
                 <th className="text-left px-3 py-2.5">Items</th>
                 <th className="text-right px-3 py-2.5">Wt</th>
                 <th className="text-right px-3 py-2.5">{t("total")}</th>
+                <th className="text-right px-3 py-2.5">Balance</th>
                 <th className="px-3 py-2.5"></th>
               </tr>
             </thead>
@@ -149,6 +150,15 @@ export default function SalesPage() {
                     {totalGrossWt > 0 ? grams(totalGrossWt) : "—"}
                   </td>
                   <td className={`px-3 py-2.5 text-right font-mono ${isReturned ? "line-through text-ink-dim" : ""}`}>{inr(s.total)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-xs">
+                    {!isReturned && (() => {
+                      const paid = ((s.sale_payments ?? []) as any[]).reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+                      const bal  = Math.round((s.total - paid) * 100) / 100;
+                      if (bal > 0.01)  return <span className="text-err font-semibold">Due {inr(bal)}</span>;
+                      if (bal < -0.01) return <span className="text-info font-semibold">Adv {inr(Math.abs(bal))}</span>;
+                      return <span className="text-ok">✓</span>;
+                    })()}
+                  </td>
                   <td className="px-3 py-2.5 text-right">
                     {isReturned ? (
                       <button

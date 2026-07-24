@@ -215,7 +215,7 @@ export function useSales(date: string | null = null, limit = 100) {
     queryFn: async () => {
       let q = supabase()
         .from("sales")
-        .select("id, bill_no, bill_date, total, status, series, sale_type, exchange_ref_bill, customers(name), sale_items(description, gross_wt, net_wt, metal, is_suspense, from_vault, suppliers(name))")
+        .select("id, bill_no, bill_date, total, status, series, sale_type, exchange_ref_bill, customers(name), sale_items(description, gross_wt, net_wt, metal, is_suspense, from_vault, suppliers(name)), sale_payments(amount, mode)")
         .order("bill_date", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(limit);
