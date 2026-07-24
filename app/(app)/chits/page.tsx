@@ -54,6 +54,7 @@ export default function ChitsPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editAmount, setEditAmount] = useState(0);
   const [editMode, setEditMode] = useState("cash");
+  const [editDate, setEditDate] = useState("");
 
   const [showBonusForm, setShowBonusForm] = useState(false);
   const [bonusCustomer, setBonusCustomer] = useState<Customer | null>(null);
@@ -78,8 +79,8 @@ export default function ChitsPage() {
     setNotes(""); setSplits([newSplit(globalDate)]); setShowForm(false);
   }
 
-  function startEdit(p: any) { setEditingId(p.id); setEditAmount(Number(p.amount)); setEditMode(p.mode); }
-  function cancelEdit() { setEditingId(null); setEditAmount(0); setEditMode("cash"); }
+  function startEdit(p: any) { setEditingId(p.id); setEditAmount(Number(p.amount)); setEditMode(p.mode); setEditDate(p.pay_date); }
+  function cancelEdit() { setEditingId(null); setEditAmount(0); setEditMode("cash"); setEditDate(""); }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rows = (payments as any[]) ?? [];
@@ -108,7 +109,7 @@ export default function ChitsPage() {
   });
 
   const updatePayment = useMutation({
-    mutationFn: async ({ id, newAmount, newMode }: { id: string; newAmount: number; newMode: string }) => {
+    mutationFn: async ({ id, newAmount, newMode, newDate }: { id: string; newAmount: number; newMode: string; newDate: string }) => {
       const client = supabase();
       const row = rows.find((p: any) => p.id === id);
       if (!row) throw new Error("Row not found");
@@ -119,9 +120,10 @@ export default function ChitsPage() {
       const deltaGrams = newGrams - oldGrams;
       const deltaAmount = newAmount - Number(row.amount);
       const modeChanged = newMode !== row.mode;
+      const dateChanged = newDate !== row.pay_date;
 
       const { error } = await client.from("chit_payments")
-        .update({ amount: newAmount, metal_grams: newGrams, mode: newMode }).eq("id", id);
+        .update({ amount: newAmount, metal_grams: newGrams, mode: newMode, pay_date: newDate }).eq("id", id);
       if (error) throw error;
 
       const balanceField = row.metal_type === "gold" ? "gold_balance_g" : "silver_balance_g";
@@ -134,10 +136,12 @@ export default function ChitsPage() {
 
       if (!modeChanged) {
         if (row.mode === "cash") {
-          await client.from("cash_ledger").update({ amount: newAmount })
+          await client.from("cash_ledger")
+            .update({ amount: newAmount, ...(dateChanged ? { tx_date: newDate } : {}) })
             .eq("ref_type", "chit_payment").eq("ref_id", id);
         } else if (row.mode === "upi" || row.mode === "bank") {
-          await client.from("bank_ledger").update({ amount: newAmount })
+          await client.from("bank_ledger")
+            .update({ amount: newAmount, ...(dateChanged ? { tx_date: newDate } : {}) })
             .eq("ref_type", "chit_payment").eq("ref_id", id);
         } else if (row.mode === "advance" && Math.abs(deltaAmount) > 0.01) {
           await client.from("payments").insert({
@@ -467,7 +471,10 @@ export default function ChitsPage() {
                   : Number(p.metal_grams).toFixed(4);
                 return isEditing ? (
                   <tr key={p.id} className="border-b border-line bg-gold/5">
-                    <td className="px-4 py-2.5 text-ink-dim">{shortDate(p.pay_date)}</td>
+                    <td className="px-4 py-2">
+                      <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)}
+                        className="border border-gold rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold" />
+                    </td>
                     <td className="px-3 py-2.5 font-medium">{p.customers?.name ?? "—"}</td>
                     <td className="px-3 py-2.5 capitalize">
                       <span className={p.metal_type === "gold" ? "text-gold" : "text-ink-mid"}>{p.metal_type}</span>
@@ -494,8 +501,8 @@ export default function ChitsPage() {
                       )}
                     </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">
-                      <button disabled={updatePayment.isPending || editAmount <= 0}
-                        onClick={() => updatePayment.mutate({ id: p.id, newAmount: editAmount, newMode: p.mode === "split" ? p.mode : editMode })}
+                      <button disabled={updatePayment.isPending || editAmount <= 0 || !editDate}
+                        onClick={() => updatePayment.mutate({ id: p.id, newAmount: editAmount, newMode: p.mode === "split" ? p.mode : editMode, newDate: editDate })}
                         className="bg-gold text-white text-xs px-3 py-1 rounded disabled:opacity-50 mr-1">
                         {updatePayment.isPending ? "…" : "Save"}
                       </button>
