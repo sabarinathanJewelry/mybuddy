@@ -2928,7 +2928,8 @@ export default function ReportsPage() {
               { label: "Revenue (excl GST)", value: inr(v2Revenue),     color: "text-ink" },
               { label: "COGS (WAC method)",  value: inr(v2TotalCogs),   color: "text-err" },
               { label: "Gross Profit",       value: inr(v2GrossProfit), color: v2GrossProfit >= 0 ? "text-ok" : "text-err" },
-            ]} cols="grid-cols-2 sm:grid-cols-3" />
+              { label: "Expenses",           value: inr(totalExpenses), color: "text-err" },
+            ]} cols="grid-cols-2 sm:grid-cols-4" />
           </div>
 
           {/* WAC v2 */}
