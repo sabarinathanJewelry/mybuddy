@@ -128,6 +128,7 @@
 
 ### Bullion
 - Bullion purchase/sale tracking
+- **Payment history**: click the "Cash Paid" amount on any trade row to expand an inline payment list showing each instalment's date, amount, and mode (sorted by date)
 
 ### Ledger
 - General ledger view

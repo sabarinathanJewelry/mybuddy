@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useGlobalDate } from "@/stores/global-date";
@@ -173,6 +173,7 @@ export default function BullionPage() {
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   function resetForm() {
     setSupplier(null); setPartyName(""); setGrossWt(0); setPureWt(0); setRatePerG(0); setTotalAmt(0);
@@ -761,7 +762,8 @@ export default function BullionPage() {
                 // Show offset payments as tooltip/sub-line
                 const offPays = ((r.bullion_payments ?? []) as any[]).filter((p: any) => p.mode === "balance_offset");
                 return (
-                  <tr key={r.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                  <React.Fragment key={r.id}>
+                  <tr className="border-b border-line last:border-0 hover:bg-canvas/50">
                     <td className="px-4 py-2.5 text-ink-dim">{shortDate(r.trade_date)}</td>
                     <td className="px-3 py-2.5">
                       <span className={`px-2 py-0.5 rounded text-xs font-medium ${r.trade_type === "buy" ? "bg-gold/10 text-gold" : "bg-ok/10 text-ok"}`}>
@@ -800,7 +802,12 @@ export default function BullionPage() {
                       )}
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono text-ok">
-                      {cash > 0 ? inr(cash) : "—"}
+                      {cash > 0 ? (
+                        <button onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}
+                          className="hover:underline tabular-nums">
+                          {inr(cash)}
+                        </button>
+                      ) : "—"}
                     </td>
                     <td className="px-3 py-2.5 text-right font-mono text-info">
                       {offset > 0 ? (
@@ -829,6 +836,46 @@ export default function BullionPage() {
                       </div>
                     </td>
                   </tr>
+                  {expandedId === r.id && (
+                    <tr className="bg-canvas/60">
+                      <td colSpan={11} className="px-6 py-3">
+                        <p className="text-xs font-semibold text-ink-dim mb-2">Payment history</p>
+                        {((r.bullion_payments ?? []) as any[]).length === 0 ? (
+                          <p className="text-xs text-ink-dim">No payments recorded.</p>
+                        ) : (
+                          <table className="text-xs w-auto border-collapse">
+                            <thead>
+                              <tr className="text-ink-dim">
+                                <th className="text-left pr-6 pb-1 font-medium">#</th>
+                                <th className="text-left pr-6 pb-1 font-medium">Date</th>
+                                <th className="text-right pr-6 pb-1 font-medium">Amount</th>
+                                <th className="text-left pb-1 font-medium">Mode</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {((r.bullion_payments ?? []) as any[])
+                                .slice()
+                                .sort((a: any, b: any) => a.pay_date > b.pay_date ? 1 : -1)
+                                .map((p: any, i: number) => (
+                                  <tr key={p.id}>
+                                    <td className="pr-6 py-0.5 text-ink-dim">{i + 1}</td>
+                                    <td className="pr-6 py-0.5">{shortDate(p.pay_date)}</td>
+                                    <td className={`pr-6 py-0.5 text-right font-mono ${p.mode === "balance_offset" ? "text-info" : "text-ok"}`}>
+                                      {inr(Number(p.amount))}
+                                    </td>
+                                    <td className="py-0.5 capitalize text-ink-dim">
+                                      {p.mode === "balance_offset" ? "Offset" : p.mode}
+                                      {p.notes ? <span className="ml-1 text-ink-dim">({p.notes})</span> : null}
+                                    </td>
+                                  </tr>
+                                ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
                 );
               })}
               {!rows.length && (
