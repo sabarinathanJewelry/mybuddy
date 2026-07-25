@@ -252,6 +252,7 @@
 
 ### Permission Requests
 - Late permission rows exceeding 2 hours are highlighted in red (`bg-err/5`) with the time shown in bold red and a `>2h` badge
+- **>2h decision split**: when `late_minutes > 120` and status is pending, admin sees **Half Day** (orange) and **Permission** (green) buttons instead of a single Approve — stores `permission_type = 'half_day' | 'permission'` in DB (migration 145); approved >2h rows show a "Half Day" badge if marked accordingly; regular <2h rows keep the single Approve button
 
 ### My Payslip (`/my-payslip`)
 - Every staff member can view all their own salary slips (periods where admin has saved payroll with their entry)

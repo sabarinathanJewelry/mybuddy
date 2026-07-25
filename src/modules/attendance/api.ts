@@ -540,6 +540,7 @@ export type PermissionRequest = {
   late_minutes: number;
   reason: string | null;
   status: "pending" | "approved" | "rejected";
+  permission_type: "permission" | "half_day";
   admin_note: string | null;
   decided_at: string | null;
   notified: boolean;
@@ -590,10 +591,10 @@ export function useCreatePermission() {
 export function useDecidePermission() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, status, admin_note }: { id: string; status: "approved" | "rejected"; admin_note?: string }) => {
+    mutationFn: async ({ id, status, admin_note, permission_type }: { id: string; status: "approved" | "rejected"; admin_note?: string; permission_type?: "permission" | "half_day" }) => {
       const { error } = await supabase()
         .from("permission_requests")
-        .update({ status, admin_note: admin_note || null, decided_at: new Date().toISOString(), notified: false })
+        .update({ status, admin_note: admin_note || null, decided_at: new Date().toISOString(), notified: false, ...(permission_type ? { permission_type } : {}) })
         .eq("id", id);
       if (error) throw error;
     },

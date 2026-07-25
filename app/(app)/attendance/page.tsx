@@ -1210,21 +1210,37 @@ function RequestsTab({ isAdmin, myBioUserId }: { isAdmin: boolean; myBioUserId: 
                         </td>
                         <td className="px-3 py-2.5 text-right">
                           {r.status === "pending" && (
-                            <div className="flex items-center gap-1 justify-end">
+                            <div className="flex items-center gap-1 justify-end flex-wrap">
                               <input type="text" placeholder="note (optional)"
                                 value={noteMap[r.id] ?? ""}
                                 onChange={e => setNoteMap(m => ({ ...m, [r.id]: e.target.value }))}
-                                className="border border-line rounded px-2 py-0.5 text-xs w-32 focus:outline-none focus:ring-1 focus:ring-gold" />
-                              <button onClick={() => decide.mutate({ id: r.id, status: "approved", admin_note: noteMap[r.id] })}
-                                disabled={decide.isPending}
-                                className="text-xs bg-ok text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">Approve</button>
+                                className="border border-line rounded px-2 py-0.5 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-gold" />
+                              {overTwoHours ? (
+                                <>
+                                  <button onClick={() => decide.mutate({ id: r.id, status: "approved", permission_type: "half_day", admin_note: noteMap[r.id] })}
+                                    disabled={decide.isPending}
+                                    className="text-xs bg-warn text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">Half Day</button>
+                                  <button onClick={() => decide.mutate({ id: r.id, status: "approved", permission_type: "permission", admin_note: noteMap[r.id] })}
+                                    disabled={decide.isPending}
+                                    className="text-xs bg-ok text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">Permission</button>
+                                </>
+                              ) : (
+                                <button onClick={() => decide.mutate({ id: r.id, status: "approved", permission_type: "permission", admin_note: noteMap[r.id] })}
+                                  disabled={decide.isPending}
+                                  className="text-xs bg-ok text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">Approve</button>
+                              )}
                               <button onClick={() => decide.mutate({ id: r.id, status: "rejected", admin_note: noteMap[r.id] })}
                                 disabled={decide.isPending}
                                 className="text-xs bg-err text-white px-2 py-0.5 rounded hover:opacity-90 disabled:opacity-40">Reject</button>
                             </div>
                           )}
-                          {r.admin_note && r.status !== "pending" && (
-                            <span className="text-xs text-ink-dim">{r.admin_note}</span>
+                          {r.status !== "pending" && (
+                            <div className="flex items-center gap-1.5 justify-end">
+                              {r.permission_type === "half_day" && (
+                                <span className="text-[10px] font-bold bg-warn/10 text-warn px-1.5 py-0.5 rounded">Half Day</span>
+                              )}
+                              {r.admin_note && <span className="text-xs text-ink-dim">{r.admin_note}</span>}
+                            </div>
                           )}
                         </td>
                       </tr>
