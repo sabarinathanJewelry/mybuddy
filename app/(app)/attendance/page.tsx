@@ -53,6 +53,17 @@ function formatMins(mins: number): string {
   const m = Math.round(mins % 60);
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
+function toISTMins(isoStr: string): number {
+  const d = new Date(new Date(isoStr).getTime() + 5.5 * 3600000);
+  return d.getUTCHours() * 60 + d.getUTCMinutes();
+}
+function parseTimeMins(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + (m || 0);
+}
+function shiftEndMins(shift: string): number {
+  return shift === "girls" ? 20 * 60 + 30 : shift === "helper" ? 18 * 60 : 21 * 60 + 30;
+}
 function currentMonth(): string {
   return new Date().toISOString().slice(0, 7);
 }
@@ -3194,10 +3205,34 @@ export default function AttendancePage() {
                                 + assign duty
                               </button>
                             )}
+                            {/* Overstayed permission: arrived later than to_time */}
+                            {isAdmin && r.first_in && (() => {
+                              const perm = dailyPerms.find(p => p.bio_user_id === r.bio_user_id);
+                              if (!perm?.to_time) return null;
+                              const overstay = toISTMins(r.first_in) - parseTimeMins(perm.to_time);
+                              if (overstay < 10) return null;
+                              return (
+                                <span className="text-[9px] font-bold bg-warn/10 text-warn px-1 py-0.5 rounded leading-none mt-0.5">
+                                  +{formatMins(overstay)} late → Half Day?
+                                </span>
+                              );
+                            })()}
                           </div>
                         </td>
                         <td className="px-3 py-2.5 text-right font-mono text-ok">{formatTime(r.first_in)}</td>
-                        <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{formatTime(r.last_out)}</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-ink-dim">
+                          {formatTime(r.last_out)}
+                          {/* Left early: checked out before shift end by 30min–4h */}
+                          {isAdmin && r.last_out && (() => {
+                            const earlyMins = shiftEndMins(r.shift) - toISTMins(r.last_out);
+                            if (earlyMins < 30 || earlyMins >= 240) return null;
+                            return (
+                              <span className="block text-[9px] font-bold text-warn leading-none mt-0.5">
+                                left {formatMins(earlyMins)} early → Half Day?
+                              </span>
+                            );
+                          })()}
+                        </td>
                         <td className="px-3 py-2.5 text-right">
                           <span className="font-mono">{formatHours(r.effective_hours)}</span>
                           {r.lunch_spare_minutes > 0 && (

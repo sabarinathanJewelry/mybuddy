@@ -253,6 +253,7 @@
 ### Permission Requests
 - Late permission rows exceeding 2 hours are highlighted in red (`bg-err/5`) with the time shown in bold red and a `>2h` badge
 - **>2h decision split**: when `late_minutes > 120` and status is pending, admin sees **Half Day** (orange) and **Permission** (green) buttons instead of a single Approve — stores `permission_type = 'half_day' | 'permission'` in DB (migration 145); approved >2h rows show a "Half Day" badge if marked accordingly; regular <2h rows keep the single Approve button
+- **Half Day indicators in daily attendance grid**: two automatic flags visible to admin — (1) **Overstayed permission**: staff had approved permission but `first_in` arrived 10+ min past the permission `to_time`; shows "+Xm late → Half Day?" warning under their status badge; (2) **Left early**: `last_out` before shift end (boys 21:30 / girls 20:30 / helper 18:00) by 30 min–4 hours; shows "left Xm early → Half Day?" under their Out time
 
 ### My Payslip (`/my-payslip`)
 - Every staff member can view all their own salary slips (periods where admin has saved payroll with their entry)

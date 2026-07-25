@@ -1007,10 +1007,10 @@ export function useApprovedPermsByDate(date: string) {
     queryFn: async () => {
       const { data } = await supabase()
         .from("permission_requests")
-        .select("bio_user_id, late_minutes")
+        .select("bio_user_id, late_minutes, from_time, to_time")
         .eq("permission_date", date)
         .eq("status", "approved");
-      return (data ?? []) as { bio_user_id: string; late_minutes: number }[];
+      return (data ?? []) as { bio_user_id: string; late_minutes: number; from_time: string | null; to_time: string | null }[];
     },
   });
 }
