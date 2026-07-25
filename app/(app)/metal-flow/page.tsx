@@ -210,6 +210,8 @@ export default function MetalFlowPage() {
   const [showDirectReserve, setShowDirectReserve] = useState(false);
   const [directReserveForm, setDirectReserveForm] = useState({ batch_no: "", batch_date: globalDate, metal: "gold_22k", output_wt: 0, notes: "" });
   const [refineryForm, setRefineryForm] = useState<{ batchId: string; total_output_wt: number; debris_wt: number; output_wt: number; loss_wt: number; output_purity_pct: number } | null>(null);
+  const [editBatchId, setEditBatchId] = useState<string | null>(null);
+  const [editBatchForm, setEditBatchForm] = useState({ metal: "gold_22k", batch_date: "", notes: "" });
 
   // Reserve & dispatches
   const { data: reserveData } = useReserve();
@@ -600,6 +602,14 @@ export default function MetalFlowPage() {
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["melt_batches"] }),
+  });
+
+  const updateBatch = useMutation({
+    mutationFn: async ({ id, metal, batch_date, notes }: { id: string; metal: string; batch_date: string; notes: string }) => {
+      const { error } = await supabase().from("melt_batches").update({ metal, batch_date, notes }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["melt_batches"] }); setEditBatchId(null); },
   });
 
   const revertRefinedToOpen = useMutation({
@@ -1585,6 +1595,42 @@ export default function MetalFlowPage() {
 
                       {/* Actions */}
                       <div className="flex flex-wrap gap-2">
+                        {b.status === "open" && editBatchId !== b.id && (
+                          <button
+                            onClick={() => { setEditBatchId(b.id); setEditBatchForm({ metal: b.metal ?? "gold_22k", batch_date: b.batch_date ?? "", notes: b.notes ?? "" }); }}
+                            className="text-sm bg-canvas text-ink-dim border border-line px-4 py-1.5 rounded-lg2 hover:border-gold hover:text-gold">
+                            Edit Batch
+                          </button>
+                        )}
+                        {b.status === "open" && editBatchId === b.id && (
+                          <div className="w-full flex flex-wrap items-end gap-3 p-3 bg-canvas rounded-lg2 border border-line">
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs text-ink-dim">Metal</label>
+                              <select value={editBatchForm.metal} onChange={e => setEditBatchForm(f => ({ ...f, metal: e.target.value }))} className={inp}>
+                                <option value="gold_22k">Gold 22K</option>
+                                <option value="gold_18k">Gold 18K</option>
+                                <option value="gold_24k">Gold 24K</option>
+                                <option value="silver">Silver</option>
+                                <option value="silver_pure">Silver Pure</option>
+                              </select>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                              <label className="text-xs text-ink-dim">Date</label>
+                              <input type="date" value={editBatchForm.batch_date} onChange={e => setEditBatchForm(f => ({ ...f, batch_date: e.target.value }))} className={inp} />
+                            </div>
+                            <div className="flex flex-col gap-1 flex-1">
+                              <label className="text-xs text-ink-dim">Notes</label>
+                              <input type="text" value={editBatchForm.notes} onChange={e => setEditBatchForm(f => ({ ...f, notes: e.target.value }))} className={inp} placeholder="optional" />
+                            </div>
+                            <button
+                              onClick={() => updateBatch.mutate({ id: b.id, ...editBatchForm })}
+                              disabled={updateBatch.isPending}
+                              className="text-sm bg-gold text-white px-4 py-1.5 rounded-lg2 hover:opacity-90 disabled:opacity-40">
+                              Save
+                            </button>
+                            <button onClick={() => setEditBatchId(null)} className="text-sm text-ink-dim hover:text-ink px-3 py-1.5">Cancel</button>
+                          </div>
+                        )}
                         {b.status === "open" && (
                           <button
                             onClick={() => updateBatchStatus.mutate({ id: b.id, status: "melted" })}

@@ -128,6 +128,7 @@
 ### Refinery / Metal Flow
 - Refinery entry for metal sent out and received
 - Metal flow tracking
+- **Edit batch**: open-status batches (before being sent to refinery) show an "Edit Batch" button that expands an inline form to change metal type (gold 22K/18K/24K, silver, silver pure), date, and notes; saves to `melt_batches`; button hidden once batch is melted or refined
 
 ### Bullion
 - Bullion purchase/sale tracking
