@@ -211,6 +211,17 @@ async function convertOrderToSale(
       }));
     if (payEntries.length) await client.from("payments").insert(payEntries);
   }
+  // Also write to sale_payments so the sales-list balance column reflects order payments
+  const salePayRows = (orderPays ?? [])
+    .filter((p: any) => p.amount > 0)
+    .map((p: any) => ({
+      sale_id: sale.id,
+      pay_date: p.pay_date,
+      mode: p.mode,
+      amount: p.amount,
+      notes: `Order payment — ${order.order_no}`,
+    }));
+  if (salePayRows.length) await client.from("sale_payments").insert(salePayRows);
 }
 
 // ─── Data hooks ─────────────────────────────────────────────────────────────
@@ -669,21 +680,28 @@ export default function OrdersPage() {
       }).eq("id", order.id);
       await fanoutOrderPayments(order.id, order.order_no, addPayDate, validPay, order.customer_id);
 
-      // If order is already delivered, also add to payments table linked to the sale
+      // If order is already delivered, also add to payments + sale_payments linked to the sale
       // (convertOrderToSale already synced earlier payments; late payments need manual sync)
       if (order.status === "delivered" && order.customer_id) {
         const { data: sale } = await client.from("sales").select("id").eq("order_id", order.id).maybeSingle();
         if (sale) {
-          const payEntries = validPay
-            .filter((p) => p.mode !== "advance") // advance already handled by fanout
-            .map((p) => ({
-              pay_date: addPayDate, direction: "in" as const,
-              mode: p.mode, amount: p.amount,
-              customer_id: order.customer_id,
-              sale_id: sale.id,
-              notes: p.notes || `Late payment — ${order.order_no}`,
-            }));
+          const nonAdvance = validPay.filter((p) => p.mode !== "advance");
+          const payEntries = nonAdvance.map((p) => ({
+            pay_date: addPayDate, direction: "in" as const,
+            mode: p.mode, amount: p.amount,
+            customer_id: order.customer_id,
+            sale_id: sale.id,
+            notes: p.notes || `Late payment — ${order.order_no}`,
+          }));
           if (payEntries.length) await client.from("payments").insert(payEntries);
+          const salePayRows = nonAdvance.map((p) => ({
+            sale_id: sale.id,
+            pay_date: addPayDate,
+            mode: p.mode,
+            amount: p.amount,
+            notes: p.notes || `Late payment — ${order.order_no}`,
+          }));
+          if (salePayRows.length) await client.from("sale_payments").insert(salePayRows);
         }
       }
     },

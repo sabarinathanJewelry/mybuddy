@@ -33,7 +33,7 @@
 
 ### Orders
 - Order entry with advance payment tracking
-- Delivery → auto-converts to sale (copies order_payments to payments table)
+- Delivery → auto-converts to sale (copies order_payments to both `payments` and `sale_payments`); late payments added via "+ Add Payment" on a delivered order also sync to `sale_payments` so the sales-list Balance column stays correct; migration 146 backfills existing converted orders
 - Late payment to already-delivered orders: syncs to converted sale's payments
 - Order cancellation auto-refunds advance payments back to customer balance (usable on other orders)
 - Diamond order items (Other / Diamond metal): diamond weight (ct + cents helper), diamond value ₹, certificate amount ₹ — auto-sums to Est. Amount
