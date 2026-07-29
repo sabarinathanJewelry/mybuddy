@@ -553,10 +553,11 @@ export default function MyAttendancePage() {
     setChatSending(true);
     const client = supabase();
     const msg = chatInput.trim();
-    await client.from("chat_messages").insert({
+    const { error: sendErr } = await client.from("chat_messages").insert({
       sender_id: senderId, sender_name: senderName, message: msg,
       reply_to_id: replyTo?.id ?? null,
     });
+    if (sendErr) { alert("Failed to send message: " + sendErr.message); setChatSending(false); return; }
     setReplyTo(null);
     setMentionQuery(null);
 
