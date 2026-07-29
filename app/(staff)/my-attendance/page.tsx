@@ -1040,6 +1040,25 @@ export default function MyAttendancePage() {
                   {todayRow.double_punch && (
                     <p className="text-xs text-warn font-medium text-center">Double punch detected — please check with admin</p>
                   )}
+
+                  {/* Punch log — show all individual punches */}
+                  {todayRow.punches.length > 0 && (
+                    <div className="bg-canvas border border-line rounded-xl px-4 py-3">
+                      <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide mb-2">Punch Log ({todayRow.punches.length})</p>
+                      <div className="space-y-1">
+                        {todayRow.punches.map((p, i) => {
+                          const label = i === 0 ? "IN" : i % 2 === 1 ? (i === todayRow.punches.length - 1 ? "OUT" : "Out") : "In";
+                          const color = i === 0 ? "text-ok" : i % 2 === 1 ? "text-err" : "text-info";
+                          return (
+                            <div key={i} className="flex items-center gap-3">
+                              <span className={`text-[10px] font-bold w-8 ${color}`}>{label}</span>
+                              <span className="font-mono text-sm text-ink">{formatTime(p)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })() : (

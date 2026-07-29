@@ -213,7 +213,7 @@
 
 ### Attendance (Staff)
 - Smart home view: card grid for staff on `/my-attendance`
-- Today tab: clock-in/out times, hours worked, lunch duration
+- Today tab: clock-in/out times, hours worked, lunch duration, **Punch Log showing all individual punch timestamps** (labeled IN/Out/In/OUT in order) so staff can see every punch the biometric device recorded — not just the first-in and last-out summary
 - Monthly tab: personal attendance history
 - Back to home from any tab without switching to classic mode
 
