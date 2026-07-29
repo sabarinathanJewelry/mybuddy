@@ -7,7 +7,7 @@ import NotificationBell from "@/components/ui/notification-bell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import {
-  useAttendanceByDate, useStaff, useUpdateStaff, useDeleteStaff, useMarkPresentDay,
+  useAttendanceByDate, useDeletePunch, useEditPunch, useStaff, useUpdateStaff, useDeleteStaff, useMarkPresentDay,
   useMonthlyAttendanceSummary, useAllPermissions, useDecidePermission,
   useKioskSequence, useSaveKioskSequence, useKioskSecret, useSaveKioskSecret, useLastSyncTime,
   useAdminKioskSequences, useSaveUserKioskSequence,
@@ -40,6 +40,10 @@ const inp = "border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none
 function formatTime(ts: string | null) {
   if (!ts) return "—";
   return new Date(ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+}
+function toISTHHMM(ts: string): string {
+  const d = new Date(new Date(ts).getTime() + 5.5 * 3600000);
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
 }
 function formatHours(h: number | null) {
   if (h === null) return "—";
@@ -2650,7 +2654,9 @@ export default function AttendancePage() {
   const [tab, setTab]           = useState<PageTab>("attendance");
   const [date, setDate]         = useState(today);
   const [activeOnly, setActiveOnly] = useState(true);
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [expanded, setExpanded]       = useState<string | null>(null);
+  const [editPunchId, setEditPunchId] = useState<string | null>(null);
+  const [editPunchTime, setEditPunchTime] = useState("");
   const { data: lastSyncIso }   = useLastSyncTime();
 
   const { isLocked: rawLocked, unlock } = useKiosk();
@@ -2743,6 +2749,8 @@ export default function AttendancePage() {
 
   const qc = useQueryClient();
   const { data = [], isLoading, isError, refetch, isFetching: isAttFetching } = useAttendanceByDate(date, activeOnly);
+  const deletePunch                        = useDeletePunch(date);
+  const editPunch                          = useEditPunch(date);
   const { data: leavesByDate = [] }       = useLeavesByDate(date);
   const { data: dailyPerms = [] }         = useApprovedPermsByDate(date);
   const { data: dailyDuties = [] }        = useOutsideDutiesByDate(date);
@@ -3317,20 +3325,15 @@ export default function AttendancePage() {
 
                       {expanded === r.bio_user_id && (
                         <tr className="border-b border-line bg-canvas/30">
-                          <td colSpan={9} className="px-6 py-2.5">
-                            <div className="flex flex-wrap gap-2">
+                          <td colSpan={9} className="px-6 py-3">
+                            <div className="flex flex-wrap gap-2 mb-2">
                               {r.punches.map((p, pi) => (
                                 <span key={pi} className="text-xs bg-white border border-line rounded px-2 py-1 font-mono">
                                   {pi === 0 ? "IN" : pi % 2 === 1 ? (pi === r.punches.length - 1 ? "OUT" : "↑ out") : "↓ in"}
                                   {" "}{formatTime(p)}
                                 </span>
                               ))}
-                              {r.double_punch_detected && (
-                              <span className="text-xs border border-warn/40 rounded px-2 py-1 bg-warn/10 text-warn font-medium">
-                                Double punch detected — verify with staff
-                              </span>
-                            )}
-                            {r.lunch_minutes !== null ? (
+                              {r.lunch_minutes !== null ? (
                                 <span className={`text-xs border rounded px-2 py-1 font-medium ${
                                   r.lunch_overrun_minutes > 0 ? "bg-err/10 border-err/30 text-err" :
                                   r.lunch_spare_minutes > 0  ? "bg-warn/10 border-warn/30 text-warn" :
@@ -3343,6 +3346,53 @@ export default function AttendancePage() {
                               ) : r.present && r.last_out ? (
                                 <span className="text-xs border border-line rounded px-2 py-1 text-ink-dim">No lunch tracked</span>
                               ) : null}
+                            </div>
+                            {/* Edit / delete individual punches */}
+                            <div className="border-t border-line/60 pt-2 space-y-1">
+                              <p className="text-[10px] font-semibold text-ink-dim uppercase tracking-wide mb-1.5">Edit punches</p>
+                              {r.punchRows.map((pr, pi) => (
+                                <div key={pr.id} className="flex items-center gap-2">
+                                  <span className="text-[10px] text-ink-dim w-5 text-right">{pi + 1}.</span>
+                                  {editPunchId === pr.id ? (
+                                    <>
+                                      <input
+                                        type="time"
+                                        value={editPunchTime}
+                                        onChange={e => setEditPunchTime(e.target.value)}
+                                        className="border border-gold rounded px-2 py-0.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gold"
+                                      />
+                                      <button
+                                        disabled={editPunch.isPending}
+                                        onClick={async () => {
+                                          await editPunch.mutateAsync({ id: pr.id, punch_time: `${date}T${editPunchTime}:00.000+05:30` });
+                                          setEditPunchId(null);
+                                        }}
+                                        className="text-xs bg-ok text-white px-2 py-0.5 rounded disabled:opacity-40">
+                                        Save
+                                      </button>
+                                      <button onClick={() => setEditPunchId(null)} className="text-xs text-ink-dim hover:text-ink">Cancel</button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="font-mono text-xs text-ink w-20">{formatTime(pr.punch_time)}</span>
+                                      <button
+                                        onClick={() => { setEditPunchId(pr.id); setEditPunchTime(toISTHHMM(pr.punch_time)); }}
+                                        className="text-[10px] text-info hover:underline">
+                                        Edit
+                                      </button>
+                                      <button
+                                        disabled={deletePunch.isPending}
+                                        onClick={() => { if (confirm(`Delete punch ${formatTime(pr.punch_time)} for ${r.name}?`)) deletePunch.mutate(pr.id); }}
+                                        className="text-[10px] text-err hover:underline disabled:opacity-40">
+                                        Delete
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              ))}
+                              {r.double_punch_detected && (
+                                <p className="text-[10px] text-warn font-medium mt-1">Double punch detected — delete the duplicate above</p>
+                              )}
                             </div>
                           </td>
                         </tr>

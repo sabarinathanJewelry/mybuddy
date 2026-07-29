@@ -42,6 +42,7 @@ export type AttendanceEntry = {
   shift: "boys" | "girls" | "helper";
   present: boolean;
   punches: string[];
+  punchRows: { id: string; punch_time: string }[];
   first_in: string | null;
   last_out: string | null;
   hours_worked: number | null;
@@ -128,7 +129,7 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
       const [logsRes, staffRes, permsRes, exceptionsRes] = await Promise.all([
         client
           .from("attendance_logs")
-          .select("bio_user_id, punch_time, punch_status")
+          .select("id, bio_user_id, punch_time, punch_status")
           .gte("punch_time", `${date}T00:00:00+05:30`)
           .lte("punch_time", `${date}T23:59:59+05:30`)
           .order("punch_time"),
@@ -157,14 +158,15 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
         ? parseTimeToMins(shopExc.shop_opens_at) + 20
         : 9 * 60 + 50;
 
-      const byUser = new Map<string, string[]>();
+      const byUser = new Map<string, { id: string; punch_time: string }[]>();
       for (const log of logs) {
         if (!byUser.has(log.bio_user_id)) byUser.set(log.bio_user_id, []);
-        byUser.get(log.bio_user_id)!.push(log.punch_time);
+        byUser.get(log.bio_user_id)!.push({ id: log.id, punch_time: log.punch_time });
       }
 
       return staff.map((s) => {
-        const rawPunches = [...(byUser.get(s.bio_user_id) ?? [])].sort();
+        const punchRows = [...(byUser.get(s.bio_user_id) ?? [])].sort((a, b) => a.punch_time.localeCompare(b.punch_time));
+        const rawPunches = punchRows.map((r) => r.punch_time);
         const { deduped: punches, double_punch_detected } = deduplicatePunches(rawPunches);
         const present = punches.length > 0;
         const firstIn = punches[0] ?? null;
@@ -221,6 +223,7 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
           shift: ((s.shift as string) ?? "boys") as "boys" | "girls" | "helper",
           present,
           punches,
+          punchRows,
           first_in: firstIn,
           last_out: lastOut,
           hours_worked: hoursWorked,
@@ -1850,5 +1853,27 @@ export function useWeekoffBioIdsByDate(date: string) {
         .in("user_id", userIds);
       return new Set((staffRows ?? []).map((s: any) => s.bio_user_id as string));
     },
+  });
+}
+
+export function useDeletePunch(date: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase().from("attendance_logs").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance", date] }),
+  });
+}
+
+export function useEditPunch(date: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, punch_time }: { id: string; punch_time: string }) => {
+      const { error } = await supabase().from("attendance_logs").update({ punch_time }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance", date] }),
   });
 }

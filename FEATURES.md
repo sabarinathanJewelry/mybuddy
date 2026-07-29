@@ -181,7 +181,7 @@
 
 ### Attendance (Admin)
 - Smart home card grid (12 cards) for admin on `/attendance`; second section "Finance & Inventory" with 8 ERP quick-link cards (Sales, Daily Sheet, Board Rate, Gold Stock, Kolusu, Analytics, Orders, All ERP)
-- Daily attendance view: all staff with punch times, late flag, hours worked
+- Daily attendance view: all staff with punch times, late flag, hours worked; **expand a row → Edit Punches panel lets admin edit the time of any individual punch or delete it** (e.g. remove an accidental double-out punch); changes refresh the row immediately
 - Monthly attendance summary: present days, late days, OT, leaves, deductions
 - **Salary increment history**: when admin saves a salary change from the monthly attendance edit panel, the old → new amount and effective month are recorded in `staff_salary_history`; history is shown inline below the edit form (date changed, old salary in red, new salary in green, effective month) — only future edits are tracked, past changes before this feature are not recorded
 - **Per-staff fine settings**: admin can set per-staff fine mode (day/min), fine rate ₹, OT rate ₹, OT rate mode (hour/min), fine from/to date range — all via the pencil edit panel; blank = use global setting; saved in monthly `attendance_settings` JSON; salary split-up shows Fine ₹ formula, OT ₹ formula, net fine or OT bonus clearly; value-based equalization: if OT ₹ > Fine ₹ the excess becomes OT bonus pay; per-staff fine date range — late days outside that range are excluded from fine calculation; range is saved in the monthly `attendance_settings` JSON under `staff_fine_ranges`; if no range is set for a staff member the global fine-from-date applies; effective range shown inline in the salary split-up as `[from → to]`
