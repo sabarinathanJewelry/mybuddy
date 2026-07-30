@@ -131,6 +131,7 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
         client
           .from("attendance_logs")
           .select("id, bio_user_id, punch_time, punch_status")
+          .eq("deleted_by_admin", false)
           .gte("punch_time", `${date}T00:00:00+05:30`)
           .lte("punch_time", `${date}T23:59:59+05:30`)
           .order("punch_time"),
@@ -294,6 +295,7 @@ export function useMarkPresentDay() {
         .from("attendance_logs")
         .select("id")
         .eq("bio_user_id", bio_user_id)
+        .eq("deleted_by_admin", false)
         .gte("punch_time", `${date}T00:00:00+05:30`)
         .lte("punch_time", `${date}T23:59:59+05:30`)
         .limit(1);
@@ -378,6 +380,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
         const res = await client
           .from("attendance_logs")
           .select("id, bio_user_id, punch_time")
+          .eq("deleted_by_admin", false)
           .in("bio_user_id", activeIds)
           .gte("punch_time", `${month}-01T00:00:00+05:30`)
           .lt("punch_time", `${nextMon}-01T00:00:00+05:30`)
@@ -859,6 +862,7 @@ export function useMyMonthlyLeaveCount(monthKey: string) {
           .from("attendance_logs")
           .select("punch_time")
           .eq("bio_user_id", staffRow.bio_user_id)
+          .eq("deleted_by_admin", false)
           .gte("punch_time", `${monthKey}-01T00:00:00+05:30`)
           .lt("punch_time",  `${nextMon}-01T00:00:00+05:30`),
         supabase()
@@ -1862,7 +1866,9 @@ export function useDeletePunch(date: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase().from("attendance_logs").delete().eq("id", id);
+      // Soft-delete: keeps the row so the sync upsert (on bio_user_id,punch_time)
+      // hits a conflict and cannot re-insert the record from the device.
+      const { error } = await supabase().from("attendance_logs").update({ deleted_by_admin: true }).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -1875,9 +1881,14 @@ export function useDeletePunch(date: string) {
 export function useEditPunch(date: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, punch_time }: { id: string; punch_time: string }) => {
-      const { error } = await supabase().from("attendance_logs").update({ punch_time }).eq("id", id);
-      if (error) throw error;
+    mutationFn: async ({ id, bio_user_id, punch_time }: { id: string; bio_user_id: string; punch_time: string }) => {
+      const client = supabase();
+      // Soft-delete original so the sync can't restore the old time
+      const { error: delErr } = await client.from("attendance_logs").update({ deleted_by_admin: true }).eq("id", id);
+      if (delErr) throw delErr;
+      // Insert corrected punch as a new row
+      const { error: insErr } = await client.from("attendance_logs").insert({ bio_user_id, punch_time });
+      if (insErr) throw insErr;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["attendance", date] });

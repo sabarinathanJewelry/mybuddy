@@ -108,7 +108,7 @@ function PunchEditor({ date, bio_user_id, punchRows }: { date: string; bio_user_
               <>
                 <input type="time" value={editTime} onChange={e => setEditTime(e.target.value)} className={inp + " py-0.5 text-xs"} />
                 <button
-                  onClick={async () => { await editPunch.mutateAsync({ id: p.id, punch_time: `${date}T${editTime}:00.000+05:30` }); setEditId(null); }}
+                  onClick={async () => { await editPunch.mutateAsync({ id: p.id, bio_user_id, punch_time: `${date}T${editTime}:00.000+05:30` }); setEditId(null); }}
                   className="text-[10px] text-ok hover:underline">Save</button>
                 <button onClick={() => setEditId(null)} className="text-[10px] text-ink-dim hover:underline">Cancel</button>
               </>
@@ -3437,7 +3437,7 @@ export default function AttendancePage() {
                                       <button
                                         disabled={editPunch.isPending}
                                         onClick={async () => {
-                                          await editPunch.mutateAsync({ id: pr.id, punch_time: `${date}T${editPunchTime}:00.000+05:30` });
+                                          await editPunch.mutateAsync({ id: pr.id, bio_user_id: r.bio_user_id, punch_time: `${date}T${editPunchTime}:00.000+05:30` });
                                           setEditPunchId(null);
                                         }}
                                         className="text-xs bg-ok text-white px-2 py-0.5 rounded disabled:opacity-40">
