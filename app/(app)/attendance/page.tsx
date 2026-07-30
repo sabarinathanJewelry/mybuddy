@@ -7,7 +7,7 @@ import NotificationBell from "@/components/ui/notification-bell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import {
-  useAttendanceByDate, useDeletePunch, useEditPunch, useStaff, useUpdateStaff, useDeleteStaff, useMarkPresentDay,
+  useAttendanceByDate, useDeletePunch, useEditPunch, useAddPunch, useStaff, useUpdateStaff, useDeleteStaff, useMarkPresentDay,
   useMonthlyAttendanceSummary, useAllPermissions, useDecidePermission,
   useKioskSequence, useSaveKioskSequence, useKioskSecret, useSaveKioskSecret, useLastSyncTime,
   useAdminKioskSequences, useSaveUserKioskSequence,
@@ -2655,8 +2655,10 @@ export default function AttendancePage() {
   const [date, setDate]         = useState(today);
   const [activeOnly, setActiveOnly] = useState(true);
   const [expanded, setExpanded]       = useState<string | null>(null);
-  const [editPunchId, setEditPunchId] = useState<string | null>(null);
+  const [editPunchId, setEditPunchId]     = useState<string | null>(null);
   const [editPunchTime, setEditPunchTime] = useState("");
+  const [addPunchFor, setAddPunchFor]     = useState<string | null>(null);
+  const [addPunchTime, setAddPunchTime]   = useState("");
   const { data: lastSyncIso }   = useLastSyncTime();
 
   const { isLocked: rawLocked, unlock } = useKiosk();
@@ -2751,6 +2753,7 @@ export default function AttendancePage() {
   const { data = [], isLoading, isError, refetch, isFetching: isAttFetching } = useAttendanceByDate(date, activeOnly);
   const deletePunch                        = useDeletePunch(date);
   const editPunch                          = useEditPunch(date);
+  const addPunch                           = useAddPunch(date);
   const { data: leavesByDate = [] }       = useLeavesByDate(date);
   const { data: dailyPerms = [] }         = useApprovedPermsByDate(date);
   const { data: dailyDuties = [] }        = useOutsideDutiesByDate(date);
@@ -3393,6 +3396,38 @@ export default function AttendancePage() {
                               {r.double_punch_detected && (
                                 <p className="text-[10px] text-warn font-medium mt-1">Double punch detected — delete the duplicate above</p>
                               )}
+                              {/* Add punch */}
+                              <div className="mt-2 pt-2 border-t border-line/40">
+                                {addPunchFor === r.bio_user_id ? (
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-ink-dim">New punch time:</span>
+                                    <input
+                                      type="time"
+                                      value={addPunchTime}
+                                      onChange={e => setAddPunchTime(e.target.value)}
+                                      className="border border-gold rounded px-2 py-0.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-gold"
+                                    />
+                                    <button
+                                      disabled={!addPunchTime || addPunch.isPending}
+                                      onClick={async () => {
+                                        await addPunch.mutateAsync({ bio_user_id: r.bio_user_id, punch_time: `${date}T${addPunchTime}:00.000+05:30` });
+                                        setAddPunchFor(null);
+                                        setAddPunchTime("");
+                                      }}
+                                      className="text-xs bg-ok text-white px-2 py-0.5 rounded disabled:opacity-40">
+                                      Add
+                                    </button>
+                                    <button onClick={() => { setAddPunchFor(null); setAddPunchTime(""); }}
+                                      className="text-xs text-ink-dim hover:text-ink">Cancel</button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => { setAddPunchFor(r.bio_user_id); setAddPunchTime(""); }}
+                                    className="text-[10px] text-ok hover:underline font-medium">
+                                    + Add punch
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           </td>
                         </tr>

@@ -1877,3 +1877,14 @@ export function useEditPunch(date: string) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance", date] }),
   });
 }
+
+export function useAddPunch(date: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ bio_user_id, punch_time }: { bio_user_id: string; punch_time: string }) => {
+      const { error } = await supabase().from("attendance_logs").insert({ bio_user_id, punch_time });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance", date] }),
+  });
+}
