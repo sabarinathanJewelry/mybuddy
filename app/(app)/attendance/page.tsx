@@ -2342,7 +2342,7 @@ function ChatTab({ isAdmin, adminName }: { isAdmin: boolean; adminName: string }
 
   useEffect(() => {
     const client = supabase();
-    client.from("chat_messages").select("*").order("created_at", { ascending: false }).limit(200)
+    client.from("chat_messages").select("*").order("created_at", { ascending: false }).limit(500)
       .then(({ data }) => setMsgs(((data ?? []) as ChatMsg[]).reverse()));
     const ch = client.channel("attendance_chat")
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, (p) => {

@@ -466,7 +466,7 @@ export default function MyAttendancePage() {
   useEffect(() => {
     const client = supabase();
     client.from("chat_messages")
-      .select("*").order("created_at", { ascending: false }).limit(200)
+      .select("*").order("created_at", { ascending: false }).limit(500)
       .then(({ data }) => setChatMessages(((data ?? []) as ChatMessage[]).reverse()));
     client.from("staff").select("name")
       .then(({ data }) => setMentionStaff((data ?? []).map((s: any) => s.name)));
