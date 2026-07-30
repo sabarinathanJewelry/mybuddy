@@ -188,17 +188,44 @@ function useRestock() {
   });
 }
 
-function useUpdateRestockDate() {
+function useUpdateRestock() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, tx_date }: { id: string; tx_date: string }) => {
-      const { error } = await supabase()
-        .from("kolusu_transactions")
-        .update({ tx_date })
-        .eq("id", id);
-      if (error) throw error;
+    mutationFn: async ({
+      id, box_id, tx_date, new_qty, new_raw_wt_g, notes,
+      old_qty, old_raw_wt_g,
+    }: {
+      id: string; box_id: string; tx_date: string;
+      new_qty: number; new_raw_wt_g: number; notes: string;
+      old_qty: number; old_raw_wt_g: number;
+    }) => {
+      const client = supabase();
+      const qty_diff = new_qty - old_qty;
+      const wt_diff  = parseFloat((new_raw_wt_g - old_raw_wt_g).toFixed(3));
+      const { error: txErr } = await client.from("kolusu_transactions").update({
+        tx_date,
+        qty_change: new_qty,
+        raw_wt_g: new_raw_wt_g,
+        total_wt_g: new_raw_wt_g,
+        notes: notes.trim() ? `RESTOCK: ${notes.trim()}` : "RESTOCK",
+      }).eq("id", id);
+      if (txErr) throw txErr;
+      if (qty_diff !== 0 || wt_diff !== 0) {
+        const { data: box, error: fetchErr } = await client
+          .from("kolusu_boxes").select("current_gross_wt_g, current_qty").eq("id", box_id).single();
+        if (fetchErr) throw fetchErr;
+        const { error: updErr } = await client.from("kolusu_boxes").update({
+          current_gross_wt_g: parseFloat((box.current_gross_wt_g + wt_diff).toFixed(3)),
+          current_qty: box.current_qty + qty_diff,
+          updated_at: new Date().toISOString(),
+        }).eq("id", box_id);
+        if (updErr) throw updErr;
+      }
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["kolusu_transactions"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["kolusu_boxes"] });
+      qc.invalidateQueries({ queryKey: ["kolusu_transactions"] });
+    },
   });
 }
 
@@ -242,11 +269,11 @@ export default function KolusuPage() {
   const recordSale = useRecordSale();
   const recordReturn = useRecordReturn();
   const restock = useRestock();
-  const updateRestockDate = useUpdateRestockDate();
+  const updateRestock = useUpdateRestock();
   const { data: pendingSales = [], isLoading: pendingLoading } = usePendingSales();
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [editRestockId, setEditRestockId] = useState<string | null>(null);
-  const [editRestockDate, setEditRestockDate] = useState("");
+  const [editRestockForm, setEditRestockForm] = useState({ tx_date: "", qty: 0, raw_wt_g: 0, notes: "" });
 
   async function syncFromChat() {
     setSyncResult(null);
@@ -1271,10 +1298,14 @@ export default function KolusuPage() {
                           <button
                             onClick={() => {
                               if (editRestockId === tx.id) { setEditRestockId(null); }
-                              else { setEditRestockId(tx.id); setEditRestockDate(tx.tx_date); }
+                              else {
+                                setEditRestockId(tx.id);
+                                const rawNotes = (tx.notes ?? "").replace(/^RESTOCK:?\s*/i, "");
+                                setEditRestockForm({ tx_date: tx.tx_date, qty: tx.qty_change, raw_wt_g: tx.raw_wt_g, notes: rawNotes });
+                              }
                             }}
-                            className="text-xs px-2 py-1 rounded-lg2 border border-line text-ink-dim hover:border-gold hover:text-gold transition-colors">
-                            Edit date
+                            className={`text-xs px-2 py-1 rounded-lg2 border transition-colors ${editRestockId === tx.id ? "border-err/40 bg-err/10 text-err" : "border-line text-ink-dim hover:border-gold hover:text-gold"}`}>
+                            {editRestockId === tx.id ? "Cancel" : "Edit"}
                           </button>
                         )}
                       </td>
@@ -1341,28 +1372,60 @@ export default function KolusuPage() {
                     )}
                     {isRestock && editRestockId === tx.id && (
                       <tr className="border-b border-line bg-ok/5">
-                        <td colSpan={8} className="px-4 py-3">
-                          <div className="flex items-center gap-3 flex-wrap">
-                            <span className="text-xs text-ink-dim font-medium">Change date for this restock:</span>
-                            <input
-                              type="date"
-                              value={editRestockDate}
-                              onChange={e => setEditRestockDate(e.target.value)}
-                              className="border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
-                            />
+                        <td colSpan={8} className="px-4 py-4">
+                          <p className="text-xs font-semibold text-ok mb-3">Edit Restock — Box {tx.kolusu_boxes?.box_no}</p>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                            <div>
+                              <label className="block text-xs text-ink-dim mb-1">Date</label>
+                              <input type="date" value={editRestockForm.tx_date}
+                                onChange={e => setEditRestockForm(f => ({ ...f, tx_date: e.target.value }))}
+                                className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-ink-dim mb-1">Qty</label>
+                              <input type="number" min={1} value={editRestockForm.qty}
+                                onChange={e => setEditRestockForm(f => ({ ...f, qty: parseInt(e.target.value) || 0 }))}
+                                className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-ink-dim mb-1">Gross weight (g)</label>
+                              <input type="number" step="0.001" value={editRestockForm.raw_wt_g}
+                                onChange={e => setEditRestockForm(f => ({ ...f, raw_wt_g: parseFloat(e.target.value) || 0 }))}
+                                className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-ink-dim mb-1">Notes</label>
+                              <input type="text" value={editRestockForm.notes}
+                                onChange={e => setEditRestockForm(f => ({ ...f, notes: e.target.value }))}
+                                className="w-full border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold" />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
                             <button
-                              disabled={updateRestockDate.isPending || !editRestockDate}
+                              disabled={updateRestock.isPending}
                               onClick={async () => {
-                                await updateRestockDate.mutateAsync({ id: tx.id, tx_date: editRestockDate });
+                                await updateRestock.mutateAsync({
+                                  id: tx.id,
+                                  box_id: tx.box_id,
+                                  tx_date: editRestockForm.tx_date,
+                                  new_qty: editRestockForm.qty,
+                                  new_raw_wt_g: editRestockForm.raw_wt_g,
+                                  notes: editRestockForm.notes,
+                                  old_qty: tx.qty_change,
+                                  old_raw_wt_g: tx.raw_wt_g,
+                                });
                                 setEditRestockId(null);
                               }}
                               className="bg-ok text-white text-xs px-4 py-1.5 rounded-lg2 disabled:opacity-50">
-                              {updateRestockDate.isPending ? "Saving…" : "Save"}
+                              {updateRestock.isPending ? "Saving…" : "Save"}
                             </button>
                             <button onClick={() => setEditRestockId(null)}
                               className="border border-line text-xs px-3 py-1.5 rounded-lg2 text-ink-dim">
                               Cancel
                             </button>
+                            {updateRestock.isError && (
+                              <span className="text-xs text-err">{(updateRestock.error as Error).message}</span>
+                            )}
                           </div>
                         </td>
                       </tr>
