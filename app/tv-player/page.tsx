@@ -25,50 +25,57 @@ const FALLBACK_POLL_MS = 60_000;
 function ZonePlayer({ zone }: { zone: PlayoutZone }) {
   const [index, setIndex] = useState(0);
   const items = zone.items;
-  const item = items[index % Math.max(items.length, 1)];
+  const activeIndex = index % Math.max(items.length, 1);
+  const activeItem  = items[activeIndex];
+
+  useEffect(() => { setIndex(0); }, [items.length]);
 
   useEffect(() => {
-    setIndex(0);
-  }, [items.length]);
-
-  useEffect(() => {
-    if (!item || item.item_type === "video") return; // videos advance on onEnded instead
-    const timer = setTimeout(() => setIndex((i) => (i + 1) % items.length), Math.max(item.duration_seconds, 1) * 1000);
+    if (!activeItem || activeItem.item_type === "video") return;
+    const timer = setTimeout(
+      () => setIndex((i) => (i + 1) % items.length),
+      Math.max(activeItem.duration_seconds, 1) * 1000,
+    );
     return () => clearTimeout(timer);
-  }, [item, items.length]);
+  }, [activeItem, items.length]);
 
-  const style = {
+  const containerStyle = {
     position: "absolute" as const,
     left: `${zone.x_pct}%`, top: `${zone.y_pct}%`,
     width: `${zone.w_pct}%`, height: `${zone.h_pct}%`,
     overflow: "hidden" as const,
     background: "#1A1410",
   };
+  const mediaStyle = { width: "100%", height: "100%", objectFit: "contain" as const };
 
-  if (!item || !item.media_url) return <div style={style} />;
-
-  if (item.item_type === "video") {
-    // Unmuted autoplay only works inside the packaged Android TV app, where
-    // MainActivity disables the WebView's "media requires user gesture" policy.
-    // In a plain browser tab, Chrome/Firefox block unmuted autoplay entirely
-    // (the video will sit paused until the visitor interacts with the page
-    // once) — that's a browser policy, not a bug in this code.
-    return (
-      <div style={style}>
-        <video
-          key={item.media_url}
-          src={item.media_url}
-          autoPlay playsInline
-          onEnded={() => setIndex((i) => (i + 1) % items.length)}
-          style={{ width: "100%", height: "100%", objectFit: "contain" }}
-        />
-      </div>
-    );
-  }
-
+  // Render ALL items simultaneously, show/hide with display — this keeps every
+  // image/video in the browser's memory cache and prevents CDN re-downloads on
+  // every slide transition (the previous key={media_url} approach caused React
+  // to unmount+remount each element on every rotation, bypassing the cache).
   return (
-    <div style={style}>
-      <img key={item.media_url} src={item.media_url} style={{ width: "100%", height: "100%", objectFit: "contain" }} alt="" />
+    <div style={containerStyle}>
+      {items.map((it, i) => {
+        const visible = i === activeIndex;
+        const display = visible ? undefined : "none";
+        if (!it.media_url) return null;
+        if (it.item_type === "video") {
+          return (
+            // Unmuted autoplay only works inside the packaged Android TV app.
+            // In plain browser tabs Chrome/Firefox block unmuted autoplay until
+            // the user interacts — that's a browser policy, not a bug here.
+            <video
+              key={i}
+              src={it.media_url}
+              autoPlay playsInline
+              onEnded={() => visible && setIndex((idx) => (idx + 1) % items.length)}
+              style={{ ...mediaStyle, display }}
+            />
+          );
+        }
+        return (
+          <img key={i} src={it.media_url} style={{ ...mediaStyle, display }} alt="" />
+        );
+      })}
     </div>
   );
 }

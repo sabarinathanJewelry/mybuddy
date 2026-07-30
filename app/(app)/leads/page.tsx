@@ -152,7 +152,7 @@ function useMessages(leadId: string | null) {
   return useQuery<Message[]>({
     queryKey: ["whatsapp_messages", leadId],
     enabled: !!leadId,
-    refetchInterval: 5000,
+    refetchInterval: 30_000,
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("whatsapp_messages")

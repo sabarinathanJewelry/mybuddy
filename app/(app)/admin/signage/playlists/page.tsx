@@ -158,6 +158,28 @@ export default function SignagePlaylistsPage() {
       <SignageTabs />
       <h1 className="text-xl font-semibold text-ink">{t("signage_playlists")}</h1>
 
+      {/* Supabase Storage egress advisory */}
+      <div className="bg-warn/5 border border-warn/30 rounded-xl px-4 py-3 space-y-1.5">
+        <p className="text-sm font-semibold text-warn">Supabase Free Plan: 5 GB Storage Egress / month</p>
+        <p className="text-xs text-ink-dim">
+          Each image/video in a playlist is served from Supabase Storage CDN. The TV player now caches all media
+          in memory at startup so files are downloaded only <strong>once per session</strong> — not on every slide
+          rotation. To stay within the free limit:
+        </p>
+        <ul className="text-xs text-ink-dim list-disc list-inside space-y-0.5">
+          <li>Keep images under <strong>500 KB</strong> — compress before uploading (PNG→JPG, resize to 1920×1080 max)</li>
+          <li>Keep videos under <strong>10 MB</strong> — use H.264 MP4, 1080p, 2–3 Mbps bitrate</li>
+          <li>Fewer playlist items = less initial load. 5–8 items per zone is ideal</li>
+          <li>Restarting the TV app reloads all media — avoid unnecessary restarts</li>
+        </ul>
+        <a
+          href="https://supabase.com/dashboard/project/_/settings/billing"
+          target="_blank" rel="noopener noreferrer"
+          className="inline-block text-xs text-info underline mt-1">
+          View usage in Supabase dashboard →
+        </a>
+      </div>
+
       <div className="flex gap-2">
         <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="New playlist name" className={inp} />
         <button onClick={handleCreate} disabled={createPlaylist.isPending} className="bg-gold hover:bg-gold-dark text-white text-sm font-medium px-4 py-2 rounded-lg2 whitespace-nowrap">
