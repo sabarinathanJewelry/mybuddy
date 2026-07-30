@@ -790,11 +790,10 @@ function MonthlyTab() {
                                     const dayExpanded = expandedDayKey === dayKey;
                                     return (<Fragment key={d.date}>
                                     <tr
-                                      className={`border-b border-line last:border-0 ${!d.first_in ? "opacity-50" : ""}`}>
+                                      onClick={() => setExpandedDayKey(dayExpanded ? null : dayKey)}
+                                      className={`border-b border-line last:border-0 cursor-pointer hover:bg-canvas/60 ${dayExpanded ? "bg-canvas/40" : ""} ${!d.first_in ? "opacity-50" : ""}`}>
                                       <td className="py-1 pr-3 font-mono whitespace-nowrap">
-                                        <button onClick={() => setExpandedDayKey(dayExpanded ? null : dayKey)} className="text-left hover:text-gold">
-                                          {dayLabel(d.date)}
-                                        </button>
+                                        <span className={`${dayExpanded ? "text-gold" : ""}`}>{dayLabel(d.date)}</span>
                                       </td>
                                       <td className="py-1 px-2 text-center">
                                         <div className="flex flex-col items-center gap-0.5">
