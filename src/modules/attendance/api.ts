@@ -84,6 +84,7 @@ export type DailyAttendance = {
   punch_count: number;
   lunch_minutes: number | null;   // null = only 2 punches (no lunch tracked)
   double_punch_detected: boolean;
+  punchRows: { id: string; punch_time: string }[];
 };
 
 export type MonthlyEmployeeSummary = {
@@ -376,7 +377,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
       while (true) {
         const res = await client
           .from("attendance_logs")
-          .select("bio_user_id, punch_time")
+          .select("id, bio_user_id, punch_time")
           .in("bio_user_id", activeIds)
           .gte("punch_time", `${month}-01T00:00:00+05:30`)
           .lt("punch_time", `${nextMon}-01T00:00:00+05:30`)
@@ -410,7 +411,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
       );
 
       // Group logs by employee and IST calendar date
-      const byUserByDate = new Map<string, Map<string, string[]>>();
+      const byUserByDate = new Map<string, Map<string, { id: string; punch_time: string }[]>>();
       for (const log of logs) {
         const uid     = log.bio_user_id;
         const istDate = new Date(new Date(log.punch_time).getTime() + IST_MS)
@@ -419,7 +420,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
         if (!byUserByDate.has(uid)) byUserByDate.set(uid, new Map());
         const m = byUserByDate.get(uid)!;
         if (!m.has(istDate)) m.set(istDate, []);
-        m.get(istDate)!.push(log.punch_time);
+        m.get(istDate)!.push({ id: log.id, punch_time: log.punch_time });
       }
 
       // Enumerate every calendar date in the range (UTC dates = IST dates for full months)
@@ -434,7 +435,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
       return staff.map((s) => {
         const sh = (s.shift as string) ?? "boys";
         const shiftEndMin = sh === "girls" ? 20 * 60 + 30 : sh === "helper" ? 18 * 60 : 21 * 60 + 30;
-        const byDate = byUserByDate.get(s.bio_user_id) ?? new Map<string, string[]>();
+        const byDate = byUserByDate.get(s.bio_user_id) ?? new Map<string, { id: string; punch_time: string }[]>();
 
         // New joiners: only build/count days from their join date onward — days before
         // that never existed for them and shouldn't show as (or count toward) absences.
@@ -444,7 +445,8 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
 
         // Build per-day detail
         const daily: DailyAttendance[] = staffDates.map((date) => {
-          const rawDayPunches = [...(byDate.get(date) ?? [])].sort();
+          const rawDayPunchRows = [...(byDate.get(date) ?? [])].sort((a, b) => a.punch_time.localeCompare(b.punch_time));
+          const rawDayPunches = rawDayPunchRows.map((r) => r.punch_time);
           const { deduped: dayPunches, double_punch_detected } = deduplicatePunches(rawDayPunches);
           const firstIn  = dayPunches[0] ?? null;
           const lastOut  = dayPunches.length >= 2 && (dayPunches.length - 1) % 2 === 1 ? dayPunches[dayPunches.length - 1] : null;
@@ -476,7 +478,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
               : Math.max(0, hw - 1);
           }
 
-          return { date, first_in: firstIn, last_out: lastOut, is_late, late_minutes, ot_minutes, effective_hours, punch_count: dayPunches.length, lunch_minutes, double_punch_detected };
+          return { date, first_in: firstIn, last_out: lastOut, is_late, late_minutes, ot_minutes, effective_hours, punch_count: dayPunches.length, lunch_minutes, double_punch_detected, punchRows: rawDayPunchRows };
         });
 
         const staffTotalDays = joinDate && joinDate > lastDay
@@ -1863,7 +1865,10 @@ export function useDeletePunch(date: string) {
       const { error } = await supabase().from("attendance_logs").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance", date] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance", date] });
+      qc.invalidateQueries({ queryKey: ["monthly-attendance"] });
+    },
   });
 }
 
@@ -1874,7 +1879,10 @@ export function useEditPunch(date: string) {
       const { error } = await supabase().from("attendance_logs").update({ punch_time }).eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance", date] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance", date] });
+      qc.invalidateQueries({ queryKey: ["monthly-attendance"] });
+    },
   });
 }
 
@@ -1885,6 +1893,9 @@ export function useAddPunch(date: string) {
       const { error } = await supabase().from("attendance_logs").insert({ bio_user_id, punch_time });
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["attendance", date] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["attendance", date] });
+      qc.invalidateQueries({ queryKey: ["monthly-attendance"] });
+    },
   });
 }

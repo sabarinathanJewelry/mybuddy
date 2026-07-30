@@ -83,6 +83,61 @@ function dayLabel(dateStr: string): string {
   return `${String(d).padStart(2, "0")} ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dow]}`;
 }
 
+// ── Punch editor for monthly tab rows ────────────────────────────────────────
+function PunchEditor({ date, bio_user_id, punchRows }: { date: string; bio_user_id: string; punchRows: { id: string; punch_time: string }[] }) {
+  const [editId, setEditId]     = useState<string | null>(null);
+  const [editTime, setEditTime] = useState("");
+  const [adding, setAdding]     = useState(false);
+  const [addTime, setAddTime]   = useState("");
+  const deletePunch = useDeletePunch(date);
+  const editPunch   = useEditPunch(date);
+  const addPunch    = useAddPunch(date);
+
+  return (
+    <div className="p-2 space-y-1.5">
+      <p className="text-[10px] font-semibold text-ink-dim uppercase tracking-wide mb-1">
+        Punch Log ({punchRows.length})
+      </p>
+      {punchRows.map((p, i) => {
+        const label = i === 0 ? "IN" : i % 2 === 1 ? (i === punchRows.length - 1 ? "OUT" : "Out") : "In";
+        const color = i === 0 ? "text-ok" : i % 2 === 1 ? "text-err" : "text-info";
+        return (
+          <div key={p.id} className="flex items-center gap-2">
+            <span className={`text-[10px] font-bold w-7 ${color}`}>{label}</span>
+            {editId === p.id ? (
+              <>
+                <input type="time" value={editTime} onChange={e => setEditTime(e.target.value)} className={inp + " py-0.5 text-xs"} />
+                <button
+                  onClick={async () => { await editPunch.mutateAsync({ id: p.id, punch_time: `${date}T${editTime}:00.000+05:30` }); setEditId(null); }}
+                  className="text-[10px] text-ok hover:underline">Save</button>
+                <button onClick={() => setEditId(null)} className="text-[10px] text-ink-dim hover:underline">Cancel</button>
+              </>
+            ) : (
+              <>
+                <span className="font-mono text-xs text-ink">{formatTime(p.punch_time)}</span>
+                <button onClick={() => { setEditId(p.id); setEditTime(toISTHHMM(p.punch_time)); }} className="text-[10px] text-info hover:underline">Edit</button>
+                <button onClick={() => { if (confirm("Delete this punch?")) deletePunch.mutate(p.id); }} className="text-[10px] text-err hover:underline">Del</button>
+              </>
+            )}
+          </div>
+        );
+      })}
+      {adding ? (
+        <div className="flex items-center gap-2 pt-1">
+          <span className="text-[10px] text-ink-dim w-7">+</span>
+          <input type="time" value={addTime} onChange={e => setAddTime(e.target.value)} className={inp + " py-0.5 text-xs"} />
+          <button
+            onClick={async () => { if (!addTime) return; await addPunch.mutateAsync({ bio_user_id, punch_time: `${date}T${addTime}:00.000+05:30` }); setAdding(false); setAddTime(""); }}
+            className="text-[10px] text-ok hover:underline">Add</button>
+          <button onClick={() => { setAdding(false); setAddTime(""); }} className="text-[10px] text-ink-dim hover:underline">Cancel</button>
+        </div>
+      ) : (
+        <button onClick={() => setAdding(true)} className="text-[10px] text-gold hover:underline pt-1">+ Add punch</button>
+      )}
+    </div>
+  );
+}
+
 // ── Monthly Report tab ───────────────────────────────────────────────────────
 function MonthlyTab() {
   const today      = currentMonth();
@@ -92,8 +147,9 @@ function MonthlyTab() {
   const [applyFine, setApplyFine]     = useState(true);
   const [bulkLeaves, setBulkLeaves]   = useState(1);
   const [showNetPay, setShowNetPay]   = useState(true);
-  const [expandedId, setExpandedId]   = useState<string | null>(null);
-  const [editingId, setEditingId]     = useState<string | null>(null);
+  const [expandedId, setExpandedId]     = useState<string | null>(null);
+  const [expandedDayKey, setExpandedDayKey] = useState<string | null>(null);
+  const [editingId, setEditingId]       = useState<string | null>(null);
   const [editForm, setEditForm]       = useState({ monthly_salary: 0, allowed_leaves: 1, equalize_ot: false, fine_from: "", fine_to: "", fine_mode: "" as "" | "day" | "minute", fine_amt: "" as number | "", ot_rate_amt: "" as number | "", ot_rate_mode: "" as "" | "hour" | "minute" });
   const [staffFineRanges, setStaffFineRanges] = useState<Record<string, { from?: string; to?: string; fine_mode?: "day" | "minute"; fine_amt?: number; ot_rate_amt?: number; ot_rate_mode?: "hour" | "minute" }>>({});
   const [weekendPenalty, setWeekendPenalty] = useState(false);
@@ -729,10 +785,17 @@ function MonthlyTab() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {r.daily.map(d => (
-                                    <tr key={d.date}
+                                  {r.daily.map(d => {
+                                    const dayKey = `${r.bio_user_id}:${d.date}`;
+                                    const dayExpanded = expandedDayKey === dayKey;
+                                    return (<Fragment key={d.date}>
+                                    <tr
                                       className={`border-b border-line last:border-0 ${!d.first_in ? "opacity-50" : ""}`}>
-                                      <td className="py-1 pr-3 font-mono whitespace-nowrap">{dayLabel(d.date)}</td>
+                                      <td className="py-1 pr-3 font-mono whitespace-nowrap">
+                                        <button onClick={() => setExpandedDayKey(dayExpanded ? null : dayKey)} className="text-left hover:text-gold">
+                                          {dayLabel(d.date)}
+                                        </button>
+                                      </td>
                                       <td className="py-1 px-2 text-center">
                                         <div className="flex flex-col items-center gap-0.5">
                                           {!d.first_in ? (
@@ -790,7 +853,15 @@ function MonthlyTab() {
                                         {d.ot_minutes > 0 ? formatMins(d.ot_minutes) : "—"}
                                       </td>
                                     </tr>
-                                  ))}
+                                    {dayExpanded && (
+                                      <tr className="border-b border-line bg-canvas">
+                                        <td colSpan={9}>
+                                          <PunchEditor date={d.date} bio_user_id={r.bio_user_id} punchRows={d.punchRows} />
+                                        </td>
+                                      </tr>
+                                    )}
+                                    </Fragment>);
+                                  })}
                                 </tbody>
                               </table>
 
