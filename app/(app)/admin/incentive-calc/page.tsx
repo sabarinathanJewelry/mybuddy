@@ -16,7 +16,7 @@ interface CalcRow {
   netWt: number; balance: number; sp1: string; sp2: string;
   customer: string; mobile: string; billNo: string;
 }
-interface RowOverride  { balanceZero?: boolean; paidDate?: string; minWastage?: number; sp1Share?: number; wastage?: number; amountPaid?: number; writeOffAmt?: number; forceIneligible?: boolean; boardRate?: number; }
+interface RowOverride  { balanceZero?: boolean; paidDate?: string; minWastage?: number; sp1Share?: number; wastage?: number; amountPaid?: number; writeOffAmt?: number; forceIneligible?: boolean; boardRate?: number; rateOverride?: number; }
 
 // ─── Initial Master Rate Table (official incentive codes only) ─────────────────
 const INITIAL_MASTER: MasterEntry[] = [
@@ -373,7 +373,8 @@ function calcRow(
   mapper: MapperEntry[], master: MasterEntry[]
 ) {
   const { masterEntry, incentiveCode, mapped } = lookupProduct(row.product, row.netWt, mapper, master);
-  const rate       = masterEntry?.rate ?? 0;
+  const masterRate = masterEntry?.rate ?? 0;
+  const rate       = ov?.rateOverride ?? masterRate;
   const minWastage = ov?.minWastage ?? masterEntry?.minWastage ?? 0;
   const balance    = ov?.balanceZero ? 0 : row.balance;
   const sp1Share   = ov?.sp1Share   ?? defaultSplit;
@@ -393,7 +394,7 @@ function calcRow(
   const totalInc   = parseFloat((fullInc * recoveryPct / 100).toFixed(2));
   const sp1Inc     = row.sp2 ? parseFloat((totalInc * sp1Share / 100).toFixed(2)) : totalInc;
   const sp2Inc     = row.sp2 ? parseFloat((totalInc * (100 - sp1Share) / 100).toFixed(2)) : 0;
-  return { rate, minWastage, balance, sp1Share, wastage, eligible, fullInc, totalInc, recoveryPct, effectiveVA, mcLost, sp1Inc, sp2Inc, incentiveCode, mapped };
+  return { rate, masterRate, minWastage, balance, sp1Share, wastage, eligible, fullInc, totalInc, recoveryPct, effectiveVA, mcLost, sp1Inc, sp2Inc, incentiveCode, mapped };
 }
 
 // ─── Small inline editor ────────────────────────────────────────────────────────
@@ -1109,6 +1110,34 @@ export default function IncentiveCalcPage() {
                                 <span className="text-[9px] bg-warn/10 text-warn border border-warn/30 px-1 rounded">{eff.recoveryPct}%</span>
                               </span>
                             )}
+                            <span className="inline-flex items-center gap-1">
+                              <span className={`text-[10px] font-mono ${ov?.rateOverride !== undefined ? "text-info font-bold" : "text-ink-dim"}`}>
+                                <InlineNum value={eff.rate} onSave={v => setOv(row.idx, { rateOverride: v })} width={44} readOnly={!!lockInfo} />/g
+                              </span>
+                              {ov?.rateOverride !== undefined && (
+                                <span className="inline-flex items-center gap-0.5">
+                                  <span className="text-[9px] text-ink-dim line-through font-mono">{eff.masterRate}/g</span>
+                                  <button onClick={() => setOv(row.idx, { rateOverride: undefined })}
+                                    className="text-[9px] text-ink-dim hover:text-err">↩</button>
+                                </span>
+                              )}
+                            </span>
+                          </span>
+                        ) : eff.rate > 0 ? (
+                          <span className="inline-flex flex-col items-end gap-0.5">
+                            <span className="font-mono text-ink-dim">—</span>
+                            <span className="inline-flex items-center gap-1">
+                              <span className={`text-[10px] font-mono ${ov?.rateOverride !== undefined ? "text-info font-bold" : "text-ink-dim"}`}>
+                                <InlineNum value={eff.rate} onSave={v => setOv(row.idx, { rateOverride: v })} width={44} readOnly={!!lockInfo} />/g
+                              </span>
+                              {ov?.rateOverride !== undefined && (
+                                <span className="inline-flex items-center gap-0.5">
+                                  <span className="text-[9px] text-ink-dim line-through font-mono">{eff.masterRate}/g</span>
+                                  <button onClick={() => setOv(row.idx, { rateOverride: undefined })}
+                                    className="text-[9px] text-ink-dim hover:text-err">↩</button>
+                                </span>
+                              )}
+                            </span>
                           </span>
                         ) : <span className="font-mono text-ink-dim">—</span>}
                       </td>
