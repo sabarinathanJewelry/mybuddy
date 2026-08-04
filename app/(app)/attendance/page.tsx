@@ -381,7 +381,9 @@ function MonthlyTab() {
         .eq("bio_user_id", editingId!)
         .order("changed_at", { ascending: false })
         .limit(10);
-      return (rows ?? []) as { old_salary: number; new_salary: number; effective_month: string; changed_at: string }[];
+      // Deduplicate: drop entries where old→new→month are identical to the previous entry
+      const all = (rows ?? []) as { old_salary: number; new_salary: number; effective_month: string; changed_at: string }[];
+      return all.filter((r, i) => i === 0 || !(r.old_salary === all[i-1].old_salary && r.new_salary === all[i-1].new_salary && r.effective_month === all[i-1].effective_month));
     },
   });
   async function handleBulkLeaves() {

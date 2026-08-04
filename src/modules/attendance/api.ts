@@ -265,6 +265,7 @@ export function useUpdateStaff() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["staff"] });
       qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["monthly-attendance"] });
     },
   });
 }
