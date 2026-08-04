@@ -118,11 +118,24 @@ function NumCell({ value, onChange, highlight, warn, readOnly }: { value: number
 }
 
 // ─── Incentive calc (mirrors incentive-calc page) ──────────────────────────────
-// lockedRows: { "rowIdx": { staff, period } } — rows already paid; skip them
+type LockedRow = { staff: string; period: string; lockedAt?: string };
+
+// Per-staff latest lock date — used to filter arrear: only bills marked paid AFTER lock date
+function getStaffLockDates(lockedRows: Record<string, LockedRow>): Map<string, string> {
+  const dates = new Map<string, string>();
+  for (const row of Object.values(lockedRows)) {
+    if (!row.lockedAt) continue;
+    const existing = dates.get(row.staff);
+    if (!existing || row.lockedAt > existing) dates.set(row.staff, row.lockedAt);
+  }
+  return dates;
+}
+
+// lockedRows: { "rowIdx": { staff, period, lockedAt? } } — rows already paid; skip them
 // paidOverridesOnly: when true, only count items manually marked paid (balanceZero override)
 function calcStaffIncentives(
   sheetData: any,
-  lockedRows: Record<string, { staff: string; period: string }> = {},
+  lockedRows: Record<string, LockedRow> = {},
   paidOverridesOnly = false
 ): Map<string, number> {
   const rawData = sheetData.raw_data as string;
@@ -134,6 +147,7 @@ function calcStaffIncentives(
   const hi = lines.findIndex((l: string) => /date/i.test(l) && /product/i.test(l) && /net.?wt/i.test(l));
   if (hi < 0) return new Map();
   const staffInc = new Map<string, number>();
+  const staffLockDates = paidOverridesOnly ? getStaffLockDates(lockedRows) : new Map<string, string>();
   lines.slice(hi + 1).forEach((line: string, i: number) => {
     if (lockedRows[String(i)]) return; // already paid in a previous period
     const c = line.split("\t");
@@ -146,6 +160,12 @@ function calcStaffIncentives(
     if (balance > 0) return;
     const sp1 = (c[5] ?? "").trim();
     const sp2 = (c[6] ?? "").trim();
+    // arrear mode: skip bills marked paid on or before the staff member's lock date
+    // (those were already included in the regular monthly incentive)
+    if (paidOverridesOnly && ov.paidDate) {
+      const lockDate = staffLockDates.get(sp1) || staffLockDates.get(sp2);
+      if (lockDate && ov.paidDate <= lockDate) return;
+    }
     const split = ov.sp1Share ?? defaultSplit;
     const product = (c[1] ?? "").trim().toUpperCase();
     const rawWastage = parseFloat((c[3] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
@@ -173,7 +193,7 @@ function calcStaffIncentives(
 function getEligibleRowsForStaff(
   sheetData: any,
   staffName: string,
-  lockedRows: Record<string, { staff: string; period: string }>
+  lockedRows: Record<string, LockedRow>
 ): number[] {
   const rawData = sheetData.raw_data as string;
   const overrides = sheetData.overrides ?? {};
@@ -216,7 +236,7 @@ function getEligibleRowsForStaff(
 // Returns per-staff list of bills that are arrear-eligible (balanceZero=true), with carry-forward bill metadata
 function getArrearBillDetails(
   sheetData: any,
-  lockedRows: Record<string, { staff: string; period: string }>
+  lockedRows: Record<string, LockedRow>
 ): Map<string, ArrearBill[]> {
   const rawData = sheetData.raw_data as string;
   const overrides = sheetData.overrides ?? {};
@@ -227,6 +247,7 @@ function getArrearBillDetails(
   const hi = lines.findIndex((l: string) => /date/i.test(l) && /product/i.test(l) && /net.?wt/i.test(l));
   if (hi < 0) return new Map();
   const result = new Map<string, ArrearBill[]>();
+  const staffLockDates = getStaffLockDates(lockedRows);
   let lastDate = "", lastCustomer = "", lastBillNo = "";
   lines.slice(hi + 1).forEach((line: string, i: number) => {
     if (!line.trim()) return;
@@ -245,6 +266,11 @@ function getArrearBillDetails(
     const sp1 = (c[5] ?? "").trim();
     const sp2 = (c[6] ?? "").trim();
     if (!sp1 && !sp2) return;
+    // skip bills marked paid on or before the staff member's lock date
+    if (ov.paidDate) {
+      const lockDate = staffLockDates.get(sp1) || staffLockDates.get(sp2);
+      if (lockDate && ov.paidDate <= lockDate) return;
+    }
     const split = ov.sp1Share ?? defaultSplit;
     const product = (c[1] ?? "").trim().toUpperCase();
     const rawWastage = parseFloat((c[3] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
@@ -304,7 +330,7 @@ export default function PayrollPage() {
   const [incSheetId, setIncSheetId]         = useState<string | null>(null);
   const [incSheetData, setIncSheetData]     = useState<any>(null);
   const [incSheetPeriod, setIncSheetPeriod] = useState<string>("");
-  const [incLockedRows, setIncLockedRows]   = useState<Record<string, { staff: string; period: string }>>({});
+  const [incLockedRows, setIncLockedRows]   = useState<Record<string, LockedRow>>({});
   const [lockedStaff, setLockedStaff]       = useState<Set<string>>(new Set());
   const [appliedIncSheetIds, setAppliedIncSheetIds] = useState<string[]>([]);
   const [arrearBillsMap, setArrearBillsMap] = useState<Map<string, ArrearBill[]>>(new Map());
@@ -522,9 +548,10 @@ export default function PayrollPage() {
       if (!incSheetId || !incSheetData) throw new Error("No incentive sheet loaded");
       const rowIndices = getEligibleRowsForStaff(incSheetData, staffName, incLockedRows);
       if (rowIndices.length === 0) return staffName;
+      const lockedAt = new Date().toISOString().slice(0, 10);
       const newLocked = { ...incLockedRows };
       for (const idx of rowIndices) {
-        newLocked[String(idx)] = { staff: staffName, period };
+        newLocked[String(idx)] = { staff: staffName, period, lockedAt };
       }
       const { error } = await supabase()
         .from("incentive_sheets")
