@@ -235,6 +235,18 @@ function getEligibleRowsForStaff(
   return indices;
 }
 
+// Scans all balanceZero overrides and returns the earliest paidDate — used as auto-default cutoff
+function detectCutoffDate(sheetData: any): string {
+  const overrides = sheetData?.overrides ?? {};
+  let minDate = "";
+  for (const ov of Object.values(overrides) as any[]) {
+    if (ov.balanceZero && ov.paidDate) {
+      if (!minDate || ov.paidDate < minDate) minDate = ov.paidDate;
+    }
+  }
+  return minDate;
+}
+
 // Returns per-staff list of bills that are arrear-eligible (balanceZero=true), with carry-forward bill metadata
 function getArrearBillDetails(
   sheetData: any,
@@ -467,9 +479,14 @@ export default function PayrollPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attSummary, attLoading]);
 
-  // Recalculate pending amounts when arrear toggle changes
+  // Recalculate pending amounts when arrear toggle or cutoff date changes
   useEffect(() => {
     if (!incSheetData || loadStep !== "map_names") return;
+    // Auto-detect cutoff from earliest paidDate when arrear mode is first enabled
+    if (loadAsArrear && !arrearCutoffDate) {
+      const detected = detectCutoffDate(incSheetData);
+      if (detected) { setArrearCutoffDate(detected); return; } // effect re-runs with detected date
+    }
     const staffInc = calcStaffIncentives(incSheetData, incLockedRows, loadAsArrear, arrearCutoffDate);
     setPendingInc(staffInc);
     if (loadAsArrear) {
@@ -493,6 +510,7 @@ export default function PayrollPage() {
     setIncSheetData(d);
     setIncSheetPeriod(d.period ?? "");
     setIncLockedRows(locked);
+    setArrearCutoffDate("");
     const staffInc = calcStaffIncentives(d, locked);
     const initial: Record<string, string> = {};
     for (const incName of staffInc.keys()) {
