@@ -16,6 +16,7 @@ interface ArrearBill {
   billNo: string;
   netWt: number;
   inc: number;
+  paidDate?: string;  // date admin marked "Paid ✓" in incentive sheet
 }
 
 interface PayEntry {
@@ -262,11 +263,11 @@ function getArrearBillDetails(
     const sp1Inc = sp2 ? parseFloat((total * split / 100).toFixed(2)) : total;
     const sp2Inc = sp2 ? parseFloat((total * (100 - split) / 100).toFixed(2)) : 0;
     if (sp1) {
-      const bill: ArrearBill = { date: lastDate, product, customer: lastCustomer, billNo: lastBillNo, netWt, inc: sp1Inc };
+      const bill: ArrearBill = { date: lastDate, product, customer: lastCustomer, billNo: lastBillNo, netWt, inc: sp1Inc, paidDate: ov.paidDate };
       result.set(sp1, [...(result.get(sp1) ?? []), bill]);
     }
     if (sp2) {
-      const bill: ArrearBill = { date: lastDate, product, customer: lastCustomer, billNo: lastBillNo, netWt, inc: sp2Inc };
+      const bill: ArrearBill = { date: lastDate, product, customer: lastCustomer, billNo: lastBillNo, netWt, inc: sp2Inc, paidDate: ov.paidDate };
       result.set(sp2, [...(result.get(sp2) ?? []), bill]);
     }
   });
@@ -790,7 +791,8 @@ export default function PayrollPage() {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="bg-canvas text-ink-dim border-b border-line sticky top-0">
-                    <th className="text-left px-3 py-2 font-medium">Date</th>
+                    <th className="text-left px-3 py-2 font-medium">Sale Date</th>
+                    <th className="text-left px-3 py-2 font-medium">Paid On</th>
                     <th className="text-left px-3 py-2 font-medium">Bill No</th>
                     <th className="text-left px-3 py-2 font-medium">Customer</th>
                     <th className="text-left px-3 py-2 font-medium">Product</th>
@@ -802,6 +804,7 @@ export default function PayrollPage() {
                   {(auditEntry.arrearBills ?? []).map((b, i) => (
                     <tr key={i} className="border-b border-line last:border-0 hover:bg-canvas/50">
                       <td className="px-3 py-2 text-ink-dim whitespace-nowrap">{b.date}</td>
+                      <td className={clsx("px-3 py-2 font-mono whitespace-nowrap font-medium", b.paidDate ? "text-ok" : "text-ink-dim")}>{b.paidDate || "—"}</td>
                       <td className="px-3 py-2 font-mono text-ink-dim whitespace-nowrap">{b.billNo || "—"}</td>
                       <td className="px-3 py-2 truncate max-w-[140px]">{b.customer || "—"}</td>
                       <td className="px-3 py-2 truncate max-w-[120px]">{b.product}</td>
@@ -812,7 +815,7 @@ export default function PayrollPage() {
                 </tbody>
                 <tfoot>
                   <tr className="bg-canvas border-t-2 border-line font-semibold">
-                    <td colSpan={5} className="px-3 py-2 text-ink-dim">Total</td>
+                    <td colSpan={6} className="px-3 py-2 text-ink-dim">Total</td>
                     <td className="px-3 py-2 text-right text-ok">{inr(auditEntry.arrear)}</td>
                   </tr>
                 </tfoot>
@@ -921,7 +924,8 @@ export default function PayrollPage() {
                                     <table className="w-full">
                                       <thead>
                                         <tr className="bg-canvas text-ink-dim">
-                                          <th className="text-left px-2 py-1 font-medium">Date</th>
+                                          <th className="text-left px-2 py-1 font-medium">Sale Date</th>
+                                          <th className="text-left px-2 py-1 font-medium">Paid On</th>
                                           <th className="text-left px-2 py-1 font-medium">Bill No</th>
                                           <th className="text-left px-2 py-1 font-medium">Customer</th>
                                           <th className="text-left px-2 py-1 font-medium">Product</th>
@@ -932,6 +936,7 @@ export default function PayrollPage() {
                                         {bills.map((b, bi) => (
                                           <tr key={bi} className="border-t border-line">
                                             <td className="px-2 py-1 text-ink-dim whitespace-nowrap">{b.date}</td>
+                                            <td className={clsx("px-2 py-1 font-mono whitespace-nowrap font-medium", b.paidDate ? "text-ok" : "text-ink-dim")}>{b.paidDate || "—"}</td>
                                             <td className="px-2 py-1 font-mono text-ink-dim whitespace-nowrap">{b.billNo || "—"}</td>
                                             <td className="px-2 py-1 truncate max-w-[100px]">{b.customer || "—"}</td>
                                             <td className="px-2 py-1 truncate max-w-[80px]">{b.product}</td>
