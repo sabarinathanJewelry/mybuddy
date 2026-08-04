@@ -153,6 +153,7 @@ function MonthlyTab() {
   const [editForm, setEditForm]       = useState({ monthly_salary: 0, allowed_leaves: 1, equalize_ot: false, fine_from: "", fine_to: "", fine_mode: "" as "" | "day" | "minute", fine_amt: "" as number | "", ot_rate_amt: "" as number | "", ot_rate_mode: "" as "" | "hour" | "minute" });
   const [staffFineRanges, setStaffFineRanges] = useState<Record<string, { from?: string; to?: string; fine_mode?: "day" | "minute"; fine_amt?: number; ot_rate_amt?: number; ot_rate_mode?: "hour" | "minute" }>>({});
   const [weekendPenalty, setWeekendPenalty] = useState(false);
+  const [warningShown, setWarningShown]     = useState<Set<string>>(new Set());
   const [equalizeOt, setEqualizeOt]         = useState(true);
   const [applyOt, setApplyOt]               = useState(false);
   const [otRateAmt, setOtRateAmt]           = useState(50);
@@ -332,6 +333,19 @@ function MonthlyTab() {
     const isPartialMonth = r.join_date && r.join_date.slice(0, 7) === month;
     const basePay = isPartialMonth ? r.total_days * r.per_day_salary : r.monthly_salary;
     return basePay - r.leave_deduction - calcWeekendExtra(r) - calcFine(r) + calcOtPay(r);
+  }
+  function conductIssues(r: MonthlyEmployeeSummary) {
+    const late   = effectiveLateDays(r);
+    const absent = r.excess_leave_days;
+    const double = r.days_double_punch;
+    return { late, absent, double, total: late + absent + double };
+  }
+  function toggleWarning(id: string) {
+    setWarningShown(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
   }
 
   function startEdit(r: MonthlyEmployeeSummary) {
@@ -611,6 +625,11 @@ function MonthlyTab() {
                         }`}>
                           {r.shift === "girls" ? "G" : "B"}
                         </span>
+                        {(() => { const c = conductIssues(r); return c.total > 0 ? (
+                          <span className="ml-1.5 text-[10px] font-semibold px-1 py-0.5 rounded bg-err/10 text-err">
+                            {c.total} issue{c.total !== 1 ? "s" : ""}
+                          </span>
+                        ) : null; })()}
                       </td>
                       <td className="px-3 py-2.5 text-right font-mono text-xs">
                         {r.monthly_salary > 0 ? inr(r.monthly_salary) : <span className="text-ink-dim">—</span>}
@@ -1148,6 +1167,77 @@ function MonthlyTab() {
                                 </div>
                               </div>
                             </div>
+
+                            {/* Conduct & Contact card */}
+                            {(() => {
+                              const c = conductIssues(r);
+                              const projected = c.total * 10;
+                              return (
+                                <div className="w-60 shrink-0 bg-white rounded-xl border border-line p-4 text-xs shadow-soft space-y-2">
+                                  <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide">Contact & Conduct</p>
+
+                                  {r.phone ? (
+                                    <a href={`tel:${r.phone}`} className="block font-mono text-info hover:underline">{r.phone}</a>
+                                  ) : (
+                                    <span className="text-ink-dim">No phone on record</span>
+                                  )}
+
+                                  <div className="border-t border-line pt-2 space-y-1">
+                                    <div className="flex justify-between">
+                                      <span className={c.late > 0 ? "text-warn" : "text-ink-dim"}>Late arrivals</span>
+                                      <span className={`font-medium ${c.late > 0 ? "text-warn" : "text-ink-dim"}`}>{c.late} days</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className={c.absent > 0 ? "text-err" : "text-ink-dim"}>Excess absences</span>
+                                      <span className={`font-medium ${c.absent > 0 ? "text-err" : "text-ink-dim"}`}>{c.absent} days</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className={c.double > 0 ? "text-warn" : "text-ink-dim"}>Double punches</span>
+                                      <span className={`font-medium ${c.double > 0 ? "text-warn" : "text-ink-dim"}`}>{c.double} days</span>
+                                    </div>
+                                    <div className="flex justify-between border-t border-line pt-1 mt-1">
+                                      <span className={c.total > 0 ? "text-err font-semibold" : "text-ink-dim"}>Total issues</span>
+                                      <span className={`font-semibold ${c.total > 0 ? "text-err" : "text-ok"}`}>{c.total > 0 ? c.total : "None"}</span>
+                                    </div>
+                                  </div>
+
+                                  {c.total > 0 && (
+                                    <div className="border-t border-line pt-2 space-y-2">
+                                      <button
+                                        onClick={e => { e.stopPropagation(); toggleWarning(r.bio_user_id); }}
+                                        className={`w-full text-xs px-2 py-1.5 rounded-lg2 border font-medium transition-colors ${
+                                          warningShown.has(r.bio_user_id)
+                                            ? "bg-err/10 border-err/30 text-err"
+                                            : "border-line text-ink-dim hover:border-err/40 hover:text-err"
+                                        }`}
+                                      >
+                                        {warningShown.has(r.bio_user_id) ? "Hide Warning" : "Show Warning"}
+                                      </button>
+                                      {warningShown.has(r.bio_user_id) && (
+                                        <div className="p-2.5 bg-err/5 border border-err/20 rounded-lg2 text-[11px] text-ink leading-relaxed">
+                                          <p className="font-semibold text-err mb-1.5">Warning Notice</p>
+                                          <p>
+                                            Dear <strong>{r.name}</strong>, your attendance this month shows{" "}
+                                            <strong>{c.total} conduct issue{c.total !== 1 ? "s" : ""}</strong>
+                                            {c.late > 0 && ` — ${c.late} late arrival${c.late !== 1 ? "s" : ""}`}
+                                            {c.absent > 0 && `, ${c.absent} excess absence${c.absent !== 1 ? "s" : ""}`}
+                                            {c.double > 0 && `, ${c.double} double punch${c.double !== 1 ? "es" : ""}`}.
+                                            {" "}If this continues next month,{" "}
+                                            <strong className="text-err">₹{projected} will be deducted</strong> from your salary (₹10 per issue).
+                                            Please maintain punctuality and attendance.
+                                          </p>
+                                          <p className="mt-1.5 text-ink-dim text-right text-[10px]">— Management</p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {c.total === 0 && (
+                                    <p className="text-ok text-center pt-1 font-medium">No conduct issues</p>
+                                  )}
+                                </div>
+                              );
+                            })()}
 
                           </div>
                         </td>
