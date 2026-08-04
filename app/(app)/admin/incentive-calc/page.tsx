@@ -1418,7 +1418,8 @@ export default function IncentiveCalcPage() {
                   <thead>
                     <tr className="text-ink-dim border-b border-line bg-canvas/50">
                       <th className="text-left px-3 py-2">Incentive Code</th>
-                      <th className="text-right px-3 py-2">Rate (₹/g)</th>
+                      <th className="text-right px-3 py-2">Rate</th>
+                      <th className="text-center px-3 py-2">Type</th>
                       <th className="text-right px-3 py-2">Min Wastage %</th>
                       <th className="px-3 py-2 w-10" />
                     </tr>
@@ -1431,6 +1432,18 @@ export default function IncentiveCalcPage() {
                         </td>
                         <td className="px-3 py-1.5 text-right text-ok font-semibold">
                           <InlineNum value={m.rate} onSave={v => updateMaster(i, { rate: v })} />
+                        </td>
+                        <td className="px-3 py-1.5 text-center">
+                          <button
+                            onClick={() => updateMaster(i, { perSale: !m.perSale })}
+                            className={`text-[10px] font-semibold px-2 py-0.5 rounded border transition-colors ${
+                              m.perSale
+                                ? "bg-info/10 border-info/30 text-info"
+                                : "bg-canvas border-line text-ink-dim"
+                            }`}
+                          >
+                            {m.perSale ? "per sale" : "per gram"}
+                          </button>
                         </td>
                         <td className="px-3 py-1.5 text-right text-ink-dim">
                           <InlineNum value={m.minWastage} onSave={v => updateMaster(i, { minWastage: v })} />%
