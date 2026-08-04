@@ -20,6 +20,7 @@ interface PayEntry {
   advance: number;
   incentive: number;
   arrear: number;
+  arrearSource?: string;
   paid?: boolean;
   payMode?: "cash" | "bank";
 }
@@ -79,7 +80,7 @@ ${e.deduction > 0 ? `<tr class="ded"><td>Leave Deduction</td><td>− ${inrFmt(e.
 ${(e.fine ?? 0) > 0 ? `<tr class="ded"><td>Fine</td><td>− ${inrFmt(e.fine ?? 0)}</td></tr>` : ""}
 ${e.advance > 0 ? `<tr class="ded"><td>Advance Recovered</td><td>− ${inrFmt(e.advance)}</td></tr>` : ""}
 ${e.incentive > 0 ? `<tr class="add"><td>Incentive</td><td>+ ${inrFmt(e.incentive)}</td></tr>` : ""}
-${e.arrear > 0 ? `<tr class="add"><td>Arrear</td><td>+ ${inrFmt(e.arrear)}</td></tr>` : ""}
+${e.arrear > 0 ? `<tr class="add"><td>Arrear${(e as any).arrearSource ? ` (${(e as any).arrearSource} Incentive)` : ""}</td><td>+ ${inrFmt(e.arrear)}</td></tr>` : ""}
 <tr class="tot" style="${d.salary < 0 ? "color:#c0392b" : ""}"><td>Net Salary</td><td>${d.salary < 0 ? "− " : ""}${inrFmt(d.salary)}</td></tr>
 </table>
 <p style="font-size:11px;color:#aaa;text-align:center;margin-top:24px">
@@ -409,7 +410,7 @@ export default function PayrollPage() {
     setEntries(prev => prev.map(e => {
       const inc = rounded.get(e.name.toUpperCase());
       if (inc === undefined) return e;
-      return loadAsArrear ? { ...e, arrear: (e.arrear || 0) + inc } : { ...e, incentive: inc };
+      return loadAsArrear ? { ...e, arrear: (e.arrear || 0) + inc, arrearSource: incSheetPeriod || e.arrearSource } : { ...e, incentive: inc };
     }));
     if (incSheetId) setAppliedIncSheetIds(prev => prev.includes(incSheetId) ? prev : [...prev, incSheetId]);
     setMapSaving(false);
@@ -883,7 +884,12 @@ export default function PayrollPage() {
                       <NumCell value={e.incentive} onChange={v => updateField(e.id, { incentive: v })} highlight={e.incentive > 0} readOnly={e.paid} />
                     </td>
                     <td className="px-2 py-1.5 w-24">
-                      <NumCell value={e.arrear} onChange={v => updateField(e.id, { arrear: v })} highlight={e.arrear > 0} readOnly={e.paid} />
+                      <div className="space-y-0.5">
+                        <NumCell value={e.arrear} onChange={v => updateField(e.id, { arrear: v })} highlight={e.arrear > 0} readOnly={e.paid} />
+                        {e.arrear > 0 && e.arrearSource && (
+                          <p className="text-[10px] text-info text-right leading-tight">{e.arrearSource} inc.</p>
+                        )}
+                      </div>
                     </td>
                     <td className="px-2 py-1.5 text-right font-mono text-xs text-ink-dim whitespace-nowrap">
                       {inr(d.calculated)}
