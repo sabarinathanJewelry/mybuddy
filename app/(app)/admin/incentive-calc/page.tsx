@@ -703,7 +703,13 @@ export default function IncentiveCalcPage() {
     setDefaultSplit(d.default_split ?? 70);
     setPeriod(d.period);
     setLockedRows(d.locked_rows ?? {});
-    if (d.mapper_entries) setMapperEntries(d.mapper_entries);
+    if (d.mapper_entries) {
+      // Merge any new INITIAL_MAPPER entries not present in the saved sheet
+      const saved = d.mapper_entries as MapperEntry[];
+      const savedNames = new Set(saved.map((m: MapperEntry) => m.erpName.toUpperCase()));
+      const merged = [...saved, ...INITIAL_MAPPER.filter(m => !savedNames.has(m.erpName.toUpperCase()))];
+      setMapperEntries(merged);
+    }
     if (d.master_entries) {
       // Apply perSale flag from INITIAL_MASTER — not persisted in DB, always derived from code
       const withFlags = (d.master_entries as MasterEntry[]).map(e => {
