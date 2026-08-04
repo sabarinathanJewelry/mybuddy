@@ -506,7 +506,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
         const absent_days       = Math.max(0, staffTotalDays - present_days);
         const allowed_leaves    = (s.allowed_leaves as number) ?? 1;
         const excess_leave_days = Math.max(0, absent_days - allowed_leaves);
-        const per_day_salary    = staffTotalDays > 0 ? ((s.monthly_salary as number) ?? 0) / staffTotalDays : 0;
+        const per_day_salary    = ((s.monthly_salary as number) ?? 0) / 30;
         const leave_deduction   = excess_leave_days * per_day_salary;
 
         return {

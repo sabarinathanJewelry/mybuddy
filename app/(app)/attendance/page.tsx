@@ -329,7 +329,9 @@ function MonthlyTab() {
     return weekendAbsent * r.per_day_salary;
   }
   function calcNet(r: MonthlyEmployeeSummary): number {
-    return r.monthly_salary - r.leave_deduction - calcWeekendExtra(r) - calcFine(r) + calcOtPay(r);
+    const isPartialMonth = r.join_date && r.join_date.slice(0, 7) === month;
+    const basePay = isPartialMonth ? r.total_days * r.per_day_salary : r.monthly_salary;
+    return basePay - r.leave_deduction - calcWeekendExtra(r) - calcFine(r) + calcOtPay(r);
   }
 
   function startEdit(r: MonthlyEmployeeSummary) {
@@ -913,7 +915,7 @@ function MonthlyTab() {
                                 <span className="font-mono font-medium">{inr(r.monthly_salary)}</span>
                               </div>
                               <div className="flex justify-between text-ink-dim">
-                                <span>÷ {r.total_days} working days</span>
+                                <span>÷ 30 days{r.join_date && r.join_date.slice(0, 7) === month ? ` × ${r.total_days} in period` : ""}</span>
                                 <span className="font-mono">{inr(Math.round(r.per_day_salary))}/day</span>
                               </div>
 
