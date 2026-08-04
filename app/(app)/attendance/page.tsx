@@ -366,7 +366,7 @@ function MonthlyTab() {
     setStaffFineRanges(newRanges);
     const settingsValue = { late_fine_amt: lateFineAmt, fine_mode: fineMode, apply_fine: applyFine, equalize_ot: equalizeOt, apply_ot: applyOt, ot_rate_amt: otRateAmt, ot_rate_mode: otRateMode, weekend_penalty: weekendPenalty, fine_from_date: fineFromDate, staff_fine_ranges: newRanges };
     await supabase().from("app_settings").upsert({ key: settingsKey, value: settingsValue }, { onConflict: "key" });
-    const { equalize_ot, fine_from: _ff, fine_to: _ft, ...staffUpdate } = editForm;
+    const { equalize_ot, fine_from: _ff, fine_to: _ft, fine_mode: _fm, fine_amt: _fa, ot_rate_amt: _ora, ot_rate_mode: _orm, ...staffUpdate } = editForm;
     await update.mutateAsync({ bio_user_id, ...staffUpdate, equalize_ot });
     setEditingId(null);
   }
