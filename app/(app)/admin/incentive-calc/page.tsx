@@ -122,6 +122,7 @@ const INITIAL_MASTER: MasterEntry[] = [
   { code: "DIAMOND STUD",           rate: 200, minWastage: 1, perSale: true },
   { code: "DIAMOND RING",           rate: 200, minWastage: 1, perSale: true },
   { code: "DIAMOND NECKLACE",       rate: 500, minWastage: 1, perSale: true },
+  { code: "DIA NECKLACE",           rate: 500, minWastage: 1, perSale: true },
   { code: "SB",                     rate: 0,   minWastage: 1  },
   { code: "S",                      rate: 0.5, minWastage: 1  },
   { code: "92.5-S",                 rate: 5,   minWastage: 1  },
