@@ -704,7 +704,14 @@ export default function IncentiveCalcPage() {
     setPeriod(d.period);
     setLockedRows(d.locked_rows ?? {});
     if (d.mapper_entries) setMapperEntries(d.mapper_entries);
-    if (d.master_entries) setMasterEntries(d.master_entries);
+    if (d.master_entries) {
+      // Apply perSale flag from INITIAL_MASTER — not persisted in DB, always derived from code
+      const withFlags = (d.master_entries as MasterEntry[]).map(e => {
+        const init = INITIAL_MASTER.find(m => m.code === e.code);
+        return init?.perSale ? { ...e, perSale: true } : e;
+      });
+      setMasterEntries(withFlags);
+    }
     setSavedSheetId(id);
     setSaveStatus("idle");
     // Re-parse
