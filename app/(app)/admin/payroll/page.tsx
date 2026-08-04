@@ -226,8 +226,10 @@ export default function PayrollPage() {
   // ── Incentive sheet lock tracking
   const [incSheetId, setIncSheetId]         = useState<string | null>(null);
   const [incSheetData, setIncSheetData]     = useState<any>(null);
+  const [incSheetPeriod, setIncSheetPeriod] = useState<string>("");
   const [incLockedRows, setIncLockedRows]   = useState<Record<string, { staff: string; period: string }>>({});
   const [lockedStaff, setLockedStaff]       = useState<Set<string>>(new Set());
+  const [appliedIncSheetIds, setAppliedIncSheetIds] = useState<string[]>([]);
 
   // ── Inactive staff picker
   const [showInactivePicker, setShowInactivePicker] = useState(false);
@@ -366,13 +368,14 @@ export default function PayrollPage() {
   // ── Incentive load step 1: select sheet
   async function selectIncentiveSheet(id: string) {
     const { data } = await supabase().from("incentive_sheets")
-      .select("master_entries, mapper_entries, raw_data, overrides, default_split, locked_rows")
+      .select("period, master_entries, mapper_entries, raw_data, overrides, default_split, locked_rows")
       .eq("id", id).single();
     if (!data) return;
     const d = data as any;
     const locked = d.locked_rows ?? {};
     setIncSheetId(id);
     setIncSheetData(d);
+    setIncSheetPeriod(d.period ?? "");
     setIncLockedRows(locked);
     const staffInc = calcStaffIncentives(d, locked);
     const initial: Record<string, string> = {};
@@ -408,6 +411,7 @@ export default function PayrollPage() {
       if (inc === undefined) return e;
       return loadAsArrear ? { ...e, arrear: (e.arrear || 0) + inc } : { ...e, incentive: inc };
     }));
+    if (incSheetId) setAppliedIncSheetIds(prev => prev.includes(incSheetId) ? prev : [...prev, incSheetId]);
     setMapSaving(false);
     setLoadStep(null);
     setPendingInc(new Map());
@@ -441,7 +445,7 @@ export default function PayrollPage() {
   const saveSheet = useMutation({
     mutationFn: async () => {
       setSaveStatus("saving");
-      const payload = { period, entries, updated_at: new Date().toISOString() };
+      const payload = { period, entries, applied_inc_sheet_ids: appliedIncSheetIds, updated_at: new Date().toISOString() };
       const client = supabase();
       if (savedSheetId) {
         const { error } = await client.from("payroll_sheets").update(payload).eq("id", savedSheetId);
@@ -473,6 +477,7 @@ export default function PayrollPage() {
     if (!data) return;
     const d = data as any;
     setPeriod(d.period); setEntries(d.entries ?? []); setSavedSheetId(id); setSaveStatus("idle");
+    setAppliedIncSheetIds(d.applied_inc_sheet_ids ?? []);
   }
 
   function initFromStaff() {
@@ -674,13 +679,19 @@ export default function PayrollPage() {
           <div className="bg-white rounded-xl border border-line shadow-soft p-5 w-full max-w-sm space-y-3">
             <h2 className="font-semibold text-sm">Select Incentive Sheet</h2>
             <div className="space-y-1.5 max-h-64 overflow-y-auto">
-              {incentiveSheets.map(s => (
-                <button key={s.id} onClick={() => selectIncentiveSheet(s.id)}
-                  className="w-full flex items-center justify-between border border-line rounded-lg2 px-3 py-2 text-sm hover:border-gold hover:bg-gold/5 text-left">
-                  <span className="font-medium">{s.period}</span>
-                  <span className="text-xs text-ink-dim">{new Date(s.updated_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>
-                </button>
-              ))}
+              {incentiveSheets.map(s => {
+                const alreadyApplied = appliedIncSheetIds.includes(s.id);
+                return (
+                  <button key={s.id} onClick={() => selectIncentiveSheet(s.id)}
+                    className={`w-full flex items-center justify-between border rounded-lg2 px-3 py-2 text-sm text-left ${alreadyApplied ? "border-warn/40 bg-warn/5 hover:border-warn" : "border-line hover:border-gold hover:bg-gold/5"}`}>
+                    <span className="font-medium">{s.period}</span>
+                    <span className="flex items-center gap-2">
+                      {alreadyApplied && <span className="text-[10px] bg-warn/20 text-warn px-1.5 py-0.5 rounded font-semibold">Already applied</span>}
+                      <span className="text-xs text-ink-dim">{new Date(s.updated_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
             <button onClick={() => setLoadStep(null)} className="w-full border border-line text-sm px-4 py-2 rounded-lg2 text-ink-dim">Cancel</button>
           </div>
@@ -695,6 +706,15 @@ export default function PayrollPage() {
               <div>
                 <h2 className="font-semibold text-sm">Map Incentive Names → Staff Names</h2>
                 <p className="text-xs text-ink-dim mt-1">Mappings are saved permanently for future use.</p>
+                {incSheetPeriod && (
+                  <p className="text-xs mt-1">
+                    <span className="text-ink-dim">Source: </span>
+                    <span className="font-medium text-info">{incSheetPeriod} incentive sheet</span>
+                    {appliedIncSheetIds.includes(incSheetId ?? "") && (
+                      <span className="ml-2 text-[10px] bg-warn/20 text-warn px-1.5 py-0.5 rounded font-semibold">Already applied — loading again will add on top</span>
+                    )}
+                  </p>
+                )}
               </div>
               {unmatchedCount > 0 && (
                 <span className="text-xs bg-warn/10 text-warn border border-warn/30 px-2 py-1 rounded-lg2 shrink-0">
