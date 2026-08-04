@@ -9,6 +9,15 @@ import { inr } from "@/lib/format";
 import { clsx } from "clsx";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
+interface ArrearBill {
+  date: string;
+  product: string;
+  customer: string;
+  billNo: string;
+  netWt: number;
+  inc: number;
+}
+
 interface PayEntry {
   id: string;
   name: string;
@@ -21,6 +30,7 @@ interface PayEntry {
   incentive: number;
   arrear: number;
   arrearSource?: string;
+  arrearBills?: ArrearBill[];
   paid?: boolean;
   payMode?: "cash" | "bank";
 }
@@ -146,7 +156,10 @@ function calcStaffIncentives(
     if (!master || master.rate <= 0) return;
     const minW = ov.minWastage ?? master.minWastage ?? 0;
     if (wastage < minW) return;
-    const total = parseFloat((master.rate * netWt).toFixed(2));
+    if (ov.forceIneligible) return;
+    const perSale = master.perSale ?? false;
+    const effectiveRate = ov.rateOverride ?? master.rate;
+    const total = perSale ? effectiveRate : parseFloat((effectiveRate * netWt).toFixed(2));
     const sp1Inc = sp2 ? parseFloat((total * split / 100).toFixed(2)) : total;
     const sp2Inc = sp2 ? parseFloat((total * (100 - split) / 100).toFixed(2)) : 0;
     if (sp1) staffInc.set(sp1, (staffInc.get(sp1) ?? 0) + sp1Inc);
@@ -192,10 +205,72 @@ function getEligibleRowsForStaff(
     if (!master || master.rate <= 0) return;
     const minW = ov.minWastage ?? master.minWastage ?? 0;
     if (wastage2 < minW) return;
+    if (ov.forceIneligible) return;
     void split; // split used in calc, row is eligible
     indices.push(i);
   });
   return indices;
+}
+
+// Returns per-staff list of bills that are arrear-eligible (balanceZero=true), with carry-forward bill metadata
+function getArrearBillDetails(
+  sheetData: any,
+  lockedRows: Record<string, { staff: string; period: string }>
+): Map<string, ArrearBill[]> {
+  const rawData = sheetData.raw_data as string;
+  const overrides = sheetData.overrides ?? {};
+  const defaultSplit = sheetData.default_split ?? 70;
+  const masterEntries = sheetData.master_entries ?? [];
+  const mapperEntries = sheetData.mapper_entries ?? [];
+  const lines = rawData.split("\n").map((l: string) => l.trimEnd());
+  const hi = lines.findIndex((l: string) => /date/i.test(l) && /product/i.test(l) && /net.?wt/i.test(l));
+  if (hi < 0) return new Map();
+  const result = new Map<string, ArrearBill[]>();
+  let lastDate = "", lastCustomer = "", lastBillNo = "";
+  lines.slice(hi + 1).forEach((line: string, i: number) => {
+    if (!line.trim()) return;
+    const c = line.split("\t");
+    const rawDate = (c[0] ?? "").trim();
+    if (rawDate) {
+      lastDate = rawDate;
+      lastCustomer = (c[9] ?? "").trim();
+      lastBillNo = (c[11] ?? "").trim();
+    }
+    if (lockedRows[String(i)]) return;
+    const netWt = parseFloat((c[8] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
+    if (netWt <= 0) return;
+    const ov = overrides[i] ?? {};
+    if (!ov.balanceZero) return;
+    const sp1 = (c[5] ?? "").trim();
+    const sp2 = (c[6] ?? "").trim();
+    if (!sp1 && !sp2) return;
+    const split = ov.sp1Share ?? defaultSplit;
+    const product = (c[1] ?? "").trim().toUpperCase();
+    const rawWastage = parseFloat((c[3] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
+    const wastage = ov.wastage ?? rawWastage;
+    const mapEntry = mapperEntries.find((m: any) => m.erpName?.toUpperCase() === product);
+    let code = (mapEntry?.incentiveCode ?? product).toUpperCase();
+    if (code === "92.5-S" && netWt >= 20) code = "92.5-L";
+    const master = masterEntries.find((m: any) => m.code?.toUpperCase() === code);
+    if (!master || master.rate <= 0) return;
+    const minW = ov.minWastage ?? master.minWastage ?? 0;
+    if (wastage < minW) return;
+    if (ov.forceIneligible) return;
+    const perSale = master.perSale ?? false;
+    const effectiveRate = ov.rateOverride ?? master.rate;
+    const total = perSale ? effectiveRate : parseFloat((effectiveRate * netWt).toFixed(2));
+    const sp1Inc = sp2 ? parseFloat((total * split / 100).toFixed(2)) : total;
+    const sp2Inc = sp2 ? parseFloat((total * (100 - split) / 100).toFixed(2)) : 0;
+    if (sp1) {
+      const bill: ArrearBill = { date: lastDate, product, customer: lastCustomer, billNo: lastBillNo, netWt, inc: sp1Inc };
+      result.set(sp1, [...(result.get(sp1) ?? []), bill]);
+    }
+    if (sp2) {
+      const bill: ArrearBill = { date: lastDate, product, customer: lastCustomer, billNo: lastBillNo, netWt, inc: sp2Inc };
+      result.set(sp2, [...(result.get(sp2) ?? []), bill]);
+    }
+  });
+  return result;
 }
 
 // ─── Main page ─────────────────────────────────────────────────────────────────
@@ -231,6 +306,9 @@ export default function PayrollPage() {
   const [incLockedRows, setIncLockedRows]   = useState<Record<string, { staff: string; period: string }>>({});
   const [lockedStaff, setLockedStaff]       = useState<Set<string>>(new Set());
   const [appliedIncSheetIds, setAppliedIncSheetIds] = useState<string[]>([]);
+  const [arrearBillsMap, setArrearBillsMap] = useState<Map<string, ArrearBill[]>>(new Map());
+  const [expandedBillNames, setExpandedBillNames] = useState<Set<string>>(new Set());
+  const [auditEntry, setAuditEntry] = useState<PayEntry | null>(null);
 
   // ── Inactive staff picker
   const [showInactivePicker, setShowInactivePicker] = useState(false);
@@ -363,6 +441,12 @@ export default function PayrollPage() {
     if (!incSheetData || loadStep !== "map_names") return;
     const staffInc = calcStaffIncentives(incSheetData, incLockedRows, loadAsArrear);
     setPendingInc(staffInc);
+    if (loadAsArrear) {
+      setArrearBillsMap(getArrearBillDetails(incSheetData, incLockedRows));
+    } else {
+      setArrearBillsMap(new Map());
+    }
+    setExpandedBillNames(new Set());
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadAsArrear]);
 
@@ -407,10 +491,22 @@ export default function PayrollPage() {
       if (target) resolved.set(target, (resolved.get(target) ?? 0) + amount);
     }
     const rounded = new Map([...resolved.entries()].map(([k, v]) => [k, Math.round(v)]));
+    // Build per-staff bill list from arrearBillsMap (keyed by ERP name, mapped to staff)
+    const staffBills = new Map<string, ArrearBill[]>();
+    if (loadAsArrear) {
+      for (const [incName, bills] of arrearBillsMap.entries()) {
+        const target = (nameMap[incName]?.trim() || incName).toUpperCase();
+        if (target) staffBills.set(target, [...(staffBills.get(target) ?? []), ...bills]);
+      }
+    }
     setEntries(prev => prev.map(e => {
       const inc = rounded.get(e.name.toUpperCase());
       if (inc === undefined) return e;
-      return loadAsArrear ? { ...e, arrear: (e.arrear || 0) + inc, arrearSource: incSheetPeriod || e.arrearSource } : { ...e, incentive: inc };
+      if (loadAsArrear) {
+        const newBills = staffBills.get(e.name.toUpperCase()) ?? [];
+        return { ...e, arrear: (e.arrear || 0) + inc, arrearSource: incSheetPeriod || e.arrearSource, arrearBills: [...(e.arrearBills ?? []), ...newBills] };
+      }
+      return { ...e, incentive: inc };
     }));
     if (incSheetId) setAppliedIncSheetIds(prev => prev.includes(incSheetId) ? prev : [...prev, incSheetId]);
     setMapSaving(false);
@@ -674,6 +770,59 @@ export default function PayrollPage() {
         </div>
       )}
 
+      {/* ── MODAL: arrear audit ── */}
+      {auditEntry && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setAuditEntry(null)}>
+          <div className="bg-white rounded-xl border border-line shadow-soft p-5 w-full max-w-2xl space-y-3" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-semibold text-sm">Arrear Source — {auditEntry.name}</h2>
+                {auditEntry.arrearSource && (
+                  <p className="text-xs text-ink-dim mt-0.5">{auditEntry.arrearSource} incentive sheet · {auditEntry.arrearBills?.length ?? 0} bills</p>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-bold text-ok">{inr(auditEntry.arrear)}</span>
+                <button onClick={() => setAuditEntry(null)} className="text-ink-dim hover:text-err text-lg leading-none">×</button>
+              </div>
+            </div>
+            <div className="overflow-y-auto max-h-96 border border-line rounded-lg2">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-canvas text-ink-dim border-b border-line sticky top-0">
+                    <th className="text-left px-3 py-2 font-medium">Date</th>
+                    <th className="text-left px-3 py-2 font-medium">Bill No</th>
+                    <th className="text-left px-3 py-2 font-medium">Customer</th>
+                    <th className="text-left px-3 py-2 font-medium">Product</th>
+                    <th className="text-right px-3 py-2 font-medium">Wt (g)</th>
+                    <th className="text-right px-3 py-2 font-medium">Inc</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(auditEntry.arrearBills ?? []).map((b, i) => (
+                    <tr key={i} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                      <td className="px-3 py-2 text-ink-dim whitespace-nowrap">{b.date}</td>
+                      <td className="px-3 py-2 font-mono text-ink-dim whitespace-nowrap">{b.billNo || "—"}</td>
+                      <td className="px-3 py-2 truncate max-w-[140px]">{b.customer || "—"}</td>
+                      <td className="px-3 py-2 truncate max-w-[120px]">{b.product}</td>
+                      <td className="px-3 py-2 text-right font-mono">{b.netWt.toFixed(3)}</td>
+                      <td className="px-3 py-2 text-right font-medium text-ok whitespace-nowrap">{inr(b.inc)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-canvas border-t-2 border-line font-semibold">
+                    <td colSpan={5} className="px-3 py-2 text-ink-dim">Total</td>
+                    <td className="px-3 py-2 text-right text-ok">{inr(auditEntry.arrear)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+            <button onClick={() => setAuditEntry(null)} className="w-full border border-line text-sm px-4 py-2 rounded-lg2 text-ink-dim">Close</button>
+          </div>
+        </div>
+      )}
+
       {/* ── MODAL: pick incentive sheet ── */}
       {loadStep === "pick_incentive" && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
@@ -702,7 +851,7 @@ export default function PayrollPage() {
       {/* ── MODAL: name mapper ── */}
       {loadStep === "map_names" && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl border border-line shadow-soft p-5 w-full max-w-2xl space-y-4">
+          <div className={clsx("bg-white rounded-xl border border-line shadow-soft p-5 w-full space-y-4", loadAsArrear ? "max-w-4xl" : "max-w-2xl")}>
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="font-semibold text-sm">Map Incentive Names → Staff Names</h2>
@@ -730,11 +879,14 @@ export default function PayrollPage() {
                     <th className="text-left py-2 pr-4">Incentive Name</th>
                     <th className="text-right py-2 pr-4">Amount</th>
                     <th className="text-left py-2">→ Staff Name</th>
+                    {loadAsArrear && <th className="text-left py-2 pl-3">Bills</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {[...pendingInc.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([incName, amount]) => {
                     const mapped = nameMap[incName] ?? "";
+                    const bills = loadAsArrear ? (arrearBillsMap.get(incName) ?? []) : [];
+                    const billsExpanded = expandedBillNames.has(incName);
                     return (
                       <tr key={incName} className={clsx("border-b border-line last:border-0", !mapped.trim() && "bg-warn/5")}>
                         <td className="py-2 pr-4 font-mono text-xs font-medium">{incName}</td>
@@ -751,6 +903,51 @@ export default function PayrollPage() {
                               className="border border-line rounded-lg2 px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-gold w-28 uppercase" />
                           </div>
                         </td>
+                        {loadAsArrear && (
+                          <td className="py-2 pl-3 align-top min-w-[180px]">
+                            {bills.length > 0 ? (
+                              <div>
+                                <button
+                                  onClick={() => setExpandedBillNames(prev => {
+                                    const s = new Set(prev);
+                                    s.has(incName) ? s.delete(incName) : s.add(incName);
+                                    return s;
+                                  })}
+                                  className="text-[10px] text-info border border-info/30 px-2 py-0.5 rounded hover:bg-info/10 whitespace-nowrap">
+                                  {billsExpanded ? "▲" : "▼"} {bills.length} bill{bills.length !== 1 ? "s" : ""}
+                                </button>
+                                {billsExpanded && (
+                                  <div className="mt-1.5 border border-line rounded overflow-hidden text-[10px]">
+                                    <table className="w-full">
+                                      <thead>
+                                        <tr className="bg-canvas text-ink-dim">
+                                          <th className="text-left px-2 py-1 font-medium">Date</th>
+                                          <th className="text-left px-2 py-1 font-medium">Bill No</th>
+                                          <th className="text-left px-2 py-1 font-medium">Customer</th>
+                                          <th className="text-left px-2 py-1 font-medium">Product</th>
+                                          <th className="text-right px-2 py-1 font-medium">Inc</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {bills.map((b, bi) => (
+                                          <tr key={bi} className="border-t border-line">
+                                            <td className="px-2 py-1 text-ink-dim whitespace-nowrap">{b.date}</td>
+                                            <td className="px-2 py-1 font-mono text-ink-dim whitespace-nowrap">{b.billNo || "—"}</td>
+                                            <td className="px-2 py-1 truncate max-w-[100px]">{b.customer || "—"}</td>
+                                            <td className="px-2 py-1 truncate max-w-[80px]">{b.product}</td>
+                                            <td className="px-2 py-1 text-right text-ok font-medium whitespace-nowrap">{inr(b.inc)}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-ink-dim">—</span>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -887,7 +1084,16 @@ export default function PayrollPage() {
                       <div className="space-y-0.5">
                         <NumCell value={e.arrear} onChange={v => updateField(e.id, { arrear: v })} highlight={e.arrear > 0} readOnly={e.paid} />
                         {e.arrear > 0 && e.arrearSource && (
-                          <p className="text-[10px] text-info text-right leading-tight">{e.arrearSource} inc.</p>
+                          <div className="flex items-center justify-end gap-1 flex-wrap">
+                            <p className="text-[10px] text-info leading-tight">{e.arrearSource} inc.</p>
+                            {e.arrearBills && e.arrearBills.length > 0 && (
+                              <button
+                                onClick={() => setAuditEntry(e)}
+                                className="text-[9px] text-info border border-info/30 px-1 py-0.5 rounded hover:bg-info/10 whitespace-nowrap leading-tight">
+                                {e.arrearBills.length} bills
+                              </button>
+                            )}
+                          </div>
                         )}
                       </div>
                     </td>
