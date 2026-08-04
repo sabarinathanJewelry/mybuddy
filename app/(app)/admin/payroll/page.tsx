@@ -133,10 +133,12 @@ function getStaffLockDates(lockedRows: Record<string, LockedRow>): Map<string, s
 
 // lockedRows: { "rowIdx": { staff, period, lockedAt? } } — rows already paid; skip them
 // paidOverridesOnly: when true, only count items manually marked paid (balanceZero override)
+// cutoffDate: manual override — exclude bills where paidDate <= cutoffDate (for sheets locked before lockedAt was added)
 function calcStaffIncentives(
   sheetData: any,
   lockedRows: Record<string, LockedRow> = {},
-  paidOverridesOnly = false
+  paidOverridesOnly = false,
+  cutoffDate = ""
 ): Map<string, number> {
   const rawData = sheetData.raw_data as string;
   const overrides = sheetData.overrides ?? {};
@@ -160,10 +162,10 @@ function calcStaffIncentives(
     if (balance > 0) return;
     const sp1 = (c[5] ?? "").trim();
     const sp2 = (c[6] ?? "").trim();
-    // arrear mode: skip bills marked paid on or before the staff member's lock date
-    // (those were already included in the regular monthly incentive)
+    // arrear mode: skip bills marked paid on or before the cutoff date
+    // cutoff = manual date if set, else the staff member's stored lock date
     if (paidOverridesOnly && ov.paidDate) {
-      const lockDate = staffLockDates.get(sp1) || staffLockDates.get(sp2);
+      const lockDate = cutoffDate || staffLockDates.get(sp1) || staffLockDates.get(sp2);
       if (lockDate && ov.paidDate <= lockDate) return;
     }
     const split = ov.sp1Share ?? defaultSplit;
@@ -236,7 +238,8 @@ function getEligibleRowsForStaff(
 // Returns per-staff list of bills that are arrear-eligible (balanceZero=true), with carry-forward bill metadata
 function getArrearBillDetails(
   sheetData: any,
-  lockedRows: Record<string, LockedRow>
+  lockedRows: Record<string, LockedRow>,
+  cutoffDate = ""
 ): Map<string, ArrearBill[]> {
   const rawData = sheetData.raw_data as string;
   const overrides = sheetData.overrides ?? {};
@@ -266,9 +269,9 @@ function getArrearBillDetails(
     const sp1 = (c[5] ?? "").trim();
     const sp2 = (c[6] ?? "").trim();
     if (!sp1 && !sp2) return;
-    // skip bills marked paid on or before the staff member's lock date
+    // skip bills marked paid on or before the cutoff (manual override or stored lock date)
     if (ov.paidDate) {
-      const lockDate = staffLockDates.get(sp1) || staffLockDates.get(sp2);
+      const lockDate = cutoffDate || staffLockDates.get(sp1) || staffLockDates.get(sp2);
       if (lockDate && ov.paidDate <= lockDate) return;
     }
     const split = ov.sp1Share ?? defaultSplit;
@@ -336,6 +339,7 @@ export default function PayrollPage() {
   const [arrearBillsMap, setArrearBillsMap] = useState<Map<string, ArrearBill[]>>(new Map());
   const [expandedBillNames, setExpandedBillNames] = useState<Set<string>>(new Set());
   const [auditEntry, setAuditEntry] = useState<PayEntry | null>(null);
+  const [arrearCutoffDate, setArrearCutoffDate] = useState("");
 
   // ── Inactive staff picker
   const [showInactivePicker, setShowInactivePicker] = useState(false);
@@ -466,16 +470,16 @@ export default function PayrollPage() {
   // Recalculate pending amounts when arrear toggle changes
   useEffect(() => {
     if (!incSheetData || loadStep !== "map_names") return;
-    const staffInc = calcStaffIncentives(incSheetData, incLockedRows, loadAsArrear);
+    const staffInc = calcStaffIncentives(incSheetData, incLockedRows, loadAsArrear, arrearCutoffDate);
     setPendingInc(staffInc);
     if (loadAsArrear) {
-      setArrearBillsMap(getArrearBillDetails(incSheetData, incLockedRows));
+      setArrearBillsMap(getArrearBillDetails(incSheetData, incLockedRows, arrearCutoffDate));
     } else {
       setArrearBillsMap(new Map());
     }
     setExpandedBillNames(new Set());
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadAsArrear]);
+  }, [loadAsArrear, arrearCutoffDate]);
 
   // ── Incentive load step 1: select sheet
   async function selectIncentiveSheet(id: string) {
@@ -520,8 +524,10 @@ export default function PayrollPage() {
     const rounded = new Map([...resolved.entries()].map(([k, v]) => [k, Math.round(v)]));
     // Build per-staff bill list from arrearBillsMap (keyed by ERP name, mapped to staff)
     const staffBills = new Map<string, ArrearBill[]>();
+    // Recompute with cutoff at apply time (in case cutoff changed after last recalc)
+    const finalBillsMap = loadAsArrear ? getArrearBillDetails(incSheetData, incLockedRows, arrearCutoffDate) : new Map<string, ArrearBill[]>();
     if (loadAsArrear) {
-      for (const [incName, bills] of arrearBillsMap.entries()) {
+      for (const [incName, bills] of finalBillsMap.entries()) {
         const target = (nameMap[incName]?.trim() || incName).toUpperCase();
         if (target) staffBills.set(target, [...(staffBills.get(target) ?? []), ...bills]);
       }
@@ -991,12 +997,28 @@ export default function PayrollPage() {
                 className="bg-gold text-white text-sm px-5 py-2 rounded-lg2 disabled:opacity-50">
                 {mapSaving ? "Saving…" : loadAsArrear ? "Save & Apply as Arrear" : "Save & Apply"}
               </button>
-              <button onClick={() => setLoadStep(null)} className="border border-line text-sm px-4 py-2 rounded-lg2 text-ink-dim">Cancel</button>
-              <label className="ml-auto flex items-center gap-2 cursor-pointer text-sm select-none">
-                <input type="checkbox" checked={loadAsArrear} onChange={e => setLoadAsArrear(e.target.checked)}
-                  className="accent-gold w-4 h-4" />
-                <span className={loadAsArrear ? "text-gold font-medium" : "text-ink-dim"}>Load as Arrear (not Incentive)</span>
-              </label>
+              <button onClick={() => { setLoadStep(null); setArrearCutoffDate(""); }} className="border border-line text-sm px-4 py-2 rounded-lg2 text-ink-dim">Cancel</button>
+              <div className="ml-auto flex flex-wrap items-center gap-3">
+                {loadAsArrear && (
+                  <label className="flex items-center gap-2 text-xs text-ink-dim">
+                    <span>Exclude bills paid on/before</span>
+                    <input
+                      type="date"
+                      value={arrearCutoffDate}
+                      onChange={e => setArrearCutoffDate(e.target.value)}
+                      className="border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold"
+                    />
+                    {arrearCutoffDate && (
+                      <button onClick={() => setArrearCutoffDate("")} className="text-ink-dim hover:text-err text-xs">✕</button>
+                    )}
+                  </label>
+                )}
+                <label className="flex items-center gap-2 cursor-pointer text-sm select-none">
+                  <input type="checkbox" checked={loadAsArrear} onChange={e => setLoadAsArrear(e.target.checked)}
+                    className="accent-gold w-4 h-4" />
+                  <span className={loadAsArrear ? "text-gold font-medium" : "text-ink-dim"}>Load as Arrear (not Incentive)</span>
+                </label>
+              </div>
             </div>
           </div>
         </div>
