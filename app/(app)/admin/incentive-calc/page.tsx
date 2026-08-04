@@ -9,7 +9,7 @@ import { clsx } from "clsx";
 import { useBoardRate } from "@/stores/board-rate";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
-interface MasterEntry  { code: string; rate: number; minWastage: number }
+interface MasterEntry  { code: string; rate: number; minWastage: number; perSale?: boolean }
 interface MapperEntry  { erpName: string; incentiveCode: string; notes: string }
 interface CalcRow {
   idx: number; date: string; product: string; wastage: number;
@@ -118,9 +118,10 @@ const INITIAL_MASTER: MasterEntry[] = [
   { code: "PLAIN THAYATTU",         rate: 7,   minWastage: 11 },
   { code: "ROUND THAYATTU",         rate: 7,   minWastage: 11 },
   { code: "SIDE STUD",              rate: 10,  minWastage: 1  },
-  { code: "DIAMOND BESARI",         rate: 100, minWastage: 1  },
-  { code: "DIAMOND STUD",           rate: 200, minWastage: 1  },
-  { code: "DIAMOND RING",           rate: 200, minWastage: 1  },
+  { code: "DIAMOND BESARI",         rate: 100, minWastage: 1, perSale: true },
+  { code: "DIAMOND STUD",           rate: 200, minWastage: 1, perSale: true },
+  { code: "DIAMOND RING",           rate: 200, minWastage: 1, perSale: true },
+  { code: "DIAMOND NECKLACE",       rate: 500, minWastage: 1, perSale: true },
   { code: "SB",                     rate: 0,   minWastage: 1  },
   { code: "S",                      rate: 0.5, minWastage: 1  },
   { code: "92.5-S",                 rate: 5,   minWastage: 1  },
@@ -251,6 +252,8 @@ const INITIAL_MAPPER: MapperEntry[] = [
   { erpName: "DIAMOND BESARI",          incentiveCode: "DIAMOND BESARI",     notes: "" },
   { erpName: "DIAMOND STUD",            incentiveCode: "DIAMOND STUD",       notes: "" },
   { erpName: "DIAMOND RING",            incentiveCode: "DIAMOND RING",       notes: "" },
+  { erpName: "DIAMOND NECKLACE",        incentiveCode: "DIAMOND NECKLACE",   notes: "" },
+  { erpName: "DIA NECKLACE",            incentiveCode: "DIAMOND NECKLACE",   notes: "ERP short name" },
   // Zero incentive
   { erpName: "COINS",                   incentiveCode: "COINS",              notes: "Zero incentive" },
   { erpName: "PURE GOLD",               incentiveCode: "COINS",              notes: "Zero incentive" },
@@ -390,11 +393,12 @@ function calcRow(
   const mcLost      = (ov?.boardRate && ov.writeOffAmt && ov.writeOffAmt > 0)
     ? parseFloat((row.netWt * ov.boardRate * wastage / 100 * (1 - recoveryPct / 100)).toFixed(2))
     : null;
-  const fullInc    = eligible ? parseFloat((rate * row.netWt).toFixed(2)) : 0;
+  const perSale    = masterEntry?.perSale ?? false;
+  const fullInc    = eligible ? (perSale ? rate : parseFloat((rate * row.netWt).toFixed(2))) : 0;
   const totalInc   = parseFloat((fullInc * recoveryPct / 100).toFixed(2));
   const sp1Inc     = row.sp2 ? parseFloat((totalInc * sp1Share / 100).toFixed(2)) : totalInc;
   const sp2Inc     = row.sp2 ? parseFloat((totalInc * (100 - sp1Share) / 100).toFixed(2)) : 0;
-  return { rate, masterRate, minWastage, balance, sp1Share, wastage, eligible, fullInc, totalInc, recoveryPct, effectiveVA, mcLost, sp1Inc, sp2Inc, incentiveCode, mapped };
+  return { rate, masterRate, minWastage, balance, sp1Share, wastage, eligible, fullInc, totalInc, recoveryPct, effectiveVA, mcLost, sp1Inc, sp2Inc, incentiveCode, mapped, perSale };
 }
 
 // ─── Small inline editor ────────────────────────────────────────────────────────
@@ -1112,11 +1116,11 @@ export default function IncentiveCalcPage() {
                             )}
                             <span className="inline-flex items-center gap-1">
                               <span className={`text-[10px] font-mono ${ov?.rateOverride !== undefined ? "text-info font-bold" : "text-ink-dim"}`}>
-                                <InlineNum value={eff.rate} onSave={v => setOv(row.idx, { rateOverride: v })} width={44} readOnly={!!lockInfo} />/g
+                                <InlineNum value={eff.rate} onSave={v => setOv(row.idx, { rateOverride: v })} width={44} readOnly={!!lockInfo} />{eff.perSale ? "/sale" : "/g"}
                               </span>
                               {ov?.rateOverride !== undefined && (
                                 <span className="inline-flex items-center gap-0.5">
-                                  <span className="text-[9px] text-ink-dim line-through font-mono">{eff.masterRate}/g</span>
+                                  <span className="text-[9px] text-ink-dim line-through font-mono">{eff.masterRate}{eff.perSale ? "/sale" : "/g"}</span>
                                   <button onClick={() => setOv(row.idx, { rateOverride: undefined })}
                                     className="text-[9px] text-ink-dim hover:text-err">↩</button>
                                 </span>
@@ -1128,11 +1132,11 @@ export default function IncentiveCalcPage() {
                             <span className="font-mono text-ink-dim">—</span>
                             <span className="inline-flex items-center gap-1">
                               <span className={`text-[10px] font-mono ${ov?.rateOverride !== undefined ? "text-info font-bold" : "text-ink-dim"}`}>
-                                <InlineNum value={eff.rate} onSave={v => setOv(row.idx, { rateOverride: v })} width={44} readOnly={!!lockInfo} />/g
+                                <InlineNum value={eff.rate} onSave={v => setOv(row.idx, { rateOverride: v })} width={44} readOnly={!!lockInfo} />{eff.perSale ? "/sale" : "/g"}
                               </span>
                               {ov?.rateOverride !== undefined && (
                                 <span className="inline-flex items-center gap-0.5">
-                                  <span className="text-[9px] text-ink-dim line-through font-mono">{eff.masterRate}/g</span>
+                                  <span className="text-[9px] text-ink-dim line-through font-mono">{eff.masterRate}{eff.perSale ? "/sale" : "/g"}</span>
                                   <button onClick={() => setOv(row.idx, { rateOverride: undefined })}
                                     className="text-[9px] text-ink-dim hover:text-err">↩</button>
                                 </span>
