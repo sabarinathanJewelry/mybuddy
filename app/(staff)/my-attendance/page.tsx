@@ -1083,14 +1083,7 @@ export default function MyAttendancePage() {
           </div>
           {monthFine > 0 && (
             <div className="bg-err/5 border border-err/20 rounded-xl px-4 py-3 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-err font-semibold">Late Fine — {monthLabel(todayMonth).split(" ")[0]}</p>
-                <p className="text-[11px] text-ink-dim mt-0.5">
-                  {netLateMins}m late × ₹{fineSettings?.late_fine_amt}/min
-                  {fineSettings?.equalize_ot && totalOtMins > 0 && ` (after ${formatMins(totalOtMins)} OT offset)`}
-                  {fineFromDate && ` · from ${fineFromDate}`}
-                </p>
-              </div>
+              <p className="text-xs text-err font-semibold">Late Fine — {monthLabel(todayMonth).split(" ")[0]}</p>
               <p className="text-xl font-bold text-err">−₹{monthFine.toFixed(0)}</p>
             </div>
           )}
@@ -1129,14 +1122,7 @@ export default function MyAttendancePage() {
           </div>
           {monthFine > 0 && (
             <div className="bg-err/5 border border-err/20 rounded-xl px-4 py-3 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-err font-semibold">Late Fine — {monthLabel(month).split(" ")[0]}</p>
-                <p className="text-[11px] text-ink-dim mt-0.5">
-                  {netLateMins}m late × ₹{fineSettings?.late_fine_amt}/min
-                  {fineSettings?.equalize_ot && totalOtMins > 0 && ` (after ${formatMins(totalOtMins)} OT offset)`}
-                  {fineFromDate && ` · from ${fineFromDate}`}
-                </p>
-              </div>
+              <p className="text-xs text-err font-semibold">Late Fine — {monthLabel(month).split(" ")[0]}</p>
               <p className="text-xl font-bold text-err">−₹{monthFine.toFixed(0)}</p>
             </div>
           )}
