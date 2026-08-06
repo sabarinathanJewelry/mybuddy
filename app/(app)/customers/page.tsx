@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCustomers, useUpsertCustomer, useDeleteCustomer } from "@/modules/customers/api";
 import { supabase } from "@/lib/supabase/client";
 import { useT } from "@/i18n";
-import { inr, grams } from "@/lib/format";
+import { inr, grams, shortDate } from "@/lib/format";
 import type { Customer, CustomerFormData } from "@/modules/customers/types";
 
 type Tab = "customers" | "balances";
@@ -267,7 +267,7 @@ export default function CustomersPage() {
                         <td className="px-3 py-2.5 text-ink-dim hidden sm:table-cell">{r.phone ?? "—"}</td>
                         <td className="px-3 py-2.5 text-right font-mono text-ink-dim hidden sm:table-cell">{inr(r.total_sales)}</td>
                         <td className="px-3 py-2.5 text-right font-mono text-ok hidden sm:table-cell">{inr(Number(r.total_paid_in) - Number(r.total_paid_out))}</td>
-                        <td className="px-3 py-2.5 text-right font-mono font-bold text-err">
+                        <td className="px-3 py-2.5 text-right font-mono font-bold text-err" title={r.last_txn_date ? `Last transaction: ${shortDate(r.last_txn_date)}` : undefined}>
                           {inr(Math.abs(Number(r.balance)))}
                         </td>
                         <td className="px-3 py-2.5 text-right">
@@ -310,7 +310,7 @@ export default function CustomersPage() {
                         <td className="px-4 py-2.5 text-ink-dim text-xs">{idx + 1}</td>
                         <td className="px-3 py-2.5 font-medium">{r.name}</td>
                         <td className="px-3 py-2.5 text-ink-dim hidden sm:table-cell">{r.phone ?? "—"}</td>
-                        <td className="px-3 py-2.5 text-right font-mono font-bold text-ok">{inr(Number(r.balance))}</td>
+                        <td className="px-3 py-2.5 text-right font-mono font-bold text-ok" title={r.last_txn_date ? `Last transaction: ${shortDate(r.last_txn_date)}` : undefined}>{inr(Number(r.balance))}</td>
                         <td className="px-3 py-2.5 text-right">
                           <Link href={`/customers/${r.id}`} className="text-xs text-info hover:underline">View</Link>
                         </td>
