@@ -18,8 +18,9 @@
 - **Bulk import page** at `/suppliers/import-payments`: paste tab-separated rows from Excel/Tally (columns: Payment No | Date DD/MM/YYYY | Ledger Name | Amount | Reference)
 - Auto-matches ledger names to suppliers (exact → contains → word match); unmatched rows show a red dropdown for manual selection
 - **Persistent mapping**: manual selections saved to `localStorage` (`supplier-payment-mapping-v1`) keyed by ledger name; applied automatically on next import
-- **Duplicate detection**: on parse, checks `supplier_payments.notes` for existing Payment Nos and auto-skips rows already imported (shown as "Already imported")
+- **Duplicate detection**: on parse, fetches existing `supplier_payments` with their `supplier_id`; auto-skips already-imported rows; if the existing row is under a **different** supplier than the auto/manual match, shows "Under: X — Re-assign" warning with a button to delete old + re-insert under the correct supplier
 - Ledger insert (`bank_ledger`/`cash_ledger`) is best-effort — payment insert failure is the only hard error; ledger errors are logged to console only
+- Import uses a snapshot of rows state at click time (no stale-closure issue)
 - Detects mode (bank/upi/cash) from reference string; skip checkbox per row; shows ready/unmatched/duplicate/skipped counts before import
 
 ### Sales
