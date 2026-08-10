@@ -296,7 +296,7 @@ function useYearSoldItems(fyFrom: string, fyTo: string) {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("sale_items")
-        .select("metal, gross_wt, pure_wt, purity_pct, va_pct, sales!inner(bill_date)")
+        .select("metal, gross_wt, pure_wt, purity_pct, va_pct, rate, line_total, gst_pct, making_amt, stone_amt, diamond_amt, sales!inner(bill_date)")
         .gte("sales.bill_date", fyFrom)
         .lte("sales.bill_date", fyTo)
         .eq("sales.status", "confirmed")
@@ -2581,7 +2581,7 @@ export default function ReportsPage() {
         const gMap = new Map<string, Acc>();
         const sMap = new Map<string, Acc>();
 
-        // Effective purity: prefer purity_pct; fall back to pure_wt/gross_wt when purity_pct is 0
+        // Purity for purchase items only (no line_total available)
         const effectivePurity = (item: any): number => {
           const pp = Number(item.purity_pct || 0);
           if (pp > 0) return pp;
@@ -2590,20 +2590,39 @@ export default function ReportsPage() {
           return gw > 0 && pw > 0 ? (pw / gw) * 100 : 0;
         };
 
+        // Sold touch: back-calculate from actual sale price vs board rate, GST-extracted.
+        // metal_revenue = (line_total excl GST) − making − stone/diamond
+        // touch% = metal_revenue / (gross_wt × board_rate) × 100
+        // Falls back to stored purity_pct + va_pct when rate or line_total is missing.
+        const soldTouchCalc = (item: any): { touch: number; basePurity: number } => {
+          const gross      = Number(item.gross_wt    || 0);
+          const boardRate  = Number(item.rate         || 0);
+          const lineTotal  = Number(item.line_total   || 0);
+          const gstPct     = Number(item.gst_pct      || 0);
+          const makingAmt  = Number(item.making_amt   || 0);
+          const stoneAmt   = Number(item.stone_amt    || 0) + Number(item.diamond_amt || 0);
+          const basePurity = effectivePurity(item);
+          if (gross > 0 && boardRate > 0 && lineTotal > 0) {
+            const lineExcGst = gstPct > 0 ? lineTotal * 100 / (100 + gstPct) : lineTotal;
+            const metalRev   = lineExcGst - makingAmt - stoneAmt;
+            if (metalRev > 0) return { touch: metalRev / (gross * boardRate) * 100, basePurity };
+          }
+          return { touch: basePurity > 0 ? basePurity + Number(item.va_pct || 0) : 0, basePurity };
+        };
+
         for (const item of yearSoldItems) {
           const ym = (item.sales as any)?.bill_date?.slice(0, 7);
           if (!ym) continue;
-          const gross  = Number(item.gross_wt || 0);
-          const purity = effectivePurity(item);
-          const touch  = purity > 0 ? purity + Number(item.va_pct || 0) : 0;
-          const map    = GOLD_METALS.includes(item.metal) ? gMap : SILVER_METALS.includes(item.metal) ? sMap : null;
+          const gross = Number(item.gross_wt || 0);
+          const { touch } = soldTouchCalc(item);
+          const map = GOLD_METALS.includes(item.metal) ? gMap : SILVER_METALS.includes(item.metal) ? sMap : null;
           if (!map) continue;
           const p = map.get(ym) ?? emptyAcc();
           map.set(ym, {
             ...p,
             totalGross: p.totalGross + gross,
-            soldGross:  purity > 0 ? p.soldGross + gross : p.soldGross,
-            soldPure:   purity > 0 ? p.soldPure  + gross * touch / 100 : p.soldPure,
+            soldGross:  touch > 0 ? p.soldGross + gross : p.soldGross,
+            soldPure:   touch > 0 ? p.soldPure  + gross * touch / 100 : p.soldPure,
           });
         }
         for (const item of yearPurchDirect) {
@@ -2644,16 +2663,21 @@ export default function ReportsPage() {
         const avgSSold  = sSoldG  > 0 ? sSoldP  / sSoldG  * 100 : 0;
         const avgSPurch = sPurchG > 0 ? sPurchP / sPurchG * 100 : 0;
 
-        // Monthly weighted avg VA% — gold only, gross_wt > 0, va_pct not null
+        // Monthly weighted avg VA% — gold only, computed as (sold touch − base purity)
+        // Uses price-based touch (board rate + GST-adjusted) so the VA% reflects what
+        // was actually charged above the board rate, not what was entered in the form.
         const vaMonthMap = new Map<string, { wt: number; wtdVa: number }>();
         for (const item of yearSoldItems) {
           if (!GOLD_METALS.includes(item.metal)) continue;
           const gross = Number(item.gross_wt || 0);
-          if (gross <= 0 || item.va_pct === null || item.va_pct === undefined) continue;
+          if (gross <= 0) continue;
           const ym = (item.sales as any)?.bill_date?.slice(0, 7);
           if (!ym) continue;
+          const { touch, basePurity } = soldTouchCalc(item);
+          if (touch <= 0 || basePurity <= 0) continue;
+          const computedVa = touch - basePurity;
           const prev = vaMonthMap.get(ym) ?? { wt: 0, wtdVa: 0 };
-          vaMonthMap.set(ym, { wt: prev.wt + gross, wtdVa: prev.wtdVa + gross * Number(item.va_pct) });
+          vaMonthMap.set(ym, { wt: prev.wt + gross, wtdVa: prev.wtdVa + gross * computedVa });
         }
         let fyVaWt = 0, fyVaWtd = 0;
         for (const [, v] of vaMonthMap) { fyVaWt += v.wt; fyVaWtd += v.wtdVa; }
