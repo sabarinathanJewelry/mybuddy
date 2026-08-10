@@ -42,6 +42,9 @@ export default function SuppliersPage() {
       <div className="flex items-center gap-3">
         <input type="search" placeholder="Search suppliers…" value={search} onChange={(e) => setSearch(e.target.value)}
           className="flex-1 border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gold" />
+        <Link href="/suppliers/import-payments" className="text-xs text-ink-dim border border-line px-3 py-2 rounded-lg2 hover:bg-canvas shrink-0">
+          Import Payments
+        </Link>
         <button onClick={() => { setEditingId(null); setForm({ ...blank }); setShowForm(true); }} className="bg-gold hover:bg-gold-dark text-white text-sm font-medium px-4 py-2 rounded-lg2 shrink-0">
           + {t("add_supplier")}
         </button>

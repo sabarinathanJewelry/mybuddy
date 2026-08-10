@@ -14,6 +14,12 @@
 - Balance write-off (bad debt) — recorded as scrap_entries, shown as "Balance Write-off"
 - Customer balance formula: `opening_balance − total_sales + payments_in − payments_out + writeoffs`
 
+### Supplier Payments Import
+- **Bulk import page** at `/suppliers/import-payments`: paste tab-separated rows from Excel/Tally (columns: Payment No | Date DD/MM/YYYY | Ledger Name | Amount | Reference)
+- Auto-matches ledger names to suppliers (exact → contains → word match); unmatched rows show a red dropdown for manual selection
+- Detects mode (bank/upi/cash) from reference string; each imported row writes to `supplier_payments` + `bank_ledger`/`cash_ledger`
+- Skip checkbox per row; header checkbox skips all; shows ready/unmatched/skipped counts before import
+
 ### Sales
 - **Date range filter**: Sales list has From / To date inputs plus quick "Today", current month, and previous month buttons; "All" clears filter to show all bills (up to 100)
 - **Period summary bar**: A separate `useSalesSummary` query (limit 10000, confirmed only) computes accurate gold gross weight + weighted-avg touch% / VA% and silver gross weight for the full selected period, independent of the 100-bill display cap
