@@ -124,7 +124,7 @@
 
 ### Touch Analysis (Reports → Touch Profit tab)
 - **FY Monthly Touch Table**: comprehensive sold touch% vs purchase touch% per month for gold and silver separately; FY year selector; gross weight column for each metal so volumes are transparent
-  - Sold touch = back-calculated from actual sale price: `metal_revenue = (line_total ÷ (1 + GST%)) − making − stone/diamond`, `touch = metal_revenue / (gross_wt × board_rate) × 100`; GST is extracted before the ratio so a 3% GST-inclusive price is correctly treated as ~10% VA not ~13%. Falls back to stored `purity_pct + va_pct` when rate/line_total missing
+  - Sold touch = back-calculated from actual sale price: `metal_revenue = (line_total ÷ (1 + GST%)) − making − stone/diamond`; `VA% = (metal_revenue / (gross_wt × board_rate) − 1) × 100`; `touch = base_purity + VA%`. Formula: VA is the % above board rate (excl GST), touch adds that to the physical purity baseline so 22K at 10% VA = 101.67% touch. Falls back to stored `purity_pct + va_pct` when rate/line_total missing
   - Avg VA% column uses `touch − base_purity` (price-derived) not the stored `va_pct` field
   - Purchase touch = weighted avg of supplier_purchases.purity_pct (direct) + sale_items.supplier_va_pct (confirmed suspense, not yet converted) — no double counting
   - **Avg Gold VA% column**: weighted avg VA% per month for gold items only (gold wt > 0, va_pct not null) using `Σ(gross_wt × va_pct) / Σ(gross_wt)`; also shown in FY average row and summary cards

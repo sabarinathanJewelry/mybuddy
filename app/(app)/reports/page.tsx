@@ -2605,7 +2605,12 @@ export default function ReportsPage() {
           if (gross > 0 && boardRate > 0 && lineTotal > 0) {
             const lineExcGst = gstPct > 0 ? lineTotal * 100 / (100 + gstPct) : lineTotal;
             const metalRev   = lineExcGst - makingAmt - stoneAmt;
-            if (metalRev > 0) return { touch: metalRev / (gross * boardRate) * 100, basePurity };
+            // VA% = how much above board rate the metal was sold (excl GST, excl making/stone)
+            // touch = base_purity + VA%  (not metalRev/rate×100 which ignores purity baseline)
+            if (metalRev > 0) {
+              const va = (metalRev / (gross * boardRate) - 1) * 100;
+              return { touch: basePurity + va, basePurity };
+            }
           }
           return { touch: basePurity > 0 ? basePurity + Number(item.va_pct || 0) : 0, basePurity };
         };
