@@ -17,8 +17,10 @@
 ### Supplier Payments Import
 - **Bulk import page** at `/suppliers/import-payments`: paste tab-separated rows from Excel/Tally (columns: Payment No | Date DD/MM/YYYY | Ledger Name | Amount | Reference)
 - Auto-matches ledger names to suppliers (exact → contains → word match); unmatched rows show a red dropdown for manual selection
-- Detects mode (bank/upi/cash) from reference string; each imported row writes to `supplier_payments` + `bank_ledger`/`cash_ledger`
-- Skip checkbox per row; header checkbox skips all; shows ready/unmatched/skipped counts before import
+- **Persistent mapping**: manual selections saved to `localStorage` (`supplier-payment-mapping-v1`) keyed by ledger name; applied automatically on next import
+- **Duplicate detection**: on parse, checks `supplier_payments.notes` for existing Payment Nos and auto-skips rows already imported (shown as "Already imported")
+- Ledger insert (`bank_ledger`/`cash_ledger`) is best-effort — payment insert failure is the only hard error; ledger errors are logged to console only
+- Detects mode (bank/upi/cash) from reference string; skip checkbox per row; shows ready/unmatched/duplicate/skipped counts before import
 
 ### Sales
 - **Date range filter**: Sales list has From / To date inputs plus quick "Today", current month, and previous month buttons; "All" clears filter to show all bills (up to 100)
