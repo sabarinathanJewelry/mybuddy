@@ -853,6 +853,19 @@ function ProductTable({ title, color, items, showGrams = true, mergeMode, mergeS
   );
 }
 
+// ── comparison metrics helper ────────────────────────────────────────────────
+
+function cmpMetrics(items: any[], expenses: any[]) {
+  const gold   = metalSection(items, GOLD_METALS);
+  const silver = metalSection(items, SILVER_METALS);
+  const mprRev = items.filter((i: any) => i.metal === "silver_mpr").reduce((s: number, i: any) => s + Number(i.line_total || 0), 0);
+  const totalRevExGst = gold.revenueExGst + silver.revenueExGst + mprRev;
+  const totalGst      = gold.gstAmt + silver.gstAmt;
+  const totalExp      = expenses.reduce((s: number, e: any) => s + Number(e.amount || 0), 0);
+  const billIds       = new Set(items.map((i: any) => i.sales?.id).filter(Boolean));
+  return { gold, silver, mprRev, totalRevExGst, totalGst, totalExp, billCount: billIds.size };
+}
+
 // ── item search ───────────────────────────────────────────────────────────────
 
 function useItemSearch(term: string, from: string, to: string) {
@@ -880,7 +893,7 @@ export default function ReportsPage() {
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [tab, setTab]     = useState<"pnl" | "pnl2" | "detail" | "products" | "expenses" | "items" | "kolusu" | "touch">("pnl");
+  const [tab, setTab]     = useState<"pnl" | "pnl2" | "detail" | "products" | "expenses" | "items" | "kolusu" | "touch" | "compare">("pnl");
   const [kolusuPureRate,       setKolusuPureRate]       = useState(263);
   const [kolusuBoardRate,      setKolusuBoardRate]      = useState(285);
   const [kolusuSuspenseMargin, setKolusuSuspenseMargin] = useState(2);
@@ -899,6 +912,18 @@ export default function ReportsPage() {
   const [purchVaSilver, setPurchVaSilver] = useState<number | "">(0);
   const [v2OpenGoldG,  setV2OpenGoldG]   = useState<number | "">("");
   const [v2OpenSilvG,  setV2OpenSilvG]   = useState<number | "">("");
+
+  // Compare tab period state
+  const [cmpAYear,   setCmpAYear]   = useState(now.getFullYear());
+  const [cmpAMonth,  setCmpAMonth]  = useState(now.getMonth() + 1);
+  const [cmpBYear,   setCmpBYear]   = useState(now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear());
+  const [cmpBMonth,  setCmpBMonth]  = useState(now.getMonth() === 0 ? 12 : now.getMonth());
+  const [cmpACustom, setCmpACustom] = useState(false);
+  const [cmpBCustom, setCmpBCustom] = useState(false);
+  const [cmpAFrom,   setCmpAFrom]   = useState("");
+  const [cmpATo,     setCmpATo]     = useState("");
+  const [cmpBFrom,   setCmpBFrom]   = useState("");
+  const [cmpBTo,     setCmpBTo]     = useState("");
 
   const renameProduct = useRenameProduct();
   const mergeProducts = useMergeProducts();
@@ -971,6 +996,15 @@ export default function ReportsPage() {
   const { data: yearSoldItems   = [] } = useYearSoldItems(fyTouchFrom, fyTouchTo);
   const { data: yearPurchDirect = [] } = useYearPurchaseDirect(fyTouchFrom, fyTouchTo);
   const { data: yearPurchSusp   = [] } = useYearPurchaseSuspense(fyTouchFrom, fyTouchTo);
+
+  // Compare tab data — only fetched when on the compare tab
+  const cmpActive  = tab === "compare";
+  const cmpRangeA  = cmpACustom && cmpAFrom && cmpATo ? { from: cmpAFrom, to: cmpATo } : monthRange(cmpAYear, cmpAMonth);
+  const cmpRangeB  = cmpBCustom && cmpBFrom && cmpBTo ? { from: cmpBFrom, to: cmpBTo } : monthRange(cmpBYear, cmpBMonth);
+  const { data: cmpAItems = [], isLoading: cmpALoad } = usePnlItems(cmpActive ? cmpRangeA.from : "", cmpActive ? cmpRangeA.to : "");
+  const { data: cmpBItems = [], isLoading: cmpBLoad } = usePnlItems(cmpActive ? cmpRangeB.from : "", cmpActive ? cmpRangeB.to : "");
+  const { data: cmpAExp   = [] }                      = usePnlExpenses(cmpActive ? cmpRangeA.from : "", cmpActive ? cmpRangeA.to : "");
+  const { data: cmpBExp   = [] }                      = usePnlExpenses(cmpActive ? cmpRangeB.from : "", cmpActive ? cmpRangeB.to : "");
 
   const isLoading = loadingItems || loadingPurchases || loadingExpenses;
 
@@ -1186,7 +1220,7 @@ export default function ReportsPage() {
 
       {/* Tabs */}
       <div className="flex border-b border-line gap-1 overflow-x-auto">
-        {([["pnl", "P&L Report"], ["pnl2", "P&L V2"], ["detail", "Sales Detail"], ["products", "Product Mix"], ["expenses", "Expenses"], ["items", "Item Search"], ["kolusu", "Kolusu P&L"], ["touch", "Touch Profit"]] as const).map(([k, label]) => (
+        {([["pnl", "P&L Report"], ["pnl2", "P&L V2"], ["detail", "Sales Detail"], ["products", "Product Mix"], ["expenses", "Expenses"], ["items", "Item Search"], ["kolusu", "Kolusu P&L"], ["touch", "Touch Profit"], ["compare", "Compare"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={clsx("px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap",
               tab === k ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink")}>
@@ -3214,6 +3248,179 @@ export default function ReportsPage() {
 
         </div>
       )}
+
+      {/* ── COMPARE TAB ─────────────────────────────────────────────── */}
+      {tab === "compare" && (() => {
+        const cmpLoading = cmpALoad || cmpBLoad;
+        const labelA = cmpACustom && cmpAFrom && cmpATo
+          ? `${shortDate(cmpAFrom)} – ${shortDate(cmpATo)}`
+          : `${MONTHS[cmpAMonth - 1]} ${cmpAYear}`;
+        const labelB = cmpBCustom && cmpBFrom && cmpBTo
+          ? `${shortDate(cmpBFrom)} – ${shortDate(cmpBTo)}`
+          : `${MONTHS[cmpBMonth - 1]} ${cmpBYear}`;
+
+        const mA = cmpMetrics(cmpAItems as any[], cmpAExp as any[]);
+        const mB = cmpMetrics(cmpBItems as any[], cmpBExp as any[]);
+
+        function fmtV(v: number, fmt: "inr" | "g" | "n") {
+          return fmt === "inr" ? inr(v) : fmt === "g" ? grams(v) : String(Math.round(v));
+        }
+
+        type Row = { section: string } | { label: string; a: number; b: number; fmt?: "inr" | "g" | "n"; lowerBetter?: boolean; bold?: boolean };
+        const rows: Row[] = [
+          { section: "Sales Overview" },
+          { label: "Bills",              a: mA.billCount,                                       b: mB.billCount,                                       fmt: "n" },
+          { label: "Revenue (incl GST)", a: mA.gold.revenueInclGst + mA.silver.revenueInclGst, b: mB.gold.revenueInclGst + mB.silver.revenueInclGst },
+          { label: "Revenue (excl GST)", a: mA.totalRevExGst,                                   b: mB.totalRevExGst,                                   bold: true },
+          { label: "GST Collected",      a: mA.totalGst,                                        b: mB.totalGst,                                        lowerBetter: true },
+          { section: "Gold Sales" },
+          { label: "Items",              a: mA.gold.count,          b: mB.gold.count,          fmt: "n" },
+          { label: "Gross Wt",           a: mA.gold.grossWt,        b: mB.gold.grossWt,        fmt: "g" },
+          { label: "Net Wt",             a: mA.gold.netWt,          b: mB.gold.netWt,          fmt: "g" },
+          { label: "Revenue (excl GST)", a: mA.gold.revenueExGst,   b: mB.gold.revenueExGst },
+          { label: "Making Charges",     a: mA.gold.makingAmt,      b: mB.gold.makingAmt },
+          { label: "VA Charges",         a: Math.max(0, mA.gold.vaAmt), b: Math.max(0, mB.gold.vaAmt) },
+          { section: "Silver Sales" },
+          { label: "Items",              a: mA.silver.count,        b: mB.silver.count,        fmt: "n" },
+          { label: "Gross Wt",           a: mA.silver.grossWt,      b: mB.silver.grossWt,      fmt: "g" },
+          { label: "Net Wt",             a: mA.silver.netWt,        b: mB.silver.netWt,        fmt: "g" },
+          { label: "Revenue (excl GST)", a: mA.silver.revenueExGst, b: mB.silver.revenueExGst },
+          { label: "Making Charges",     a: mA.silver.makingAmt,    b: mB.silver.makingAmt },
+          { section: "Expenses & Profit" },
+          { label: "Total Expenses",     a: mA.totalExp,            b: mB.totalExp,            lowerBetter: true },
+          { label: "Gross Profit",       a: mA.totalRevExGst - mA.totalExp, b: mB.totalRevExGst - mB.totalExp, bold: true },
+        ];
+
+        const inp = "border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold bg-white";
+
+        return (
+          <div className="space-y-4">
+            {/* Period selectors */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Period A */}
+              <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-ink">Period A <span className="ml-1 text-xs font-normal text-ink-dim">(baseline)</span></p>
+                  <button onClick={() => setCmpACustom(c => !c)} className="text-xs text-gold hover:underline">
+                    {cmpACustom ? "Switch to month" : "Custom range"}
+                  </button>
+                </div>
+                {cmpACustom ? (
+                  <div className="flex gap-2 items-center flex-wrap">
+                    <input type="date" value={cmpAFrom} onChange={e => setCmpAFrom(e.target.value)} className={inp} />
+                    <span className="text-ink-dim text-sm">–</span>
+                    <input type="date" value={cmpATo} onChange={e => setCmpATo(e.target.value)} className={inp} />
+                  </div>
+                ) : (
+                  <div className="flex gap-2 items-center">
+                    <select value={cmpAMonth} onChange={e => setCmpAMonth(Number(e.target.value))} className={inp}>
+                      {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                    </select>
+                    <input type="number" value={cmpAYear} onChange={e => setCmpAYear(Number(e.target.value))} className={clsx(inp, "w-24")} min={2020} max={2040} />
+                  </div>
+                )}
+              </div>
+
+              {/* Period B */}
+              <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-ink">Period B <span className="ml-1 text-xs font-normal text-ink-dim">(compare to)</span></p>
+                  <button onClick={() => setCmpBCustom(c => !c)} className="text-xs text-gold hover:underline">
+                    {cmpBCustom ? "Switch to month" : "Custom range"}
+                  </button>
+                </div>
+                {cmpBCustom ? (
+                  <div className="flex gap-2 items-center flex-wrap">
+                    <input type="date" value={cmpBFrom} onChange={e => setCmpBFrom(e.target.value)} className={inp} />
+                    <span className="text-ink-dim text-sm">–</span>
+                    <input type="date" value={cmpBTo} onChange={e => setCmpBTo(e.target.value)} className={inp} />
+                  </div>
+                ) : (
+                  <div className="flex gap-2 items-center">
+                    <select value={cmpBMonth} onChange={e => setCmpBMonth(Number(e.target.value))} className={inp}>
+                      {MONTHS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                    </select>
+                    <input type="number" value={cmpBYear} onChange={e => setCmpBYear(Number(e.target.value))} className={clsx(inp, "w-24")} min={2020} max={2040} />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Quick presets */}
+            <div className="flex gap-2 items-center flex-wrap">
+              <span className="text-xs text-ink-dim">Quick:</span>
+              <button className="px-3 py-1 text-xs bg-canvas border border-line rounded-lg2 hover:border-gold hover:text-gold transition-colors"
+                onClick={() => {
+                  const pm = now.getMonth() === 0 ? 12 : now.getMonth();
+                  const py = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+                  setCmpACustom(false); setCmpAYear(now.getFullYear()); setCmpAMonth(now.getMonth() + 1);
+                  setCmpBCustom(false); setCmpBYear(py); setCmpBMonth(pm);
+                }}>This vs Prev Month</button>
+              <button className="px-3 py-1 text-xs bg-canvas border border-line rounded-lg2 hover:border-gold hover:text-gold transition-colors"
+                onClick={() => {
+                  setCmpACustom(false); setCmpAYear(now.getFullYear()); setCmpAMonth(now.getMonth() + 1);
+                  setCmpBCustom(false); setCmpBYear(now.getFullYear() - 1); setCmpBMonth(now.getMonth() + 1);
+                }}>This vs Same Month Last Year</button>
+              <button className="px-3 py-1 text-xs bg-canvas border border-line rounded-lg2 hover:border-gold hover:text-gold transition-colors"
+                onClick={() => {
+                  const fyStart = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+                  setCmpACustom(true); setCmpAFrom(`${fyStart}-04-01`); setCmpATo(`${fyStart + 1}-03-31`);
+                  setCmpBCustom(true); setCmpBFrom(`${fyStart - 1}-04-01`); setCmpBTo(`${fyStart}-03-31`);
+                }}>This FY vs Last FY</button>
+            </div>
+
+            {cmpLoading && <p className="text-sm text-ink-dim">Loading...</p>}
+
+            {!cmpLoading && (
+              <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                      <th className="text-left px-4 py-2.5 font-semibold">Metric</th>
+                      <th className="text-right px-3 py-2.5 text-ink">A — {labelA}</th>
+                      <th className="text-right px-3 py-2.5 font-semibold text-ink">B — {labelB}</th>
+                      <th className="text-right px-3 py-2.5">Change (B − A)</th>
+                      <th className="text-right px-4 py-2.5">%</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, i) => {
+                      if ("section" in row) {
+                        return (
+                          <tr key={i} className="bg-canvas/70 border-y border-line">
+                            <td colSpan={5} className="px-4 py-1.5 text-[11px] font-semibold text-ink-dim uppercase tracking-wide">{row.section}</td>
+                          </tr>
+                        );
+                      }
+                      const fmt = row.fmt ?? "inr";
+                      const a = row.a, b = row.b, diff = b - a;
+                      const pct = Math.abs(a) > 0.005 ? (diff / Math.abs(a)) * 100 : null;
+                      const threshold = fmt === "g" ? 0.001 : fmt === "n" ? 0.5 : 0.5;
+                      const significant = Math.abs(diff) >= threshold;
+                      const isGood = significant && (diff > 0 ? !(row.lowerBetter) : !!(row.lowerBetter));
+                      const isBad  = significant && (diff > 0 ?  !!(row.lowerBetter) : !(row.lowerBetter));
+                      const color  = !significant ? "text-ink-dim" : isGood ? "text-ok" : isBad ? "text-err" : "text-ink";
+                      return (
+                        <tr key={i} className={clsx("border-b border-line/40 last:border-0 hover:bg-canvas/30", row.bold && "font-semibold")}>
+                          <td className="px-4 py-2.5">{row.label}</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-ink-dim">{fmtV(a, fmt)}</td>
+                          <td className="px-3 py-2.5 text-right font-mono">{fmtV(b, fmt)}</td>
+                          <td className={clsx("px-3 py-2.5 text-right font-mono text-xs", color)}>
+                            {significant ? `${diff > 0 ? "+" : ""}${fmtV(diff, fmt)}` : "—"}
+                          </td>
+                          <td className={clsx("px-4 py-2.5 text-right text-xs tabular-nums", color)}>
+                            {pct !== null && significant ? `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%` : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }

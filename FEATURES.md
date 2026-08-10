@@ -106,6 +106,13 @@
 - **V1 vs V2 comparison table**: side-by-side for Revenue, GST, COGS, Gross Profit, Net Profit, Gold VA Income with difference column
 - Requires migrations 127 (metal_inventory_snapshots table) and 128 (metal column on supplier_payments)
 
+### Compare Report (Reports → Compare tab)
+- **Side-by-side period comparison** for any two date ranges — bills, revenue (incl/excl GST), GST collected, gold/silver weights and revenue, making charges, VA charges, expenses, and gross profit
+- **Period selectors**: each period (A = baseline, B = compare-to) has a month+year picker or a custom date range; switchable via "Custom range" toggle
+- **Quick presets**: "This vs Prev Month", "This vs Same Month Last Year", "This FY vs Last FY" — one click sets both periods
+- **Change column**: absolute diff (B − A) and % change; green for improvements, red for declines (respects `lowerBetter` for expenses and GST)
+- Data fetched only when the Compare tab is active (no extra queries on other tabs)
+
 ### Reports page visual pass (all 8 tabs)
 - **Shared presentational components** (`SectionCard`, `StatCard`, `StatGrid`, `HeroStat`) in `reports/page.tsx`, built from the existing token classes only (no new colors/shadows/radii, no shadcn) — consolidates ~35 duplicated card divs and ~6 independently-duplicated stat-tile blocks into reusable pieces
 - **Hero/secondary layout**: each tab now features one large "hero" stat (the number that answers "how did we do") above a row of smaller secondary tiles, instead of a uniform grid where every figure has equal visual weight — `HeroStat` is always full-width (never placed in a narrow multi-column grid) so long ₹ lakh/crore values always have room, with `break-words` as a safety net (wraps to a second line rather than overflowing if ever too tight, e.g. smallest phone widths)
