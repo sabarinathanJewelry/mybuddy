@@ -294,17 +294,25 @@ function useYearSoldItems(fyFrom: string, fyTo: string) {
     queryKey: ["year-sold-touch", fyFrom, fyTo],
     enabled: !!fyFrom && !!fyTo,
     queryFn: async () => {
-      const { data, error } = await supabase()
-        .from("sale_items")
-        .select("metal, gross_wt, pure_wt, purity_pct, va_pct, rate, line_total, gst_pct, making_amt, stone_amt, diamond_amt, sales!inner(bill_date)")
-        .gte("sales.bill_date", fyFrom)
-        .lte("sales.bill_date", fyTo)
-        .eq("sales.status", "confirmed")
-        .gt("gross_wt", 0)
-        .in("metal", [...GOLD_METALS, ...SILVER_METALS])
-        .limit(10000);
-      if (error) throw error;
-      return (data ?? []) as any[];
+      const all: any[] = [];
+      let start = 0;
+      const PAGE = 1000;
+      while (true) {
+        const { data, error } = await supabase()
+          .from("sale_items")
+          .select("metal, gross_wt, pure_wt, purity_pct, va_pct, rate, line_total, gst_pct, making_amt, stone_amt, diamond_amt, sales!inner(bill_date)")
+          .gte("sales.bill_date", fyFrom)
+          .lte("sales.bill_date", fyTo)
+          .eq("sales.status", "confirmed")
+          .gt("gross_wt", 0)
+          .in("metal", [...GOLD_METALS, ...SILVER_METALS])
+          .range(start, start + PAGE - 1);
+        if (error) throw error;
+        all.push(...(data ?? []));
+        if (!data || data.length < PAGE) break;
+        start += PAGE;
+      }
+      return all as any[];
     },
   });
 }
