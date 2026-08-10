@@ -992,11 +992,12 @@ export default function ReportsPage() {
     const m = now.getMonth() + 1;
     return m >= 4 ? now.getFullYear() : now.getFullYear() - 1;
   });
+  const [touchLoaded, setTouchLoaded] = useState(false);
   const fyTouchFrom = `${touchYear}-04-01`;
   const fyTouchTo   = `${touchYear + 1}-03-31`;
-  const { data: yearSoldItems   = [] } = useYearSoldItems(fyTouchFrom, fyTouchTo);
-  const { data: yearPurchDirect = [] } = useYearPurchaseDirect(fyTouchFrom, fyTouchTo);
-  const { data: yearPurchSusp   = [] } = useYearPurchaseSuspense(fyTouchFrom, fyTouchTo);
+  const { data: yearSoldItems   = [], isFetching: touchFetching } = useYearSoldItems(touchLoaded ? fyTouchFrom : "", touchLoaded ? fyTouchTo : "");
+  const { data: yearPurchDirect = [] } = useYearPurchaseDirect(touchLoaded ? fyTouchFrom : "", touchLoaded ? fyTouchTo : "");
+  const { data: yearPurchSusp   = [] } = useYearPurchaseSuspense(touchLoaded ? fyTouchFrom : "", touchLoaded ? fyTouchTo : "");
 
   // Compare tab data — only fetched when on the compare tab
   const cmpActive  = tab === "compare";
@@ -2723,12 +2724,24 @@ export default function ReportsPage() {
             <div className="space-y-3">
               <div className="flex items-center gap-3 flex-wrap">
                 <span className="font-semibold text-sm">Touch Analysis</span>
-                <select value={touchYear} onChange={e => setTouchYear(Number(e.target.value))}
+                <select value={touchYear} onChange={e => { setTouchYear(Number(e.target.value)); setTouchLoaded(false); }}
                   className="border border-line rounded-lg2 px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-gold">
                   {[2022, 2023, 2024, 2025, 2026, 2027].map(y => (
                     <option key={y} value={y}>FY {y}–{String(y + 1).slice(-2)}</option>
                   ))}
                 </select>
+                {!touchLoaded ? (
+                  <button
+                    onClick={() => setTouchLoaded(true)}
+                    className="bg-gold text-white text-xs font-medium px-4 py-1.5 rounded-lg2 hover:bg-gold/90"
+                  >
+                    Load FY {touchYear}–{String(touchYear + 1).slice(-2)}
+                  </button>
+                ) : touchFetching ? (
+                  <span className="text-xs text-ink-dim">Loading…</span>
+                ) : (
+                  <button onClick={() => setTouchLoaded(false)} className="text-xs text-ink-dim hover:underline">Reset</button>
+                )}
                 <p className="text-xs text-ink-dim">
                   Sold = purity% + VA% (all gold/silver sales). Purchase = supplier purchases + confirmed suspense settlements (no double count).
                 </p>
