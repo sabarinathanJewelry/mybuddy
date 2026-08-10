@@ -231,6 +231,33 @@ export function useSales(dateFrom: string | null = null, dateTo: string | null =
   });
 }
 
+const GOLD_M = ["gold_22k", "gold_18k", "gold_24k"];
+const SILVER_M = ["silver", "silver_pure", "silver_mpr"];
+
+export function useSalesSummary(dateFrom: string | null, dateTo: string | null) {
+  return useQuery({
+    queryKey: ["sales-summary", dateFrom, dateTo],
+    enabled: !!(dateFrom || dateTo),
+    queryFn: async () => {
+      let q = supabase()
+        .from("sale_items")
+        .select("metal, gross_wt, net_wt, purity_pct, va_pct, rate, line_total, gst_pct, making_amt, stone_amt, diamond_amt, sales!inner(bill_date, status)")
+        .eq("sales.status", "confirmed")
+        .gt("gross_wt", 0)
+        .in("metal", [...GOLD_M, ...SILVER_M])
+        .limit(10000);
+      if (dateFrom && dateTo) {
+        q = q.gte("sales.bill_date", dateFrom).lte("sales.bill_date", dateTo);
+      } else if (dateFrom) {
+        q = q.eq("sales.bill_date", dateFrom);
+      }
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
 export function useSale(id: string | null) {
   return useQuery({
     queryKey: ["sale", id],

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useSales, useDeleteSale, useReturnSale } from "@/modules/sales/api";
+import { useSales, useSalesSummary, useDeleteSale, useReturnSale } from "@/modules/sales/api";
 import { useT } from "@/i18n";
 import { useGlobalDate } from "@/stores/global-date";
 import { inr, shortDate, grams } from "@/lib/format";
@@ -14,6 +14,7 @@ export default function SalesPage() {
   const [filterTo,   setFilterTo]   = useState<string>(globalDate);
 
   const { data: sales, isLoading } = useSales(filterFrom || null, filterTo || null);
+  const { data: summaryItems = [] } = useSalesSummary(filterFrom || null, filterTo || null);
   const deleteSale = useDeleteSale();
   const returnSale = useReturnSale();
   const [returningId, setReturningId] = useState<string | null>(null);
@@ -21,15 +22,40 @@ export default function SalesPage() {
   const totalAmt = sales?.reduce((s: number, x: any) => s + (x.total ?? 0), 0) ?? 0;
 
   const GOLD_METALS = new Set(["gold_22k", "gold_18k", "gold_24k"]);
-  const SILVER_METALS = new Set(["silver", "silver_pure"]);
-  const totalGoldGross = sales?.reduce((sum: number, s: any) =>
-    sum + (s.sale_items ?? []).filter((i: any) => GOLD_METALS.has(i.metal)).reduce((w: number, i: any) => w + (i.gross_wt || 0), 0), 0) ?? 0;
-  const totalGoldNet = sales?.reduce((sum: number, s: any) =>
-    sum + (s.sale_items ?? []).filter((i: any) => GOLD_METALS.has(i.metal)).reduce((w: number, i: any) => w + (i.net_wt || 0), 0), 0) ?? 0;
-  const totalSilverGross = sales?.reduce((sum: number, s: any) =>
-    sum + (s.sale_items ?? []).filter((i: any) => SILVER_METALS.has(i.metal)).reduce((w: number, i: any) => w + (i.gross_wt || 0), 0), 0) ?? 0;
-  const totalSilverNet = sales?.reduce((sum: number, s: any) =>
-    sum + (s.sale_items ?? []).filter((i: any) => SILVER_METALS.has(i.metal)).reduce((w: number, i: any) => w + (i.net_wt || 0), 0), 0) ?? 0;
+  const SILVER_METALS = new Set(["silver", "silver_pure", "silver_mpr"]);
+
+  // Totals from summary query (all confirmed items in period, not capped at 100 bills)
+  let totalGoldGross = 0, totalGoldNet = 0;
+  let totalSilverGross = 0, totalSilverNet = 0;
+  let goldWtdVa = 0, goldWtdVaWt = 0;
+  for (const item of summaryItems) {
+    const gross = Number(item.gross_wt || 0);
+    const net   = Number(item.net_wt   || 0);
+    if (GOLD_METALS.has(item.metal)) {
+      totalGoldGross += gross;
+      totalGoldNet   += net;
+      const rate     = Number(item.rate       || 0);
+      const lineTotal = Number(item.line_total || 0);
+      const gstPct   = Number(item.gst_pct    || 0);
+      const making   = Number(item.making_amt || 0);
+      const stone    = Number(item.stone_amt  || 0) + Number(item.diamond_amt || 0);
+      const purity   = Number(item.purity_pct || 0);
+      if (gross > 0 && rate > 0 && lineTotal > 0) {
+        const excGst   = gstPct > 0 ? lineTotal * 100 / (100 + gstPct) : lineTotal;
+        const metalRev = excGst - making - stone;
+        if (metalRev > 0) {
+          const va = (metalRev / (gross * rate) - 1) * 100;
+          goldWtdVa   += (purity + va) * gross;
+          goldWtdVaWt += gross;
+        }
+      }
+    } else if (SILVER_METALS.has(item.metal)) {
+      totalSilverGross += gross;
+      totalSilverNet   += net;
+    }
+  }
+  const goldAvgTouch = goldWtdVaWt > 0 ? goldWtdVa / goldWtdVaWt : 0;
+  const goldAvgVa    = goldAvgTouch > 0 ? goldAvgTouch - 91.67 : 0;
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">
@@ -96,23 +122,24 @@ export default function SalesPage() {
             All
           </button>
         )}
-        {sales && sales.length > 0 && (
-          <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
+        <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
+          {sales && sales.length > 0 && (
             <span className="text-xs text-ink-dim">
-              {sales.length} bill{sales.length !== 1 ? "s" : ""} · {inr(totalAmt)}
+              {sales.length}{sales.length === 100 ? "+" : ""} bill{sales.length !== 1 ? "s" : ""} · {inr(totalAmt)}
             </span>
-            {totalGoldGross > 0 && (
-              <span className="bg-gold/10 text-gold text-xs font-medium px-2 py-0.5 rounded-full">
-                Gold — gross {grams(totalGoldGross)} / net {grams(totalGoldNet)}
-              </span>
-            )}
-            {totalSilverGross > 0 && (
-              <span className="bg-info/10 text-info text-xs font-medium px-2 py-0.5 rounded-full">
-                Silver — gross {grams(totalSilverGross)} / net {grams(totalSilverNet)}
-              </span>
-            )}
-          </div>
-        )}
+          )}
+          {totalGoldGross > 0 && (
+            <span className="bg-gold/10 text-gold text-xs font-medium px-2 py-0.5 rounded-full">
+              Gold {grams(totalGoldGross)}
+              {goldAvgTouch > 0 && ` · ${goldAvgTouch.toFixed(2)}% touch (VA ${goldAvgVa >= 0 ? "+" : ""}${goldAvgVa.toFixed(2)}%)`}
+            </span>
+          )}
+          {totalSilverGross > 0 && (
+            <span className="bg-info/10 text-info text-xs font-medium px-2 py-0.5 rounded-full">
+              Silver {grams(totalSilverGross)}
+            </span>
+          )}
+        </div>
       </div>
 
       {isLoading ? (

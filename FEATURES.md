@@ -16,6 +16,7 @@
 
 ### Sales
 - **Date range filter**: Sales list has From / To date inputs plus quick "Today", current month, and previous month buttons; "All" clears filter to show all bills (up to 100)
+- **Period summary bar**: A separate `useSalesSummary` query (limit 10000, confirmed only) computes accurate gold gross weight + weighted-avg touch% / VA% and silver gross weight for the full selected period, independent of the 100-bill display cap
 - **Balance column in sales list**: each row shows Due (red) / Adv (blue) / ✓ based on `sale.total − sum(sale_payments.amount)`; returned bills show no balance
 - **Bill Return**: mark a sale as returned (status = 'returned') — automatically excluded from customer balance; returned bills shown with strikethrough + "Returned" badge; undo available; no ledger reversal (payments already made become advance credit on customer account)
 - Multi-item sale entry (Gold 22K / 18K / 24K / Silver / Diamond series)

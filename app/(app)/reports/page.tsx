@@ -301,7 +301,8 @@ function useYearSoldItems(fyFrom: string, fyTo: string) {
         .lte("sales.bill_date", fyTo)
         .eq("sales.status", "confirmed")
         .gt("gross_wt", 0)
-        .in("metal", [...GOLD_METALS, ...SILVER_METALS]);
+        .in("metal", [...GOLD_METALS, ...SILVER_METALS])
+        .limit(10000);
       if (error) throw error;
       return (data ?? []) as any[];
     },
