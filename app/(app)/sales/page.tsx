@@ -10,9 +10,10 @@ import { inr, shortDate, grams } from "@/lib/format";
 export default function SalesPage() {
   const t = useT();
   const globalDate = useGlobalDate((s) => s.date);
-  const [filterDate, setFilterDate] = useState<string>(globalDate);
+  const [filterFrom, setFilterFrom] = useState<string>(globalDate);
+  const [filterTo,   setFilterTo]   = useState<string>(globalDate);
 
-  const { data: sales, isLoading } = useSales(filterDate || null);
+  const { data: sales, isLoading } = useSales(filterFrom || null, filterTo || null);
   const deleteSale = useDeleteSale();
   const returnSale = useReturnSale();
   const [returningId, setReturningId] = useState<string | null>(null);
@@ -40,27 +41,59 @@ export default function SalesPage() {
       </div>
 
       {/* Filter bar */}
-      <div className="flex items-center gap-3 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
         <input
           type="date"
-          value={filterDate}
-          onChange={(e) => setFilterDate(e.target.value)}
+          value={filterFrom}
+          onChange={(e) => setFilterFrom(e.target.value)}
           className="border border-line rounded-lg2 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
         />
-        {filterDate && (
+        <span className="text-xs text-ink-dim">to</span>
+        <input
+          type="date"
+          value={filterTo}
+          onChange={(e) => setFilterTo(e.target.value)}
+          className="border border-line rounded-lg2 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gold"
+        />
+        <button
+          onClick={() => { setFilterFrom(globalDate); setFilterTo(globalDate); }}
+          className="text-xs text-gold border border-gold/40 px-3 py-1.5 rounded-lg2 hover:bg-gold/5"
+        >
+          Today
+        </button>
+        {(() => {
+          const now = new Date();
+          const y = now.getFullYear(), m = now.getMonth();
+          const thisFrom = `${y}-${String(m + 1).padStart(2, "0")}-01`;
+          const thisTo   = `${y}-${String(m + 1).padStart(2, "0")}-${String(new Date(y, m + 1, 0).getDate()).padStart(2, "0")}`;
+          const prevM = m === 0 ? 11 : m - 1;
+          const prevY = m === 0 ? y - 1 : y;
+          const prevFrom = `${prevY}-${String(prevM + 1).padStart(2, "0")}-01`;
+          const prevTo   = `${prevY}-${String(prevM + 1).padStart(2, "0")}-${String(new Date(prevY, prevM + 1, 0).getDate()).padStart(2, "0")}`;
+          const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+          return (
+            <>
+              <button
+                onClick={() => { setFilterFrom(thisFrom); setFilterTo(thisTo); }}
+                className="text-xs text-ink-dim border border-line px-3 py-1.5 rounded-lg2 hover:bg-canvas"
+              >
+                {months[m]}
+              </button>
+              <button
+                onClick={() => { setFilterFrom(prevFrom); setFilterTo(prevTo); }}
+                className="text-xs text-ink-dim border border-line px-3 py-1.5 rounded-lg2 hover:bg-canvas"
+              >
+                {months[prevM]}
+              </button>
+            </>
+          );
+        })()}
+        {(filterFrom || filterTo) && (
           <button
-            onClick={() => setFilterDate("")}
+            onClick={() => { setFilterFrom(""); setFilterTo(""); }}
             className="text-xs text-ink-dim border border-line px-3 py-1.5 rounded-lg2 hover:bg-canvas"
           >
-            All dates
-          </button>
-        )}
-        {!filterDate && (
-          <button
-            onClick={() => setFilterDate(globalDate)}
-            className="text-xs text-gold border border-gold/40 px-3 py-1.5 rounded-lg2 hover:bg-gold/5"
-          >
-            Today
+            All
           </button>
         )}
         {sales && sales.length > 0 && (
@@ -207,7 +240,7 @@ export default function SalesPage() {
               {!sales?.length && (
                 <tr>
                   <td colSpan={7} className="px-4 py-8 text-center text-ink-dim">
-                    {filterDate ? `No sales on ${shortDate(filterDate)}` : t("no_data")}
+                    {filterFrom ? `No sales ${filterFrom === filterTo ? `on ${shortDate(filterFrom)}` : `from ${shortDate(filterFrom)} to ${shortDate(filterTo)}`}` : t("no_data")}
                   </td>
                 </tr>
               )}

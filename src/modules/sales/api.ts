@@ -209,9 +209,9 @@ function itemsInsertPayload(saleId: string, items: SaleDraft["items"]) {
   }));
 }
 
-export function useSales(date: string | null = null, limit = 100) {
+export function useSales(dateFrom: string | null = null, dateTo: string | null = null, limit = 100) {
   return useQuery({
-    queryKey: ["sales", date, limit],
+    queryKey: ["sales", dateFrom, dateTo, limit],
     queryFn: async () => {
       let q = supabase()
         .from("sales")
@@ -219,7 +219,11 @@ export function useSales(date: string | null = null, limit = 100) {
         .order("bill_date", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(limit);
-      if (date) q = q.eq("bill_date", date);
+      if (dateFrom && dateTo) {
+        q = q.gte("bill_date", dateFrom).lte("bill_date", dateTo);
+      } else if (dateFrom) {
+        q = q.eq("bill_date", dateFrom);
+      }
       const { data, error } = await q;
       if (error) throw error;
       return data ?? [];
