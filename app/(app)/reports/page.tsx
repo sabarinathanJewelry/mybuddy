@@ -968,7 +968,7 @@ export default function ReportsPage() {
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [tab, setTab]     = useState<"pnl" | "pnl2" | "detail" | "products" | "expenses" | "items" | "kolusu" | "touch" | "compare">("pnl");
+  const [tab, setTab]     = useState<"pnl" | "pnl2" | "detail" | "products" | "expenses" | "items" | "kolusu" | "touch" | "compare" | "goldmon">("pnl");
   const [kolusuPureRate,       setKolusuPureRate]       = useState(263);
   const [kolusuBoardRate,      setKolusuBoardRate]      = useState(285);
   const [kolusuSuspenseMargin, setKolusuSuspenseMargin] = useState(2);
