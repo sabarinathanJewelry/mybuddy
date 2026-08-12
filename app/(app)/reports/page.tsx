@@ -374,6 +374,72 @@ function useSuspenseTouchProfit() {
   });
 }
 
+// Monthly gold comparison queries
+function useAllGoldStockEntries(from: string, to: string) {
+  return useQuery({
+    queryKey: ["all-gold-stock-entries", from, to],
+    enabled: !!from && !!to,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("gold_stock_entries")
+        .select("entry_date, total_weight_g, untagged_weight_g")
+        .gte("entry_date", from)
+        .lte("entry_date", to)
+        .order("entry_date", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as { entry_date: string; total_weight_g: number; untagged_weight_g: number }[];
+    },
+  });
+}
+
+function useAllGoldSaleItems(from: string, to: string) {
+  return useQuery({
+    queryKey: ["all-gold-sale-items", from, to],
+    enabled: !!from && !!to,
+    queryFn: async () => {
+      const all: any[] = [];
+      let start = 0;
+      const PAGE = 1000;
+      const GM = ["gold_22k", "gold_18k", "gold_24k"];
+      while (true) {
+        const { data, error } = await supabase()
+          .from("sale_items")
+          .select("gross_wt, metal, sales!inner(bill_date, status)")
+          .in("metal", GM)
+          .gte("sales.bill_date", from)
+          .lte("sales.bill_date", to)
+          .eq("sales.status", "confirmed")
+          .gt("gross_wt", 0)
+          .range(start, start + PAGE - 1);
+        if (error) throw error;
+        all.push(...(data ?? []));
+        if (!data || data.length < PAGE) break;
+        start += PAGE;
+      }
+      return all as any[];
+    },
+  });
+}
+
+function useAllGoldPurchaseItems(from: string, to: string) {
+  return useQuery({
+    queryKey: ["all-gold-purchase-items", from, to],
+    enabled: !!from && !!to,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("supplier_purchases")
+        .select("purchase_date, gross_wt, metal")
+        .in("metal", ["gold_22k", "gold_18k", "gold_24k"])
+        .gte("purchase_date", from)
+        .lte("purchase_date", to)
+        .eq("is_return", false)
+        .eq("is_adjustment", false);
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
 // WAC v2 — includes settled supplier purchases + 22K purity approx for exchange gold
 function useMetalWACv2() {
   return useQuery({
@@ -1003,6 +1069,19 @@ export default function ReportsPage() {
   const [touchLoaded, setTouchLoaded] = useState(false);
   const fyTouchFrom = `${touchYear}-04-01`;
   const fyTouchTo   = `${touchYear + 1}-03-31`;
+  const [goldMonYear, setGoldMonYear] = useState(() => {
+    const m = now.getMonth() + 1;
+    return m >= 4 ? now.getFullYear() : now.getFullYear() - 1;
+  });
+  const [goldMonLoaded, setGoldMonLoaded] = useState(false);
+  const goldMonFyFrom   = `${goldMonYear}-04-01`;
+  const goldMonFyTo     = `${goldMonYear + 1}-03-31`;
+  const goldMonFetchFrom = `${goldMonYear}-03-01`;
+  const goldMonFetchTo   = `${goldMonYear + 1}-04-02`;
+  const { data: gmStockEntries = [], isFetching: gmStockFetch } = useAllGoldStockEntries(goldMonLoaded ? goldMonFetchFrom : "", goldMonLoaded ? goldMonFetchTo : "");
+  const { data: gmSaleItems   = [], isFetching: gmSalesFetch  } = useAllGoldSaleItems(goldMonLoaded ? goldMonFyFrom : "", goldMonLoaded ? goldMonFyTo : "");
+  const { data: gmPurchItems  = [], isFetching: gmPurchFetch  } = useAllGoldPurchaseItems(goldMonLoaded ? goldMonFyFrom : "", goldMonLoaded ? goldMonFyTo : "");
+  const gmFetching = gmStockFetch || gmSalesFetch || gmPurchFetch;
   const { data: yearSoldItems   = [], isFetching: touchFetching } = useYearSoldItems(touchLoaded ? fyTouchFrom : "", touchLoaded ? fyTouchTo : "");
   const { data: yearPurchDirect = [] } = useYearPurchaseDirect(touchLoaded ? fyTouchFrom : "", touchLoaded ? fyTouchTo : "");
   const { data: yearPurchSusp   = [] } = useYearPurchaseSuspense(touchLoaded ? fyTouchFrom : "", touchLoaded ? fyTouchTo : "");
@@ -1230,7 +1309,7 @@ export default function ReportsPage() {
 
       {/* Tabs */}
       <div className="flex border-b border-line gap-1 overflow-x-auto">
-        {([["pnl", "P&L Report"], ["pnl2", "P&L V2"], ["detail", "Sales Detail"], ["products", "Product Mix"], ["expenses", "Expenses"], ["items", "Item Search"], ["kolusu", "Kolusu P&L"], ["touch", "Touch Profit"], ["compare", "Compare"]] as const).map(([k, label]) => (
+        {([["pnl", "P&L Report"], ["pnl2", "P&L V2"], ["detail", "Sales Detail"], ["products", "Product Mix"], ["expenses", "Expenses"], ["items", "Item Search"], ["kolusu", "Kolusu P&L"], ["touch", "Touch Profit"], ["compare", "Compare"], ["goldmon", "Gold Monthly"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={clsx("px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap",
               tab === k ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink")}>
@@ -3467,6 +3546,145 @@ export default function ReportsPage() {
                     })}
                   </tbody>
                 </table>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ── GOLD MONTHLY TAB ─────────────────────────────────── */}
+      {tab === "goldmon" && (() => {
+        function stockOnDate(entries: typeof gmStockEntries, onOrBefore: string) {
+          const dates = [...new Set(entries.map(e => e.entry_date))].filter(d => d <= onOrBefore).sort();
+          if (!dates.length) return null;
+          const latest = dates[dates.length - 1];
+          return {
+            wt: parseFloat(entries.filter(e => e.entry_date === latest)
+              .reduce((s, e) => s + Number(e.total_weight_g || 0) + Number(e.untagged_weight_g || 0), 0).toFixed(3)),
+            date: latest,
+          };
+        }
+
+        const fyMonths: string[] = [];
+        for (let m = 4; m <= 12; m++) fyMonths.push(`${goldMonYear}-${String(m).padStart(2, "0")}`);
+        for (let m = 1; m <= 3;  m++) fyMonths.push(`${goldMonYear + 1}-${String(m).padStart(2, "0")}`);
+        const todayStr = now.toISOString().slice(0, 10);
+
+        const gmRows = fyMonths.map(ym => {
+          const [y, mo] = ym.split("-").map(Number);
+          const firstOfMonth = `${ym}-01`;
+          const nm = mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, "0")}`;
+          const firstOfNext = `${nm}-01`;
+          const isFuture = firstOfMonth > todayStr;
+
+          const opening = stockOnDate(gmStockEntries, firstOfMonth);
+          const closing = firstOfNext <= goldMonFetchTo ? stockOnDate(gmStockEntries, firstOfNext) : null;
+
+          const salesOut = parseFloat(gmSaleItems
+            .filter((i: any) => (i.sales?.bill_date ?? "").startsWith(ym))
+            .reduce((s: number, i: any) => s + Number(i.gross_wt || 0), 0).toFixed(3));
+
+          const purchIn = parseFloat(gmPurchItems
+            .filter((p: any) => (p.purchase_date ?? "").startsWith(ym))
+            .reduce((s: number, p: any) => s + Number(p.gross_wt || 0), 0).toFixed(3));
+
+          return { ym, firstOfMonth, opening, closing, salesOut, purchIn, isFuture };
+        });
+
+        const g3 = (n: number | null) => n == null ? "—" : n.toFixed(3) + "g";
+
+        return (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-sm font-medium">FY</span>
+              <select value={goldMonYear} onChange={e => { setGoldMonYear(Number(e.target.value)); setGoldMonLoaded(false); }}
+                className={clsx(inp, "w-32")}>
+                {[2023, 2024, 2025, 2026].map(y => (
+                  <option key={y} value={y}>{y}–{String(y + 1).slice(-2)}</option>
+                ))}
+              </select>
+              {!goldMonLoaded ? (
+                <button onClick={() => setGoldMonLoaded(true)}
+                  className="bg-gold text-white text-xs font-medium px-4 py-2 rounded-lg2">
+                  Load FY {goldMonYear}–{String(goldMonYear + 1).slice(-2)}
+                </button>
+              ) : gmFetching ? (
+                <span className="text-sm text-ink-dim">Loading…</span>
+              ) : (
+                <button onClick={() => setGoldMonLoaded(false)} className="text-xs text-ink-dim hover:underline">Reset</button>
+              )}
+            </div>
+
+            {goldMonLoaded && !gmFetching && (
+              <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+                <table className="w-full text-sm" style={{ minWidth: 680 }}>
+                  <thead>
+                    <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                      <th className="text-left px-4 py-2.5">Month</th>
+                      <th className="text-right px-3 py-2.5">Opening Stock</th>
+                      <th className="text-right px-3 py-2.5">Purchases In</th>
+                      <th className="text-right px-3 py-2.5">Sales Out</th>
+                      <th className="text-right px-3 py-2.5">Closing Stock</th>
+                      <th className="text-right px-4 py-2.5">Net Change</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {gmRows.map(r => {
+                      const netChange = r.closing && r.opening
+                        ? parseFloat((r.closing.wt - r.opening.wt).toFixed(3)) : null;
+                      const stockMissing = !r.isFuture && (!r.opening || !r.closing);
+                      return (
+                        <tr key={r.ym} className={clsx("border-b border-line last:border-0",
+                          r.isFuture ? "opacity-40" : "hover:bg-canvas/50")}>
+                          <td className="px-4 py-2.5 font-medium">
+                            {MONTHS[parseInt(r.ym.split("-")[1]) - 1]} {r.ym.split("-")[0]}
+                            {stockMissing && <span className="ml-2 text-[10px] text-warn">no snapshot</span>}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono text-xs">
+                            {r.opening ? r.opening.wt.toFixed(3) + "g" : "—"}
+                            {r.opening && r.opening.date !== r.firstOfMonth && (
+                              <span className="ml-1 text-[9px] text-warn">({shortDate(r.opening.date)})</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono text-xs text-ok">
+                            {r.purchIn > 0 ? "+" + r.purchIn.toFixed(3) + "g" : "—"}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono text-xs text-err">
+                            {r.salesOut > 0 ? "−" + r.salesOut.toFixed(3) + "g" : "—"}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono text-xs">
+                            {r.closing ? r.closing.wt.toFixed(3) + "g" : "—"}
+                          </td>
+                          <td className={clsx("px-4 py-2.5 text-right font-mono text-xs font-semibold",
+                            netChange == null ? "text-ink-dim" : netChange >= 0 ? "text-ok" : "text-err")}>
+                            {netChange == null ? "—" : (netChange >= 0 ? "+" : "") + netChange.toFixed(3) + "g"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-canvas border-t border-line text-xs">
+                      <td className="px-4 py-2.5 font-semibold text-ink-dim">FY Total</td>
+                      <td className="px-3 py-2.5" />
+                      <td className="px-3 py-2.5 text-right font-mono font-semibold text-ok">
+                        {gmPurchItems.length > 0
+                          ? "+" + parseFloat(gmPurchItems.reduce((s: number, p: any) => s + Number(p.gross_wt || 0), 0).toFixed(3)) + "g"
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-mono font-semibold text-err">
+                        {gmSaleItems.length > 0
+                          ? "−" + parseFloat(gmSaleItems.reduce((s: number, i: any) => s + Number(i.gross_wt || 0), 0).toFixed(3)) + "g"
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-2.5" />
+                      <td className="px-4 py-2.5" />
+                    </tr>
+                  </tfoot>
+                </table>
+                <p className="px-4 py-2.5 text-[10px] text-ink-dim border-t border-line">
+                  Opening/Closing stock from Gold Stock snapshots (gross weight). Purchases In = supplier purchases gross weight. Sales Out = confirmed sale items gross weight. Enter stock on the 1st of each month in Gold Stock for accurate figures.
+                </p>
               </div>
             )}
           </div>

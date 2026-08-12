@@ -92,7 +92,7 @@
 - Notes shown as secondary line under description in the table
 - Mode=bank posts to bank_ledger automatically
 - Reports: Expenses by Category tab
-- **Bulk Import tab**: paste tab-separated ERP/Excel ledger data → select category + mode → Parse & Check (auto-detects date col 0 DD-MM-YYYY, txnNo col 1, narration col 5/fallback col 3, debit col 6 / credit col 7) → preview table with New/Duplicate badges (duplicate key: date|amount|category) → per-row checkboxes + Select All → selected-total footer → Import N rows (inserts to expenses + bank_ledger/cash_ledger); **date carry-forward**: ERP exports only print the date on the first row of a group — blank-date PAYMENT rows now inherit the last seen date so multi-payment days are fully captured; **PURCHASE ENTRY rows ignored**: only PAYMENT type rows are imported; **approximate duplicate detection**: matches existing expenses within ₹1 tolerance on same date + category instead of exact amount
+- **Bulk Import tab**: paste tab-separated ERP/Excel ledger data → select category + mode → Parse & Check (auto-detects date col 0 DD-MM-YYYY, txnNo col 1, narration col 5/fallback col 3, debit col 6 / credit col 7) → preview table with New/Duplicate badges (duplicate key: date|amount|category) → per-row checkboxes + Select All → selected-total footer → Import N rows (inserts to expenses + bank_ledger/cash_ledger); **date carry-forward**: ERP exports only print the date on the first row of a group — blank-date PAYMENT rows now inherit the last seen date so multi-payment days are fully captured; **PURCHASE ENTRY rows ignored**: only PAYMENT type rows are imported; **approximate duplicate detection**: matches existing expenses within ₹1 tolerance on same date + category instead of exact amount; **JOURNAL format support**: also parses "JOURNAL CC KOTAK 916"-style rows (col 2 starts with JOURNAL, description from col 3, amount from col 5)
 - **Categories tab**: manage expense categories in-app — add new categories (name input + Save), delete existing ones (with confirmation); list shows all categories from `expense_categories` table
 - **Grouped view in All Expenses tab**: expenses grouped by category (sorted by total desc), each category is a collapsible accordion row showing item count + subtotal; Expand all / Collapse all toggle; Edit/Delete per item works inside each group
 - **P&L Report — Operating Expenses grouped**: the Operating Expenses block in the P&L Report tab now shows expenses as a category accordion (same grouping logic, sorted by total desc); each category row shows item count + subtotal and can be expanded/collapsed; Expand all / Collapse all toggle at the top; grand total footer unchanged
@@ -145,6 +145,15 @@
 - **Suspense Touch Profit Detail** (collapsible): all-time monthly breakdown of grams earned from touch spread on confirmed suspense items; optional ₹ rate input; expandable item list
 - Requires migration 126 (adds va_pct to supplier_suspense view)
 - **Sales Detail tab**: VA% column showing weighted avg gold VA% per bill
+
+### Gold Monthly Comparison (Reports → Gold Monthly tab)
+- FY year selector (Apr–Mar) with lazy Load button — no auto-fetch on tab switch
+- Table with one row per month: Opening Stock (g) · Purchases In (g) · Sales Out (g) · Closing Stock (g) · Net Change (g)
+- Opening/Closing pulled from Gold Stock snapshots (gross weight); warns if snapshot date differs from 1st of month
+- Purchases In = supplier_purchases gross weight for gold metals (22K/18K/24K)
+- Sales Out = confirmed sale_items gross weight for gold metals (paginated to bypass 1000-row cap)
+- FY totals row: aggregate purchases and sales for the year
+- Future months shown at reduced opacity; "no snapshot" warning when stock entry is missing
 
 ### Refinery / Metal Flow
 - Refinery entry for metal sent out and received

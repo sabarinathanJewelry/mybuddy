@@ -34,19 +34,32 @@ function parsePaste(raw: string): Omit<BulkRow, "idx" | "isDuplicate">[] {
     if (m) {
       date = `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
       lastDate = date;
-    } else if (txnType === "PAYMENT" && lastDate) {
+    } else if (lastDate && (txnType === "PAYMENT" || txnType.startsWith("JOURNAL"))) {
       date = lastDate;
     } else {
       continue;
     }
-    if (txnType !== "PAYMENT") continue;
+
     const txnNo = (c[1] ?? "").trim();
-    const description = (c[5] ?? "").trim() || (c[3] ?? "").trim() || txnNo;
-    const amtD = parseAmt(c[6] ?? "");
-    const amtC = parseAmt(c[7] ?? "");
-    const amount = amtD > 0 ? amtD : amtC;
-    if (amount <= 0) continue;
-    results.push({ date, txnNo, description, amount });
+
+    if (txnType === "PAYMENT") {
+      // Old Tally format: date | txnNo | PAYMENT | ledger | | description | debit | credit
+      const description = (c[5] ?? "").trim() || (c[3] ?? "").trim() || txnNo;
+      const amtD = parseAmt(c[6] ?? "");
+      const amtC = parseAmt(c[7] ?? "");
+      const amount = amtD > 0 ? amtD : amtC;
+      if (amount <= 0) continue;
+      results.push({ date, txnNo, description, amount });
+    } else if (txnType.startsWith("JOURNAL")) {
+      // Journal format: date | txnNo | JOURNAL <bank> | description | credit | debit
+      const description = (c[3] ?? "").trim() || txnNo;
+      // c[4] = credit (incoming), c[5] = debit (outgoing expense)
+      const debit  = parseAmt(c[5] ?? "");
+      const credit = parseAmt(c[4] ?? "");
+      const amount = debit > 0 ? debit : credit;
+      if (amount <= 0) continue;
+      results.push({ date, txnNo, description, amount });
+    }
   }
   return results;
 }
