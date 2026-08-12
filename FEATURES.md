@@ -15,11 +15,12 @@
 - Customer balance formula: `opening_balance − total_sales + payments_in − payments_out + writeoffs`
 
 ### Supplier Outstanding Report (`/suppliers/outstanding`)
-- Per-supplier table: Period Purchases (₹) · Gold In (g) · Period Payments (₹) · Outstanding (₹) as of period end
-- Outstanding = opening_balance + all purchases to date − all payments to date (running balance, not period-only)
+- Per-supplier table: Period Purchases (₹) · Gold In (g) · Period Payments (₹) · Metal Balance (g) · Cash Outstanding (₹)
+- **Cash Outstanding** = opening_balance + all purchases − all payments (all-time up to period end, running balance)
+- **Metal Balance** = opening gold/silver (g) + metal-account purchases pure_wt − physical dispatches − metal payments; matches the figure on the supplier detail page
 - Filters: FY year selector + period buttons (Full FY / Q1 Apr–Jun / Q2 Jul–Sep / Q3 Oct–Dec / Q4 Jan–Mar / Month)
-- Summary cards: total purchases, payments, gold purchased, total outstanding for the period
-- Supplier names link to their detail page; CR suffix when supplier has a credit balance
+- Summary cards: period purchases, payments, gold in, total metal balance, total cash outstanding
+- Supplier names link to their detail page; CR suffix when balance is in credit
 - Linked from Suppliers list page header ("Outstanding" button)
 
 ### Supplier Payments Import
