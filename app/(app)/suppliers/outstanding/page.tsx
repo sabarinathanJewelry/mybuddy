@@ -82,29 +82,30 @@ export default function SupplierOutstandingPage() {
         .filter((p: any) => GOLD_METALS.includes(p.metal))
         .reduce((a: number, p: any) => a + Number(p.gross_wt || 0), 0);
 
-      // Metal balance — gold
-      const metalPurchGold = (purchases as any[])
-        .filter(p => p.supplier_id === s.id && p.is_metal_balance && GOLD_METALS.includes(p.metal))
-        .reduce((a: number, p: any) => p.is_return ? a - Number(p.pure_wt || 0) : a + Number(p.pure_wt || 0), 0);
-      const dispatchGold = (dispatches as any[])
-        .filter(d => d.supplier_id === s.id && (!d.metal || GOLD_METALS.includes(d.metal)))
-        .reduce((a: number, d: any) => a + Number(d.weight_g || 0) * (Number(d.purity_pct) || 100) / 100, 0);
-      const payGold = (payments as any[])
+      // Gold outstanding: opening + all gold purchases (gross) − gold dispatches − old_gold payments
+      // dispatches.metal is stored as "gold" or "silver" (not the full code like "gold_22k")
+      const goldPurchG = (purchases as any[])
+        .filter(p => p.supplier_id === s.id && !p.is_return && !p.is_adjustment && GOLD_METALS.includes(p.metal))
+        .reduce((a: number, p: any) => a + Number(p.gross_wt || 0), 0);
+      const goldDispatchG = (dispatches as any[])
+        .filter(d => d.supplier_id === s.id && (d.metal ?? "gold").startsWith("gold"))
+        .reduce((a: number, d: any) => a + Number(d.weight_g || 0), 0);
+      const goldPayG = (payments as any[])
         .filter(p => p.supplier_id === s.id && p.mode === "old_gold" && Number(p.metal_wt || 0) > 0)
         .reduce((a: number, p: any) => a + Number(p.metal_wt || 0), 0);
-      const goldBalanceG = Number(s.gold_opening_g || 0) + metalPurchGold - dispatchGold - payGold;
+      const goldBalanceG = Number(s.gold_opening_g || 0) + goldPurchG - goldDispatchG - goldPayG;
 
-      // Metal balance — silver
-      const metalPurchSilv = (purchases as any[])
-        .filter(p => p.supplier_id === s.id && p.is_metal_balance && SILVER_METALS.includes(p.metal))
-        .reduce((a: number, p: any) => p.is_return ? a - Number(p.pure_wt || 0) : a + Number(p.pure_wt || 0), 0);
-      const dispatchSilv = (dispatches as any[])
-        .filter(d => d.supplier_id === s.id && d.metal && SILVER_METALS.includes(d.metal))
-        .reduce((a: number, d: any) => a + Number(d.weight_g || 0) * (Number(d.purity_pct) || 100) / 100, 0);
-      const paySilv = (payments as any[])
+      // Silver outstanding: opening + all silver purchases (gross) − silver dispatches − old_silver payments
+      const silvPurchG = (purchases as any[])
+        .filter(p => p.supplier_id === s.id && !p.is_return && !p.is_adjustment && SILVER_METALS.includes(p.metal))
+        .reduce((a: number, p: any) => a + Number(p.gross_wt || 0), 0);
+      const silvDispatchG = (dispatches as any[])
+        .filter(d => d.supplier_id === s.id && (d.metal ?? "").startsWith("silver"))
+        .reduce((a: number, d: any) => a + Number(d.weight_g || 0), 0);
+      const silvPayG = (payments as any[])
         .filter(p => p.supplier_id === s.id && p.mode === "old_silver" && Number(p.metal_wt || 0) > 0)
         .reduce((a: number, p: any) => a + Number(p.metal_wt || 0), 0);
-      const silvBalanceG = Number(s.silver_opening_g || 0) + metalPurchSilv - dispatchSilv - paySilv;
+      const silvBalanceG = Number(s.silver_opening_g || 0) + silvPurchG - silvDispatchG - silvPayG;
 
       return { s, periodPurchAmt, periodPayAmt, periodGoldG, outstanding, goldBalanceG, silvBalanceG };
     }).filter(r =>
