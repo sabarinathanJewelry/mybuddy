@@ -3598,7 +3598,7 @@ export default function ReportsPage() {
             <div className="flex items-center gap-3 flex-wrap">
               <span className="text-sm font-medium">FY</span>
               <select value={goldMonYear} onChange={e => { setGoldMonYear(Number(e.target.value)); setGoldMonLoaded(false); }}
-                className={clsx(inp, "w-32")}>
+                className="border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold bg-white w-32">
                 {[2023, 2024, 2025, 2026].map(y => (
                   <option key={y} value={y}>{y}–{String(y + 1).slice(-2)}</option>
                 ))}
