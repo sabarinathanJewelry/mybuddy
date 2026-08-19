@@ -155,10 +155,10 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
       const logs = logsRes.data ?? [];
       const staff: StaffMember[] = (staffRes.data ?? []) as any;
       const approvedPerms = new Set((permsRes.data ?? []).map((p: any) => p.bio_user_id));
-      // Shop exception: if shop opened late, extend the late threshold accordingly
+      // Shop exception: if shop opened late, threshold = shop open time (no grace on top)
       const shopExc = exceptionsRes.data as { shop_opens_at: string } | null;
       const lateThresholdMins = shopExc
-        ? parseTimeToMins(shopExc.shop_opens_at) + 20
+        ? parseTimeToMins(shopExc.shop_opens_at)
         : 9 * 60 + 50;
 
       const byUser = new Map<string, { id: string; punch_time: string }[]>();
@@ -462,7 +462,8 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
           const firstInMins = firstIn ? istMinutes(firstIn) : 0;
           const hasPermission = approvedPermSet.has(`${s.bio_user_id}:${date}`);
           const shopOpenMins = exceptionMap.get(date) ?? (9 * 60 + 30);
-          const threshold = shopOpenMins + 20;
+          // On late-shop days threshold = shop open time; normal days = 9:30 + 20 = 9:50
+          const threshold = exceptionMap.has(date) ? shopOpenMins : shopOpenMins + 20;
           const is_late     = firstIn && !hasPermission ? firstInMins > threshold : false;
           const late_minutes = is_late ? firstInMins - shopOpenMins : 0;
 
