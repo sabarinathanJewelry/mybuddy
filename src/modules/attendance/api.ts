@@ -618,6 +618,21 @@ export function useDecidePermission() {
   });
 }
 
+export function useDeletePermission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase().from("permission_requests").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["permission_requests"] });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+      qc.invalidateQueries({ queryKey: ["monthly-attendance"] });
+    },
+  });
+}
+
 // ── Kiosk sequence ────────────────────────────────────────────────────────────
 
 export type KioskTap = { bio_user_id: string; action: "in" | "out" };

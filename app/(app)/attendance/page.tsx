@@ -12,7 +12,7 @@ import {
   useKioskSequence, useSaveKioskSequence, useKioskSecret, useSaveKioskSecret, useLastSyncTime,
   useAdminKioskSequences, useSaveUserKioskSequence,
   useLeavesByDate, useAllLeaveRequests, useMyLeaveRequests, usePendingLeaveCount,
-  useMyStaffProfile, useSubmitLeaveRequest, useDecideLeaveRequest, useDeleteLeaveRequest, useWeekoffBioIdsByDate,
+  useMyStaffProfile, useSubmitLeaveRequest, useDecideLeaveRequest, useDeleteLeaveRequest, useWeekoffBioIdsByDate, useDeletePermission,
   useStaffAdvances, useSaveStaffAdvance, useUpdateStaffAdvance, useDeleteStaffAdvance,
   useApprovedPermsByDate, useApprovedPermsByMonth, useApprovedLeavesByMonth,
   useLateFineWaiversByMonth, useWaiveLateFine, type LateFineWaiver,
@@ -1290,6 +1290,7 @@ function RequestsTab({ isAdmin, myBioUserId }: { isAdmin: boolean; myBioUserId: 
   // Permission sub-tab state
   const { data: requests = [], isLoading } = useAllPermissions();
   const decide = useDecidePermission();
+  const deletePerm = useDeletePermission();
   const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("pending");
   const [noteMap, setNoteMap] = useState<Record<string, string>>({});
 
@@ -1414,11 +1415,19 @@ function RequestsTab({ isAdmin, myBioUserId }: { isAdmin: boolean; myBioUserId: 
                             </div>
                           )}
                           {r.status !== "pending" && (
-                            <div className="flex items-center gap-1.5 justify-end">
+                            <div className="flex items-center gap-1.5 justify-end flex-wrap">
                               {r.permission_type === "half_day" && (
                                 <span className="text-[10px] font-bold bg-warn/10 text-warn px-1.5 py-0.5 rounded">Half Day</span>
                               )}
                               {r.admin_note && <span className="text-xs text-ink-dim">{r.admin_note}</span>}
+                              {isAdmin && (
+                                <button
+                                  onClick={() => { if (confirm("Delete this permission permanently?")) deletePerm.mutate(r.id); }}
+                                  disabled={deletePerm.isPending}
+                                  className="text-[11px] text-err hover:underline disabled:opacity-40">
+                                  Delete
+                                </button>
+                              )}
                             </div>
                           )}
                         </td>

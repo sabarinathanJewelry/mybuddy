@@ -204,6 +204,14 @@ export default function WeekoffsView() {
     },
   });
 
+  const deleteWeekoff = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase().from("monthly_weekoffs").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["weekoffs", monthKey] }),
+  });
+
   const canEdit = !myWeekoff
     || myWeekoff.status === "draft"
     || myWeekoff.status === "rejected"
@@ -409,13 +417,21 @@ export default function WeekoffsView() {
                 {allWeekoffs.filter(w => w.status === "approved").map((w) => (
                   <div key={w.id} className="flex items-start gap-3 text-xs border-b border-line last:border-0 pb-2">
                     <span className="font-medium text-ink min-w-[100px]">{profileNames[w.user_id] ?? "Staff"}</span>
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-wrap gap-1 flex-1">
                       {w.dates.sort().map((d) => (
                         <span key={d} className="bg-gold/10 text-gold px-1.5 py-0.5 rounded-full font-mono">
                           {new Date(d + "T00:00:00").getDate()}
                         </span>
                       ))}
                     </div>
+                    {isAdmin && (
+                      <button
+                        onClick={() => { if (confirm(`Revoke week-off for ${profileNames[w.user_id] ?? "Staff"}?`)) deleteWeekoff.mutate(w.id); }}
+                        disabled={deleteWeekoff.isPending}
+                        className="text-[11px] text-err hover:underline disabled:opacity-40 shrink-0">
+                        Revoke
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
