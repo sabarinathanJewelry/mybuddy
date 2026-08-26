@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import WeekoffsView from "@/components/weekoffs/WeekoffsView";
+import CountersTab from "@/components/counters/CountersTab";
 import NotificationBell from "@/components/ui/notification-bell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
@@ -31,7 +32,7 @@ import { useAuth } from "@/stores/auth";
 import { shortDate, inr } from "@/lib/format";
 import { parseKolusuChat } from "@/lib/kolusu-parse";
 
-type PageTab = "attendance" | "staff" | "monthly" | "requests" | "leaves" | "duties" | "chat" | "announcements" | "kyc" | "tasks" | "weekoffs" | "payslip";
+type PageTab = "attendance" | "staff" | "monthly" | "requests" | "leaves" | "duties" | "chat" | "announcements" | "kyc" | "tasks" | "weekoffs" | "payslip" | "counters";
 
 interface ChatMsg { id: string; sender_id: string; sender_name: string; message: string; is_deleted: boolean; edited_at: string | null; created_at: string }
 
@@ -3012,6 +3013,7 @@ export default function AttendancePage() {
     tasks:         "Tasks",
     weekoffs:      "Week-offs",
     payslip:       "My Payslip",
+    counters:      "Counters",
   };
 
   // Smart home cards — admin/subadmin only; shown regardless of kiosk lock state
@@ -3028,6 +3030,7 @@ export default function AttendancePage() {
       { icon: "💬", label: "Chat",          tab: "chat" },
       { icon: "📢", label: "Notices",       tab: "announcements" },
       { icon: "✅", label: "Tasks",         tab: "tasks" },
+      { icon: "🧹", label: "Counters",     tab: "counters" },
       { icon: "⭐", label: "Review",        action: () => setShowReview(true) },
     ];
     return (
@@ -3144,7 +3147,7 @@ export default function AttendancePage() {
             ...(!isAdmin ? ["payslip"] : []),
             ...(!isAdmin ? ["weekoffs"] : []),
             "staff", "monthly", "requests", "leaves", "duties", "chat",
-            ...(isAdmin ? ["announcements", "kyc", "tasks", "weekoffs"] : ["tasks"]),
+            ...(isAdmin ? ["announcements", "kyc", "tasks", "weekoffs", "counters"] : ["tasks"]),
           ] as PageTab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
@@ -3673,6 +3676,9 @@ export default function AttendancePage() {
 
       {/* ── Week-offs tab ── */}
       {tab === "weekoffs" && <WeekoffsView />}
+
+      {/* ── Counters tab ── */}
+      {tab === "counters" && <CountersTab isAdmin={isAdmin} myBioUserId={myBioUserId} />}
 
       {/* ── My Payslip tab (staff only) ── */}
       {tab === "payslip" && <PayslipTab />}
