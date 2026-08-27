@@ -92,9 +92,9 @@ Deno.serve(async (req) => {
     );
   }
 
-  // Look up profile UUID via staff_members.user_id
+  // Look up profile UUID via staff.user_id
   const { data: staffRow } = await supabase
-    .from("staff_members")
+    .from("staff")
     .select("user_id, name")
     .eq("bio_user_id", supRow.bio_user_id)
     .maybeSingle();
