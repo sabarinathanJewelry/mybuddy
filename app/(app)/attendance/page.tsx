@@ -3139,9 +3139,8 @@ export default function AttendancePage() {
         <NotificationBell bioUserId={isAdmin ? null : myBioUserId} />
       </div>
 
-      {/* Tabs — hidden in kiosk mode (always visible for admin); counters always visible for staff */}
-      {(!isLocked || isAdmin || tab === "counters") && (
-        <div className="flex border-b border-line gap-1 flex-wrap">
+      {/* Tabs: always visible; when kiosk locked + non-admin only Counters is shown */}
+      <div className="flex border-b border-line gap-1 flex-wrap">
           {([
             ...(!isLocked || isAdmin ? [
               "attendance",
@@ -3172,7 +3171,6 @@ export default function AttendancePage() {
             </button>
           ))}
         </div>
-      )}
 
       {/* ── Attendance tab ── */}
       {tab === "attendance" && (
