@@ -114,6 +114,7 @@ export default function MyAttendancePage() {
   const [canSeeConductNotes, setCanSeeConductNotes] = useState(false);
   const [canSeeWalkins, setCanSeeWalkins]       = useState(false);
   const [canSeePhotoShoot, setCanSeePhotoShoot] = useState(false);
+  const [isCounterSupervisor, setIsCounterSupervisor] = useState(false);
   const [showGoogleReview, setShowGoogleReview] = useState(false);
   const [smartView, setSmartView] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
@@ -305,17 +306,26 @@ export default function MyAttendancePage() {
         .from("staff").select("bio_user_id, name, shift, join_date")
         .eq("user_id", user.id).maybeSingle();
 
+      let resolvedBioUserId: string | null = null;
       if (byUserId) {
         setStaff(byUserId as StaffInfo);
+        resolvedBioUserId = byUserId.bio_user_id;
       } else if (bioUserId) {
         // Fallback: match via bio_user_id from JWT app_metadata
         const { data: byBioId } = await client
           .from("staff").select("bio_user_id, name, shift, join_date")
           .eq("bio_user_id", String(bioUserId)).maybeSingle();
-        if (byBioId) setStaff(byBioId as StaffInfo);
+        if (byBioId) { setStaff(byBioId as StaffInfo); resolvedBioUserId = byBioId.bio_user_id; }
         else setLoading(false);
       } else {
         setLoading(false);
+      }
+
+      if (resolvedBioUserId) {
+        const mon = new Date().toISOString().slice(0, 7);
+        const { data: supRow } = await client
+          .from("counter_supervisors").select("bio_user_id").eq("month", mon).maybeSingle();
+        if (supRow?.bio_user_id === resolvedBioUserId) setIsCounterSupervisor(true);
       }
     }
     init().catch(() => setLoading(false));
@@ -836,16 +846,17 @@ export default function MyAttendancePage() {
           </div>
 
           {/* Section: Shop Tools */}
-          {(canSeeRepairs || canLogKolusu || canSeeConductNotes || canSeeWalkins || canSeePhotoShoot) && (
+          {(canSeeRepairs || canLogKolusu || canSeeConductNotes || canSeeWalkins || canSeePhotoShoot || isCounterSupervisor) && (
             <div>
               <p className="text-[11px] font-bold tracking-widest text-ink-dim uppercase mb-2">Shop Tools</p>
               <div className="grid grid-cols-3 gap-3">
                 {[
-                  ...(canSeeRepairs      ? [{ icon: "🔧", label: "Repairs",        href: "/my-repairs" }] : []),
-                  ...(canLogKolusu       ? [{ icon: "🏷️", label: "Kolusu Sale",    href: "/kolusu-sale" }] : []),
-                  ...(canSeeConductNotes ? [{ icon: "🎽", label: "Staff Conduct",  href: "/staff-conduct" }] : []),
-                  ...(canSeeWalkins      ? [{ icon: "🚶", label: "Walk-in Counter",href: "/walkins" }] : []),
-                  ...(canSeePhotoShoot   ? [{ icon: "📸", label: "Photo Shoot",    href: "/photo-shoot" }] : []),
+                  ...(canSeeRepairs        ? [{ icon: "🔧", label: "Repairs",        href: "/my-repairs" }] : []),
+                  ...(canLogKolusu         ? [{ icon: "🏷️", label: "Kolusu Sale",    href: "/kolusu-sale" }] : []),
+                  ...(canSeeConductNotes   ? [{ icon: "🎽", label: "Staff Conduct",  href: "/staff-conduct" }] : []),
+                  ...(canSeeWalkins        ? [{ icon: "🚶", label: "Walk-in Counter",href: "/walkins" }] : []),
+                  ...(canSeePhotoShoot     ? [{ icon: "📸", label: "Photo Shoot",    href: "/photo-shoot" }] : []),
+                  ...(isCounterSupervisor  ? [{ icon: "🧹", label: "Counters",       href: "/counters" }] : []),
                   { icon: "⭐", label: "Review", action: () => setShowGoogleReview(true) },
                 ].map(c => (
                   "href" in c
@@ -854,7 +865,7 @@ export default function MyAttendancePage() {
                         <span className="text-3xl">{c.icon}</span>
                         <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">{c.label}</span>
                       </a>
-                    : <button key={c.label} onClick={c.action}
+                    : <button key={c.label} onClick={(c as any).action}
                         className="bg-canvas border border-line rounded-lg2 shadow-soft p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform">
                         <span className="text-3xl">{c.icon}</span>
                         <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">{c.label}</span>
@@ -863,7 +874,7 @@ export default function MyAttendancePage() {
               </div>
             </div>
           )}
-          {!(canSeeRepairs || canLogKolusu || canSeeConductNotes || canSeeWalkins || canSeePhotoShoot) && (
+          {!(canSeeRepairs || canLogKolusu || canSeeConductNotes || canSeeWalkins || canSeePhotoShoot || isCounterSupervisor) && (
             <div>
               <p className="text-[11px] font-bold tracking-widest text-ink-dim uppercase mb-2">Shop Tools</p>
               <div className="grid grid-cols-3 gap-3">
