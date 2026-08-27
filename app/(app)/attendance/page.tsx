@@ -3147,7 +3147,7 @@ export default function AttendancePage() {
             ...(!isAdmin ? ["payslip"] : []),
             ...(!isAdmin ? ["weekoffs"] : []),
             "staff", "monthly", "requests", "leaves", "duties", "chat",
-            ...(isAdmin ? ["announcements", "kyc", "tasks", "weekoffs", "counters"] : ["tasks"]),
+            ...(isAdmin ? ["announcements", "kyc", "tasks", "weekoffs", "counters"] : ["tasks", "counters"]),
           ] as PageTab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
