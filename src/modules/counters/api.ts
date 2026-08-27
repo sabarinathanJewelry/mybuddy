@@ -115,6 +115,17 @@ export function useSaveCounterAssignment() {
   });
 }
 
+export function useUpdateCounterName() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, name }: { id: number; name: string }) => {
+      const { error } = await supabase().from("counters").update({ name }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["counters"] }),
+  });
+}
+
 export function useSaveCounterSupervisor() {
   const qc = useQueryClient();
   return useMutation({

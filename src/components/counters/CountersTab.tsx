@@ -5,7 +5,7 @@ import { clsx } from "clsx";
 import {
   useCounters, useCounterAssignments, useCounterSupervisor,
   useTodayChecks, useCleanlinessChecks,
-  useSaveCounterAssignment, useSaveCounterSupervisor, useSubmitChecks,
+  useSaveCounterAssignment, useSaveCounterSupervisor, useSubmitChecks, useUpdateCounterName,
   CHECK_SLOTS, getCurrentSlot,
   type Counter, type CleanlinessCheck,
 } from "@/modules/counters/api";
@@ -363,7 +363,6 @@ export default function CountersTab({ isAdmin, myBioUserId }: Props) {
         <SetupSection
           counters={counters}
           staff={activeStaff}
-          staffMap={staffMap}
           assignMap={assignMap}
           supervisor={supervisor?.bio_user_id ?? ""}
           monthKey={monthKey}
@@ -373,46 +372,60 @@ export default function CountersTab({ isAdmin, myBioUserId }: Props) {
   );
 }
 
-function SetupSection({ counters, staff, staffMap, assignMap, supervisor, monthKey }: {
+function SetupSection({ counters, staff, assignMap, supervisor, monthKey }: {
   counters: Counter[];
   staff: StaffMember[];
-  staffMap: Record<string, string>;
   assignMap: Record<number, string>;
   supervisor: string;
   monthKey: string;
 }) {
   const [localAssign, setLocalAssign] = useState<Record<number, string>>(() => ({ ...assignMap }));
   const [localSupervisor, setLocalSupervisor] = useState(supervisor);
-  const saveAssignment  = useSaveCounterAssignment();
-  const saveSupervisor  = useSaveCounterSupervisor();
+  const [localNames, setLocalNames] = useState<Record<number, string>>(() =>
+    Object.fromEntries(counters.map(c => [c.id, c.name]))
+  );
+  const saveAssignment   = useSaveCounterAssignment();
+  const saveSupervisor   = useSaveCounterSupervisor();
+  const updateName       = useUpdateCounterName();
   const [saved, setSaved] = useState(false);
 
   async function handleSave() {
-    const promises = counters.map(c =>
-      saveAssignment.mutateAsync({ counter_id: c.id, bio_user_id: localAssign[c.id] ?? "", month: monthKey })
-    );
+    const promises: Promise<void>[] = [
+      ...counters.map(c =>
+        saveAssignment.mutateAsync({ counter_id: c.id, bio_user_id: localAssign[c.id] ?? "", month: monthKey })
+      ),
+      ...counters
+        .filter(c => localNames[c.id] && localNames[c.id] !== c.name)
+        .map(c => updateName.mutateAsync({ id: c.id, name: localNames[c.id] })),
+    ];
     if (localSupervisor) {
-      promises.push(saveSupervisor.mutateAsync({ bio_user_id: localSupervisor, month: monthKey }) as Promise<void>);
+      promises.push(saveSupervisor.mutateAsync({ bio_user_id: localSupervisor, month: monthKey }));
     }
     await Promise.all(promises);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
 
-  const isPending = saveAssignment.isPending || saveSupervisor.isPending;
+  const isPending = saveAssignment.isPending || saveSupervisor.isPending || updateName.isPending;
 
   return (
     <div className="bg-white rounded-xl border border-line shadow-soft p-4 space-y-4">
       <p className="text-sm font-semibold text-ink">Counter Setup — {monthKey}</p>
+      <p className="text-xs text-ink-dim">Edit counter names and assign a staff member to each.</p>
 
       <div className="space-y-3">
         {counters.map(c => (
-          <div key={c.id} className="flex items-center gap-3">
-            <span className="text-sm font-medium text-ink w-24">{c.name}</span>
+          <div key={c.id} className="flex items-center gap-2 flex-wrap">
+            <input
+              value={localNames[c.id] ?? c.name}
+              onChange={e => setLocalNames(m => ({ ...m, [c.id]: e.target.value }))}
+              placeholder="Counter name"
+              className="w-36 border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold"
+            />
             <select
               value={localAssign[c.id] ?? ""}
               onChange={e => setLocalAssign(m => ({ ...m, [c.id]: e.target.value }))}
-              className="flex-1 border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold bg-white">
+              className="flex-1 min-w-[160px] border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold bg-white">
               <option value="">— Unassigned —</option>
               {staff.map(s => <option key={s.bio_user_id} value={s.bio_user_id}>{s.name}</option>)}
             </select>
@@ -421,7 +434,7 @@ function SetupSection({ counters, staff, staffMap, assignMap, supervisor, monthK
       </div>
 
       <div className="border-t border-line pt-3 flex items-center gap-3">
-        <span className="text-sm font-medium text-ink w-24">Supervisor</span>
+        <span className="text-sm font-medium text-ink w-24 shrink-0">Supervisor</span>
         <select
           value={localSupervisor}
           onChange={e => setLocalSupervisor(e.target.value)}
@@ -436,7 +449,7 @@ function SetupSection({ counters, staff, staffMap, assignMap, supervisor, monthK
           onClick={handleSave}
           disabled={isPending}
           className="bg-gold text-white text-sm px-4 py-2 rounded-lg2 disabled:opacity-50">
-          {isPending ? "Saving…" : "Save Assignments"}
+          {isPending ? "Saving…" : "Save"}
         </button>
         {saved && <span className="text-xs text-ok">Saved!</span>}
       </div>
