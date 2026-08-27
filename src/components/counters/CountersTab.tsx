@@ -10,6 +10,7 @@ import {
   type Counter, type CleanlinessCheck,
 } from "@/modules/counters/api";
 import { useStaff, type StaffMember } from "@/modules/attendance/api";
+import { useAuth } from "@/stores/auth";
 
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -25,6 +26,7 @@ interface Props {
 }
 
 export default function CountersTab({ isAdmin, myBioUserId }: Props) {
+  const profile = useAuth(s => s.profile);
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
@@ -67,15 +69,16 @@ export default function CountersTab({ isAdmin, myBioUserId }: Props) {
     return checks.find(c => c.counter_id === counterId && c.check_date === date && c.check_slot === slot) ?? null;
   }
 
+  const checkedBy = myBioUserId ?? profile?.display_name ?? "admin";
+
   async function handleSubmit() {
-    if (!myBioUserId) return;
     const rows = counters.map(c => ({
       counter_id: c.id,
       check_date: today,
       check_slot: selectedSlot,
       is_neat: neatMap[c.id] ?? true,
       notes: notesMap[c.id] || undefined,
-      checked_by: myBioUserId,
+      checked_by: checkedBy,
     }));
     await submitChecks.mutateAsync(rows);
     setNeatMap({});
@@ -199,7 +202,7 @@ export default function CountersTab({ isAdmin, myBioUserId }: Props) {
               {counters.some(c => !getCheck(c.id, today, selectedSlot, todayChecks)) && (
                 <button
                   onClick={handleSubmit}
-                  disabled={submitChecks.isPending || Object.keys(neatMap).length === 0}
+                  disabled={submitChecks.isPending}
                   className="bg-gold text-white text-sm px-4 py-2 rounded-lg2 disabled:opacity-50">
                   {submitChecks.isPending ? "Saving…" : "Save Check"}
                 </button>
