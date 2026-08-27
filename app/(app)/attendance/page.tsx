@@ -2851,8 +2851,8 @@ export default function AttendancePage() {
   const isLocked = rawLocked && (hasPerUserSeqs || !!kioskSeq?.length);
   const [tapBuffer, setTapBuffer] = useState<KioskTap[]>([]);
 
-  // Force attendance tab when locked — but not for admin (they see all tabs)
-  useEffect(() => { if (isLocked && !isAdmin) setTab("attendance"); }, [isLocked, isAdmin]);
+  // Force attendance tab when locked — but not for admin or when on counters tab
+  useEffect(() => { if (isLocked && !isAdmin && tab !== "counters") setTab("attendance"); }, [isLocked, isAdmin, tab]);
 
   function seqEquals(a: KioskTap[], b: KioskTap[]): boolean {
     if (a.length !== b.length) return false;
@@ -3139,15 +3139,18 @@ export default function AttendancePage() {
         <NotificationBell bioUserId={isAdmin ? null : myBioUserId} />
       </div>
 
-      {/* Tabs — hidden in kiosk mode (always visible for admin) */}
-      {(!isLocked || isAdmin) && (
+      {/* Tabs — hidden in kiosk mode (always visible for admin); counters always visible for staff */}
+      {(!isLocked || isAdmin || tab === "counters") && (
         <div className="flex border-b border-line gap-1 flex-wrap">
           {([
-            "attendance",
-            ...(!isAdmin ? ["payslip"] : []),
-            ...(!isAdmin ? ["weekoffs"] : []),
-            "staff", "monthly", "requests", "leaves", "duties", "chat",
-            ...(isAdmin ? ["announcements", "kyc", "tasks", "weekoffs", "counters"] : ["tasks", "counters"]),
+            ...(!isLocked || isAdmin ? [
+              "attendance",
+              ...(!isAdmin ? ["payslip"] : []),
+              ...(!isAdmin ? ["weekoffs"] : []),
+              "staff", "monthly", "requests", "leaves", "duties", "chat",
+              ...(isAdmin ? ["announcements", "kyc", "tasks", "weekoffs"] : ["tasks"]),
+            ] : []),
+            "counters",
           ] as PageTab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${
