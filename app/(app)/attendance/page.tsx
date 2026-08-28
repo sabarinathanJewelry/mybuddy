@@ -3031,6 +3031,7 @@ export default function AttendancePage() {
       { icon: "📢", label: "Notices",       tab: "announcements" },
       { icon: "✅", label: "Tasks",         tab: "tasks" },
       { icon: "🧹", label: "Counters",     tab: "counters" },
+      { icon: "🏆", label: "Rewards",      href: "/rewards" },
       { icon: "⭐", label: "Review",        action: () => setShowReview(true) },
     ];
     return (
@@ -3064,6 +3065,14 @@ export default function AttendancePage() {
                     <span className="text-3xl">{c.icon}</span>
                     <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">{c.label}</span>
                   </button>
+                );
+              }
+              if (c.href) {
+                return (
+                  <a key={c.label} href={c.href} className={cls}>
+                    <span className="text-3xl">{c.icon}</span>
+                    <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">{c.label}</span>
+                  </a>
                 );
               }
               return (
