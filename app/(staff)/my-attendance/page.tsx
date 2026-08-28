@@ -832,15 +832,22 @@ export default function MyAttendancePage() {
             <p className="text-[11px] font-bold tracking-widest text-ink-dim uppercase mb-2">Communication</p>
             <div className="grid grid-cols-3 gap-3">
               {[
-                { icon: "💬", label: "Chat",  action: () => switchToTab("chat") },
-                { icon: "✅", label: "Tasks", action: () => switchToTab("tasks") },
+                { icon: "💬", label: "Chat",    action: () => switchToTab("chat") },
+                { icon: "✅", label: "Tasks",   action: () => switchToTab("tasks") },
+                { icon: "🏆", label: "Rewards", href: "/rewards" },
                 ...(canSeeIncentive ? [{ icon: "🎯", label: "Incentive", action: () => switchToTab("incentive") }] : []),
               ].map(c => (
-                <button key={c.label} onClick={c.action}
-                  className="bg-canvas border border-line rounded-lg2 shadow-soft p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform">
-                  <span className="text-3xl">{c.icon}</span>
-                  <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">{c.label}</span>
-                </button>
+                "href" in c
+                  ? <a key={c.label} href={c.href}
+                      className="bg-canvas border border-line rounded-lg2 shadow-soft p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform">
+                      <span className="text-3xl">{c.icon}</span>
+                      <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">{c.label}</span>
+                    </a>
+                  : <button key={c.label} onClick={(c as any).action}
+                      className="bg-canvas border border-line rounded-lg2 shadow-soft p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform">
+                      <span className="text-3xl">{c.icon}</span>
+                      <span className="text-[11px] font-semibold text-ink uppercase tracking-wide leading-tight text-center">{c.label}</span>
+                    </button>
               ))}
             </div>
           </div>
