@@ -207,8 +207,17 @@ export default function RewardsTab({
 
       {/* Error state */}
       {isError && (
-        <div className="text-center py-10 text-err text-sm">
-          Could not load scores. Make sure migration 152_reward_system.sql has been run in Supabase.
+        <div className="text-center py-10 space-y-2">
+          <p className="text-err text-sm">Could not load scores.</p>
+          {isAdmin && (
+            <button
+              onClick={() => refresh.mutate(month)}
+              disabled={refresh.isPending}
+              className="text-xs border border-gold rounded-lg2 px-3 py-1.5 text-gold hover:bg-gold/10 transition-colors"
+            >
+              {refresh.isPending ? "Calculating…" : "↻ Try Recalculate"}
+            </button>
+          )}
         </div>
       )}
 

@@ -41,15 +41,25 @@ export function useRewardScores(month: string) {
   return useQuery<(RewardScore & { staff_name: string })[]>({
     queryKey: ["reward_scores", month],
     queryFn: async () => {
-      const { data, error } = await supabase()
+      const { data: scores, error } = await supabase()
         .from("monthly_reward_scores")
-        .select("*, staff!inner(name)")
+        .select("*")
         .eq("month", month)
         .order("total_pts", { ascending: false });
       if (error) throw error;
-      return (data ?? []).map((r: any) => ({
-        ...r,
-        staff_name: r.staff?.name ?? r.bio_user_id,
+      if (!scores || scores.length === 0) return [];
+
+      const { data: staffRows } = await supabase()
+        .from("staff")
+        .select("bio_user_id, name")
+        .in("bio_user_id", scores.map(s => s.bio_user_id));
+
+      const nameMap: Record<string, string> = {};
+      (staffRows ?? []).forEach((s: any) => { nameMap[s.bio_user_id] = s.name; });
+
+      return scores.map(s => ({
+        ...s,
+        staff_name: nameMap[s.bio_user_id] ?? s.bio_user_id,
       }));
     },
     enabled: !!month,
