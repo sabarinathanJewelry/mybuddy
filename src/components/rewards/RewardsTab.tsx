@@ -429,8 +429,8 @@ export default function RewardsTab({
             { icon: "⏰", label: "Punctuality",          max: 40, desc: "+1 per day arrived by 9:50 am. Most on-time days wins." },
             { icon: "📅", label: "Leave Discipline",     max: 10, desc: "0 leaves=10 · 1=8 · 2=6 · 3=4 · 4+=0 pts" },
             { icon: "☕", label: "Break Discipline",     max: 10, desc: "+1 per day lunch break ≤ 1 hour. Consistently short breaks win." },
-            { icon: "🤝", label: "Behavior",             max: 15, desc: "Admin marks +/− for teamwork, attitude, misconduct, shouting. Range −15 to +15." },
-            { icon: "👔", label: "Dressing & Neatness",  max: 15, desc: "Admin marks +/− for appearance and uniform. Range 0 to +15." },
+            { icon: "🤝", label: "Behavior",             max: 15, desc: "Starts at 0. Staff Conduct notes deduct: fined=−5, pending=−2. Admin can also add manual marks. Range −15 to +15." },
+            { icon: "👔", label: "Dressing & Neatness",  max: 15, desc: "Starts at 15. Dress Code / Grooming conduct notes deduct: fined=−5, pending=−2. Range 0 to 15." },
             { icon: "🧹", label: "Cleanliness",          max: 10, desc: "90%+ neat=10 · 75%+=7 · 60%+=4 (counter supervisor only)" },
           ].map(c => (
             <div key={c.label} className="flex gap-2">
