@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useRewardScores, useMyRewardScore, useRefreshRewards,
   REWARD_CATEGORIES, TOTAL_MAX, type RewardScore,
@@ -132,9 +132,16 @@ export default function RewardsTab({
   const [month, setMonth] = useState(currentMonth());
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const { data: scores = [], isLoading } = useRewardScores(month);
+  const { data: scores = [], isLoading, isError } = useRewardScores(month);
   const { data: myScore } = useMyRewardScore(month, myBioUserId);
   const refresh = useRefreshRewards();
+
+  // Auto-calculate when admin opens the page and no scores exist yet
+  useEffect(() => {
+    if (isAdmin && !isLoading && !isError && scores.length === 0 && !refresh.isPending) {
+      refresh.mutate(month);
+    }
+  }, [isAdmin, isLoading, isError, scores.length, month]);
 
   const myRank = scores.findIndex(s => s.bio_user_id === myBioUserId) + 1;
 
@@ -198,19 +205,27 @@ export default function RewardsTab({
         </div>
       )}
 
+      {/* Error state */}
+      {isError && (
+        <div className="text-center py-10 text-err text-sm">
+          Could not load scores. Make sure migration 152_reward_system.sql has been run in Supabase.
+        </div>
+      )}
+
+      {/* Loading / auto-calculating */}
+      {(isLoading || (refresh.isPending && scores.length === 0)) && (
+        <div className="flex flex-col items-center gap-3 py-10">
+          <div className="w-8 h-8 border-4 border-gold border-t-transparent rounded-full animate-spin" />
+          {refresh.isPending && <p className="text-xs text-ink-dim">Calculating scores…</p>}
+        </div>
+      )}
+
       {/* No scores yet */}
-      {!isLoading && scores.length === 0 && (
+      {!isLoading && !isError && !refresh.isPending && scores.length === 0 && (
         <div className="text-center py-10 text-ink-dim text-sm">
           {isAdmin
             ? "No scores yet. Click Recalculate to compute this month's scores."
             : "Scores not calculated yet. Check back later."}
-        </div>
-      )}
-
-      {/* Loading */}
-      {isLoading && (
-        <div className="flex justify-center py-10">
-          <div className="w-8 h-8 border-4 border-gold border-t-transparent rounded-full animate-spin" />
         </div>
       )}
 
