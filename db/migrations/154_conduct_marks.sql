@@ -1,4 +1,7 @@
 -- ── Behavior & Dressing marks (admin-recorded) ───────────────────────────────
+-- Drop functions first so we can change their return types
+DROP FUNCTION IF EXISTS calculate_monthly_rewards(text);
+DROP FUNCTION IF EXISTS refresh_monthly_rewards(text);
 
 CREATE TABLE IF NOT EXISTS staff_conduct_marks (
   id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),

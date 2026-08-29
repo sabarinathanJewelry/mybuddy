@@ -2,6 +2,8 @@
 -- Dress Code / Grooming notes → dressing_pts deductions
 -- Customer Handling / Punctuality / Other notes → behavior_pts deductions
 -- fined = -5 pts, pending = -2 pts, dismissed = 0
+DROP FUNCTION IF EXISTS calculate_monthly_rewards(text);
+DROP FUNCTION IF EXISTS refresh_monthly_rewards(text);
 
 CREATE OR REPLACE FUNCTION calculate_monthly_rewards(p_month text)
 RETURNS TABLE(
