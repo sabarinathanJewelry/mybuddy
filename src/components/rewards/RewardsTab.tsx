@@ -298,10 +298,10 @@ export default function RewardsTab({
                 <span className="font-semibold text-ink">{cat.label}</span>
                 <span className="text-ink-dim"> (max {cat.max} pts)</span>
                 <p>
-                  {cat.key === "punctuality_pts" && "+1 per day you arrive by 9:35 am. Max 25 days."}
-                  {cat.key === "leave_pts"        && "0 leaves=10 pts · 1=8 · 2=6 · 3=4 · 4+ = 0 pts"}
-                  {cat.key === "break_pts"        && "+1 per day your lunch break is within 1 hour. Max 10 days."}
-                  {cat.key === "cleanliness_pts"  && "90%+ neat=15 · 75%+=10 · 60%+=5 (supervisor only)"}
+                  {cat.key === "punctuality_pts" && "+1 per day you arrive by 9:50 am. Highest on-time days wins."}
+                  {cat.key === "leave_pts"        && "Fewest leaves = most points. 0=10 · 1=8 · 2=6 · 3=4 · 4+=0"}
+                  {cat.key === "break_pts"        && "+1 per day your lunch break is within 1 hour. Consistently short breaks win."}
+                  {cat.key === "cleanliness_pts"  && "Best neat % wins. 90%+=15 · 75%+=10 · 60%+=5 (supervisor only)"}
                 </p>
               </div>
             </div>
