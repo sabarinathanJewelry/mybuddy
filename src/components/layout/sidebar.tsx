@@ -172,6 +172,7 @@ export default function Sidebar() {
       ...(!canAccess("walkins") && canSeeWalkins ? [{ href: "/walkins", icon: "🚶", label: t("nav_walkins") }] : []),
       ...(canSeePhotoShoot ? [{ href: "/photo-shoot", icon: "📸", label: t("nav_photo_shoot") }] : []),
       { href: "/weekoffs",      icon: "📅", label: t("nav_weekoffs") },
+      { href: "/rewards",       icon: "🏆", label: "Rewards" },
       { href: "/google-review", icon: "⭐", label: t("nav_google_review") },
       ...(isAdmin ? ADMIN_NAV.map(item => ({ href: item.href, icon: item.icon, label: t(item.key), isAdmin: true })) : []),
     ];
