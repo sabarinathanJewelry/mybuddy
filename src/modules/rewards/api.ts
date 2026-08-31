@@ -149,6 +149,22 @@ export function useDeleteConductMark() {
   });
 }
 
+export function useUpdateConductMark() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, month, points, note }: { id: string; month: string; points: number; note: string }) => {
+      const { error } = await supabase()
+        .from("staff_conduct_marks")
+        .update({ points, note })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: (_, v) => {
+      qc.invalidateQueries({ queryKey: ["conduct_marks", v.month] });
+    },
+  });
+}
+
 export function useRefreshRewards() {
   const qc = useQueryClient();
   return useMutation({

@@ -56,11 +56,10 @@ function AddItemForm({ playlistId, nextOrderIndex }: { playlistId: string; nextO
       const client = supabase();
       let body: Blob = file;
       let ext = file.name.split(".").pop();
-      // Images should never realistically hit 50MB, but compress rather than
-      // reject if one does — TV-resolution sized (2560px), not the tiny 900px
-      // preset used for repair-photo thumbnails elsewhere in the app.
-      if (itemType === "image" && file.size > 50 * 1024 * 1024) {
-        body = await compressImage(file, 2560, 0.85);
+      // Always compress images to 1920px / 75% JPEG — enough for a 1080p TV
+      // and keeps files around 200-400 KB, well within Supabase free egress.
+      if (itemType === "image") {
+        body = await compressImage(file, 1920, 0.75);
         ext = "jpg";
       }
       const path = `${playlistId}/${Date.now()}.${ext}`;

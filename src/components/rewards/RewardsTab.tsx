@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   useRewardScores, useMyRewardScore, useRefreshRewards,
-  useConductMarks, useAddConductMark, useDeleteConductMark, useAllStaff,
+  useConductMarks, useAddConductMark, useDeleteConductMark, useUpdateConductMark, useAllStaff,
   REWARD_CATEGORIES, TOTAL_MAX, type RewardScore, type ConductMark,
 } from "@/modules/rewards/api";
 import { useAuth } from "@/stores/auth";
@@ -133,52 +133,69 @@ function LeaderboardRow({
 }
 
 function ConductMarkForm({
-  month, adminName, onClose,
+  month, adminName, editMark, onClose,
 }: {
   month: string;
   adminName: string;
+  editMark?: ConductMark;
   onClose: () => void;
 }) {
   const { data: allStaff = [] } = useAllStaff();
   const addMark = useAddConductMark();
-  const [bioUserId, setBioUserId] = useState("");
-  const [category, setCategory] = useState<"behavior" | "dressing">("behavior");
-  const [pts, setPts] = useState(0);
-  const [note, setNote] = useState("");
+  const updateMark = useUpdateConductMark();
+  const isEditing = !!editMark;
+
+  const [bioUserId, setBioUserId] = useState(editMark?.bio_user_id ?? "");
+  const [category, setCategory] = useState<"behavior" | "dressing">(editMark?.category ?? "behavior");
+  const [pts, setPts] = useState(editMark?.points ?? 0);
+  const [note, setNote] = useState(editMark?.note ?? "");
 
   const presets = category === "behavior" ? BEHAVIOR_PRESETS : DRESSING_PRESETS;
   const inp = "w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold bg-canvas text-ink";
+  const isPending = addMark.isPending || updateMark.isPending;
 
   async function submit() {
-    if (!bioUserId || pts === 0 || !note.trim()) return;
-    await addMark.mutateAsync({ bio_user_id: bioUserId, month, category, points: pts, note: note.trim(), marked_by: adminName });
-    setBioUserId(""); setPts(0); setNote("");
+    if (pts === 0 || !note.trim()) return;
+    if (isEditing) {
+      await updateMark.mutateAsync({ id: editMark!.id, month, points: pts, note: note.trim() });
+    } else {
+      if (!bioUserId) return;
+      await addMark.mutateAsync({ bio_user_id: bioUserId, month, category, points: pts, note: note.trim(), marked_by: adminName });
+    }
     onClose();
   }
 
   return (
     <div className="border border-gold/40 rounded-lg2 bg-canvas p-4 space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold text-ink">Add Conduct Mark</p>
+        <p className="text-sm font-semibold text-ink">{isEditing ? "Edit Conduct Mark" : "Add Conduct Mark"}</p>
         <button onClick={onClose} className="text-ink-dim text-xs hover:text-ink">✕</button>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="text-[11px] text-ink-dim mb-1 block">Staff</label>
-          <select value={bioUserId} onChange={e => setBioUserId(e.target.value)} className={inp}>
-            <option value="">Select staff…</option>
-            {allStaff.map(s => <option key={s.bio_user_id} value={s.bio_user_id}>{s.name}</option>)}
-          </select>
+      {!isEditing && (
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[11px] text-ink-dim mb-1 block">Staff</label>
+            <select value={bioUserId} onChange={e => setBioUserId(e.target.value)} className={inp}>
+              <option value="">Select staff…</option>
+              {allStaff.map(s => <option key={s.bio_user_id} value={s.bio_user_id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[11px] text-ink-dim mb-1 block">Category</label>
+            <select value={category} onChange={e => setCategory(e.target.value as any)} className={inp}>
+              <option value="behavior">🤝 Behavior</option>
+              <option value="dressing">👔 Dressing</option>
+            </select>
+          </div>
         </div>
-        <div>
-          <label className="text-[11px] text-ink-dim mb-1 block">Category</label>
-          <select value={category} onChange={e => setCategory(e.target.value as any)} className={inp}>
-            <option value="behavior">🤝 Behavior</option>
-            <option value="dressing">👔 Dressing</option>
-          </select>
-        </div>
-      </div>
+      )}
+
+      {isEditing && (
+        <p className="text-xs text-ink-dim">
+          Editing {editMark!.category === "behavior" ? "🤝 Behavior" : "👔 Dressing"} mark
+        </p>
+      )}
 
       <div>
         <label className="text-[11px] text-ink-dim mb-1 block">Quick select</label>
@@ -201,9 +218,13 @@ function ConductMarkForm({
 
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="text-[11px] text-ink-dim mb-1 block">Points (+ or −)</label>
+          <label className="text-[11px] text-ink-dim mb-1 block">Points (+ to reward, − to deduct)</label>
           <input type="number" value={pts} onChange={e => setPts(Number(e.target.value))}
-            className={inp} min={-15} max={15} />
+            className={`${inp} ${pts < 0 ? "text-err" : pts > 0 ? "text-ok" : ""}`}
+            min={-15} max={15} />
+          <p className="text-[10px] mt-1 text-ink-dim">
+            {pts < 0 ? `Deducts ${Math.abs(pts)} pts from score` : pts > 0 ? `Adds ${pts} pts to score` : "Enter a value"}
+          </p>
         </div>
         <div>
           <label className="text-[11px] text-ink-dim mb-1 block">Note (required)</label>
@@ -214,16 +235,22 @@ function ConductMarkForm({
 
       <button
         onClick={submit}
-        disabled={!bioUserId || pts === 0 || !note.trim() || addMark.isPending}
+        disabled={(!isEditing && !bioUserId) || pts === 0 || !note.trim() || isPending}
         className="w-full bg-gold text-white text-sm font-semibold rounded-lg2 py-2 disabled:opacity-50"
       >
-        {addMark.isPending ? "Saving…" : "Save Mark"}
+        {isPending ? "Saving…" : isEditing ? "Update Mark" : "Save Mark"}
       </button>
     </div>
   );
 }
 
-function ConductHistory({ month, isAdmin }: { month: string; isAdmin: boolean }) {
+function ConductHistory({
+  month, isAdmin, onEdit,
+}: {
+  month: string;
+  isAdmin: boolean;
+  onEdit: (mark: ConductMark) => void;
+}) {
   const { data: marks = [] } = useConductMarks(month);
   const deleteMark = useDeleteConductMark();
   const { data: staffRows = [] } = useAllStaff();
@@ -249,10 +276,18 @@ function ConductHistory({ month, isAdmin }: { month: string; isAdmin: boolean })
             <p className="text-[10px] text-ink-dim">by {m.marked_by} · {shortDate(m.created_at)}</p>
           </div>
           {isAdmin && (
-            <button
-              onClick={() => deleteMark.mutate({ id: m.id, month })}
-              className="text-ink-dim hover:text-err text-xs flex-shrink-0"
-            >✕</button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                onClick={() => onEdit(m)}
+                className="text-ink-dim hover:text-gold text-xs"
+                title="Edit"
+              >✎</button>
+              <button
+                onClick={() => deleteMark.mutate({ id: m.id, month })}
+                className="text-ink-dim hover:text-err text-xs"
+                title="Delete"
+              >✕</button>
+            </div>
           )}
         </div>
       ))}
@@ -270,6 +305,7 @@ export default function RewardsTab({
   const [month, setMonth] = useState(currentMonth());
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showMarkForm, setShowMarkForm] = useState(false);
+  const [editingMark, setEditingMark] = useState<ConductMark | null>(null);
   const profile = useAuth(s => s.profile);
   const adminName = profile?.display_name ?? "Admin";
 
@@ -306,7 +342,7 @@ export default function RewardsTab({
         {isAdmin && (
           <div className="flex gap-2">
             <button
-              onClick={() => setShowMarkForm(v => !v)}
+              onClick={() => { setEditingMark(null); setShowMarkForm(v => !v); }}
               className="text-xs border border-line rounded-lg2 px-3 py-1.5 text-ink hover:border-gold hover:text-gold transition-colors"
             >
               + Conduct Mark
@@ -322,9 +358,14 @@ export default function RewardsTab({
         )}
       </div>
 
-      {/* Conduct mark form */}
-      {isAdmin && showMarkForm && (
-        <ConductMarkForm month={month} adminName={adminName} onClose={() => setShowMarkForm(false)} />
+      {/* Conduct mark form (add or edit) */}
+      {isAdmin && (showMarkForm || editingMark) && (
+        <ConductMarkForm
+          month={month}
+          adminName={adminName}
+          editMark={editingMark ?? undefined}
+          onClose={() => { setShowMarkForm(false); setEditingMark(null); }}
+        />
       )}
 
       {/* My scorecard (staff view) */}
@@ -417,7 +458,11 @@ export default function RewardsTab({
       )}
 
       {/* Conduct history */}
-      <ConductHistory month={month} isAdmin={isAdmin} />
+      <ConductHistory
+        month={month}
+        isAdmin={isAdmin}
+        onEdit={mark => { setEditingMark(mark); setShowMarkForm(false); }}
+      />
 
       {/* Scoring guide */}
       <details className="border border-line rounded-lg2 text-sm">

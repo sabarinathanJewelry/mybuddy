@@ -120,8 +120,16 @@ function useScreenWakeLock() {
   }, []);
 }
 
+function useSignageSW() {
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    navigator.serviceWorker.register("/signage-sw.js").catch(() => {});
+  }, []);
+}
+
 export default function TvPlayerPage() {
   useScreenWakeLock();
+  useSignageSW();
   const [playout, setPlayout] = useState<PlayoutResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const credsRef = useRef<{ device_id: string; device_secret: string } | null>(null);
