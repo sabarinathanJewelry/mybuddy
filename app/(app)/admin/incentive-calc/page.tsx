@@ -793,6 +793,33 @@ export default function IncentiveCalcPage() {
 
   const grandTotal = [...staffTotals.values()].reduce((s, v) => s + v, 0);
 
+  // Gold VA% leaderboard — weight-average making% per staff on gold bills only (bill prefix G, wastage > 0)
+  const goldVaLeaderboard = useMemo(() => {
+    const map = new Map<string, { wtdSum: number; totalWt: number; count: number }>();
+    const addStaff = (name: string, wastage: number, wt: number) => {
+      if (!name) return;
+      const e = map.get(name) ?? { wtdSum: 0, totalWt: 0, count: 0 };
+      e.wtdSum  += wastage * wt;
+      e.totalWt += wt;
+      e.count   += 1;
+      map.set(name, e);
+    };
+    for (const { row, eff } of computed) {
+      const pfx = row.billNo.split("/").pop()?.[0]?.toUpperCase();
+      if (pfx !== "G") continue;
+      if (eff.wastage <= 0) continue;
+      if (row.sp1) addStaff(row.sp1, eff.wastage, row.netWt);
+      if (row.sp2) addStaff(row.sp2, eff.wastage, row.netWt);
+    }
+    return [...map.entries()]
+      .map(([name, { wtdSum, totalWt, count }]) => ({
+        name,
+        avg: totalWt > 0 ? parseFloat((wtdSum / totalWt).toFixed(2)) : 0,
+        count,
+      }))
+      .sort((a, b) => b.avg - a.avg);
+  }, [computed]);
+
   const unmappedProducts = useMemo(() =>
     [...new Set((rows ?? []).filter(r => {
       const { mapped, masterEntry } = lookupProduct(r.product, r.netWt, mapperEntries, masterEntries);
@@ -1237,6 +1264,42 @@ export default function IncentiveCalcPage() {
           {staffTotals.size === 0 && (
             <div className="bg-canvas rounded-xl border border-line px-6 py-10 text-center text-ink-dim text-sm">
               Paste and calculate data first.
+            </div>
+          )}
+
+          {/* Gold VA% leaderboard */}
+          {goldVaLeaderboard.length > 0 && (
+            <div className="bg-white rounded-xl border border-gold/30 shadow-soft p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-ink">Gold Making % — Staff Leaderboard</span>
+                <span className="text-[10px] text-ink-dim bg-canvas border border-line rounded-full px-2 py-0.5">weight-avg · gold bills only</span>
+              </div>
+              <div className="space-y-2">
+                {goldVaLeaderboard.map((entry, idx) => {
+                  const MEDALS = ["🥇","🥈","🥉"];
+                  const isTop = idx === 0;
+                  const barPct = goldVaLeaderboard[0].avg > 0
+                    ? Math.round((entry.avg / goldVaLeaderboard[0].avg) * 100)
+                    : 0;
+                  return (
+                    <div key={entry.name} className={clsx(
+                      "flex items-center gap-3 rounded-lg2 px-3 py-2",
+                      isTop ? "bg-gold/5 border border-gold/20" : "bg-canvas"
+                    )}>
+                      <span className="w-5 text-center text-sm">{MEDALS[idx] ?? `${idx + 1}`}</span>
+                      <span className={clsx("text-sm font-medium flex-1", isTop ? "text-gold" : "text-ink")}>{entry.name}</span>
+                      <div className="w-32 h-1.5 bg-line rounded-full overflow-hidden hidden sm:block">
+                        <div className="h-full bg-gold rounded-full" style={{ width: `${barPct}%` }} />
+                      </div>
+                      <span className={clsx("text-sm font-bold tabular-nums", isTop ? "text-gold" : "text-ink")}>{entry.avg}%</span>
+                      <span className="text-[10px] text-ink-dim w-16 text-right">{entry.count} sales</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-ink-dim">
+                Highest avg = sells gold at the highest making charge. Reward this staff for driving margins.
+              </p>
             </div>
           )}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
