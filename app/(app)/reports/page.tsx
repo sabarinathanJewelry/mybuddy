@@ -576,6 +576,43 @@ function useKolusuOpening(asOfDate: string) {
   });
 }
 
+function useKolusuBoxStats(from: string, to: string) {
+  return useQuery({
+    queryKey: ["kolusu-box-stats", from, to],
+    enabled: !!from && !!to,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("kolusu_transactions")
+        .select("box_id, qty_change, total_wt_g, tx_date, notes, kolusu_boxes(box_no, name)")
+        .gte("tx_date", from)
+        .lte("tx_date", to)
+        .order("tx_date", { ascending: true });
+      if (error) throw error;
+      const map: Record<string, { box_no: string; name: string; sold_qty: number; sold_wt: number; restock_qty: number; restock_wt: number; days: Set<string> }> = {};
+      for (const tx of (data ?? []) as any[]) {
+        const box = tx.kolusu_boxes;
+        if (!box) continue;
+        const key = tx.box_id;
+        if (!map[key]) map[key] = { box_no: box.box_no, name: box.name ?? "", sold_qty: 0, sold_wt: 0, restock_qty: 0, restock_wt: 0, days: new Set() };
+        const isRestock = tx.qty_change > 0 && !((tx.notes ?? "").startsWith("RETURN"));
+        if (tx.qty_change < 0) {
+          map[key].sold_qty += Math.abs(tx.qty_change);
+          map[key].sold_wt  += Number(tx.total_wt_g || 0);
+          map[key].days.add(tx.tx_date);
+        } else if (isRestock) {
+          map[key].restock_qty += tx.qty_change;
+          map[key].restock_wt  += Number(tx.total_wt_g || 0);
+        }
+      }
+      return Object.values(map).map(r => ({
+        ...r, days: r.days.size,
+        sold_wt: parseFloat(r.sold_wt.toFixed(3)),
+        restock_wt: parseFloat(r.restock_wt.toFixed(3)),
+      })).sort((a, b) => b.sold_qty - a.sold_qty);
+    },
+  });
+}
+
 function useSaveInventorySnapshot() {
   const qc = useQueryClient();
   return useMutation({
@@ -968,7 +1005,7 @@ export default function ReportsPage() {
   const now = new Date();
   const [year, setYear]   = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [tab, setTab]     = useState<"pnl" | "pnl2" | "detail" | "products" | "expenses" | "items" | "kolusu" | "touch" | "compare" | "goldmon">("pnl");
+  const [tab, setTab]     = useState<"pnl" | "pnl2" | "detail" | "products" | "expenses" | "items" | "kolusu" | "touch" | "compare" | "goldmon" | "goldtrend" | "kolbox">("pnl");
   const [kolusuPureRate,       setKolusuPureRate]       = useState(263);
   const [kolusuBoardRate,      setKolusuBoardRate]      = useState(285);
   const [kolusuSuspenseMargin, setKolusuSuspenseMargin] = useState(2);
@@ -1074,6 +1111,23 @@ export default function ReportsPage() {
     return m >= 4 ? now.getFullYear() : now.getFullYear() - 1;
   });
   const [goldMonLoaded, setGoldMonLoaded] = useState(false);
+
+  // Gold Trend tab state
+  const todayStr = now.toISOString().slice(0, 10);
+  const firstOfMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  const [gtFrom, setGtFrom] = useState(firstOfMonth);
+  const [gtTo,   setGtTo]   = useState(todayStr);
+  const [gtLoaded, setGtLoaded] = useState(false);
+  const { data: gtStockEntries = [], isFetching: gtStockFetch } = useAllGoldStockEntries(gtLoaded ? gtFrom : "", gtLoaded ? gtTo : "");
+  const { data: gtSaleItems    = [], isFetching: gtSalesFetch  } = useAllGoldSaleItems(gtLoaded ? gtFrom : "", gtLoaded ? gtTo : "");
+  const { data: gtPurchItems   = [], isFetching: gtPurchFetch  } = useAllGoldPurchaseItems(gtLoaded ? gtFrom : "", gtLoaded ? gtTo : "");
+  const gtFetching = gtStockFetch || gtSalesFetch || gtPurchFetch;
+
+  // Kolusu Box Comparison tab state
+  const [kbFrom, setKbFrom] = useState(firstOfMonth);
+  const [kbTo,   setKbTo]   = useState(todayStr);
+  const [kbLoaded, setKbLoaded] = useState(false);
+  const { data: kbStats = [], isFetching: kbFetching } = useKolusuBoxStats(kbLoaded ? kbFrom : "", kbLoaded ? kbTo : "");
   const goldMonFyFrom   = `${goldMonYear}-04-01`;
   const goldMonFyTo     = `${goldMonYear + 1}-03-31`;
   const goldMonFetchFrom = `${goldMonYear}-03-01`;
@@ -1309,7 +1363,7 @@ export default function ReportsPage() {
 
       {/* Tabs */}
       <div className="flex border-b border-line gap-1 overflow-x-auto">
-        {([["pnl", "P&L Report"], ["pnl2", "P&L V2"], ["detail", "Sales Detail"], ["products", "Product Mix"], ["expenses", "Expenses"], ["items", "Item Search"], ["kolusu", "Kolusu P&L"], ["touch", "Touch Profit"], ["compare", "Compare"], ["goldmon", "Gold Monthly"]] as const).map(([k, label]) => (
+        {([["pnl", "P&L Report"], ["pnl2", "P&L V2"], ["detail", "Sales Detail"], ["products", "Product Mix"], ["expenses", "Expenses"], ["items", "Item Search"], ["kolusu", "Kolusu P&L"], ["touch", "Touch Profit"], ["compare", "Compare"], ["goldmon", "Gold Monthly"], ["goldtrend", "Gold Trend"], ["kolbox", "Kolusu Boxes"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k)}
             className={clsx("px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap",
               tab === k ? "border-gold text-gold" : "border-transparent text-ink-dim hover:text-ink")}>
@@ -3686,6 +3740,295 @@ export default function ReportsPage() {
                   Opening/Closing stock from Gold Stock snapshots (gross weight). Purchases In = supplier purchases gross weight. Sales Out = confirmed sale items gross weight. Enter stock on the 1st of each month in Gold Stock for accurate figures.
                 </p>
               </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ── Gold Trend tab ───────────────────────────────────────────────── */}
+      {tab === "goldtrend" && (() => {
+        const inp = "border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold bg-canvas";
+
+        // Build a unified timeline of events sorted by date
+        const events: { date: string; type: "snapshot" | "purchase" | "sale"; wt: number }[] = [];
+        for (const e of gtStockEntries) {
+          events.push({ date: e.entry_date, type: "snapshot", wt: Number(e.total_weight_g || 0) + Number(e.untagged_weight_g || 0) });
+        }
+        for (const p of gtPurchItems as any[]) {
+          if (p.purchase_date) events.push({ date: p.purchase_date, type: "purchase", wt: Number(p.gross_wt || 0) });
+        }
+        for (const s of gtSaleItems as any[]) {
+          const d = s.sales?.bill_date;
+          if (d) events.push({ date: d, type: "sale", wt: Number(s.gross_wt || 0) });
+        }
+        events.sort((a, b) => a.date.localeCompare(b.date));
+
+        // Group by date for the detail table
+        const byDate: Record<string, { snapshot?: number; purchIn: number; soldOut: number }> = {};
+        for (const ev of events) {
+          if (!byDate[ev.date]) byDate[ev.date] = { purchIn: 0, soldOut: 0 };
+          if (ev.type === "snapshot") byDate[ev.date].snapshot = ev.wt;
+          else if (ev.type === "purchase") byDate[ev.date].purchIn += ev.wt;
+          else byDate[ev.date].soldOut += ev.wt;
+        }
+        const dates = Object.keys(byDate).sort();
+
+        const totalPurchIn = gtPurchItems.reduce((s: number, p: any) => s + Number(p.gross_wt || 0), 0);
+        const totalSoldOut = gtSaleItems.reduce((s: number, i: any) => s + Number(i.gross_wt || 0), 0);
+        const snapshots = gtStockEntries.map(e => ({
+          date: e.entry_date,
+          wt: Number(e.total_weight_g || 0) + Number(e.untagged_weight_g || 0),
+        })).sort((a, b) => a.date.localeCompare(b.date));
+
+        // Inline SVG trend chart
+        const chartW = 600; const chartH = 180; const padL = 60; const padR = 16; const padT = 16; const padB = 32;
+        const plotW = chartW - padL - padR;
+        const plotH = chartH - padT - padB;
+        const maxWt = snapshots.length ? Math.max(...snapshots.map(s => s.wt)) * 1.1 : 1;
+        const xScale = (i: number) => snapshots.length < 2 ? padL + plotW / 2 : padL + (i / (snapshots.length - 1)) * plotW;
+        const yScale = (w: number) => padT + plotH - (w / maxWt) * plotH;
+        const pts = snapshots.map((s, i) => `${xScale(i).toFixed(1)},${yScale(s.wt).toFixed(1)}`).join(" ");
+
+        return (
+          <div className="space-y-4">
+            {/* Controls */}
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="block text-[11px] text-ink-dim mb-1">From</label>
+                <input type="date" value={gtFrom} onChange={e => { setGtFrom(e.target.value); setGtLoaded(false); }} className={inp} />
+              </div>
+              <div>
+                <label className="block text-[11px] text-ink-dim mb-1">To</label>
+                <input type="date" value={gtTo} onChange={e => { setGtTo(e.target.value); setGtLoaded(false); }} className={inp} />
+              </div>
+              <button
+                onClick={() => setGtLoaded(true)}
+                disabled={!gtFrom || !gtTo || gtFetching}
+                className="bg-gold text-white text-xs font-semibold px-4 py-2 rounded-lg2 disabled:opacity-50"
+              >
+                {gtFetching ? "Loading…" : "Load"}
+              </button>
+            </div>
+
+            {gtLoaded && !gtFetching && (
+              <>
+                {/* Summary cards */}
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "Purchased In",  val: totalPurchIn.toFixed(3) + "g", color: "text-ok" },
+                    { label: "Sold Out",       val: totalSoldOut.toFixed(3) + "g", color: "text-err" },
+                    { label: "Net Change",
+                      val: (totalPurchIn - totalSoldOut >= 0 ? "+" : "") + (totalPurchIn - totalSoldOut).toFixed(3) + "g",
+                      color: totalPurchIn >= totalSoldOut ? "text-ok" : "text-err" },
+                  ].map(c => (
+                    <div key={c.label} className="bg-white border border-line rounded-xl p-3 shadow-soft">
+                      <p className="text-[11px] text-ink-dim">{c.label}</p>
+                      <p className={`text-lg font-bold tabular-nums ${c.color}`}>{c.val}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Trend chart */}
+                {snapshots.length >= 2 && (
+                  <div className="bg-white border border-line rounded-xl p-4 shadow-soft overflow-x-auto">
+                    <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide mb-3">Stock Snapshots Trend</p>
+                    <svg viewBox={`0 0 ${chartW} ${chartH}`} style={{ width: "100%", maxWidth: chartW, height: chartH }}>
+                      {/* Y gridlines */}
+                      {[0, 0.25, 0.5, 0.75, 1].map(pct => {
+                        const y = padT + plotH * (1 - pct);
+                        const val = (maxWt * pct / 1.1).toFixed(0);
+                        return (
+                          <g key={pct}>
+                            <line x1={padL} y1={y} x2={padL + plotW} y2={y} stroke="#e5e7eb" strokeWidth="1" />
+                            <text x={padL - 6} y={y + 4} textAnchor="end" fontSize="10" fill="#9ca3af">{val}g</text>
+                          </g>
+                        );
+                      })}
+                      {/* Line */}
+                      <polyline points={pts} fill="none" stroke="#D4AF37" strokeWidth="2.5" strokeLinejoin="round" />
+                      {/* Points */}
+                      {snapshots.map((s, i) => (
+                        <g key={i}>
+                          <circle cx={xScale(i)} cy={yScale(s.wt)} r="4" fill="#D4AF37" />
+                          <text x={xScale(i)} y={yScale(s.wt) - 8} textAnchor="middle" fontSize="9" fill="#374151">{s.wt.toFixed(0)}g</text>
+                        </g>
+                      ))}
+                      {/* X axis dates */}
+                      {snapshots.map((s, i) => (
+                        <text key={i} x={xScale(i)} y={chartH - 4} textAnchor="middle" fontSize="9" fill="#9ca3af">
+                          {s.date.slice(5)}
+                        </text>
+                      ))}
+                    </svg>
+                  </div>
+                )}
+                {snapshots.length < 2 && (
+                  <p className="text-xs text-ink-dim">No stock snapshots in this range — enter stock entries to see the trend chart.</p>
+                )}
+
+                {/* Detail table */}
+                {dates.length > 0 && (
+                  <div className="bg-white border border-line rounded-xl shadow-soft overflow-x-auto">
+                    <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide px-4 pt-3 pb-1">Daily Detail</p>
+                    <table className="w-full text-sm" style={{ minWidth: 520 }}>
+                      <thead>
+                        <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                          <th className="text-left px-4 py-2">Date</th>
+                          <th className="text-right px-3 py-2 text-ok">Purchased In</th>
+                          <th className="text-right px-3 py-2 text-err">Sold Out</th>
+                          <th className="text-right px-4 py-2">Stock Snapshot</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dates.map(d => {
+                          const row = byDate[d];
+                          return (
+                            <tr key={d} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                              <td className="px-4 py-2 text-ink font-medium">{shortDate(d)}</td>
+                              <td className="px-3 py-2 text-right font-mono text-xs text-ok">
+                                {row.purchIn > 0 ? "+" + row.purchIn.toFixed(3) + "g" : "—"}
+                              </td>
+                              <td className="px-3 py-2 text-right font-mono text-xs text-err">
+                                {row.soldOut > 0 ? "−" + row.soldOut.toFixed(3) + "g" : "—"}
+                              </td>
+                              <td className="px-4 py-2 text-right font-mono text-xs font-semibold text-ink">
+                                {row.snapshot != null ? row.snapshot.toFixed(3) + "g" : "—"}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-canvas border-t border-line text-xs font-semibold">
+                          <td className="px-4 py-2 text-ink-dim">Total</td>
+                          <td className="px-3 py-2 text-right font-mono text-ok">+{totalPurchIn.toFixed(3)}g</td>
+                          <td className="px-3 py-2 text-right font-mono text-err">−{totalSoldOut.toFixed(3)}g</td>
+                          <td className="px-4 py-2" />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+                {dates.length === 0 && (
+                  <p className="text-sm text-center text-ink-dim py-8">No data found for this period.</p>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* ── Kolusu Boxes tab ─────────────────────────────────────────────── */}
+      {tab === "kolbox" && (() => {
+        const inp = "border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold bg-canvas";
+        const maxQty = kbStats.length ? kbStats[0].sold_qty : 1;
+
+        return (
+          <div className="space-y-4">
+            {/* Controls */}
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="block text-[11px] text-ink-dim mb-1">From</label>
+                <input type="date" value={kbFrom} onChange={e => { setKbFrom(e.target.value); setKbLoaded(false); }} className={inp} />
+              </div>
+              <div>
+                <label className="block text-[11px] text-ink-dim mb-1">To</label>
+                <input type="date" value={kbTo} onChange={e => { setKbTo(e.target.value); setKbLoaded(false); }} className={inp} />
+              </div>
+              <button
+                onClick={() => setKbLoaded(true)}
+                disabled={!kbFrom || !kbTo || kbFetching}
+                className="bg-gold text-white text-xs font-semibold px-4 py-2 rounded-lg2 disabled:opacity-50"
+              >
+                {kbFetching ? "Loading…" : "Load"}
+              </button>
+            </div>
+
+            {kbLoaded && !kbFetching && kbStats.length > 0 && (
+              <>
+                {/* Bar chart */}
+                <div className="bg-white border border-line rounded-xl p-4 shadow-soft">
+                  <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide mb-3">Boxes by Qty Sold</p>
+                  <div className="space-y-2">
+                    {kbStats.map((box, i) => {
+                      const pct = maxQty > 0 ? Math.round((box.sold_qty / maxQty) * 100) : 0;
+                      const barColor = i === 0 ? "bg-gold" : i === 1 ? "bg-gold/60" : "bg-gold/30";
+                      return (
+                        <div key={box.box_no} className="flex items-center gap-3">
+                          <span className="text-xs font-semibold text-ink-dim w-14 flex-shrink-0 text-right">
+                            {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`} {box.box_no}
+                          </span>
+                          <div className="flex-1 bg-line rounded-full h-5 relative overflow-hidden">
+                            <div className={`h-5 rounded-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
+                            <span className="absolute inset-0 flex items-center px-2 text-[11px] font-semibold text-ink">
+                              {box.name || box.box_no}
+                            </span>
+                          </div>
+                          <span className="text-xs font-bold text-ink w-12 text-right">{box.sold_qty} pcs</span>
+                          <span className="text-xs text-ink-dim w-20 text-right">{box.sold_wt.toFixed(3)}g</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Detail table */}
+                <div className="bg-white border border-line rounded-xl shadow-soft overflow-x-auto">
+                  <table className="w-full text-sm" style={{ minWidth: 560 }}>
+                    <thead>
+                      <tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+                        <th className="text-left px-4 py-2.5">Rank</th>
+                        <th className="text-left px-3 py-2.5">Box</th>
+                        <th className="text-right px-3 py-2.5 text-err">Sold Qty</th>
+                        <th className="text-right px-3 py-2.5 text-err">Sold Weight</th>
+                        <th className="text-right px-3 py-2.5 text-ok">Restock Qty</th>
+                        <th className="text-right px-4 py-2.5 text-ok">Restock Weight</th>
+                        <th className="text-right px-3 py-2.5">Sale Days</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {kbStats.map((box, i) => (
+                        <tr key={box.box_no} className={`border-b border-line last:border-0 hover:bg-canvas/50 ${i === 0 ? "bg-gold/5" : ""}`}>
+                          <td className="px-4 py-2.5 text-center font-bold text-ink-dim">
+                            {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <span className="font-semibold text-ink">{box.box_no}</span>
+                            {box.name && <span className="ml-1 text-ink-dim text-xs">{box.name}</span>}
+                          </td>
+                          <td className="px-3 py-2.5 text-right font-mono text-xs text-err font-semibold">{box.sold_qty}</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-xs text-err">{box.sold_wt.toFixed(3)}g</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-xs text-ok">{box.restock_qty || "—"}</td>
+                          <td className="px-4 py-2.5 text-right font-mono text-xs text-ok">{box.restock_wt > 0 ? box.restock_wt.toFixed(3) + "g" : "—"}</td>
+                          <td className="px-3 py-2.5 text-right font-mono text-xs text-ink-dim">{box.days}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-canvas border-t border-line text-xs font-semibold">
+                        <td className="px-4 py-2.5 text-ink-dim" colSpan={2}>Total</td>
+                        <td className="px-3 py-2.5 text-right font-mono text-err">
+                          {kbStats.reduce((s, b) => s + b.sold_qty, 0)}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono text-err">
+                          {kbStats.reduce((s, b) => s + b.sold_wt, 0).toFixed(3)}g
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono text-ok">
+                          {kbStats.reduce((s, b) => s + b.restock_qty, 0)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono text-ok">
+                          {kbStats.reduce((s, b) => s + b.restock_wt, 0).toFixed(3)}g
+                        </td>
+                        <td className="px-3 py-2.5" />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {kbLoaded && !kbFetching && kbStats.length === 0 && (
+              <p className="text-sm text-center text-ink-dim py-8">No sales found in this period.</p>
             )}
           </div>
         );
