@@ -752,7 +752,7 @@ export default function IncentiveCalcPage() {
       qc.invalidateQueries({ queryKey: ["incentive_sheets"] });
       setTimeout(() => setSaveStatus("idle"), 2500);
     },
-    onError: () => setSaveStatus("idle"),
+    onError: (e: unknown) => { setSaveStatus("idle"); alert("Save failed: " + (e instanceof Error ? e.message : String(e))); },
   });
 
   // ── Load a saved sheet
