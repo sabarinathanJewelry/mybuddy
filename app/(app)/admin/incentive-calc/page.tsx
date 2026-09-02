@@ -644,6 +644,7 @@ export default function IncentiveCalcPage() {
   const [savedSheetId, setSavedSheetId] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle"|"saving"|"saved">("idle");
   const [lockedRows, setLockedRows] = useState<Record<string, { staff: string; period: string }>>({});
+  const [deletedIdxs, setDeletedIdxs] = useState<number[]>([]);
 
   const inp = "border border-line rounded-lg2 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-gold";
 
@@ -667,6 +668,7 @@ export default function IncentiveCalcPage() {
         period,
         raw_data: raw,
         overrides,
+        deleted_idxs: deletedIdxs,
         default_split: defaultSplit,
         mapper_entries: vars?.mapperEntries ?? mapperEntries,
         master_entries: vars?.masterEntries ?? masterEntries,
@@ -704,6 +706,8 @@ export default function IncentiveCalcPage() {
     setDefaultSplit(d.default_split ?? 70);
     setPeriod(d.period);
     setLockedRows(d.locked_rows ?? {});
+    const savedDeleted: number[] = d.deleted_idxs ?? [];
+    setDeletedIdxs(savedDeleted);
     if (d.mapper_entries) {
       // Merge any new INITIAL_MAPPER entries not present in the saved sheet
       const saved = d.mapper_entries as MapperEntry[];
@@ -721,8 +725,8 @@ export default function IncentiveCalcPage() {
     }
     setSavedSheetId(id);
     setSaveStatus("idle");
-    // Re-parse
-    const r = parseErp(d.raw_data);
+    // Re-parse — filter out previously deleted rows
+    const r = parseErp(d.raw_data).filter(row => !savedDeleted.includes(row.idx));
     setRows(r);
     setTab("data");
     const names = new Set<string>();
@@ -747,6 +751,7 @@ export default function IncentiveCalcPage() {
     setRows(r);
     setOverrides({});
     setLockedRows({});
+    setDeletedIdxs([]);
     setFilterStaff("ALL");
     setFilterStatus("all");
     setTab("data");
@@ -764,6 +769,7 @@ export default function IncentiveCalcPage() {
   function deleteRow(idx: number) {
     setRows(prev => prev ? prev.filter(r => r.idx !== idx) : prev);
     setOverrides(prev => { const n = { ...prev }; delete n[idx]; return n; });
+    setDeletedIdxs(prev => prev.includes(idx) ? prev : [...prev, idx]);
   }
 
   const allStaff = useMemo(() => {
@@ -915,7 +921,7 @@ export default function IncentiveCalcPage() {
             Calculate
           </button>
           {rows && (
-            <button onClick={() => { setRows(null); setRaw(""); setOverrides({}); }}
+            <button onClick={() => { setRows(null); setRaw(""); setOverrides({}); setDeletedIdxs([]); }}
               className="border border-line text-sm px-4 py-2 rounded-lg2 hover:border-err hover:text-err">
               Clear
             </button>
