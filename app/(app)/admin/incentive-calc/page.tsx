@@ -761,6 +761,11 @@ export default function IncentiveCalcPage() {
     setOverrides(prev => ({ ...prev, [idx]: { ...prev[idx], ...patch } }));
   }
 
+  function deleteRow(idx: number) {
+    setRows(prev => prev ? prev.filter(r => r.idx !== idx) : prev);
+    setOverrides(prev => { const n = { ...prev }; delete n[idx]; return n; });
+  }
+
   const allStaff = useMemo(() => {
     const s = new Set<string>();
     (rows ?? []).forEach(r => { if (r.sp1) s.add(r.sp1); if (r.sp2) s.add(r.sp2); });
@@ -999,6 +1004,7 @@ export default function IncentiveCalcPage() {
                   <th className="text-left px-3 py-2">Bill No</th>
                   <th className="text-left px-3 py-2">Customer</th>
                   <th className="text-left px-3 py-2">Mobile</th>
+                  <th className="px-2 py-2"></th>
                 </tr>
               </thead>
               <tbody>
@@ -1176,6 +1182,14 @@ export default function IncentiveCalcPage() {
                       </td>
                       <td className="px-3 py-1.5 text-ink-dim truncate max-w-[120px]">{row.customer || "—"}</td>
                       <td className="px-3 py-1.5 text-ink-dim font-mono text-[11px]">{row.mobile || "—"}</td>
+                      <td className="px-2 py-1.5 text-center">
+                        {!lockInfo && (
+                          <button
+                            onClick={() => deleteRow(row.idx)}
+                            title="Remove this row"
+                            className="text-ink-dim/40 hover:text-err text-sm leading-none">×</button>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
