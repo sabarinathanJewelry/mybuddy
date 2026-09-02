@@ -17,6 +17,7 @@ export interface RewardScore {
   leave_count: number;
   disciplined_break_days: number;
   neat_pct: number | null;
+  leave_flag: boolean;
   updated_at: string;
   staff_name?: string;
 }
@@ -75,6 +76,7 @@ export function useRewardScores(month: string) {
         ...s,
         behavior_pts: s.behavior_pts ?? 0,
         dressing_pts: s.dressing_pts ?? 0,
+        leave_flag: s.leave_flag ?? false,
         staff_name: nameMap[s.bio_user_id] ?? s.bio_user_id,
       }));
     },

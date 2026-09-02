@@ -98,6 +98,11 @@ function LeaderboardRow({
             <span className={`text-sm font-semibold truncate ${isMe ? "text-gold" : "text-ink"}`}>
               {score.staff_name}
               {isMe && <span className="ml-1 text-[10px] text-gold font-normal">(you)</span>}
+              {score.leave_flag && (
+                <span className="ml-1 text-[10px] font-normal text-amber-600 bg-amber-100 dark:bg-amber-900/30 px-1 py-0.5 rounded" title="More than 3 approved leaves — management review">
+                  ⚠ 3+ leaves
+                </span>
+              )}
             </span>
             <span className="text-sm font-bold text-ink ml-2 flex-shrink-0">
               {score.total_pts}
@@ -482,7 +487,7 @@ export default function RewardsTab({
         <div className="px-4 pb-4 pt-2 space-y-2 text-xs text-ink-dim">
           {[
             { icon: "⏰", label: "Punctuality",          max: 40, desc: "+1 per day arrived by 9:50 am. Most on-time days wins." },
-            { icon: "📅", label: "Leave Discipline",     max: 10, desc: "0 leaves=10 · 1=8 · 2=6 · 3=4 · 4+=0 pts" },
+            { icon: "📅", label: "Leave Discipline",     max: 10, desc: "Applied in advance=10 · Retrospective (after leave date)=8 · Same-day=5. Score set by worst leave that month. ⚠ badge shown if >3 approved leaves." },
             { icon: "☕", label: "Break Discipline",     max: 10, desc: "+1 per day lunch break ≤ 1 hour. Consistently short breaks win." },
             { icon: "🤝", label: "Behavior",             max: 15, desc: "Starts at 0. Staff Conduct notes deduct: fined=−5, pending=−2. Admin can also add manual marks. Range −15 to +15." },
             { icon: "👔", label: "Dressing & Neatness",  max: 15, desc: "Starts at 15. Dress Code / Grooming conduct notes deduct: fined=−5, pending=−2. Range 0 to 15." },
