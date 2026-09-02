@@ -621,6 +621,69 @@ function InlineMapperAdd({ erpName, masterEntries, onSave }: {
 // ─── Main page ─────────────────────────────────────────────────────────────────
 type ViewTab = "data" | "staff" | "settings";
 
+type SortKey = "score" | "avgPct" | "goldWt" | "silverWt";
+interface LeaderboardEntry {
+  name: string; avgPct: number; goldWt: number; silverWt: number;
+  score: number; goldCount: number; silverCount: number;
+}
+function SalesLeaderboard({ data }: { data: LeaderboardEntry[] }) {
+  const [sort, setSort] = useState<SortKey>("score");
+  const sorted = [...data].sort((a, b) => b[sort] - a[sort]);
+  const SORTS: { key: SortKey; label: string }[] = [
+    { key: "score",    label: "Score" },
+    { key: "avgPct",   label: "Avg Making%" },
+    { key: "goldWt",   label: "Gold Weight" },
+    { key: "silverWt", label: "Silver Weight" },
+  ];
+  return (
+    <div className="bg-canvas rounded-xl border border-line shadow-soft p-4 space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="font-semibold text-ink text-sm">Sales Performance Leaderboard</h3>
+        <div className="flex gap-1">
+          {SORTS.map(s => (
+            <button key={s.key} onClick={() => setSort(s.key)}
+              className={clsx("px-2.5 py-1 rounded-md text-xs font-medium border transition-colors", {
+                "bg-gold text-white border-gold": sort === s.key,
+                "bg-white text-ink-dim border-line hover:border-gold/40": sort !== s.key,
+              })}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-ink-dim border-b border-line">
+              <th className="pb-1.5 text-left w-6">#</th>
+              <th className="pb-1.5 text-left">Staff</th>
+              <th className="pb-1.5 text-right">Score</th>
+              <th className="pb-1.5 text-right">Avg Making%</th>
+              <th className="pb-1.5 text-right">Gold (g)</th>
+              <th className="pb-1.5 text-right">Silver (g)</th>
+              <th className="pb-1.5 text-right">Bills</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((r, i) => (
+              <tr key={r.name} className={clsx("border-b border-line/50", i === 0 && "text-gold font-semibold")}>
+                <td className="py-1.5 text-ink-dim">{i + 1}</td>
+                <td className="py-1.5">{r.name}</td>
+                <td className={clsx("py-1.5 text-right font-mono", sort === "score" && "text-gold font-semibold")}>{r.score.toFixed(1)}</td>
+                <td className={clsx("py-1.5 text-right font-mono", sort === "avgPct" && "text-gold font-semibold")}>{r.avgPct.toFixed(2)}%</td>
+                <td className={clsx("py-1.5 text-right font-mono", sort === "goldWt" && "text-gold font-semibold")}>{r.goldWt.toFixed(3)}</td>
+                <td className={clsx("py-1.5 text-right font-mono", sort === "silverWt" && "text-gold font-semibold")}>{r.silverWt.toFixed(3)}</td>
+                <td className="py-1.5 text-right text-ink-dim">{r.goldCount + r.silverCount}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[10px] text-ink-dim">Score = avg making% × gold grams. Higher = better quality on higher volume.</p>
+    </div>
+  );
+}
+
 export default function IncentiveCalcPage() {
   const qc = useQueryClient();
   const boardRateStore = useBoardRate(s => s.rate);
@@ -793,31 +856,39 @@ export default function IncentiveCalcPage() {
 
   const grandTotal = [...staffTotals.values()].reduce((s, v) => s + v, 0);
 
-  // Gold VA% leaderboard — weight-average making% per staff on gold bills only (bill prefix G, wastage > 0)
-  const goldVaLeaderboard = useMemo(() => {
-    const map = new Map<string, { wtdSum: number; totalWt: number; count: number }>();
-    const addStaff = (name: string, wastage: number, wt: number) => {
+  // Sales leaderboard — gold weight, silver weight, avg wastage%, composite score per staff
+  const salesLeaderboard = useMemo(() => {
+    const map = new Map<string, { wtdSum: number; goldWt: number; silverWt: number; goldCount: number; silverCount: number }>();
+    const addStaff = (name: string, wastage: number, wt: number, isGold: boolean) => {
       if (!name) return;
-      const e = map.get(name) ?? { wtdSum: 0, totalWt: 0, count: 0 };
-      e.wtdSum  += wastage * wt;
-      e.totalWt += wt;
-      e.count   += 1;
+      const e = map.get(name) ?? { wtdSum: 0, goldWt: 0, silverWt: 0, goldCount: 0, silverCount: 0 };
+      if (isGold) {
+        if (wastage > 0) e.wtdSum += wastage * wt;
+        e.goldWt    += wt;
+        e.goldCount += 1;
+      } else {
+        e.silverWt    += wt;
+        e.silverCount += 1;
+      }
       map.set(name, e);
     };
     for (const { row, eff } of computed) {
       const pfx = row.billNo.split("/").pop()?.[0]?.toUpperCase();
-      if (pfx !== "G") continue;
-      if (eff.wastage <= 0) continue;
-      if (row.sp1) addStaff(row.sp1, eff.wastage, row.netWt);
-      if (row.sp2) addStaff(row.sp2, eff.wastage, row.netWt);
+      const isGold   = pfx === "G";
+      const isSilver = pfx === "S";
+      if (!isGold && !isSilver) continue;
+      if (row.sp1) addStaff(row.sp1, eff.wastage, row.netWt, isGold);
+      if (row.sp2) addStaff(row.sp2, eff.wastage, row.netWt, isGold);
     }
-    return [...map.entries()]
-      .map(([name, { wtdSum, totalWt, count }]) => ({
-        name,
-        avg: totalWt > 0 ? parseFloat((wtdSum / totalWt).toFixed(2)) : 0,
-        count,
-      }))
-      .sort((a, b) => b.avg - a.avg);
+    return [...map.entries()].map(([name, d]) => ({
+      name,
+      avgPct:    d.goldWt > 0 ? parseFloat((d.wtdSum / d.goldWt).toFixed(2)) : 0,
+      goldWt:    parseFloat(d.goldWt.toFixed(3)),
+      silverWt:  parseFloat(d.silverWt.toFixed(3)),
+      score:     parseFloat(((d.wtdSum / (d.goldWt || 1)) * d.goldWt).toFixed(1)), // avg% × goldWt
+      goldCount: d.goldCount,
+      silverCount: d.silverCount,
+    }));
   }, [computed]);
 
   const unmappedProducts = useMemo(() =>
@@ -1267,40 +1338,9 @@ export default function IncentiveCalcPage() {
             </div>
           )}
 
-          {/* Gold VA% leaderboard */}
-          {goldVaLeaderboard.length > 0 && (
-            <div className="bg-white rounded-xl border border-gold/30 shadow-soft p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-ink">Gold Making % — Staff Leaderboard</span>
-                <span className="text-[10px] text-ink-dim bg-canvas border border-line rounded-full px-2 py-0.5">weight-avg · gold bills only</span>
-              </div>
-              <div className="space-y-2">
-                {goldVaLeaderboard.map((entry, idx) => {
-                  const MEDALS = ["🥇","🥈","🥉"];
-                  const isTop = idx === 0;
-                  const barPct = goldVaLeaderboard[0].avg > 0
-                    ? Math.round((entry.avg / goldVaLeaderboard[0].avg) * 100)
-                    : 0;
-                  return (
-                    <div key={entry.name} className={clsx(
-                      "flex items-center gap-3 rounded-lg2 px-3 py-2",
-                      isTop ? "bg-gold/5 border border-gold/20" : "bg-canvas"
-                    )}>
-                      <span className="w-5 text-center text-sm">{MEDALS[idx] ?? `${idx + 1}`}</span>
-                      <span className={clsx("text-sm font-medium flex-1", isTop ? "text-gold" : "text-ink")}>{entry.name}</span>
-                      <div className="w-32 h-1.5 bg-line rounded-full overflow-hidden hidden sm:block">
-                        <div className="h-full bg-gold rounded-full" style={{ width: `${barPct}%` }} />
-                      </div>
-                      <span className={clsx("text-sm font-bold tabular-nums", isTop ? "text-gold" : "text-ink")}>{entry.avg}%</span>
-                      <span className="text-[10px] text-ink-dim w-16 text-right">{entry.count} sales</span>
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="text-[10px] text-ink-dim">
-                Highest avg = sells gold at the highest making charge. Reward this staff for driving margins.
-              </p>
-            </div>
+          {/* Sales performance leaderboard */}
+          {salesLeaderboard.length > 0 && (
+            <SalesLeaderboard data={salesLeaderboard} />
           )}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
             {[...staffTotals.entries()].sort((a, b) => b[1] - a[1]).map(([name, total]) => {
