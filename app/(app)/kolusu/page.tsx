@@ -188,6 +188,30 @@ function useRestock() {
   });
 }
 
+function useDeleteRestock() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, box_id, qty, wt_g }: { id: string; box_id: string; qty: number; wt_g: number }) => {
+      const client = supabase();
+      const { data: box, error: fetchErr } = await client
+        .from("kolusu_boxes").select("current_gross_wt_g, current_qty").eq("id", box_id).single();
+      if (fetchErr) throw fetchErr;
+      const { error: updErr } = await client.from("kolusu_boxes").update({
+        current_gross_wt_g: parseFloat((box.current_gross_wt_g - wt_g).toFixed(3)),
+        current_qty: box.current_qty - qty,
+        updated_at: new Date().toISOString(),
+      }).eq("id", box_id);
+      if (updErr) throw updErr;
+      const { error: delErr } = await client.from("kolusu_transactions").delete().eq("id", id);
+      if (delErr) throw delErr;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["kolusu_boxes"] });
+      qc.invalidateQueries({ queryKey: ["kolusu_transactions"] });
+    },
+  });
+}
+
 function useUpdateRestock() {
   const qc = useQueryClient();
   return useMutation({
@@ -270,6 +294,7 @@ export default function KolusuPage() {
   const recordReturn = useRecordReturn();
   const restock = useRestock();
   const updateRestock = useUpdateRestock();
+  const deleteRestock = useDeleteRestock();
   const { data: pendingSales = [], isLoading: pendingLoading } = usePendingSales();
   const [syncResult, setSyncResult] = useState<string | null>(null);
   const [editRestockId, setEditRestockId] = useState<string | null>(null);
@@ -1295,18 +1320,30 @@ export default function KolusuPage() {
                           </div>
                         )}
                         {isRestock && (
-                          <button
-                            onClick={() => {
-                              if (editRestockId === tx.id) { setEditRestockId(null); }
-                              else {
-                                setEditRestockId(tx.id);
-                                const rawNotes = (tx.notes ?? "").replace(/^RESTOCK:?\s*/i, "");
-                                setEditRestockForm({ tx_date: tx.tx_date, qty: tx.qty_change, raw_wt_g: tx.raw_wt_g, notes: rawNotes });
-                              }
-                            }}
-                            className={`text-xs px-2 py-1 rounded-lg2 border transition-colors ${editRestockId === tx.id ? "border-err/40 bg-err/10 text-err" : "border-line text-ink-dim hover:border-gold hover:text-gold"}`}>
-                            {editRestockId === tx.id ? "Cancel" : "Edit"}
-                          </button>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => {
+                                if (editRestockId === tx.id) { setEditRestockId(null); }
+                                else {
+                                  setEditRestockId(tx.id);
+                                  const rawNotes = (tx.notes ?? "").replace(/^RESTOCK:?\s*/i, "");
+                                  setEditRestockForm({ tx_date: tx.tx_date, qty: tx.qty_change, raw_wt_g: tx.raw_wt_g, notes: rawNotes });
+                                }
+                              }}
+                              className={`text-xs px-2 py-1 rounded-lg2 border transition-colors ${editRestockId === tx.id ? "border-err/40 bg-err/10 text-err" : "border-line text-ink-dim hover:border-gold hover:text-gold"}`}>
+                              {editRestockId === tx.id ? "Cancel" : "Edit"}
+                            </button>
+                            <button
+                              disabled={deleteRestock.isPending}
+                              onClick={() => {
+                                if (window.confirm(`Delete this restock? ${grams(tx.total_wt_g)} and ${tx.qty_change} pcs will be deducted from Box ${tx.kolusu_boxes?.box_no ?? ""}.`)) {
+                                  deleteRestock.mutate({ id: tx.id, box_id: tx.box_id, qty: tx.qty_change, wt_g: tx.total_wt_g });
+                                }
+                              }}
+                              className="text-xs px-2 py-1 rounded-lg2 border border-err/30 text-err hover:bg-err/10 transition-colors disabled:opacity-40">
+                              Delete
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
