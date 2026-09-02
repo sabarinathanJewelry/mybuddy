@@ -70,17 +70,19 @@ BEGIN
 
   -- Leave scoring based on how early each leave was applied.
   -- worst_timing: 0 = all in advance, 1 = retroactive (applied after), 2 = same day
+  -- Count approved + pending leaves (pending = taken but not yet formally approved)
+  -- Rejected leaves are not counted (staff was expected to work / did come in)
   leaves AS (
     SELECT
       lr.bio_user_id,
-      count(*) FILTER (WHERE lr.status = 'approved')::int AS leave_count,
+      count(*) FILTER (WHERE lr.status IN ('approved', 'pending'))::int AS leave_count,
       max(
         CASE
           WHEN (lr.created_at AT TIME ZONE 'Asia/Kolkata')::date = lr.leave_date THEN 2
           WHEN (lr.created_at AT TIME ZONE 'Asia/Kolkata')::date > lr.leave_date  THEN 1
           ELSE 0
         END
-      ) FILTER (WHERE lr.status = 'approved') AS worst_timing
+      ) FILTER (WHERE lr.status IN ('approved', 'pending')) AS worst_timing
     FROM leave_requests lr
     WHERE lr.leave_date >= v_month_start AND lr.leave_date <= v_month_end
     GROUP BY lr.bio_user_id
