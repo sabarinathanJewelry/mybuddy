@@ -96,20 +96,30 @@ export function useTodayChecks(date: string) {
   });
 }
 
-export function useSaveCounterAssignment() {
+export function useAddCounterAssignment() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ counter_id, bio_user_id, month }: { counter_id: number; bio_user_id: string; month: string }) => {
-      if (!bio_user_id) {
-        const { error } = await supabase()
-          .from("counter_assignments").delete().eq("counter_id", counter_id).eq("month", month);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase()
-          .from("counter_assignments")
-          .upsert({ counter_id, bio_user_id, month }, { onConflict: "counter_id,month" });
-        if (error) throw error;
-      }
+      const { error } = await supabase()
+        .from("counter_assignments")
+        .upsert({ counter_id, bio_user_id, month }, { onConflict: "counter_id,bio_user_id,month" });
+      if (error) throw error;
+    },
+    onSuccess: (_, v) => qc.invalidateQueries({ queryKey: ["counter_assignments", v.month] }),
+  });
+}
+
+export function useRemoveCounterAssignment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ counter_id, bio_user_id, month }: { counter_id: number; bio_user_id: string; month: string }) => {
+      const { error } = await supabase()
+        .from("counter_assignments")
+        .delete()
+        .eq("counter_id", counter_id)
+        .eq("bio_user_id", bio_user_id)
+        .eq("month", month);
+      if (error) throw error;
     },
     onSuccess: (_, v) => qc.invalidateQueries({ queryKey: ["counter_assignments", v.month] }),
   });
