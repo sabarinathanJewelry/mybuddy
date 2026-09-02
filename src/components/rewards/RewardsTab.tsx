@@ -486,7 +486,7 @@ export default function RewardsTab({
         </summary>
         <div className="px-4 pb-4 pt-2 space-y-2 text-xs text-ink-dim">
           {[
-            { icon: "⏰", label: "Punctuality",          max: 40, desc: "+1 per day arrived by 9:50 am. Most on-time days wins." },
+            { icon: "⏰", label: "Punctuality",          max: 40, desc: "+1 pt per on-time day (by 9:50 AM). Bonus: 27+ days → +10, 21-26 days → +5, 18-19 days → +3. Total capped at 40." },
             { icon: "📅", label: "Leave Discipline",     max: 10, desc: "Applied in advance=10 · Retrospective (after leave date)=8 · Same-day=5. Score set by worst leave that month. ⚠ badge shown if >3 approved leaves." },
             { icon: "☕", label: "Break Discipline",     max: 10, desc: "+1 per day lunch break ≤ 1 hour. Consistently short breaks win." },
             { icon: "🤝", label: "Behavior",             max: 15, desc: "Starts at 0. Staff Conduct notes deduct: fined=−5, pending=−2. Admin can also add manual marks. Range −15 to +15." },
