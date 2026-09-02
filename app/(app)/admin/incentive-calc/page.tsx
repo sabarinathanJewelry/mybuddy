@@ -990,6 +990,7 @@ export default function IncentiveCalcPage() {
             <table className="w-full text-xs" style={{ minWidth: 1280 }}>
               <thead>
                 <tr className="text-ink-dim border-b border-line bg-canvas">
+                  <th className="px-2 py-2"></th>
                   <th className="text-left px-3 py-2">Date</th>
                   <th className="text-left px-3 py-2">ERP Product → Code</th>
                   <th className="text-right px-2 py-2">Waste%</th>
@@ -1004,7 +1005,6 @@ export default function IncentiveCalcPage() {
                   <th className="text-left px-3 py-2">Bill No</th>
                   <th className="text-left px-3 py-2">Customer</th>
                   <th className="text-left px-3 py-2">Mobile</th>
-                  <th className="px-2 py-2"></th>
                 </tr>
               </thead>
               <tbody>
@@ -1026,6 +1026,14 @@ export default function IncentiveCalcPage() {
                       "bg-canvas/30": !lockInfo && eff.eligible,
                       "opacity-60": !eff.mapped,
                     })}>
+                      <td className="px-2 py-1.5 text-center">
+                        {!lockInfo && (
+                          <button
+                            onClick={() => deleteRow(row.idx)}
+                            title="Remove this row"
+                            className="text-ink-dim/40 hover:text-err text-base leading-none font-bold">×</button>
+                        )}
+                      </td>
                       <td className="px-3 py-1.5 text-ink-dim whitespace-nowrap">{row.date}</td>
                       <td className="px-3 py-1.5">
                         <span className="font-medium">{row.product}</span>
@@ -1182,14 +1190,6 @@ export default function IncentiveCalcPage() {
                       </td>
                       <td className="px-3 py-1.5 text-ink-dim truncate max-w-[120px]">{row.customer || "—"}</td>
                       <td className="px-3 py-1.5 text-ink-dim font-mono text-[11px]">{row.mobile || "—"}</td>
-                      <td className="px-2 py-1.5 text-center">
-                        {!lockInfo && (
-                          <button
-                            onClick={() => deleteRow(row.idx)}
-                            title="Remove this row"
-                            className="text-ink-dim/40 hover:text-err text-sm leading-none">×</button>
-                        )}
-                      </td>
                     </tr>
                   );
                 })}
