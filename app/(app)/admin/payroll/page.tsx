@@ -260,7 +260,8 @@ function detectCutoffDate(sheetData: any): string {
   return [...dates].sort()[0]; // earliest date = previous batch cutoff
 }
 
-// Returns row indices that will be counted in an arrear load (balanceZero=true, not already locked, after cutoff)
+// Returns row indices that actually generate incentive in an arrear load
+// (balanceZero=true, eligible — passes wastage/master/rate checks, not already locked, after cutoff)
 function getArrearRowIndices(
   sheetData: any,
   lockedRows: Record<string, LockedRow>,
@@ -268,6 +269,8 @@ function getArrearRowIndices(
 ): { idx: number; sp1: string }[] {
   const rawData = sheetData.raw_data as string;
   const overrides = sheetData.overrides ?? {};
+  const masterEntries = sheetData.master_entries ?? [];
+  const mapperEntries = sheetData.mapper_entries ?? [];
   const lines = rawData.split("\n").map((l: string) => l.trimEnd());
   const hi = lines.findIndex((l: string) => /date/i.test(l) && /product/i.test(l) && /net.?wt/i.test(l));
   if (hi < 0) return [];
@@ -286,6 +289,26 @@ function getArrearRowIndices(
       const lockDate = cutoffDate || staffLockDates.get(sp1) || staffLockDates.get(sp2);
       if (lockDate && ov.paidDate <= lockDate) return;
     }
+    if (ov.forceIneligible) return;
+    // Check wastage eligibility — same logic as calcStaffIncentives
+    const wastageField = (c[3] ?? "").trim();
+    const productGroup = (c[2] ?? "").trim().toUpperCase();
+    const product = (c[1] ?? "").trim().toUpperCase();
+    const isSilver = /^(SILVER|92\.5)/i.test(productGroup);
+    const isSideStud = /SIDE STUD/i.test(product);
+    const isGrams = /gm/i.test(wastageField);
+    let rawWastage: number;
+    if (isSilver || isSideStud) { rawWastage = 1; }
+    else if (isGrams && netWt > 0) { rawWastage = parseFloat(((parseFloat(wastageField.match(/[\d.]+/)?.[0] ?? "0") / netWt) * 100).toFixed(2)); }
+    else { rawWastage = parseFloat(wastageField.match(/[\d.]+/)?.[0] ?? "0") || 0; }
+    const wastage = ov.wastage ?? rawWastage;
+    const mapEntry = mapperEntries.find((m: any) => m.erpName?.toUpperCase() === product);
+    let code = (mapEntry?.incentiveCode ?? product).toUpperCase();
+    if (code === "92.5-S" && netWt > 20) code = "92.5-L";
+    const master = masterEntries.find((m: any) => m.code?.toUpperCase() === code);
+    if (!master || master.rate <= 0) return;
+    const minW = ov.minWastage ?? master.minWastage ?? 0;
+    if (wastage < minW) return; // ineligible — don't lock
     result.push({ idx: i, sp1 });
   });
   return result;
