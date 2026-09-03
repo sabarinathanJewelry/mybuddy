@@ -17,7 +17,6 @@ import {
 } from "@/modules/attendance/api";
 import NotificationBell from "@/components/ui/notification-bell";
 import { parseKolusuChat } from "@/lib/kolusu-parse";
-import { CONDUCT_CODES } from "@/lib/conduct-parse";
 import { inr, shortDate } from "@/lib/format";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -1705,16 +1704,7 @@ export default function MyAttendancePage() {
                 )}
               </div>
             )}
-            {canSeeConductNotes && /^cd\s/i.test(chatInput) && (
-              <div className="bg-canvas border border-line rounded-xl px-3 py-2 mb-2 text-xs text-ink-dim">
-                <span className="font-semibold text-ink">CD &lt;name&gt; &lt;code&gt;</span>
-                {" · "}
-                {Object.entries(CONDUCT_CODES).map(([code, info]) => (
-                  <span key={code} className="mr-2"><span className="font-mono text-gold-dark">{code}</span> {info.label}</span>
-                ))}
-              </div>
-            )}
-            <div className="flex gap-2 bg-white border border-line rounded-xl px-3 py-2">
+<div className="flex gap-2 bg-white border border-line rounded-xl px-3 py-2">
               <input
                 value={chatInput}
                 onChange={handleChatInputChange}

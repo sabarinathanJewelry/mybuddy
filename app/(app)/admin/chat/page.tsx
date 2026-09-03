@@ -29,6 +29,8 @@ export default function AdminChatPage() {
   const [editText, setEditText]     = useState("");
   const [chatInput, setChatInput]   = useState("");
   const [sending, setSending]       = useState(false);
+  const [staffList, setStaffList]   = useState<{ id: string; name: string }[]>([]);
+  const [cdMode, setCdMode]         = useState<"none" | "code" | "staff">("none");
   const bottomRef                   = useRef<HTMLDivElement>(null);
   const adminUserIdRef              = useRef<string | null>(null);
   const processedConductIds         = useRef<Set<string>>(new Set());
@@ -107,10 +109,12 @@ export default function AdminChatPage() {
       const { data: { user } } = await client.auth.getUser();
       adminUserIdRef.current = user?.id ?? null;
 
-      const [{ data: chatData }, { data: processed }] = await Promise.all([
+      const [{ data: chatData }, { data: processed }, { data: sData }] = await Promise.all([
         client.from("chat_messages").select("*").order("created_at", { ascending: true }).limit(200),
         client.from("kolusu_pending_sales").select("chat_message_id").not("chat_message_id", "is", null),
+        client.from("staff").select("id, name").eq("active", true).order("name"),
       ]);
+      setStaffList((sData ?? []) as { id: string; name: string }[]);
 
       setMessages((chatData ?? []) as ChatMessage[]);
 
@@ -163,6 +167,28 @@ export default function AdminChatPage() {
     setEditingId(null);
   }
 
+  function handleChatInput(val: string) {
+    setChatInput(val);
+    if (/^cd$/i.test(val.trim())) {
+      setCdMode("code");
+    } else if (/^cd\s+(SH|SC|BW|BT|LC)\s/i.test(val)) {
+      setCdMode("staff");
+    } else {
+      setCdMode("none");
+    }
+  }
+
+  function selectCdCode(code: string) {
+    setChatInput(`CD ${code} `);
+    setCdMode("staff");
+  }
+
+  function selectCdStaff(name: string) {
+    const m = chatInput.match(/^(CD\s+\w+\s+)/i);
+    setChatInput((m ? m[1] : chatInput) + name + " ");
+    setCdMode("none");
+  }
+
   async function sendAsAdmin() {
     if (!chatInput.trim() || !profile) return;
     setSending(true);
@@ -197,6 +223,7 @@ export default function AdminChatPage() {
       }
     }
     setChatInput("");
+    setCdMode("none");
     setSending(false);
   }
 
@@ -292,12 +319,43 @@ export default function AdminChatPage() {
 
       {/* Admin send */}
       <div className="shrink-0 pt-3">
+        {cdMode === "code" && (
+          <div className="border border-line rounded-xl bg-white shadow-soft py-1 mb-2">
+            <p className="text-[10px] text-ink-dim px-3 pt-1 pb-0.5 font-semibold uppercase tracking-wide">Conduct issue code</p>
+            {Object.entries(CONDUCT_CODES).map(([code, info]) => (
+              <button key={code} onMouseDown={(e) => { e.preventDefault(); selectCdCode(code); }}
+                className="flex items-center gap-3 w-full text-left px-3 py-1.5 hover:bg-canvas text-sm">
+                <span className="font-mono font-bold text-gold-dark w-8">{code}</span>
+                <span>{info.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {cdMode === "staff" && (() => {
+          const m = chatInput.match(/^CD\s+\w+\s+(.*)/i);
+          const q = (m?.[1] ?? "").toLowerCase();
+          const filtered = q ? staffList.filter(s => s.name.toLowerCase().includes(q)) : staffList;
+          return filtered.length > 0 ? (
+            <div className="border border-line rounded-xl bg-white shadow-soft py-1 mb-2 max-h-40 overflow-y-auto">
+              <p className="text-[10px] text-ink-dim px-3 pt-1 pb-0.5 font-semibold uppercase tracking-wide">Select staff</p>
+              {filtered.map((s) => (
+                <button key={s.id} onMouseDown={(e) => { e.preventDefault(); selectCdStaff(s.name); }}
+                  className="block w-full text-left text-sm px-3 py-1.5 hover:bg-canvas">
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          ) : null;
+        })()}
         <div className="flex gap-2 bg-white border border-line rounded-xl p-3">
           <input
             value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAsAdmin(); } }}
-            placeholder="Send a message as admin…"
+            onChange={(e) => handleChatInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && cdMode !== "none") { setCdMode("none"); return; }
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAsAdmin(); }
+            }}
+            placeholder="Send a message as admin… (type CD for conduct shorthand)"
             className="flex-1 text-sm focus:outline-none"
           />
           <button onClick={sendAsAdmin} disabled={sending || !chatInput.trim()}
