@@ -138,7 +138,8 @@ function calcStaffIncentives(
   sheetData: any,
   lockedRows: Record<string, LockedRow> = {},
   paidOverridesOnly = false,
-  cutoffDate = ""
+  cutoffDate = "",
+  ignoreLocks = false   // re-apply mode: include previously locked arrear rows
 ): Map<string, number> {
   const rawData = sheetData.raw_data as string;
   const overrides = sheetData.overrides ?? {};
@@ -151,7 +152,7 @@ function calcStaffIncentives(
   const staffInc = new Map<string, number>();
   const staffLockDates = paidOverridesOnly ? getStaffLockDates(lockedRows) : new Map<string, string>();
   lines.slice(hi + 1).forEach((line: string, i: number) => {
-    if (lockedRows[String(i)]) return; // already paid in a previous period
+    if (!ignoreLocks && lockedRows[String(i)]) return; // already paid in a previous period
     const c = line.split("\t");
     const netWt = parseFloat((c[8] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
     if (netWt <= 0) return;
@@ -427,6 +428,7 @@ export default function PayrollPage() {
 
   // ── Incentive load mode
   const [loadAsArrear, setLoadAsArrear] = useState(false);
+  const [reapplyArrear, setReapplyArrear] = useState(false);
 
   // ── Incentive sheet lock tracking
   const [incSheetId, setIncSheetId]         = useState<string | null>(null);
@@ -575,7 +577,7 @@ export default function PayrollPage() {
       const detected = detectCutoffDate(incSheetData);
       if (detected) { setArrearCutoffDate(detected); return; } // effect re-runs with detected date
     }
-    const staffInc = calcStaffIncentives(incSheetData, incLockedRows, loadAsArrear, arrearCutoffDate);
+    const staffInc = calcStaffIncentives(incSheetData, incLockedRows, loadAsArrear, arrearCutoffDate, reapplyArrear);
     setPendingInc(staffInc);
     if (loadAsArrear) {
       setArrearBillsMap(getArrearBillDetails(incSheetData, incLockedRows, arrearCutoffDate));
@@ -584,7 +586,7 @@ export default function PayrollPage() {
     }
     setExpandedBillNames(new Set());
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadAsArrear, arrearCutoffDate]);
+  }, [loadAsArrear, arrearCutoffDate, reapplyArrear]);
 
   // ── Incentive load step 1: select sheet
   async function selectIncentiveSheet(id: string) {
@@ -665,6 +667,7 @@ export default function PayrollPage() {
     setLoadStep(null);
     setPendingInc(new Map());
     setLoadAsArrear(false);
+    setReapplyArrear(false);
   }
 
   // ── Lock incentive rows for a staff member (called on "Mark Paid")
@@ -1137,6 +1140,13 @@ export default function PayrollPage() {
                     className="accent-gold w-4 h-4" />
                   <span className={loadAsArrear ? "text-gold font-medium" : "text-ink-dim"}>Load as Arrear (not Incentive)</span>
                 </label>
+                {loadAsArrear && (
+                  <label className="flex items-center gap-2 cursor-pointer text-xs select-none border border-warn/40 rounded px-2 py-1 bg-warn/5">
+                    <input type="checkbox" checked={reapplyArrear} onChange={e => setReapplyArrear(e.target.checked)}
+                      className="accent-gold w-3.5 h-3.5" />
+                    <span className="text-warn font-medium">Re-apply (include previously paid rows)</span>
+                  </label>
+                )}
               </div>
             </div>
           </div>
