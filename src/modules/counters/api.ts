@@ -3,11 +3,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 
-export const CHECK_SLOTS = [
-  "09:30","10:30","11:30","12:30","13:30",
-  "14:30","15:30","16:30","17:30","18:30",
-  "19:30","20:30","21:30",
-];
+// Three fixed spot-check slots per day
+export const CHECK_SLOTS = ["Morning", "Afternoon", "Evening"] as const;
+export type CheckSlot = typeof CHECK_SLOTS[number];
+
+// Slot windows: Morning 9:00–13:00, Afternoon 13:00–17:00, Evening 17:00–close
+const SLOT_START_HOUR: Record<CheckSlot, number> = { Morning: 9, Afternoon: 13, Evening: 17 };
+const SLOT_END_HOUR:   Record<CheckSlot, number> = { Morning: 13, Afternoon: 17, Evening: 23 };
 
 export interface Counter { id: number; name: string; display_order: number; }
 export interface CounterAssignment { id: string; counter_id: number; bio_user_id: string; month: string; }
@@ -17,18 +19,12 @@ export interface CleanlinessCheck {
   is_neat: boolean; notes: string | null; checked_by: string; created_at: string;
 }
 
-export function getCurrentSlot(): string | null {
-  const now = new Date();
-  const currentMins = now.getHours() * 60 + now.getMinutes();
-  const firstSlotMins = 9 * 60 + 30;
-  const lastSlotMins  = 21 * 60 + 30;
-  if (currentMins < firstSlotMins || currentMins > lastSlotMins + 59) return null;
-  let last: string | null = null;
+export function getCurrentSlot(): CheckSlot | null {
+  const h = new Date().getHours();
   for (const slot of CHECK_SLOTS) {
-    const [h, m] = slot.split(":").map(Number);
-    if (h * 60 + m <= currentMins) last = slot;
+    if (h >= SLOT_START_HOUR[slot] && h < SLOT_END_HOUR[slot]) return slot;
   }
-  return last;
+  return null;
 }
 
 export function useCounters() {

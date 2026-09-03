@@ -234,20 +234,19 @@ export default function CountersTab({ isAdmin, myBioUserId }: Props) {
                 </thead>
                 <tbody>
                   {CHECK_SLOTS.map(slot => {
-                    const [sh, sm] = slot.split(":").map(Number);
-                    const slotMins = sh * 60 + sm;
-                    const nowMins  = now.getHours() * 60 + now.getMinutes();
-                    const isFuture = slotMins > nowMins;
+                    const slotIdx = CHECK_SLOTS.indexOf(slot as any);
+                    const currentIdx = currentSlot ? CHECK_SLOTS.indexOf(currentSlot as any) : -1;
+                    const isFuture = currentIdx === -1 ? false : slotIdx > currentIdx;
                     const isCurrent = slot === currentSlot;
                     return (
                       <tr key={slot} className={clsx(
                         "border-b border-line last:border-0",
                         isCurrent ? "bg-gold/5" : ""
                       )}>
-                        <td className={clsx("px-2 py-2 font-mono font-semibold",
+                        <td className={clsx("px-2 py-2 font-semibold",
                           isCurrent ? "text-gold" : isFuture ? "text-ink-dim" : "text-ink")}>
                           {slot}
-                          {isCurrent && <span className="ml-1 text-[9px] text-gold font-sans">NOW</span>}
+                          {isCurrent && <span className="ml-1 text-[9px] text-gold">NOW</span>}
                         </td>
                         {counters.map(c => {
                           const check = getCheck(c.id, today, slot, todayChecks);
