@@ -375,7 +375,7 @@ export default function PayrollPage() {
   const { data: attSummary = [], isFetching: attLoading } = useMonthlyAttendanceSummary(attMonth, extraBioIds);
   const { data: monthPerms  = [] } = useApprovedPermsByMonth(attMonth);
   const { data: monthLeaves = [] } = useApprovedLeavesByMonth(attMonth);
-  const { data: attSettings = null } = useQuery({
+  const { data: attSettings = null, isLoading: attSettingsLoading } = useQuery({
     queryKey: ["attendance_settings", attMonth],
     enabled: !!attMonth,
     queryFn: async () => {
@@ -460,7 +460,7 @@ export default function PayrollPage() {
   // ── Attendance load button
   function loadAttendanceNow() {
     if (!attMonth) { return; }
-    if (attLoading) return;
+    if (attLoading || attSettingsLoading) return;
     prevAttRef.current = attMonth;
     setAttApplied(false);
     // Data is already fetched by the hook; apply immediately
@@ -470,14 +470,15 @@ export default function PayrollPage() {
     }
   }
 
-  // Watch for fresh attendance data to auto-apply after button click
+  // Watch for fresh attendance data to auto-apply after button click.
+  // Wait for both attSummary AND attSettings to finish loading so fine is calculated correctly.
   useEffect(() => {
-    if (attLoading || attApplied || !prevAttRef.current) return;
+    if (attLoading || attSettingsLoading || attApplied || !prevAttRef.current) return;
     if (prevAttRef.current !== attMonth || attSummary.length === 0) return;
     applyAttendance(attSummary);
     setAttApplied(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attSummary, attLoading]);
+  }, [attSummary, attLoading, attSettings, attSettingsLoading]);
 
   // Recalculate pending amounts when arrear toggle or cutoff date changes
   useEffect(() => {
