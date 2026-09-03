@@ -247,16 +247,17 @@ function getEligibleRowsForStaff(
   return indices;
 }
 
-// Scans all balanceZero overrides and returns the earliest paidDate — used as auto-default cutoff
+// Scans all balanceZero overrides. If there are multiple distinct paid dates (multiple batches),
+// returns the earliest date as cutoff so the previous batch is excluded on re-load.
+// If all rows share the same date (first load), returns "" — no cutoff needed.
 function detectCutoffDate(sheetData: any): string {
   const overrides = sheetData?.overrides ?? {};
-  let minDate = "";
+  const dates = new Set<string>();
   for (const ov of Object.values(overrides) as any[]) {
-    if (ov.balanceZero && ov.paidDate) {
-      if (!minDate || ov.paidDate < minDate) minDate = ov.paidDate;
-    }
+    if (ov.balanceZero && ov.paidDate) dates.add(ov.paidDate);
   }
-  return minDate;
+  if (dates.size <= 1) return ""; // single batch — no cutoff, include everything
+  return [...dates].sort()[0]; // earliest date = previous batch cutoff
 }
 
 // Returns per-staff list of bills that are arrear-eligible (balanceZero=true), with carry-forward bill metadata
