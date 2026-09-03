@@ -147,9 +147,17 @@ export default function MyAttendancePage() {
   const [replyTo, setReplyTo]           = useState<ChatMessage | null>(null);
   const [mentionStaff, setMentionStaff] = useState<string[]>([]);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
-  const [conductCodes, setConductCodes] = useState<ConductChatCode[]>([]);
+  const DEFAULT_CONDUCT_CODES: ConductChatCode[] = [
+    { code: "SH", label: "Shouting",              categoryName: "Other",            points: -2 },
+    { code: "SC", label: "Shouting at customer",  categoryName: "Customer Handling", points: -5 },
+    { code: "BW", label: "Bad words/language",    categoryName: "Other",            points: -2 },
+    { code: "BT", label: "Beating/altercation",   categoryName: "Other",            points: -5 },
+    { code: "LC", label: "Laughing at customer",  categoryName: "Customer Handling", points: -2 },
+  ];
+  const [conductCodes, setConductCodes] = useState<ConductChatCode[]>(DEFAULT_CONDUCT_CODES);
   const [cdMode, setCdMode]             = useState<"none" | "code" | "staff">("none");
-  const conductCodesRef                 = useRef<ConductChatCode[]>([]);
+  const [canMarkConduct, setCanMarkConduct] = useState(false);
+  const conductCodesRef                 = useRef<ConductChatCode[]>(DEFAULT_CONDUCT_CODES);
 
   const { data: lastSyncIso }   = useLastSyncTime();
 
@@ -300,6 +308,7 @@ export default function MyAttendancePage() {
       if (profile?.photo_shoot_access === true) setCanSeePhotoShoot(true);
       if (profile?.display_name) setSenderName(profile.display_name);
       if (profile?.role) setSenderRole(profile.role);
+      if (profile?.role === "admin" || profile?.role === "sub_admin") setCanMarkConduct(true);
 
       // Use explicit filters to avoid maybeSingle() failing for staff with
       // conduct_note_access=true (RLS lets them see all rows, causing multiple-row error)
@@ -544,7 +553,7 @@ export default function MyAttendancePage() {
     setChatInput(val);
     const match = val.match(/@(\S*)$/);
     setMentionQuery(match ? match[1] : null);
-    if (senderRole === "admin") {
+    if (canMarkConduct) {
       if (/^cd$/i.test(val.trim())) {
         setCdMode("code");
       } else {
@@ -631,8 +640,8 @@ export default function MyAttendancePage() {
       }
     }
 
-    // Conduct shorthand for admin users in kiosk chat
-    if (senderRole === "admin" && sentMsg) {
+    // Conduct shorthand for admin/sub-admin users in kiosk chat
+    if (canMarkConduct && sentMsg) {
       const conductParsed = parseConductChat(msg);
       if (conductParsed) {
         const codeInfo = conductCodesRef.current.find(c => c.code === conductParsed.code);
@@ -1763,7 +1772,7 @@ export default function MyAttendancePage() {
                 <button onClick={() => setReplyTo(null)} className="text-ink-dim hover:text-err text-sm shrink-0">✕</button>
               </div>
             )}
-            {cdMode === "code" && conductCodes.length > 0 && (
+            {cdMode === "code" && canMarkConduct && (
               <div className="border border-line rounded-xl bg-white shadow-soft py-1 mb-2">
                 <p className="text-[10px] text-ink-dim px-3 pt-1 pb-0.5 font-semibold uppercase tracking-wide">Select conduct issue</p>
                 {conductCodes.map(c => (
