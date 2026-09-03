@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/stores/auth";
+import { parseConductChat, type ConductChatCode } from "@/lib/conduct-parse";
 import {
   useAttendanceByDate, useMonthlyAttendanceSummary,
   useAllPermissions, useDecidePermission,
@@ -114,6 +115,18 @@ export default function StaffManagementPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText]   = useState("");
   const chatBottom = useRef<HTMLDivElement>(null);
+  const DEFAULT_CONDUCT_CODES: ConductChatCode[] = [
+    { code: "SH", label: "Shouting",              categoryName: "Other",            points: -2 },
+    { code: "SC", label: "Shouting at customer",  categoryName: "Customer Handling", points: -5 },
+    { code: "BW", label: "Bad words/language",    categoryName: "Other",            points: -2 },
+    { code: "BT", label: "Beating/altercation",   categoryName: "Other",            points: -5 },
+    { code: "LC", label: "Laughing at customer",  categoryName: "Customer Handling", points: -2 },
+  ];
+  const [conductCodes, setConductCodes] = useState<ConductChatCode[]>(DEFAULT_CONDUCT_CODES);
+  const [cdMode, setCdMode]       = useState<"none" | "code" | "staff">("none");
+  const [staffList, setStaffList] = useState<{ id: string; name: string }[]>([]);
+  const conductCodesRef           = useRef<ConductChatCode[]>(DEFAULT_CONDUCT_CODES);
+  const processedConductIds       = useRef<Set<string>>(new Set());
 
   // ── data hooks ──────────────────────────────────────────────────────────────
   const { data: attendance = [], isLoading: attLoading, refetch: refetchAtt } = useAttendanceByDate(attDate);
@@ -174,6 +187,16 @@ export default function StaffManagementPage() {
     const client = supabase();
     client.from("chat_messages").select("*").order("created_at", { ascending: true }).limit(200)
       .then(({ data }) => setChatMsgs((data ?? []) as ChatMsg[]));
+    client.from("staff").select("id, name").eq("active", true).order("name")
+      .then(({ data }) => setStaffList((data ?? []) as { id: string; name: string }[]));
+    client.from("conduct_chat_codes").select("*").eq("active", true).order("display_order")
+      .then(({ data }) => {
+        if (data?.length) {
+          const codes = data.map((r: any) => ({ code: r.code, label: r.label, categoryName: r.category_name, points: r.points }));
+          conductCodesRef.current = codes;
+          setConductCodes(codes);
+        }
+      });
     const ch = client.channel("staff_mgmt_chat")
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, (p) => {
         if (p.eventType === "INSERT") setChatMsgs((prev) => [...prev, p.new as ChatMsg]);
@@ -198,12 +221,75 @@ export default function StaffManagementPage() {
   }, [incSheet]);
 
   // ── chat helpers ────────────────────────────────────────────────────────────
+  function handleChatInput(val: string) {
+    setChatInput(val);
+    if (/^cd$/i.test(val.trim())) {
+      setCdMode("code");
+    } else {
+      const pat = conductCodesRef.current.map(c => c.code).join("|");
+      if (pat && new RegExp(`^cd\\s+(${pat})\\s`, "i").test(val)) {
+        setCdMode("staff");
+      } else {
+        setCdMode("none");
+      }
+    }
+  }
+
+  function selectCdCode(code: string) { setChatInput(`CD ${code} `); setCdMode("staff"); }
+  function selectCdStaff(name: string) {
+    const m = chatInput.match(/^(CD\s+\w+\s+)/i);
+    setChatInput((m ? m[1] : chatInput) + name + " ");
+    setCdMode("none");
+  }
+
   async function sendChat() {
     if (!chatInput.trim() || !profile) return;
     setChatSending(true);
-    const { data: { user } } = await supabase().auth.getUser();
-    if (user) await supabase().from("chat_messages").insert({ sender_id: user.id, sender_name: profile.display_name, message: chatInput.trim() });
+    const client = supabase();
+    const { data: { user } } = await client.auth.getUser();
+    const msg = chatInput.trim();
+    if (user) {
+      const { data: sentMsg } = await client.from("chat_messages")
+        .insert({ sender_id: user.id, sender_name: profile.display_name, message: msg })
+        .select().single();
+      if (sentMsg && !processedConductIds.current.has(sentMsg.id)) {
+        const conductParsed = parseConductChat(msg);
+        if (conductParsed) {
+          processedConductIds.current.add(sentMsg.id);
+          const codeInfo = conductCodesRef.current.find(c => c.code === conductParsed.code);
+          if (codeInfo) {
+            const { data: staffRows } = await client.from("staff")
+              .select("id, name").ilike("name", `%${conductParsed.staffName}%`).limit(3);
+            const staffRow = staffRows?.[0];
+            if (!staffRow) {
+              await client.from("chat_messages").insert({
+                sender_id: user.id, sender_name: "MyBuddy",
+                message: `⚠ Conduct: staff "${conductParsed.staffName}" not found.`,
+              });
+            } else {
+              const { data: cats } = await client.from("conduct_categories").select("id, name");
+              const catMap = new Map((cats ?? []).map((c: any) => [c.name as string, c.id as number]));
+              const noteText = `${codeInfo.label}${conductParsed.note ? ` — ${conductParsed.note}` : ""}`;
+              const { error: noteErr } = await client.from("conduct_notes").insert({
+                staff_id: staffRow.id, staff_name: staffRow.name,
+                category_id: catMap.get(codeInfo.categoryName) ?? null,
+                note: noteText, noted_by: user.id, noted_by_name: profile.display_name,
+                note_date: new Date().toISOString().slice(0, 10),
+                chat_message_id: sentMsg.id,
+              });
+              if (!noteErr) {
+                await client.from("chat_messages").insert({
+                  sender_id: user.id, sender_name: "MyBuddy",
+                  message: `✓ Conduct noted: ${staffRow.name} — ${codeInfo.label} (${codeInfo.points} pts)${conductParsed.note ? ` · ${conductParsed.note}` : ""}`,
+                });
+              }
+            }
+          }
+        }
+      }
+    }
     setChatInput("");
+    setCdMode("none");
     setChatSending(false);
   }
   async function toggleDeleteMsg(id: string, cur: boolean) { await supabase().from("chat_messages").update({ is_deleted: !cur }).eq("id", id); }
@@ -642,10 +728,40 @@ export default function StaffManagementPage() {
             <div ref={chatBottom} />
           </div>
           <div className="shrink-0">
+            {cdMode === "code" && (
+              <div className="border border-line rounded-xl bg-white shadow-soft py-1 mb-2">
+                <p className="text-[10px] text-ink-dim px-3 pt-1 pb-0.5 font-semibold uppercase tracking-wide">Select conduct issue</p>
+                {conductCodes.map(c => (
+                  <button key={c.code} onMouseDown={(e) => { e.preventDefault(); selectCdCode(c.code); }}
+                    className="flex items-center gap-3 w-full text-left px-3 py-1.5 hover:bg-canvas text-sm">
+                    <span className="font-mono font-bold text-gold-dark w-8">{c.code}</span>
+                    <span className="flex-1">{c.label}</span>
+                    <span className={`text-xs font-semibold ${c.points < 0 ? "text-err" : "text-ok"}`}>{c.points > 0 ? "+" : ""}{c.points} pts</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {cdMode === "staff" && (() => {
+              const m = chatInput.match(/^CD\s+\w+\s+(.*)/i);
+              const q = (m?.[1] ?? "").toLowerCase();
+              const filtered = q ? staffList.filter(s => s.name.toLowerCase().includes(q)) : staffList;
+              return filtered.length > 0 ? (
+                <div className="border border-line rounded-xl bg-white shadow-soft py-1 mb-2 max-h-40 overflow-y-auto">
+                  <p className="text-[10px] text-ink-dim px-3 pt-1 pb-0.5 font-semibold uppercase tracking-wide">Select staff</p>
+                  {filtered.map(s => (
+                    <button key={s.id} onMouseDown={(e) => { e.preventDefault(); selectCdStaff(s.name); }}
+                      className="block w-full text-left text-sm px-3 py-1.5 hover:bg-canvas">{s.name}</button>
+                  ))}
+                </div>
+              ) : null;
+            })()}
             <div className="flex gap-2 bg-white border border-line rounded-xl px-3 py-2">
-              <input value={chatInput} onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
-                placeholder="Send a message as admin…"
+              <input value={chatInput} onChange={(e) => handleChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape" && cdMode !== "none") { setCdMode("none"); return; }
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); }
+                }}
+                placeholder="Send a message as admin… (type CD for conduct shorthand)"
                 className="flex-1 text-sm focus:outline-none" />
               <button onClick={sendChat} disabled={chatSending || !chatInput.trim()}
                 className="bg-gold text-white px-4 py-1.5 rounded-lg2 text-sm font-medium disabled:opacity-40">Send</button>
