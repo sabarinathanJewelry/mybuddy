@@ -81,6 +81,7 @@ export type DailyAttendance = {
   late_minutes: number;     // minutes from 9:30 AM (if late)
   ot_minutes: number;       // minutes beyond shift end
   effective_hours: number | null;
+  is_half_day: boolean;     // present but effective_hours < 4
   punch_count: number;
   lunch_minutes: number | null;   // null = only 2 punches (no lunch tracked)
   double_punch_detected: boolean;
@@ -106,6 +107,7 @@ export type MonthlyEmployeeSummary = {
   excess_leave_days: number;
   per_day_salary: number;
   leave_deduction: number;
+  half_days: number;         // days present but effective_hours < 4
   days_no_lunch: number;     // present but no lunch tracked (2 punches only)
   days_lunch_spare: number;  // lunch 60–70 min
   days_lunch_over: number;   // lunch > 70 min
@@ -484,7 +486,8 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
               : Math.max(0, hw - 1);
           }
 
-          return { date, first_in: firstIn, last_out: lastOut, is_late, late_minutes, ot_minutes, effective_hours, punch_count: dayPunches.length, lunch_minutes, double_punch_detected, punchRows: rawDayPunchRows };
+          const is_half_day = firstIn !== null && effective_hours !== null && effective_hours < 4;
+          return { date, first_in: firstIn, last_out: lastOut, is_late, late_minutes, ot_minutes, effective_hours, is_half_day, punch_count: dayPunches.length, lunch_minutes, double_punch_detected, punchRows: rawDayPunchRows };
         });
 
         const staffTotalDays = joinDate && joinDate > lastDay
@@ -493,10 +496,11 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
 
         // Aggregate totals from daily (already pre-filtered to effectiveStart..lastDay)
         let present_days = 0, late_days = 0, total_late_minutes = 0, total_ot_minutes = 0;
-        let days_no_lunch = 0, days_lunch_spare = 0, days_lunch_over = 0, days_double_punch = 0;
+        let half_days = 0, days_no_lunch = 0, days_lunch_spare = 0, days_lunch_over = 0, days_double_punch = 0;
         for (const d of daily) {
           if (!d.first_in) continue;
           present_days++;
+          if (d.is_half_day) half_days++;
           if (d.is_late) { late_days++; total_late_minutes += d.late_minutes; }
           total_ot_minutes += d.ot_minutes;
           if (d.double_punch_detected) days_double_punch++;
@@ -507,7 +511,9 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
 
         const absent_days       = Math.max(0, staffTotalDays - present_days);
         const allowed_leaves    = (s.allowed_leaves as number) ?? 1;
-        const excess_leave_days = Math.max(0, absent_days - allowed_leaves);
+        // Each half-day counts as 0.5 toward leave; full absences count as 1
+        const effective_absent  = absent_days + half_days * 0.5;
+        const excess_leave_days = Math.max(0, effective_absent - allowed_leaves);
         const per_day_salary    = ((s.monthly_salary as number) ?? 0) / 30;
         const leave_deduction   = excess_leave_days * per_day_salary;
 
@@ -524,6 +530,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
           total_days:        staffTotalDays,
           present_days,
           absent_days,
+          half_days,
           late_days,
           total_late_minutes,
           total_ot_minutes,

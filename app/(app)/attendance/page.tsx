@@ -835,7 +835,12 @@ function MonthlyTab() {
                                       </td>
                                       <td className="py-1 px-2 text-right font-mono text-ok">{formatTime(d.first_in)}</td>
                                       <td className="py-1 px-2 text-right font-mono text-ink-dim">{formatTime(d.last_out)}</td>
-                                      <td className="py-1 px-2 text-right">{formatHours(d.effective_hours)}</td>
+                                      <td className="py-1 px-2 text-right">
+                                        {formatHours(d.effective_hours)}
+                                        {d.is_half_day && (
+                                          <span className="ml-1 text-[9px] font-bold px-1 py-0.5 rounded bg-warn/10 text-warn">½ day</span>
+                                        )}
+                                      </td>
                                       <td className="py-1 px-2 text-center">
                                         {!d.first_in ? (
                                           <span className="text-ink-dim">—</span>
@@ -948,6 +953,12 @@ function MonthlyTab() {
                                   <span className={r.absent_days > r.allowed_leaves ? "text-err" : "text-ink-dim"}>Absent</span>
                                   <span className="font-medium">{r.absent_days} days</span>
                                 </div>
+                                {r.half_days > 0 && (
+                                  <div className="flex justify-between text-warn">
+                                    <span>Half days (&lt;4 hrs)</span>
+                                    <span className="font-medium">{r.half_days} days</span>
+                                  </div>
+                                )}
                                 <div className="flex justify-between text-ink-dim">
                                   <span>Allowed Leaves</span>
                                   <span>{r.allowed_leaves} days</span>
