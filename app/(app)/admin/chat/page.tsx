@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/stores/auth";
 import { parseKolusuChat } from "@/lib/kolusu-parse";
+import { parseConductChat, CONDUCT_CODES } from "@/lib/conduct-parse";
 
 interface ChatMessage {
   id: string;
@@ -30,6 +31,7 @@ export default function AdminChatPage() {
   const [sending, setSending]       = useState(false);
   const bottomRef                   = useRef<HTMLDivElement>(null);
   const adminUserIdRef              = useRef<string | null>(null);
+  const processedConductIds         = useRef<Set<string>>(new Set());
 
   async function processKolusuMsg(client: ReturnType<typeof supabase>, msg: ChatMessage) {
     const parsed = parseKolusuChat(msg.message ?? "");
@@ -54,6 +56,46 @@ export default function AdminChatPage() {
         sender_id:   adminId,
         sender_name: "MyBuddy",
         message: `✓ Kolusu logged: ${parsed.raw_wt_g}g + ${parsed.cover_wt_g}g cover${parsed.description ? ` (${parsed.description})` : ""} from ${msg.sender_name}`,
+      });
+    }
+  }
+
+  async function processConductMsg(client: ReturnType<typeof supabase>, msg: ChatMessage, senderId: string | null) {
+    const parsed = parseConductChat(msg.message ?? "");
+    if (!parsed || msg.sender_name === "MyBuddy") return;
+    if (processedConductIds.current.has(msg.id)) return;
+    processedConductIds.current.add(msg.id);
+    const { data: staffRows } = await client.from("staff")
+      .select("id, name").ilike("name", `%${parsed.staffName}%`).limit(3);
+    const staffRow = staffRows?.[0];
+    const adminId = senderId ?? adminUserIdRef.current;
+    if (!staffRow) {
+      if (adminId) {
+        await client.from("chat_messages").insert({
+          sender_id: adminId, sender_name: "MyBuddy",
+          message: `⚠ Conduct: staff "${parsed.staffName}" not found. Check name and retry.`,
+        });
+      }
+      return;
+    }
+    const { data: cats } = await client.from("conduct_categories").select("id, name");
+    const catMap = new Map((cats ?? []).map((c: any) => [c.name as string, c.id as number]));
+    const codeInfo = CONDUCT_CODES[parsed.code];
+    const noteText = `${codeInfo.label}${parsed.note ? ` — ${parsed.note}` : ""}`;
+    const { error } = await client.from("conduct_notes").insert({
+      staff_id: staffRow.id,
+      staff_name: staffRow.name,
+      category_id: catMap.get(codeInfo.categoryName) ?? null,
+      note: noteText,
+      noted_by: msg.sender_id || null,
+      noted_by_name: msg.sender_name,
+      note_date: msg.created_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+    });
+    if (error) return;
+    if (adminId) {
+      await client.from("chat_messages").insert({
+        sender_id: adminId, sender_name: "MyBuddy",
+        message: `✓ Conduct noted: ${staffRow.name} — ${codeInfo.label}${parsed.note ? ` (${parsed.note})` : ""}`,
       });
     }
   }
@@ -89,6 +131,7 @@ export default function AdminChatPage() {
           const msg = payload.new as ChatMessage;
           setMessages((prev) => [...prev, msg]);
           await processKolusuMsg(client, msg);
+          await processConductMsg(client, msg, null);
         } else if (payload.eventType === "UPDATE")
           setMessages((prev) => prev.map((m) => m.id === payload.new.id ? payload.new as ChatMessage : m));
         else if (payload.eventType === "DELETE")
@@ -148,6 +191,9 @@ export default function AdminChatPage() {
           sender_name: "MyBuddy",
           message:     `✓ Kolusu logged: ${parsed.raw_wt_g}g + ${parsed.cover_wt_g}g cover${parsed.description ? ` (${parsed.description})` : ""}`,
         });
+      }
+      if (sentMsg) {
+        await processConductMsg(client, { ...sentMsg, sender_id: user.id, sender_name: profile.display_name } as ChatMessage, user.id);
       }
     }
     setChatInput("");
