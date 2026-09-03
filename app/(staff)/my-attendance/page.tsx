@@ -17,6 +17,7 @@ import {
 } from "@/modules/attendance/api";
 import NotificationBell from "@/components/ui/notification-bell";
 import { parseKolusuChat } from "@/lib/kolusu-parse";
+import { parseConductChat, type ConductChatCode } from "@/lib/conduct-parse";
 import { inr, shortDate } from "@/lib/format";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -146,6 +147,9 @@ export default function MyAttendancePage() {
   const [replyTo, setReplyTo]           = useState<ChatMessage | null>(null);
   const [mentionStaff, setMentionStaff] = useState<string[]>([]);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [conductCodes, setConductCodes] = useState<ConductChatCode[]>([]);
+  const [cdMode, setCdMode]             = useState<"none" | "code" | "staff">("none");
+  const conductCodesRef                 = useRef<ConductChatCode[]>([]);
 
   const { data: lastSyncIso }   = useLastSyncTime();
 
@@ -480,6 +484,14 @@ export default function MyAttendancePage() {
       .then(({ data }) => setChatMessages(((data ?? []) as ChatMessage[]).reverse()));
     client.from("staff").select("name")
       .then(({ data }) => setMentionStaff((data ?? []).map((s: any) => s.name)));
+    client.from("conduct_chat_codes").select("*").eq("active", true).order("display_order")
+      .then(({ data }) => {
+        const codes = (data ?? []).map((r: any) => ({
+          code: r.code, label: r.label, categoryName: r.category_name, points: r.points,
+        }));
+        conductCodesRef.current = codes;
+        setConductCodes(codes);
+      });
 
     const channel = client.channel("staff_chat")
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, (payload) => {
@@ -532,6 +544,29 @@ export default function MyAttendancePage() {
     setChatInput(val);
     const match = val.match(/@(\S*)$/);
     setMentionQuery(match ? match[1] : null);
+    if (senderRole === "admin") {
+      if (/^cd$/i.test(val.trim())) {
+        setCdMode("code");
+      } else {
+        const pat = conductCodesRef.current.map(c => c.code).join("|");
+        if (pat && new RegExp(`^cd\\s+(${pat})\\s`, "i").test(val)) {
+          setCdMode("staff");
+        } else {
+          setCdMode("none");
+        }
+      }
+    }
+  }
+
+  function selectCdCode(code: string) {
+    setChatInput(`CD ${code} `);
+    setCdMode("staff");
+  }
+
+  function selectCdStaff(name: string) {
+    const m = chatInput.match(/^(CD\s+\w+\s+)/i);
+    setChatInput((m ? m[1] : chatInput) + name + " ");
+    setCdMode("none");
   }
 
   function insertMention(name: string) {
@@ -563,13 +598,14 @@ export default function MyAttendancePage() {
     setChatSending(true);
     const client = supabase();
     const msg = chatInput.trim();
-    const { error: sendErr } = await client.from("chat_messages").insert({
+    const { data: sentMsg, error: sendErr } = await client.from("chat_messages").insert({
       sender_id: senderId, sender_name: senderName, message: msg,
       reply_to_id: replyTo?.id ?? null,
-    });
+    }).select().single();
     if (sendErr) { alert("Failed to send message: " + sendErr.message); setChatSending(false); return; }
     setReplyTo(null);
     setMentionQuery(null);
+    setCdMode("none");
 
     // Auto-log kolusu sale if staff has kolusu_access and message matches KS / kolusu format
     if (canLogKolusu) {
@@ -592,6 +628,42 @@ export default function MyAttendancePage() {
           sender_name: "MyBuddy",
           message:     `✓ Kolusu logged: ${parsed.raw_wt_g}g + ${parsed.cover_wt_g}g cover${parsed.description ? ` (${parsed.description})` : ""}. Admin will assign box.`,
         });
+      }
+    }
+
+    // Conduct shorthand for admin users in kiosk chat
+    if (senderRole === "admin" && sentMsg) {
+      const conductParsed = parseConductChat(msg);
+      if (conductParsed) {
+        const codeInfo = conductCodesRef.current.find(c => c.code === conductParsed.code);
+        if (codeInfo) {
+          const { data: staffRows } = await client.from("staff")
+            .select("id, name").ilike("name", `%${conductParsed.staffName}%`).limit(3);
+          const staffRow = staffRows?.[0];
+          if (!staffRow) {
+            await client.from("chat_messages").insert({
+              sender_id: senderId, sender_name: "MyBuddy",
+              message: `⚠ Conduct: staff "${conductParsed.staffName}" not found.`,
+            });
+          } else {
+            const { data: cats } = await client.from("conduct_categories").select("id, name");
+            const catMap = new Map((cats ?? []).map((c: any) => [c.name as string, c.id as number]));
+            const noteText = `${codeInfo.label}${conductParsed.note ? ` — ${conductParsed.note}` : ""}`;
+            const { error: noteErr } = await client.from("conduct_notes").insert({
+              staff_id: staffRow.id, staff_name: staffRow.name,
+              category_id: catMap.get(codeInfo.categoryName) ?? null,
+              note: noteText, noted_by: senderId, noted_by_name: senderName,
+              note_date: new Date().toISOString().slice(0, 10),
+              chat_message_id: sentMsg.id,
+            });
+            if (!noteErr) {
+              await client.from("chat_messages").insert({
+                sender_id: senderId, sender_name: "MyBuddy",
+                message: `✓ Conduct noted: ${staffRow.name} — ${codeInfo.label} (${codeInfo.points} pts)${conductParsed.note ? ` · ${conductParsed.note}` : ""}`,
+              });
+            }
+          }
+        }
       }
     }
 
@@ -1691,6 +1763,37 @@ export default function MyAttendancePage() {
                 <button onClick={() => setReplyTo(null)} className="text-ink-dim hover:text-err text-sm shrink-0">✕</button>
               </div>
             )}
+            {cdMode === "code" && conductCodes.length > 0 && (
+              <div className="border border-line rounded-xl bg-white shadow-soft py-1 mb-2">
+                <p className="text-[10px] text-ink-dim px-3 pt-1 pb-0.5 font-semibold uppercase tracking-wide">Select conduct issue</p>
+                {conductCodes.map(c => (
+                  <button key={c.code} onMouseDown={(e) => { e.preventDefault(); selectCdCode(c.code); }}
+                    className="flex items-center gap-3 w-full text-left px-3 py-1.5 hover:bg-canvas text-sm">
+                    <span className="font-mono font-bold text-gold-dark w-8">{c.code}</span>
+                    <span className="flex-1">{c.label}</span>
+                    <span className={`text-xs font-semibold ${c.points < 0 ? "text-err" : "text-ok"}`}>
+                      {c.points > 0 ? "+" : ""}{c.points} pts
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {cdMode === "staff" && (() => {
+              const m = chatInput.match(/^CD\s+\w+\s+(.*)/i);
+              const q = (m?.[1] ?? "").toLowerCase();
+              const filtered = q ? mentionStaff.filter(n => n.toLowerCase().includes(q)) : mentionStaff;
+              return filtered.length > 0 ? (
+                <div className="border border-line rounded-xl bg-white shadow-soft py-1 mb-2 max-h-40 overflow-y-auto">
+                  <p className="text-[10px] text-ink-dim px-3 pt-1 pb-0.5 font-semibold uppercase tracking-wide">Select staff</p>
+                  {filtered.map(name => (
+                    <button key={name} onMouseDown={(e) => { e.preventDefault(); selectCdStaff(name); }}
+                      className="block w-full text-left text-sm px-3 py-1.5 hover:bg-canvas">
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              ) : null;
+            })()}
             {mentionQuery !== null && (
               <div className="bg-white border border-line rounded-xl shadow-soft py-1 mb-2 max-h-36 overflow-y-auto">
                 {mentionStaff.filter((n) => n.toLowerCase().includes(mentionQuery.toLowerCase())).map((name) => (
@@ -1710,6 +1813,7 @@ export default function MyAttendancePage() {
                 onChange={handleChatInputChange}
                 onKeyDown={(e) => {
                   if (e.key === "Escape" && mentionQuery !== null) { setMentionQuery(null); return; }
+                  if (e.key === "Escape" && cdMode !== "none") { setCdMode("none"); return; }
                   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); }
                 }}
                 placeholder={senderName ? `Message as ${senderName}…` : "Loading…"}

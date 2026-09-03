@@ -101,13 +101,14 @@ export default function AdminChatPage() {
     const catMap = new Map((cats ?? []).map((c: any) => [c.name as string, c.id as number]));
     const noteText = `${codeInfo.label}${parsed.note ? ` — ${parsed.note}` : ""}`;
     const { error } = await client.from("conduct_notes").insert({
-      staff_id:     staffRow.id,
-      staff_name:   staffRow.name,
-      category_id:  catMap.get(codeInfo.categoryName) ?? null,
-      note:         noteText,
-      noted_by:     msg.sender_id || null,
-      noted_by_name: msg.sender_name,
-      note_date:    msg.created_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+      staff_id:        staffRow.id,
+      staff_name:      staffRow.name,
+      category_id:     catMap.get(codeInfo.categoryName) ?? null,
+      note:            noteText,
+      noted_by:        msg.sender_id || null,
+      noted_by_name:   msg.sender_name,
+      note_date:       msg.created_at?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+      chat_message_id: msg.id,
     });
     if (error) return;
     if (adminId) {
