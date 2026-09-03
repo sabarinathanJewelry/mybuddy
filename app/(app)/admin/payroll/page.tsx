@@ -582,7 +582,7 @@ export default function PayrollPage() {
         const newBills = staffBills.get(e.name.toUpperCase()) ?? [];
         return { ...e, arrear: (e.arrear || 0) + inc, arrearSource: incSheetPeriod || e.arrearSource, arrearBills: [...(e.arrearBills ?? []), ...newBills] };
       }
-      return { ...e, incentive: inc };
+      return { ...e, incentive: (e.incentive || 0) + inc };
     }));
     if (incSheetId) setAppliedIncSheetIds(prev => prev.includes(incSheetId) ? prev : [...prev, incSheetId]);
     setMapSaving(false);
