@@ -260,6 +260,37 @@ function detectCutoffDate(sheetData: any): string {
   return [...dates].sort()[0]; // earliest date = previous batch cutoff
 }
 
+// Returns row indices that will be counted in an arrear load (balanceZero=true, not already locked, after cutoff)
+function getArrearRowIndices(
+  sheetData: any,
+  lockedRows: Record<string, LockedRow>,
+  cutoffDate = ""
+): { idx: number; sp1: string }[] {
+  const rawData = sheetData.raw_data as string;
+  const overrides = sheetData.overrides ?? {};
+  const lines = rawData.split("\n").map((l: string) => l.trimEnd());
+  const hi = lines.findIndex((l: string) => /date/i.test(l) && /product/i.test(l) && /net.?wt/i.test(l));
+  if (hi < 0) return [];
+  const staffLockDates = getStaffLockDates(lockedRows);
+  const result: { idx: number; sp1: string }[] = [];
+  lines.slice(hi + 1).forEach((line: string, i: number) => {
+    if (lockedRows[String(i)]) return;
+    const c = line.split("\t");
+    const netWt = parseFloat((c[8] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
+    if (netWt <= 0) return;
+    const ov = overrides[i] ?? {};
+    if (!ov.balanceZero) return;
+    const sp1 = (c[5] ?? "").trim();
+    const sp2 = (c[6] ?? "").trim();
+    if (ov.paidDate) {
+      const lockDate = cutoffDate || staffLockDates.get(sp1) || staffLockDates.get(sp2);
+      if (lockDate && ov.paidDate <= lockDate) return;
+    }
+    result.push({ idx: i, sp1 });
+  });
+  return result;
+}
+
 // Returns per-staff list of bills that are arrear-eligible (balanceZero=true), with carry-forward bill metadata
 function getArrearBillDetails(
   sheetData: any,
@@ -586,6 +617,19 @@ export default function PayrollPage() {
       return { ...e, incentive: (e.incentive || 0) + inc };
     }));
     if (incSheetId) setAppliedIncSheetIds(prev => prev.includes(incSheetId) ? prev : [...prev, incSheetId]);
+    // Lock arrear rows so they cannot be double-loaded in a future payroll run
+    if (loadAsArrear && incSheetId && incSheetData) {
+      const arrearRows = getArrearRowIndices(incSheetData, incLockedRows, arrearCutoffDate);
+      if (arrearRows.length > 0) {
+        const lockedAt = new Date().toISOString().slice(0, 10);
+        const newLocked = { ...incLockedRows };
+        for (const { idx, sp1 } of arrearRows) {
+          newLocked[String(idx)] = { staff: sp1, period: incSheetPeriod || "", lockedAt };
+        }
+        await supabase().from("incentive_sheets").update({ locked_rows: newLocked }).eq("id", incSheetId);
+        setIncLockedRows(newLocked);
+      }
+    }
     setMapSaving(false);
     setLoadStep(null);
     setPendingInc(new Map());
