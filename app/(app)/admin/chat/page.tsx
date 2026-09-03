@@ -32,7 +32,14 @@ export default function AdminChatPage() {
   const [chatInput, setChatInput]     = useState("");
   const [sending, setSending]         = useState(false);
   const [staffList, setStaffList]     = useState<{ id: string; name: string }[]>([]);
-  const [conductCodes, setConductCodes] = useState<ConductChatCode[]>([]);
+  const DEFAULT_CONDUCT_CODES: ConductChatCode[] = [
+    { code: "SH", label: "Shouting",              categoryName: "Other",            points: -2 },
+    { code: "SC", label: "Shouting at customer",  categoryName: "Customer Handling", points: -5 },
+    { code: "BW", label: "Bad words/language",    categoryName: "Other",            points: -2 },
+    { code: "BT", label: "Beating/altercation",   categoryName: "Other",            points: -5 },
+    { code: "LC", label: "Laughing at customer",  categoryName: "Customer Handling", points: -2 },
+  ];
+  const [conductCodes, setConductCodes] = useState<ConductChatCode[]>(DEFAULT_CONDUCT_CODES);
   const [cdMode, setCdMode]           = useState<"none" | "code" | "staff">("none");
   const [showCodeMgmt, setShowCodeMgmt] = useState(false);
   const [newCode, setNewCode]         = useState({ code: "", label: "", categoryName: "Other", points: -2 });
@@ -40,7 +47,7 @@ export default function AdminChatPage() {
   const bottomRef                     = useRef<HTMLDivElement>(null);
   const adminUserIdRef                = useRef<string | null>(null);
   const processedConductIds           = useRef<Set<string>>(new Set());
-  const conductCodesRef               = useRef<ConductChatCode[]>([]);
+  const conductCodesRef               = useRef<ConductChatCode[]>(DEFAULT_CONDUCT_CODES);
 
   function setCodesState(codes: ConductChatCode[]) {
     conductCodesRef.current = codes;
@@ -419,7 +426,7 @@ export default function AdminChatPage() {
 
       {/* Admin send */}
       <div className="shrink-0 pt-3">
-        {cdMode === "code" && conductCodes.length > 0 && (
+        {cdMode === "code" && (
           <div className="border border-line rounded-xl bg-white shadow-soft py-1 mb-2">
             <p className="text-[10px] text-ink-dim px-3 pt-1 pb-0.5 font-semibold uppercase tracking-wide">Select conduct issue</p>
             {conductCodes.map(c => (
