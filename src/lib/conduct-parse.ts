@@ -1,22 +1,19 @@
-export const CONDUCT_CODES = {
-  SH: { label: "Shouting",              categoryName: "Other" },
-  SC: { label: "Shouting at customer",  categoryName: "Customer Handling" },
-  BW: { label: "Bad words/language",    categoryName: "Other" },
-  BT: { label: "Beating/altercation",   categoryName: "Other" },
-  LC: { label: "Laughing at customer",  categoryName: "Customer Handling" },
-} as const;
-
-export type ConductCode = keyof typeof CONDUCT_CODES;
+export interface ConductChatCode {
+  code: string;
+  label: string;
+  categoryName: string;
+  points: number;
+}
 
 export interface ConductChatEntry {
   staffName: string;
-  code: ConductCode;
+  code: string;
   note: string;
 }
 
 // Format: CD <StaffName> <CODE> [note]
 // For multi-word names use quotes: CD "Mary John" SC note here
-// Codes: SH SC BW BT LC
+// Codes are admin-configurable (conduct_chat_codes table).
 export function parseConductChat(text: string): ConductChatEntry | null {
   const lower = text.trim().toLowerCase();
   if (!lower.startsWith("cd ")) return null;
@@ -41,11 +38,11 @@ export function parseConductChat(text: string): ConductChatEntry | null {
 
   if (!staffName) return null;
 
-  const codeMatch = rest.match(/^([A-Za-z]{2,4})(?:\s|$)/);
+  // Accept any 2-5 uppercase letter code
+  const codeMatch = rest.match(/^([A-Za-z]{2,5})(?:\s|$)/);
   if (!codeMatch) return null;
-  const code = codeMatch[1].toUpperCase() as ConductCode;
-  if (!(code in CONDUCT_CODES)) return null;
-
+  const code = codeMatch[1].toUpperCase();
   const note = rest.slice(codeMatch[0].length).trim();
+
   return { staffName, code, note };
 }
