@@ -194,7 +194,11 @@ function calcStaffIncentives(
     if (ov.forceIneligible) return;
     const perSale = master.perSale ?? false;
     const effectiveRate = ov.rateOverride ?? master.rate;
-    const total = perSale ? effectiveRate : parseFloat((effectiveRate * netWt).toFixed(2));
+    const fullInc = perSale ? effectiveRate : parseFloat((effectiveRate * netWt).toFixed(2));
+    const recoveryPct = ov.writeOffAmt && ov.writeOffAmt > 0
+      ? parseFloat((((ov.amountPaid ?? 0) / ((ov.amountPaid ?? 0) + ov.writeOffAmt)) * 100).toFixed(1))
+      : 100;
+    const total = parseFloat((fullInc * recoveryPct / 100).toFixed(2));
     const sp1Inc = sp2 ? parseFloat((total * split / 100).toFixed(2)) : total;
     const sp2Inc = sp2 ? parseFloat((total * (100 - split) / 100).toFixed(2)) : 0;
     if (sp1) staffInc.set(sp1, (staffInc.get(sp1) ?? 0) + sp1Inc);
@@ -379,7 +383,11 @@ function getArrearBillDetails(
     if (ov.forceIneligible) return;
     const perSale = master.perSale ?? false;
     const effectiveRate = ov.rateOverride ?? master.rate;
-    const total = perSale ? effectiveRate : parseFloat((effectiveRate * netWt).toFixed(2));
+    const fullInc = perSale ? effectiveRate : parseFloat((effectiveRate * netWt).toFixed(2));
+    const recoveryPct = ov.writeOffAmt && ov.writeOffAmt > 0
+      ? parseFloat((((ov.amountPaid ?? 0) / ((ov.amountPaid ?? 0) + ov.writeOffAmt)) * 100).toFixed(1))
+      : 100;
+    const total = parseFloat((fullInc * recoveryPct / 100).toFixed(2));
     const sp1Inc = sp2 ? parseFloat((total * split / 100).toFixed(2)) : total;
     const sp2Inc = sp2 ? parseFloat((total * (100 - split) / 100).toFixed(2)) : 0;
     if (sp1) {
