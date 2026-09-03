@@ -170,11 +170,23 @@ function calcStaffIncentives(
     }
     const split = ov.sp1Share ?? defaultSplit;
     const product = (c[1] ?? "").trim().toUpperCase();
-    const rawWastage = parseFloat((c[3] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
+    const productGroup = (c[2] ?? "").trim().toUpperCase();
+    const wastageField = (c[3] ?? "").trim();
+    const isSilver = /^(SILVER|92\.5)/i.test(productGroup);
+    const isSideStud = /SIDE STUD/i.test(product);
+    const isGrams = /gm/i.test(wastageField);
+    let rawWastage: number;
+    if (isSilver || isSideStud) {
+      rawWastage = 1;
+    } else if (isGrams && netWt > 0) {
+      rawWastage = parseFloat(((parseFloat(wastageField.match(/[\d.]+/)?.[0] ?? "0") / netWt) * 100).toFixed(2));
+    } else {
+      rawWastage = parseFloat(wastageField.match(/[\d.]+/)?.[0] ?? "0") || 0;
+    }
     const wastage = ov.wastage ?? rawWastage;
     const mapEntry = mapperEntries.find((m: any) => m.erpName?.toUpperCase() === product);
     let code = (mapEntry?.incentiveCode ?? product).toUpperCase();
-    if (code === "92.5-S" && netWt >= 20) code = "92.5-L";
+    if (code === "92.5-S" && netWt > 20) code = "92.5-L";
     const master = masterEntries.find((m: any) => m.code?.toUpperCase() === code);
     if (!master || master.rate <= 0) return;
     const minW = ov.minWastage ?? master.minWastage ?? 0;
@@ -288,11 +300,23 @@ function getArrearBillDetails(
     }
     const split = ov.sp1Share ?? defaultSplit;
     const product = (c[1] ?? "").trim().toUpperCase();
-    const rawWastage = parseFloat((c[3] ?? "").match(/[\d.]+/)?.[0] ?? "0") || 0;
+    const productGroup = (c[2] ?? "").trim().toUpperCase();
+    const wastageField = (c[3] ?? "").trim();
+    const isSilver = /^(SILVER|92\.5)/i.test(productGroup);
+    const isSideStud = /SIDE STUD/i.test(product);
+    const isGrams = /gm/i.test(wastageField);
+    let rawWastage: number;
+    if (isSilver || isSideStud) {
+      rawWastage = 1;
+    } else if (isGrams && netWt > 0) {
+      rawWastage = parseFloat(((parseFloat(wastageField.match(/[\d.]+/)?.[0] ?? "0") / netWt) * 100).toFixed(2));
+    } else {
+      rawWastage = parseFloat(wastageField.match(/[\d.]+/)?.[0] ?? "0") || 0;
+    }
     const wastage = ov.wastage ?? rawWastage;
     const mapEntry = mapperEntries.find((m: any) => m.erpName?.toUpperCase() === product);
     let code = (mapEntry?.incentiveCode ?? product).toUpperCase();
-    if (code === "92.5-S" && netWt >= 20) code = "92.5-L";
+    if (code === "92.5-S" && netWt > 20) code = "92.5-L";
     const master = masterEntries.find((m: any) => m.code?.toUpperCase() === code);
     if (!master || master.rate <= 0) return;
     const minW = ov.minWastage ?? master.minWastage ?? 0;
