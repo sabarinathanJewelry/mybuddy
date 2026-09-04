@@ -352,7 +352,7 @@ export default function PledgeFormPage() {
     }
 
     function shareWhatsApp() {
-      const text = buildWhatsAppText(selected);
+      const text = buildWhatsAppText(selected!);
       window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
     }
 
