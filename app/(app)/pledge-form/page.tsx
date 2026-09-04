@@ -102,7 +102,7 @@ const EMPTY_FORM = {
 export default function PledgeFormPage() {
   const qc = useQueryClient();
   const profile = useAuth((s) => s.profile);
-  const isAdmin = profile?.role === "admin" || profile?.role === "sub_admin";
+  const isAdmin = profile?.role === "admin" || profile?.role === "subadmin";
 
   const [view, setView] = useState<"list" | "new" | "detail">("list");
   const [selected, setSelected] = useState<PledgeForm | null>(null);
