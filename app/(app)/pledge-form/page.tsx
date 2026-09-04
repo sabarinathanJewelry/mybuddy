@@ -322,6 +322,116 @@ export default function PledgeFormPage() {
   }
 
   if (view === "detail" && selected) {
+    function buildWhatsAppText(r: PledgeForm) {
+      const lines = [
+        `*Pledge Form — Sabarinathan Jewellers*`,
+        `Date: ${shortDate(r.form_date)}`,
+        ``,
+        `*Customer*`,
+        `Name: ${r.customer_name}`,
+        r.father_husband ? `Father/Husband: ${r.father_husband}` : null,
+        r.phone ? `Phone: ${r.phone}` : null,
+        r.aadhaar ? `Aadhaar: ${r.aadhaar}` : null,
+        r.pan ? `PAN: ${r.pan}` : null,
+        r.occupation ? `Occupation: ${r.occupation}` : null,
+        r.address ? `Address: ${r.address}` : null,
+        ``,
+        `*Pledged Item*`,
+        r.item_description ? `Item: ${r.item_description}` : null,
+        r.gross_weight_g ? `Weight: ${r.gross_weight_g}g` : null,
+        r.purity ? `Purity: ${r.purity}` : null,
+        r.loan_amount ? `Loan: ₹${Number(r.loan_amount).toLocaleString("en-IN")}` : null,
+        r.interest_rate ? `Interest: ${r.interest_rate}% / month` : null,
+        (r.srety_name || r.srety_phone) ? `` : null,
+        r.srety_name ? `*Guarantor*` : null,
+        r.srety_name ? `Name: ${r.srety_name}${r.srety_relation ? ` (${r.srety_relation})` : ""}` : null,
+        r.srety_phone ? `Phone: ${r.srety_phone}` : null,
+        r.notes ? `\nNotes: ${r.notes}` : null,
+      ].filter(Boolean).join("\n");
+      return lines;
+    }
+
+    function shareWhatsApp() {
+      const text = buildWhatsAppText(selected);
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+    }
+
+    function printForm() {
+      const r = selected;
+      const win = window.open("", "_blank");
+      if (!win) return;
+      win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Pledge Form — ${r.customer_name}</title>
+<style>
+  body { font-family: Arial, sans-serif; font-size: 13px; color: #111; margin: 24px; }
+  h1 { font-size: 18px; text-align: center; margin: 0; }
+  .sub { text-align: center; color: #555; font-size: 12px; margin-bottom: 16px; }
+  .photos { display: flex; gap: 16px; margin-bottom: 16px; }
+  .photo-box { border: 1px solid #ccc; width: 120px; height: 150px; object-fit: cover; }
+  .photo-placeholder { border: 1px dashed #ccc; width: 120px; height: 150px; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 11px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+  td { padding: 4px 8px; border: 1px solid #ddd; vertical-align: top; }
+  td:first-child { width: 36%; font-weight: bold; background: #f9f9f9; color: #444; }
+  h2 { font-size: 13px; margin: 14px 0 4px; border-bottom: 1px solid #ccc; padding-bottom: 3px; }
+  .declaration { font-size: 11px; color: #444; border: 1px solid #ccc; padding: 10px; margin-top: 12px; }
+  .sig { display: flex; justify-content: space-between; margin-top: 40px; font-size: 12px; }
+</style></head><body>
+<h1>சபரிநாதன் ஜுவல்லர்ஸ் — Sabarinathan Jewellers</h1>
+<p class="sub">Pledge Form · கடன் / பாதுகாப்பு உறுதிமொழிப் படிவம் · Date: ${shortDate(r.form_date)}</p>
+
+<div class="photos">
+  ${r.photo1_data ? `<div><img src="${r.photo1_data}" class="photo-box"><p style="text-align:center;font-size:11px;margin:3px 0">Customer</p></div>` : `<div><div class="photo-placeholder">No photo</div><p style="text-align:center;font-size:11px;margin:3px 0">Customer</p></div>`}
+  ${r.photo2_data ? `<div><img src="${r.photo2_data}" class="photo-box"><p style="text-align:center;font-size:11px;margin:3px 0">ID / Item</p></div>` : `<div><div class="photo-placeholder">No photo</div><p style="text-align:center;font-size:11px;margin:3px 0">ID / Item</p></div>`}
+</div>
+
+<h2>Customer · வாடிக்கையாளர் விவரம்</h2>
+<table>
+  <tr><td>Name · பெயர்</td><td>${r.customer_name}</td></tr>
+  ${r.father_husband ? `<tr><td>Father / Husband</td><td>${r.father_husband}</td></tr>` : ""}
+  ${r.occupation ? `<tr><td>Occupation · தொழில்</td><td>${r.occupation}</td></tr>` : ""}
+  ${r.address ? `<tr><td>Address · முகவரி</td><td>${r.address}</td></tr>` : ""}
+  ${r.phone ? `<tr><td>Phone · தொலைபேசி</td><td>${r.phone}</td></tr>` : ""}
+  ${r.aadhaar ? `<tr><td>Aadhaar</td><td>${r.aadhaar}</td></tr>` : ""}
+  ${r.pan ? `<tr><td>PAN</td><td>${r.pan}</td></tr>` : ""}
+</table>
+
+<h2>Pledged Item · அடகு பொருள் விவரம்</h2>
+<table>
+  ${r.item_description ? `<tr><td>Description · பொருள்</td><td>${r.item_description}</td></tr>` : ""}
+  ${r.gross_weight_g ? `<tr><td>Gross Weight · எடை</td><td>${r.gross_weight_g} g</td></tr>` : ""}
+  ${r.purity ? `<tr><td>Purity · தூய்மை</td><td>${r.purity}</td></tr>` : ""}
+  ${r.loan_amount ? `<tr><td>Loan Amount · கடன் தொகை</td><td>₹${Number(r.loan_amount).toLocaleString("en-IN")}</td></tr>` : ""}
+  ${r.interest_rate ? `<tr><td>Interest Rate · வட்டி</td><td>${r.interest_rate}% / month</td></tr>` : ""}
+</table>
+
+${r.srety_name || r.srety_phone ? `
+<h2>Guarantor / SRETY · உத்தரவாதி</h2>
+<table>
+  ${r.srety_name ? `<tr><td>Name</td><td>${r.srety_name}${r.srety_relation ? ` (${r.srety_relation})` : ""}</td></tr>` : ""}
+  ${r.srety_address ? `<tr><td>Address</td><td>${r.srety_address}</td></tr>` : ""}
+  ${r.srety_phone ? `<tr><td>Phone</td><td>${r.srety_phone}</td></tr>` : ""}
+  ${r.srety_aadhaar ? `<tr><td>Aadhaar</td><td>${r.srety_aadhaar}</td></tr>` : ""}
+</table>` : ""}
+
+${r.notes ? `<h2>Notes</h2><p>${r.notes}</p>` : ""}
+
+<div class="declaration">
+  <strong>Declaration · உறுதிமொழி</strong><br>
+  I hereby pledge the above item(s) as security for the loan amount stated. I confirm that the pledged items are my own property and free from any encumbrance. I agree to pay interest at the stated rate and redeem the pledged items within the agreed period.<br><br>
+  மேற்கண்ட பொருட்களை நான் அடகு வைக்கிறேன். இவை என்னுடைய சொந்த சொத்து என்பதை உறுதி செய்கிறேன்.
+</div>
+
+<div class="sig">
+  <div>Customer Signature<br>___________________</div>
+  <div>Guarantor Signature<br>___________________</div>
+  <div>Staff: ${r.recorded_by_name ?? "___________________"}</div>
+</div>
+</body></html>`);
+      win.document.close();
+      win.focus();
+      setTimeout(() => win.print(), 500);
+    }
+
     return (
       <div className="max-w-2xl mx-auto space-y-4">
         {previewPhoto && (
@@ -329,12 +439,28 @@ export default function PledgeFormPage() {
             <img src={previewPhoto} alt="photo" className="max-w-sm max-h-[80vh] rounded-xl border-4 border-white object-contain" />
           </div>
         )}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
             <h1 className="text-xl font-bold">{selected.customer_name}</h1>
             <p className="text-xs text-ink-dim">{shortDate(selected.form_date)} · Recorded by {selected.recorded_by_name ?? "—"}</p>
           </div>
-          <button onClick={() => setView("list")} className="text-sm text-ink-dim hover:text-ink">← Back</button>
+          <div className="flex items-center gap-2">
+            <button onClick={shareWhatsApp}
+              className="flex items-center gap-1.5 bg-[#25D366] text-white px-3 py-1.5 rounded-lg2 text-sm font-medium hover:bg-[#1ebe5e] transition-colors">
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+              </svg>
+              WhatsApp
+            </button>
+            <button onClick={printForm}
+              className="flex items-center gap-1.5 border border-line px-3 py-1.5 rounded-lg2 text-sm text-ink-dim hover:text-ink hover:border-gold transition-colors">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6v-8z" />
+              </svg>
+              Print
+            </button>
+            <button onClick={() => setView("list")} className="text-sm text-ink-dim hover:text-ink">← Back</button>
+          </div>
         </div>
 
         {/* Photos */}
