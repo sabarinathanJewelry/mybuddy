@@ -171,6 +171,7 @@ export default function Sidebar() {
       ...(canSeeConductNotes ? [{ href: "/staff-conduct", icon: "🎽", label: t("nav_conduct_notes") }] : []),
       ...(!canAccess("walkins") && canSeeWalkins ? [{ href: "/walkins", icon: "🚶", label: t("nav_walkins") }] : []),
       ...(canSeePhotoShoot ? [{ href: "/photo-shoot", icon: "📸", label: t("nav_photo_shoot") }] : []),
+      ...(isAdmin ? [{ href: "/pledge-form", icon: "📋", label: "Pledge Forms" }] : []),
       { href: "/weekoffs",      icon: "📅", label: t("nav_weekoffs") },
       { href: "/rewards",       icon: "🏆", label: "Rewards" },
       { href: "/google-review", icon: "⭐", label: t("nav_google_review") },
