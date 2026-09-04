@@ -756,12 +756,16 @@ export default function StaffManagementPage() {
               ) : null;
             })()}
             <div className="flex gap-2 bg-white border border-line rounded-xl px-3 py-2">
+              <button
+                onMouseDown={(e) => { e.preventDefault(); handleChatInput("CD"); }}
+                className="shrink-0 text-xs font-bold font-mono text-gold border border-gold/40 rounded px-1.5 py-0.5 hover:bg-gold/10 transition-colors"
+                title="Conduct shorthand">CD</button>
               <input value={chatInput} onChange={(e) => handleChatInput(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Escape" && cdMode !== "none") { setCdMode("none"); return; }
                   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); }
                 }}
-                placeholder="Send a message as admin… (type CD for conduct shorthand)"
+                placeholder="Send a message as admin…"
                 className="flex-1 text-sm focus:outline-none" />
               <button onClick={sendChat} disabled={chatSending || !chatInput.trim()}
                 className="bg-gold text-white px-4 py-1.5 rounded-lg2 text-sm font-medium disabled:opacity-40">Send</button>

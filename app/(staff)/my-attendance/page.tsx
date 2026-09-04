@@ -1068,9 +1068,6 @@ export default function MyAttendancePage() {
                       ) : (
                         <p className="text-lg font-semibold text-ink-dim italic mt-0.5">Still in</p>
                       )}
-                      {todayRow.ot_minutes > 0 && (
-                        <p className="text-xs text-ok mt-1 font-medium">OT {formatMins(todayRow.ot_minutes)}</p>
-                      )}
                     </div>
                   </div>
 
@@ -1172,7 +1169,6 @@ export default function MyAttendancePage() {
               { label: "Present", value: presentDays, color: "text-ok" },
               { label: "Absent",  value: absentDays,  color: absentDays > 0 ? "text-err" : "text-ink-dim" },
               { label: "Late",    value: totalLateMins > 0 ? formatMins(totalLateMins) : "—", color: totalLateMins > 0 ? "text-warn" : "text-ink-dim" },
-              { label: "OT",      value: formatMins(totalOtMins), color: totalOtMins > 0 ? "text-ok" : "text-ink-dim" },
             ].map(c => (
               <div key={c.label} className="bg-white rounded-xl border border-line p-3 shadow-soft text-center">
                 <p className={`text-xl font-bold ${c.color}`}>{c.value}</p>
@@ -1211,7 +1207,6 @@ export default function MyAttendancePage() {
               { label: "Present", value: presentDays, color: "text-ok" },
               { label: "Absent",  value: absentDays,  color: absentDays > 0 ? "text-err" : "text-ink-dim" },
               { label: "Late",    value: totalLateMins > 0 ? formatMins(totalLateMins) : "—", color: totalLateMins > 0 ? "text-warn" : "text-ink-dim" },
-              { label: "OT",      value: formatMins(totalOtMins), color: totalOtMins > 0 ? "text-ok" : "text-ink-dim" },
             ].map(c => (
               <div key={c.label} className="bg-white rounded-xl border border-line p-3 shadow-soft text-center">
                 <p className={`text-xl font-bold ${c.color}`}>{c.value}</p>
@@ -1292,7 +1287,6 @@ export default function MyAttendancePage() {
                     <th className="text-right px-3 py-2.5">Hours</th>
                     <th className="text-right px-3 py-2.5">Lunch</th>
                     <th className="text-right px-3 py-2.5">Late</th>
-                    <th className="text-right px-3 py-2.5">OT</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1332,9 +1326,6 @@ export default function MyAttendancePage() {
                       </td>
                       <td className={`px-3 py-2 text-right text-xs font-medium ${r.late_minutes > 0 ? "text-warn" : "text-ink-dim"}`}>
                         {r.late_minutes > 0 ? `${r.late_minutes}m` : "—"}
-                      </td>
-                      <td className={`px-3 py-2 text-right text-xs font-medium ${r.ot_minutes > 0 ? "text-ok" : "text-ink-dim"}`}>
-                        {r.ot_minutes > 0 ? formatMins(r.ot_minutes) : "—"}
                       </td>
                     </tr>
                   ))}
