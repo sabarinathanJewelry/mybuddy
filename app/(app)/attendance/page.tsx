@@ -31,6 +31,7 @@ import { useKiosk } from "@/stores/kiosk";
 import { useAuth } from "@/stores/auth";
 import { shortDate, inr } from "@/lib/format";
 import { parseKolusuChat } from "@/lib/kolusu-parse";
+import { parseConductChat, type ConductChatCode } from "@/lib/conduct-parse";
 
 type PageTab = "attendance" | "staff" | "monthly" | "requests" | "leaves" | "duties" | "chat" | "announcements" | "kyc" | "tasks" | "weekoffs" | "payslip" | "counters";
 
@@ -2446,6 +2447,14 @@ function fmtChatTime(ts: string) {
   return new Date(ts).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true });
 }
 
+const DEFAULT_CONDUCT_CODES: ConductChatCode[] = [
+  { code: "SH", label: "Shouting",             categoryName: "Other",             points: -2 },
+  { code: "SC", label: "Shouting at customer", categoryName: "Customer Handling", points: -5 },
+  { code: "BW", label: "Bad words/language",   categoryName: "Other",             points: -2 },
+  { code: "BT", label: "Beating/altercation",  categoryName: "Other",             points: -5 },
+  { code: "LC", label: "Laughing at customer", categoryName: "Customer Handling", points: -2 },
+];
+
 function ChatTab({ isAdmin, adminName }: { isAdmin: boolean; adminName: string }) {
   const profile     = useAuth((s) => s.profile);
   const [msgs, setMsgs]       = useState<ChatMsg[]>([]);
@@ -2455,10 +2464,26 @@ function ChatTab({ isAdmin, adminName }: { isAdmin: boolean; adminName: string }
   const [editText, setEditText]   = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const [conductCodes, setConductCodes] = useState<ConductChatCode[]>(DEFAULT_CONDUCT_CODES);
+  const [cdMode, setCdMode]   = useState<"none" | "code" | "staff">("none");
+  const [staffList, setStaffList] = useState<{ id: string; name: string }[]>([]);
+  const conductCodesRef       = useRef<ConductChatCode[]>(DEFAULT_CONDUCT_CODES);
+  const processedIds          = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     const client = supabase();
     client.from("chat_messages").select("*").order("created_at", { ascending: false }).limit(500)
       .then(({ data }) => setMsgs(((data ?? []) as ChatMsg[]).reverse()));
+    client.from("staff").select("id, name").eq("active", true).order("name")
+      .then(({ data }) => setStaffList((data ?? []) as { id: string; name: string }[]));
+    client.from("conduct_chat_codes").select("*").eq("active", true).order("display_order")
+      .then(({ data }) => {
+        if (data?.length) {
+          const codes = data.map((r: any) => ({ code: r.code, label: r.label, categoryName: r.category_name, points: r.points }));
+          conductCodesRef.current = codes;
+          setConductCodes(codes);
+        }
+      });
     const ch = client.channel("attendance_chat")
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_messages" }, (p) => {
         if (p.eventType === "INSERT")      setMsgs((prev) => [...prev, p.new as ChatMsg]);
@@ -2470,6 +2495,26 @@ function ChatTab({ isAdmin, adminName }: { isAdmin: boolean; adminName: string }
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
 
+  function handleInput(val: string) {
+    setInput(val);
+    if (/^cd$/i.test(val.trim())) {
+      setCdMode("code");
+    } else {
+      const pat = conductCodesRef.current.map(c => c.code).join("|");
+      if (pat && new RegExp(`^cd\\s+(${pat})\\s`, "i").test(val)) {
+        setCdMode("staff");
+      } else {
+        setCdMode("none");
+      }
+    }
+  }
+  function selectCdCode(code: string) { setInput(`CD ${code} `); setCdMode("staff"); }
+  function selectCdStaff(name: string) {
+    const m = input.match(/^(CD\s+\w+\s+)/i);
+    setInput((m ? m[1] : input) + name + " ");
+    setCdMode("none");
+  }
+
   async function send() {
     if (!input.trim() || !profile) return;
     setSending(true);
@@ -2477,30 +2522,58 @@ function ChatTab({ isAdmin, adminName }: { isAdmin: boolean; adminName: string }
     const { data: { user } } = await client.auth.getUser();
     const msg = input.trim();
     if (user) {
-      await client.from("chat_messages").insert({ sender_id: user.id, sender_name: profile.display_name, message: msg });
-      // Auto-detect kolusu sale format and create pending entry
-      const parsed = parseKolusuChat(msg);
-      if (parsed) {
-        const today = new Date().toISOString().slice(0, 10);
-        await client.from("kolusu_pending_sales").insert({
-          tx_date:     today,
-          raw_wt_g:    parsed.raw_wt_g,
-          cover_wt_g:  parsed.cover_wt_g,
-          qty:         parsed.qty,
-          description: parsed.description || null,
-          bill_no:     parsed.bill_no || null,
-          staff_name:  profile.display_name,
-          staff_id:    user.id,
-          source:      "chat",
-        });
-        await client.from("chat_messages").insert({
-          sender_id:   user.id,
-          sender_name: "MyBuddy",
-          message:     `✓ Kolusu sale logged: ${parsed.raw_wt_g}g + ${parsed.cover_wt_g}g cover${parsed.description ? ` (${parsed.description})` : ""}. Admin will assign to box.`,
-        });
+      const { data: sentMsg } = await client.from("chat_messages")
+        .insert({ sender_id: user.id, sender_name: profile.display_name, message: msg })
+        .select().single();
+      // Auto-detect conduct shorthand (admin only)
+      if (isAdmin && sentMsg && !processedIds.current.has(sentMsg.id)) {
+        const conductParsed = parseConductChat(msg);
+        if (conductParsed) {
+          processedIds.current.add(sentMsg.id);
+          const codeInfo = conductCodesRef.current.find(c => c.code === conductParsed.code);
+          if (codeInfo) {
+            const { data: staffRows } = await client.from("staff")
+              .select("id, name").ilike("name", `%${conductParsed.staffName}%`).limit(3);
+            const staffRow = staffRows?.[0];
+            if (!staffRow) {
+              await client.from("chat_messages").insert({ sender_id: user.id, sender_name: "MyBuddy", message: `⚠ Conduct: staff "${conductParsed.staffName}" not found.` });
+            } else {
+              const { data: cats } = await client.from("conduct_categories").select("id, name");
+              const catMap = new Map((cats ?? []).map((c: any) => [c.name as string, c.id as number]));
+              const noteText = `${codeInfo.label}${conductParsed.note ? ` — ${conductParsed.note}` : ""}`;
+              const { error: noteErr } = await client.from("conduct_notes").insert({
+                staff_id: staffRow.id, staff_name: staffRow.name,
+                category_id: catMap.get(codeInfo.categoryName) ?? null,
+                note: noteText, noted_by: user.id, noted_by_name: profile.display_name,
+                note_date: new Date().toISOString().slice(0, 10),
+                chat_message_id: sentMsg.id,
+              });
+              if (!noteErr) {
+                await client.from("chat_messages").insert({ sender_id: user.id, sender_name: "MyBuddy", message: `✓ Conduct noted: ${staffRow.name} — ${codeInfo.label} (${codeInfo.points} pts)${conductParsed.note ? ` · ${conductParsed.note}` : ""}` });
+              }
+            }
+          }
+        }
+      }
+      // Auto-detect kolusu sale format
+      if (!parseConductChat(msg)) {
+        const parsed = parseKolusuChat(msg);
+        if (parsed) {
+          const today = new Date().toISOString().slice(0, 10);
+          await client.from("kolusu_pending_sales").insert({
+            tx_date: today, raw_wt_g: parsed.raw_wt_g, cover_wt_g: parsed.cover_wt_g,
+            qty: parsed.qty, description: parsed.description || null, bill_no: parsed.bill_no || null,
+            staff_name: profile.display_name, staff_id: user.id, source: "chat",
+          });
+          await client.from("chat_messages").insert({
+            sender_id: user.id, sender_name: "MyBuddy",
+            message: `✓ Kolusu sale logged: ${parsed.raw_wt_g}g + ${parsed.cover_wt_g}g cover${parsed.description ? ` (${parsed.description})` : ""}. Admin will assign to box.`,
+          });
+        }
       }
     }
     setInput("");
+    setCdMode("none");
     setSending(false);
   }
   async function toggleHide(id: string, cur: boolean) { await supabase().from("chat_messages").update({ is_deleted: !cur }).eq("id", id); }
@@ -2563,9 +2636,44 @@ function ChatTab({ isAdmin, adminName }: { isAdmin: boolean; adminName: string }
         <div ref={bottomRef} />
       </div>
       <div className="shrink-0">
+        {isAdmin && cdMode === "code" && (
+          <div className="border border-line rounded-xl bg-white shadow-soft py-1 mb-2">
+            <p className="text-[10px] text-ink-dim px-3 pt-1 pb-0.5 font-semibold uppercase tracking-wide">Select conduct issue</p>
+            {conductCodes.map(c => (
+              <button key={c.code} onMouseDown={(e) => { e.preventDefault(); selectCdCode(c.code); }}
+                className="flex items-center gap-3 w-full text-left px-3 py-1.5 hover:bg-canvas text-sm">
+                <span className="font-mono font-bold text-gold w-8">{c.code}</span>
+                <span className="flex-1">{c.label}</span>
+                <span className={`text-xs font-semibold ${c.points < 0 ? "text-err" : "text-ok"}`}>{c.points > 0 ? "+" : ""}{c.points} pts</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {isAdmin && cdMode === "staff" && (() => {
+          const m = input.match(/^CD\s+\w+\s+(.*)/i);
+          const q = (m?.[1] ?? "").toLowerCase();
+          const filtered = q ? staffList.filter(s => s.name.toLowerCase().includes(q)) : staffList;
+          return filtered.length > 0 ? (
+            <div className="border border-line rounded-xl bg-white shadow-soft py-1 mb-2 max-h-40 overflow-y-auto">
+              <p className="text-[10px] text-ink-dim px-3 pt-1 pb-0.5 font-semibold uppercase tracking-wide">Select staff</p>
+              {filtered.map(s => (
+                <button key={s.id} onMouseDown={(e) => { e.preventDefault(); selectCdStaff(s.name); }}
+                  className="block w-full text-left text-sm px-3 py-1.5 hover:bg-canvas">{s.name}</button>
+              ))}
+            </div>
+          ) : null;
+        })()}
         <div className="flex gap-2 bg-white border border-line rounded-xl px-3 py-2">
-          <input value={input} onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+          {isAdmin && (
+            <button onMouseDown={(e) => { e.preventDefault(); handleInput("CD"); }}
+              className="shrink-0 text-xs font-bold font-mono text-gold border border-gold/40 rounded px-1.5 py-0.5 hover:bg-gold/10 transition-colors"
+              title="Conduct shorthand">CD</button>
+          )}
+          <input value={input} onChange={(e) => handleInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && cdMode !== "none") { setCdMode("none"); return; }
+              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+            }}
             placeholder="Type a message…"
             className="flex-1 text-sm focus:outline-none" />
           <button onClick={send} disabled={sending || !input.trim()}
