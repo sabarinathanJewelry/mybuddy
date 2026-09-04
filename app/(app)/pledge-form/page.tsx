@@ -357,7 +357,7 @@ export default function PledgeFormPage() {
     }
 
     function printForm() {
-      const r = selected;
+      const r = selected!;
       const win = window.open("", "_blank");
       if (!win) return;
       win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
