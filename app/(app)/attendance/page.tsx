@@ -866,14 +866,14 @@ function MonthlyTab() {
                                         {(() => {
                                           if (!d.is_late) return <span className="text-ink-dim">—</span>;
                                           const isWaived = waivedDates(r.bio_user_id).has(d.date);
-                                          if (isWaived) return <span className="text-[10px] font-semibold text-ok">Waived</span>;
+                                          if (isWaived) return <span className="text-[10px] font-semibold text-ok">Deleted</span>;
                                           const forgiven = permDates(r.bio_user_id).has(d.date) || dutyDates(r.bio_user_id).has(d.date) || !inFineRange(d.date, r.bio_user_id);
                                           if (forgiven) return <span className="text-ink-dim">—</span>;
                                           return (
                                             <div className="flex items-center justify-end gap-1.5">
                                               <span className="font-mono text-err">{inr(dayFineAmount(r.bio_user_id, d.late_minutes))}</span>
                                               <button onClick={() => { setWaiveTarget({ bio_user_id: r.bio_user_id, date: d.date, late_minutes: d.late_minutes }); setWaiveReason(""); }}
-                                                className="text-[9px] text-gold hover:underline shrink-0">Waive</button>
+                                                className="text-[9px] text-gold hover:underline shrink-0">Delete Fine</button>
                                             </div>
                                           );
                                         })()}
@@ -897,7 +897,7 @@ function MonthlyTab() {
                               {waiveTarget?.bio_user_id === r.bio_user_id && (
                                 <div className="mt-2 p-2.5 border border-gold/40 bg-gold/5 rounded-lg2 flex flex-wrap items-center gap-2">
                                   <span className="text-ink-dim">
-                                    Waive {inr(dayFineAmount(r.bio_user_id, waiveTarget.late_minutes))} fine for {dayLabel(waiveTarget.date)}?
+                                    Delete {inr(dayFineAmount(r.bio_user_id, waiveTarget.late_minutes))} late fine for {dayLabel(waiveTarget.date)}?
                                   </span>
                                   <input value={waiveReason} onChange={e => setWaiveReason(e.target.value)}
                                     placeholder="Reason (optional)" className={inp + " w-40 text-xs"} />
@@ -905,7 +905,7 @@ function MonthlyTab() {
                                     onClick={() => saveWaiveFine(r, waiveTarget.date, waiveTarget.late_minutes)}
                                     disabled={waiveFine.isPending}
                                     className="bg-gold text-white text-xs px-3 py-1 rounded-lg2 disabled:opacity-50">
-                                    {waiveFine.isPending ? "Saving…" : "Confirm Waive"}
+                                    {waiveFine.isPending ? "Saving…" : "Confirm Delete"}
                                   </button>
                                   <button onClick={() => { setWaiveTarget(null); setWaiveReason(""); }}
                                     className="border border-line text-xs px-3 py-1 rounded-lg2">Cancel</button>
@@ -915,7 +915,7 @@ function MonthlyTab() {
 
                               {staffWaivers(r.bio_user_id).length > 0 && (
                                 <div className="mt-3">
-                                  <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide mb-1.5">Waived Fines — {monthLabel(month)}</p>
+                                  <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide mb-1.5">Deleted Fines — {monthLabel(month)}</p>
                                   <div className="space-y-1">
                                     {staffWaivers(r.bio_user_id).map(w => (
                                       <div key={w.id} className="flex items-center gap-2 text-xs text-ink-dim flex-wrap">

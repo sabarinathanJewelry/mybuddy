@@ -88,14 +88,48 @@ export function useConductNoteCounts(month: string) {
     queryFn: async () => {
       const { data, error } = await supabase()
         .from("conduct_notes")
-        .select("staff_id, status")
+        .select("staff_id, status, deleted_at")
         .gte("note_date", `${month}-01`)
         .lt("note_date", nextMonth(month))
-        .neq("status", "dismissed");
+        .neq("status", "dismissed")
+        .is("deleted_at", null);
       if (error) throw error;
       const counts: Record<string, number> = {};
       for (const row of data ?? []) counts[row.staff_id] = (counts[row.staff_id] ?? 0) + 1;
       return counts;
+    },
+  });
+}
+
+export function useDeleteConductNote() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const profile = useAuth.getState().profile;
+      const { error } = await supabase()
+        .from("conduct_notes")
+        .update({ deleted_at: new Date().toISOString(), deleted_by_name: profile?.display_name ?? "Admin" })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["conduct-notes"] }),
+  });
+}
+
+export function useMyConductNotes(staff_id: string | null, month: string) {
+  return useQuery<ConductNote[]>({
+    queryKey: ["my-conduct-notes", staff_id, month],
+    enabled: !!staff_id,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("conduct_notes")
+        .select("*")
+        .eq("staff_id", staff_id!)
+        .gte("note_date", `${month}-01`)
+        .lt("note_date", nextMonth(month))
+        .order("note_date", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as ConductNote[];
     },
   });
 }

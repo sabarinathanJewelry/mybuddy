@@ -1,42 +1,55 @@
--- 167: Customer loan pledge forms with photo capture.
--- Staff fills form and captures 2 photos; stored standalone (not linked to loans table).
+-- 167: Credit security forms (கடன் / பாதுகாப்பு உறுதிமொழிப் படிவம்)
+-- Standalone form with 2 photos, full KYC + SURETY fields.
 
 create table pledge_forms (
-  id              uuid primary key default gen_random_uuid(),
-  form_date       date not null default current_date,
+  id               uuid primary key default gen_random_uuid(),
+  created_at       timestamptz not null default now(),
 
-  -- Customer
-  customer_name   text not null,
-  father_husband  text,
-  address         text,
-  phone           text,
-  aadhaar         text,
-  pan             text,
-  occupation      text,
-
-  -- Pledged item
-  item_description text,
-  gross_weight_g  numeric(10,3),
-  purity          text,
-  loan_amount     numeric(14,2),
-  interest_rate   numeric(6,2),
-
-  -- Guarantor (SRETY)
-  srety_name      text,
-  srety_address   text,
-  srety_phone     text,
-  srety_aadhaar   text,
-  srety_relation  text,
+  -- Header
+  bill_order_no    text,
+  form_date        date not null default current_date,
+  form_time        text,
+  photo_date       date,
 
   -- Photos (base64 data URIs)
-  photo1_data     text,   -- customer face photo
-  photo2_data     text,   -- ID / item photo
+  photo1_data      text,   -- customer face photo
+  photo2_data      text,   -- jewellery / item photo
+
+  -- Top customer block
+  customer_name    text not null,
+  customer_phone   text,
+  loan_amount      numeric(14,2),
+  rate_fixed       boolean,           -- true = rate fixed, false = not fixed
+  agreed_rate      text,
+  agreed_rate_date date,
+  due_date         date,
+
+  -- KYC details
+  kyc_full_name    text,
+  kyc_aadhaar_name text,
+  kyc_aadhaar_no   text,
+  kyc_pan_no       text,
+  kyc_phone        text,
+  kyc_alt_phone    text,
+  kyc_address      text,
+  authorizer_name  text,
+  doc_aadhaar      boolean not null default false,
+  doc_pan          boolean not null default false,
+  doc_address      boolean not null default false,
+  doc_others       text,
+
+  -- SURETY
+  surety_full_name    text,
+  surety_aadhaar_name text,
+  surety_phone        text,
+  surety_alt_phone    text,
+  surety_aadhaar_no   text,
+  surety_pan          text,
+  surety_address      text,
 
   -- Meta
-  recorded_by     uuid references auth.users(id),
-  recorded_by_name text,
-  notes           text,
-  created_at      timestamptz not null default now()
+  recorded_by      uuid references auth.users(id),
+  recorded_by_name text
 );
 
 alter table pledge_forms enable row level security;

@@ -5,7 +5,7 @@ import { useT } from "@/i18n";
 import { useAuth } from "@/stores/auth";
 import {
   useActiveStaff, useConductCategories, useAddConductCategory, useDeleteConductCategory,
-  useConductNotes, useAddConductNote, useResolveConductNote,
+  useConductNotes, useAddConductNote, useResolveConductNote, useDeleteConductNote,
 } from "@/modules/staff-conduct/api";
 import type { ConductNote } from "@/modules/staff-conduct/types";
 import { inr, shortDate } from "@/lib/format";
@@ -164,6 +164,9 @@ function ResolveActions({ note }: { note: ConductNote }) {
 }
 
 function StatusBadge({ note }: { note: ConductNote }) {
+  if (note.deleted_at) {
+    return <span className="text-xs px-2 py-0.5 rounded-full bg-canvas text-ink-dim border border-line line-through">Deleted</span>;
+  }
   if (note.status === "fined") {
     return <span className="text-xs px-2 py-0.5 rounded-full bg-err/10 text-err">Fined {note.fine_amount != null ? inr(note.fine_amount) : ""}</span>;
   }
@@ -180,6 +183,7 @@ export default function StaffConductPage() {
   const [month, setMonth] = useState(currentMonth());
   const { data: categories = [] } = useConductCategories();
   const { data: notes = [], isLoading } = useConductNotes(month);
+  const deleteNote = useDeleteConductNote();
 
   const visibleNotes = isAdmin ? notes : notes.filter((n) => n.noted_by === profile?.id);
   const categoryName = (id: number | null) => categories.find((c) => c.id === id)?.name;
@@ -217,9 +221,20 @@ export default function StaffConductPage() {
                   <StatusBadge note={note} />
                 </div>
                 {note.note && <p className="text-sm text-ink-mid">{note.note}</p>}
-                {isAdmin && note.status === "pending" && <ResolveActions note={note} />}
-                {note.status !== "pending" && note.resolved_by_name && (
+                {isAdmin && note.status === "pending" && !note.deleted_at && <ResolveActions note={note} />}
+                {note.status !== "pending" && note.resolved_by_name && !note.deleted_at && (
                   <p className="text-xs text-ink-dim">{note.status === "fined" ? "Fined" : "Dismissed"} by {note.resolved_by_name}</p>
+                )}
+                {note.deleted_at && (
+                  <p className="text-xs text-ink-dim italic">Deleted by {note.deleted_by_name ?? "admin"} — fine removed, visible as history only</p>
+                )}
+                {isAdmin && !note.deleted_at && (
+                  <button
+                    onClick={() => { if (confirm(`Delete this note for ${note.staff_name}? The fine will be removed but the history will remain visible to them.`)) deleteNote.mutate(note.id); }}
+                    className="text-[10px] text-err hover:underline self-start mt-0.5"
+                  >
+                    Delete fine
+                  </button>
                 )}
               </div>
             ))}

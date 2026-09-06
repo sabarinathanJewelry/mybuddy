@@ -18,6 +18,7 @@ import {
 import NotificationBell from "@/components/ui/notification-bell";
 import { parseKolusuChat } from "@/lib/kolusu-parse";
 import { parseConductChat, type ConductChatCode } from "@/lib/conduct-parse";
+import { useMyConductNotes } from "@/modules/staff-conduct/api";
 import { inr, shortDate } from "@/lib/format";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -94,7 +95,7 @@ type DayRow = {
   lunch_minutes: number | null;
 };
 
-type StaffInfo = { bio_user_id: string; name: string; shift: string; join_date: string | null };
+type StaffInfo = { id: string; bio_user_id: string; name: string; shift: string; join_date: string | null };
 
 type PageTab = "today" | "monthly" | "requests" | "incentive" | "chat" | "policies" | "kyc" | "tasks" | "weekoffs" | "payslip";
 
@@ -176,6 +177,9 @@ export default function MyAttendancePage() {
 
   // Late fine waivers
   const { data: myFineWaivers = [] } = useMyLateFineWaivers(staff?.bio_user_id ?? null);
+
+  // My conduct notes for selected month
+  const { data: myConductNotes = [] } = useMyConductNotes(staff?.id ?? null, month);
 
   // Leave requests
   const { data: myLeaves = [], refetch: refetchLeaves } = useMyLeaveRequests(staff?.bio_user_id ?? null);
@@ -316,7 +320,7 @@ export default function MyAttendancePage() {
 
       // Prefer user_id column match (reliable, JWT-independent)
       const { data: byUserId } = await client
-        .from("staff").select("bio_user_id, name, shift, join_date")
+        .from("staff").select("id, bio_user_id, name, shift, join_date")
         .eq("user_id", user.id).maybeSingle();
 
       let resolvedBioUserId: string | null = null;
@@ -326,7 +330,7 @@ export default function MyAttendancePage() {
       } else if (bioUserId) {
         // Fallback: match via bio_user_id from JWT app_metadata
         const { data: byBioId } = await client
-          .from("staff").select("bio_user_id, name, shift, join_date")
+          .from("staff").select("id, bio_user_id, name, shift, join_date")
           .eq("bio_user_id", String(bioUserId)).maybeSingle();
         if (byBioId) { setStaff(byBioId as StaffInfo); resolvedBioUserId = byBioId.bio_user_id; }
         else setLoading(false);
@@ -1227,7 +1231,7 @@ export default function MyAttendancePage() {
             if (waiversThisMonth.length === 0) return null;
             return (
               <div className="bg-ok/5 border border-ok/20 rounded-xl px-4 py-3 space-y-1.5">
-                <p className="text-xs text-ok font-semibold">Late Fine Waived</p>
+                <p className="text-xs text-ok font-semibold">Late Fine Deleted by Admin</p>
                 {waiversThisMonth.map(w => (
                   <div key={w.id} className="text-[11px] text-ink-dim flex flex-wrap gap-x-2">
                     <span className="font-mono text-ink">{shortDate(w.fine_date)}</span>
@@ -1239,6 +1243,35 @@ export default function MyAttendancePage() {
               </div>
             );
           })()}
+
+          {/* Conduct notes for this month */}
+          {myConductNotes.length > 0 && (
+            <div className="border border-line rounded-xl px-4 py-3 space-y-2">
+              <p className="text-xs font-semibold text-ink-dim uppercase tracking-wide">Conduct Notes — {monthLabel(month).split(" ")[0]}</p>
+              {myConductNotes.map(n => (
+                <div key={n.id} className={`rounded-lg2 px-3 py-2 text-xs space-y-0.5 ${n.deleted_at ? "bg-canvas opacity-60" : n.status === "fined" ? "bg-err/5 border border-err/20" : "bg-canvas border border-line"}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-ink">{shortDate(n.note_date)}{n.note ? ` — ${n.note}` : ""}</span>
+                    {n.deleted_at ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-canvas border border-line text-ink-dim line-through">Deleted</span>
+                    ) : n.status === "fined" ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-err/10 text-err">Fined {n.fine_amount != null ? inr(n.fine_amount) : ""}</span>
+                    ) : n.status === "dismissed" ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-canvas border border-line text-ink-dim">Dismissed</span>
+                    ) : (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-warn/10 text-warn">Pending</span>
+                    )}
+                  </div>
+                  {n.deleted_at && (
+                    <p className="text-[10px] text-ink-dim italic">Fine applied but deleted by {n.deleted_by_name ?? "admin"} — no deduction</p>
+                  )}
+                  {n.noted_by_name && !n.deleted_at && (
+                    <p className="text-[10px] text-ink-dim">Noted by {n.noted_by_name}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Weekend absence alert */}
           {(() => {

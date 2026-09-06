@@ -20,6 +20,8 @@ export interface ConductNote {
   resolved_by_name: string | null;
   resolved_at: string | null;
   created_at: string;
+  deleted_at: string | null;
+  deleted_by_name: string | null;
 }
 
 export interface StaffOption {
