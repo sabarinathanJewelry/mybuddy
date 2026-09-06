@@ -6,6 +6,7 @@ import {
   useConductMarks, useAddConductMark, useDeleteConductMark, useUpdateConductMark, useAllStaff,
   REWARD_CATEGORIES, TOTAL_MAX, type RewardScore, type ConductMark,
 } from "@/modules/rewards/api";
+import { useConductNotes } from "@/modules/staff-conduct/api";
 import { useAuth } from "@/stores/auth";
 import { shortDate } from "@/lib/format";
 
@@ -258,53 +259,97 @@ function ConductHistory({
   onEdit: (mark: ConductMark) => void;
 }) {
   const { data: allMarks = [] } = useConductMarks(month);
+  const { data: allNotes = [] } = useConductNotes(month);
   const deleteMark = useDeleteConductMark();
   const { data: staffRows = [] } = useAllStaff();
   const nameMap: Record<string, string> = {};
   staffRows.forEach(s => { nameMap[s.bio_user_id] = s.name; });
 
+  const myName = myBioUserId ? (nameMap[myBioUserId] ?? null) : null;
+
   // Staff see only their own marks; admin sees all
   const marks = isAdmin ? allMarks : allMarks.filter(m => m.bio_user_id === myBioUserId);
 
-  if (marks.length === 0) return null;
+  // CD conduct_notes for this month: exclude deleted and dismissed; filter by staff name for non-admin
+  const cdNotes = allNotes
+    .filter(n => !n.deleted_at && n.status !== "dismissed")
+    .filter(n => isAdmin || n.staff_name === myName);
+
+  // Merged list sorted newest-first
+  type Entry =
+    | { kind: "mark"; m: ConductMark; date: string }
+    | { kind: "note"; n: (typeof cdNotes)[0]; date: string };
+
+  const entries: Entry[] = [
+    ...marks.map(m => ({ kind: "mark" as const, m, date: m.created_at })),
+    ...cdNotes.map(n => ({ kind: "note" as const, n, date: n.created_at })),
+  ].sort((a, b) => b.date.localeCompare(a.date));
+
+  if (entries.length === 0) return null;
+
+  function notePoints(n: (typeof cdNotes)[0]): number {
+    if (n.status === "fined") return n.fine_amount ? -Math.abs(n.fine_amount) : -5;
+    return -2; // pending
+  }
 
   return (
     <div className="space-y-1">
       <p className="text-[11px] font-bold tracking-widest text-ink-dim uppercase">
         {isAdmin ? "Conduct History" : "Your Conduct Marks"}
       </p>
-      {marks.map(m => (
-        <div key={m.id} className="flex items-start gap-2 border border-line rounded-lg2 px-3 py-2 bg-canvas">
-          <span className="text-lg">{m.category === "behavior" ? "🤝" : "👔"}</span>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+      {entries.map(entry => {
+        if (entry.kind === "mark") {
+          const m = entry.m;
+          return (
+            <div key={`mark-${m.id}`} className="flex items-start gap-2 border border-line rounded-lg2 px-3 py-2 bg-canvas">
+              <span className="text-lg">{m.category === "behavior" ? "🤝" : "👔"}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  {isAdmin && (
+                    <span className="text-sm font-semibold text-ink">{nameMap[m.bio_user_id] ?? m.bio_user_id}</span>
+                  )}
+                  <span className={`text-xs font-bold ${m.points >= 0 ? "text-ok" : "text-err"}`}>
+                    {m.points > 0 ? "+" : ""}{m.points} pts
+                  </span>
+                  <span className="text-xs text-ink-dim">{m.category === "behavior" ? "Behavior" : "Dressing"}</span>
+                </div>
+                <p className="text-xs text-ink-dim truncate">{m.note}</p>
+                <p className="text-[10px] text-ink-dim">{shortDate(m.created_at)}</p>
+              </div>
               {isAdmin && (
-                <span className="text-sm font-semibold text-ink">{nameMap[m.bio_user_id] ?? m.bio_user_id}</span>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button onClick={() => onEdit(m)} className="text-ink-dim hover:text-gold text-xs" title="Edit">✎</button>
+                  <button onClick={() => deleteMark.mutate({ id: m.id, month })} className="text-ink-dim hover:text-err text-xs" title="Delete">✕</button>
+                </div>
               )}
-              <span className={`text-xs font-bold ${m.points >= 0 ? "text-ok" : "text-err"}`}>
-                {m.points > 0 ? "+" : ""}{m.points} pts
-              </span>
-              <span className="text-xs text-ink-dim">{m.category === "behavior" ? "Behavior" : "Dressing"}</span>
             </div>
-            <p className="text-xs text-ink-dim truncate">{m.note}</p>
-            <p className="text-[10px] text-ink-dim">{shortDate(m.created_at)}</p>
+          );
+        }
+
+        // CD conduct note
+        const n = entry.n;
+        const pts = notePoints(n);
+        return (
+          <div key={`note-${n.id}`} className="flex items-start gap-2 border border-line rounded-lg2 px-3 py-2 bg-canvas">
+            <span className="text-lg">🤝</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                {isAdmin && (
+                  <span className="text-sm font-semibold text-ink">{n.staff_name}</span>
+                )}
+                <span className="text-xs font-bold text-err">{pts} pts</span>
+                <span className="text-xs text-ink-dim">Behavior</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-gold/10 text-gold font-medium">CD</span>
+                {n.status === "fined" && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-err/10 text-err">Fined</span>
+                )}
+              </div>
+              <p className="text-xs text-ink-dim truncate">{n.note}</p>
+              <p className="text-[10px] text-ink-dim">{n.noted_by_name ? `by ${n.noted_by_name} · ` : ""}{shortDate(n.note_date)}</p>
+            </div>
           </div>
-          {isAdmin && (
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <button
-                onClick={() => onEdit(m)}
-                className="text-ink-dim hover:text-gold text-xs"
-                title="Edit"
-              >✎</button>
-              <button
-                onClick={() => deleteMark.mutate({ id: m.id, month })}
-                className="text-ink-dim hover:text-err text-xs"
-                title="Delete"
-              >✕</button>
-            </div>
-          )}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
