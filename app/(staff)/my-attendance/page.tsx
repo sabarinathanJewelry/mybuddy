@@ -725,12 +725,22 @@ export default function MyAttendancePage() {
     },
   });
 
-  // Only count late minutes on/after fine_from_date (if set), excluding waived days
+  // Only count late minutes on/after fine_from_date (if set),
+  // excluding waived days, approved permissions, and approved outside duties
+  // (mirrors the admin-side effectiveLateMins calculation)
   const fineFromDate = fineSettings?.fine_from_date ?? "";
   const waivedDateSet = new Set(myFineWaivers.map(w => w.fine_date));
+  const permDateSet   = new Set(
+    (permissions as PermissionRequest[]).filter(p => p.status === "approved").map(p => p.permission_date)
+  );
+  const dutyDateSet   = new Set(
+    (myDuties as OutsideDuty[]).filter(d => d.status === "approved").map(d => d.duty_date)
+  );
   const totalLateMins = rows
     .filter(r => !fineFromDate || r.date >= fineFromDate)
     .filter(r => !waivedDateSet.has(r.date))
+    .filter(r => !permDateSet.has(r.date))
+    .filter(r => !dutyDateSet.has(r.date))
     .reduce((s, r) => s + r.late_minutes, 0);
 
   const netLateMins = fineSettings?.equalize_ot
