@@ -226,7 +226,7 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
           phone: s.phone ?? "",
           card_no: s.card_no ?? 0,
           active: s.active,
-          shift: ((s.shift as string) ?? "boys") as "boys" | "girls" | "helper",
+          shift: ((s.shift as string) ?? "boys") as "boys" | "girls" | "helper" | "half_day",
           present,
           punches,
           punchRows,
@@ -294,7 +294,7 @@ export function useDeleteStaff() {
 export function useMarkPresentDay() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ bio_user_id, date, shift, override }: { bio_user_id: string; date: string; shift: "boys" | "girls" | "helper"; override?: boolean }) => {
+    mutationFn: async ({ bio_user_id, date, shift, override }: { bio_user_id: string; date: string; shift: "boys" | "girls" | "helper" | "half_day"; override?: boolean }) => {
       const client = supabase();
       const { data: existing, error: checkErr } = await client
         .from("attendance_logs")
