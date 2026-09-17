@@ -39,7 +39,7 @@ export type AttendanceEntry = {
   phone: string;
   card_no: number;
   active: boolean;
-  shift: "boys" | "girls" | "helper";
+  shift: "boys" | "girls" | "helper" | "half_day";
   present: boolean;
   punches: string[];
   punchRows: { id: string; punch_time: string }[];
@@ -66,7 +66,7 @@ export type StaffMember = {
   card_no: number;
   active: boolean;
   join_date: string | null;
-  shift: "boys" | "girls" | "helper";
+  shift: "boys" | "girls" | "helper" | "half_day";
   monthly_salary: number;
   allowed_leaves: number;
   equalize_ot: boolean;
@@ -93,7 +93,7 @@ export type MonthlyEmployeeSummary = {
   name: string;
   designation: string;
   phone: string;
-  shift: "boys" | "girls" | "helper";
+  shift: "boys" | "girls" | "helper" | "half_day";
   monthly_salary: number;
   allowed_leaves: number;
   equalize_ot: boolean;
@@ -183,8 +183,9 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
             : null;
 
         // Late = first punch after threshold IST; approved permission overrides
-        // Threshold defaults to 9:50 (9:30 + 20 min grace), overridden by shop_exceptions for this date
-        const is_late = firstIn && !approvedPerms.has(s.bio_user_id) ? istMinutes(firstIn) > lateThresholdMins : false;
+        // half_day shift starts at 4:00 PM (grace to 4:10 PM); all others use shop threshold
+        const effectiveThreshold = s.shift === "half_day" ? 16 * 60 + 10 : lateThresholdMins;
+        const is_late = firstIn && !approvedPerms.has(s.bio_user_id) ? istMinutes(firstIn) > effectiveThreshold : false;
 
         // Lunch = time between second punch and second-to-last punch (middle window)
         // Spare: 60–70 min (buffer zone), Over: > 70 min (red flag)
@@ -441,7 +442,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
 
       return staff.map((s) => {
         const sh = (s.shift as string) ?? "boys";
-        const shiftEndMin = sh === "girls" ? 20 * 60 + 30 : sh === "helper" ? 18 * 60 : 21 * 60 + 30;
+        const shiftEndMin = sh === "girls" ? 20 * 60 + 30 : sh === "helper" ? 18 * 60 : 21 * 60 + 30; // half_day ends same as boys: 9:30 PM
         const byDate = byUserByDate.get(s.bio_user_id) ?? new Map<string, { id: string; punch_time: string }[]>();
 
         // New joiners: only build/count days from their join date onward — days before
@@ -464,10 +465,13 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
           const firstInMins = firstIn ? istMinutes(firstIn) : 0;
           const hasPermission = approvedPermSet.has(`${s.bio_user_id}:${date}`);
           const shopOpenMins = exceptionMap.get(date) ?? (9 * 60 + 30);
-          // On late-shop days threshold = shop open time; normal days = 9:30 + 20 = 9:50
-          const threshold = exceptionMap.has(date) ? shopOpenMins : shopOpenMins + 20;
+          // half_day shift: late after 4:10 PM, minutes from 4:00 PM
+          // all others: late after shop threshold, minutes from 9:30 AM
+          const isHalfDay = sh === "half_day";
+          const shiftStartMins = isHalfDay ? 16 * 60 : shopOpenMins;
+          const threshold = isHalfDay ? 16 * 60 + 10 : exceptionMap.has(date) ? shopOpenMins : shopOpenMins + 20;
           const is_late     = firstIn && !hasPermission ? firstInMins > threshold : false;
-          const late_minutes = is_late ? firstInMins - shopOpenMins : 0;
+          const late_minutes = is_late ? firstInMins - shiftStartMins : 0;
 
           const lastOutMins = lastOut ? istMinutes(lastOut) : 0;
           const ot_minutes  = lastOut ? Math.max(0, lastOutMins - shiftEndMin) : 0;

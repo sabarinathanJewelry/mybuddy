@@ -68,7 +68,7 @@ function parseTimeMins(t: string): number {
   return h * 60 + (m || 0);
 }
 function shiftEndMins(shift: string): number {
-  return shift === "girls" ? 20 * 60 + 30 : shift === "helper" ? 18 * 60 : 21 * 60 + 30;
+  return shift === "girls" ? 20 * 60 + 30 : shift === "helper" ? 18 * 60 : 21 * 60 + 30; // boys & half_day both end 9:30 PM
 }
 function currentMonth(): string {
   return new Date().toISOString().slice(0, 7);
@@ -623,9 +623,9 @@ function MonthlyTab() {
                       <td className="px-3 py-2.5 font-medium">
                         {r.name}
                         <span className={`ml-1.5 text-[10px] font-semibold px-1 py-0.5 rounded ${
-                          r.shift === "girls" ? "bg-info/10 text-info" : "bg-gold/10 text-gold"
+                          r.shift === "girls" ? "bg-info/10 text-info" : r.shift === "half_day" ? "bg-purple-100 text-purple-600" : "bg-gold/10 text-gold"
                         }`}>
-                          {r.shift === "girls" ? "G" : "B"}
+                          {r.shift === "girls" ? "G" : r.shift === "half_day" ? "H" : "B"}
                         </span>
                         {(() => { const c = conductIssues(r); return c.total > 0 ? (
                           <span className="ml-1.5 text-[10px] font-semibold px-1 py-0.5 rounded bg-err/10 text-err">
@@ -1975,9 +1975,9 @@ function StaffTab() {
                   <td className="px-3 py-2.5 text-ink-dim hidden lg:table-cell">{s.phone || "—"}</td>
                   <td className="px-3 py-2.5 hidden lg:table-cell">
                     <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                      (s.shift ?? "boys") === "girls" ? "bg-info/10 text-info" : (s.shift ?? "boys") === "helper" ? "bg-ok/10 text-ok" : "bg-gold/10 text-gold"
+                      (s.shift ?? "boys") === "girls" ? "bg-info/10 text-info" : (s.shift ?? "boys") === "helper" ? "bg-ok/10 text-ok" : (s.shift ?? "boys") === "half_day" ? "bg-purple-100 text-purple-600" : "bg-gold/10 text-gold"
                     }`}>
-                      {(s.shift ?? "boys") === "girls" ? "Girls" : (s.shift ?? "boys") === "helper" ? "Helper" : "Boys"}
+                      {(s.shift ?? "boys") === "girls" ? "Girls" : (s.shift ?? "boys") === "helper" ? "Helper" : (s.shift ?? "boys") === "half_day" ? "Half Day" : "Boys"}
                     </span>
                   </td>
                   <td className="px-3 py-2.5 text-center">
@@ -2075,11 +2075,12 @@ function StaffTab() {
                         </div>
                         <div>
                           <label className="text-xs text-ink-dim block mb-1">Shift</label>
-                          <select value={form.shift ?? "boys"} onChange={e => setForm(f => ({ ...f, shift: e.target.value as "boys" | "girls" | "helper" }))}
+                          <select value={form.shift ?? "boys"} onChange={e => setForm(f => ({ ...f, shift: e.target.value as "boys" | "girls" | "helper" | "half_day" }))}
                             className={inp + " w-40"}>
                             <option value="boys">Boys (till 9:30 PM)</option>
                             <option value="girls">Girls (till 8:30 PM)</option>
                             <option value="helper">Helper (till 6:00 PM)</option>
+                            <option value="half_day">Half Day (4:00–9:30 PM)</option>
                           </select>
                         </div>
                         <div>

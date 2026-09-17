@@ -1198,7 +1198,7 @@ export default function MyAttendancePage() {
           )}
 
           <p className="text-xs text-ink-dim text-center">
-            Boys: 9:30 AM – 9:30 PM · Girls: 9:30 AM – 8:30 PM · Grace till 9:50 AM
+            Boys: 9:30 AM – 9:30 PM · Girls: 9:30 AM – 8:30 PM · Half Day: 4:00 PM – 9:30 PM · Grace till 9:50 AM / 4:10 PM
           </p>
         </div>
       )}
@@ -1378,7 +1378,7 @@ export default function MyAttendancePage() {
           )}
 
           <p className="text-xs text-ink-dim text-center pb-2">
-            Boys shift: 9:30 AM – 9:30 PM · Girls shift: 9:30 AM – 8:30 PM · Grace till 9:50 AM
+            Boys: 9:30 AM – 9:30 PM · Girls: 9:30 AM – 8:30 PM · Half Day: 4:00 PM – 9:30 PM · Grace till 9:50 AM / 4:10 PM
           </p>
         </div>
       )}
