@@ -8,12 +8,15 @@ import {
 } from "@/modules/rewards/api";
 import { useConductNotes } from "@/modules/staff-conduct/api";
 import { useAuth } from "@/stores/auth";
-import { shortDate } from "@/lib/format";
 
 function currentMonth() { return new Date().toISOString().slice(0, 7); }
 function monthLabel(m: string) {
   const [y, mo] = m.split("-");
   return new Date(Number(y), Number(mo) - 1, 1).toLocaleString("en-IN", { month: "long", year: "numeric" });
+}
+function fmtDateTime(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true });
 }
 
 const MEDALS = ["🥇", "🥈", "🥉"];
@@ -314,7 +317,7 @@ function ConductHistory({
                   <span className="text-xs text-ink-dim">{m.category === "behavior" ? "Behavior" : "Dressing"}</span>
                 </div>
                 <p className="text-xs text-ink-dim truncate">{m.note}</p>
-                <p className="text-[10px] text-ink-dim">{shortDate(m.created_at)}</p>
+                <p className="text-[10px] text-ink-dim">{fmtDateTime(m.created_at)}</p>
               </div>
               {isAdmin && (
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -345,7 +348,7 @@ function ConductHistory({
                 )}
               </div>
               <p className="text-xs text-ink-dim truncate">{n.note}</p>
-              <p className="text-[10px] text-ink-dim">{n.noted_by_name ? `by ${n.noted_by_name} · ` : ""}{shortDate(n.note_date)}</p>
+              <p className="text-[10px] text-ink-dim">{n.noted_by_name ? `by ${n.noted_by_name} · ` : ""}{fmtDateTime(n.created_at)}</p>
             </div>
           </div>
         );
