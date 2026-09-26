@@ -37,6 +37,7 @@ export async function middleware(request: NextRequest) {
 
   // Public routes — no auth required
   if (pathname.startsWith("/apply")) return supabaseResponse;
+  if (pathname === "/links") return supabaseResponse;
   if (pathname.startsWith("/api/whatsapp/")) return supabaseResponse;
   // Signage: TV devices have no Supabase session — these routes do their own
   // auth (device_secret)
