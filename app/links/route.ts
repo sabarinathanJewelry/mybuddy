@@ -29,11 +29,11 @@ body{background:#030d06;font-family:'DM Sans',system-ui,sans-serif;display:flex;
 
 .links{
   position:relative;z-index:2;
-  margin-top:-38vw;
+  margin-top:-67.5vw;
   padding:0 12px 8px;
   display:flex;flex-direction:column;gap:8px;
 }
-@media(min-width:430px){.links{margin-top:-163px;}}
+@media(min-width:430px){.links{margin-top:-290px;}}
 
 .btn{
   display:flex;align-items:center;border-radius:14px;
