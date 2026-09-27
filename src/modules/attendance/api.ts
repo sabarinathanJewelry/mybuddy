@@ -258,6 +258,20 @@ export function useStaff() {
   });
 }
 
+export function useAddStaff() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (s: { bio_user_id: string; name: string; designation?: string; department?: string; phone?: string; shift?: string; join_date?: string | null }) => {
+      const { error } = await supabase().from("staff").insert({ ...s, active: true });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["staff"] });
+      qc.invalidateQueries({ queryKey: ["attendance"] });
+    },
+  });
+}
+
 export function useUpdateStaff() {
   const qc = useQueryClient();
   return useMutation({

@@ -8,7 +8,7 @@ import NotificationBell from "@/components/ui/notification-bell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
 import {
-  useAttendanceByDate, useDeletePunch, useEditPunch, useAddPunch, useStaff, useUpdateStaff, useDeleteStaff, useMarkPresentDay,
+  useAttendanceByDate, useDeletePunch, useEditPunch, useAddPunch, useStaff, useAddStaff, useUpdateStaff, useDeleteStaff, useMarkPresentDay,
   useMonthlyAttendanceSummary, useAllPermissions, useDecidePermission,
   useKioskSequence, useSaveKioskSequence, useKioskSecret, useSaveKioskSecret, useLastSyncTime,
   useAdminKioskSequences, useSaveUserKioskSequence,
@@ -1832,11 +1832,15 @@ function StaffAdvancesSection() {
 function StaffTab() {
   const { data: staff = [], isLoading } = useStaff();
   const update = useUpdateStaff();
+  const add    = useAddStaff();
   const del    = useDeleteStaff();
   const markPresent = useMarkPresentDay();
   const [editing, setEditing]       = useState<string | null>(null);
   const [form, setForm]             = useState<Partial<StaffMember>>({});
   const [showInactive, setShowInactive] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addForm, setAddForm] = useState({ bio_user_id: "", name: "", designation: "", department: "", phone: "", shift: "boys", join_date: "" });
+  const [addErr, setAddErr] = useState("");
   const [loginForm, setLoginForm]   = useState<{ bio_user_id: string; name: string } | null>(null);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPwd, setLoginPwd]     = useState("");
@@ -1848,6 +1852,20 @@ function StaffTab() {
 
   const visible = showInactive ? staff : staff.filter((s) => s.active);
 
+  async function saveAdd() {
+    setAddErr("");
+    if (!addForm.bio_user_id.trim()) { setAddErr("Bio device ID is required."); return; }
+    if (!addForm.name.trim()) { setAddErr("Name is required."); return; }
+    if (staff.some(s => s.bio_user_id === addForm.bio_user_id.trim())) { setAddErr(`Bio ID "${addForm.bio_user_id}" already exists.`); return; }
+    try {
+      await add.mutateAsync({ bio_user_id: addForm.bio_user_id.trim(), name: addForm.name.trim(), designation: addForm.designation.trim() || undefined, department: addForm.department.trim() || undefined, phone: addForm.phone.trim() || undefined, shift: addForm.shift, join_date: addForm.join_date || null });
+      setAddForm({ bio_user_id: "", name: "", designation: "", department: "", phone: "", shift: "boys", join_date: "" });
+      setShowAddForm(false);
+    } catch (e: any) {
+      setAddErr(e?.message ?? "Failed to add staff.");
+    }
+  }
+
   function startEdit(s: StaffMember) {
     setEditing(s.bio_user_id);
     setForm({
@@ -1857,6 +1875,7 @@ function StaffTab() {
       phone: s.phone,
       shift: s.shift ?? "boys",
       join_date: s.join_date,
+      active: s.active,
     });
   }
 
@@ -1936,13 +1955,74 @@ function StaffTab() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <p className="text-sm text-ink-dim">{staff.filter(s => s.active).length} active · {staff.filter(s => !s.active).length} inactive</p>
-        <label className="flex items-center gap-1.5 text-sm text-ink-dim cursor-pointer select-none">
-          <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="accent-gold" />
-          Show inactive
-        </label>
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-1.5 text-sm text-ink-dim cursor-pointer select-none">
+            <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="accent-gold" />
+            Show inactive
+          </label>
+          <button onClick={() => { setShowAddForm(v => !v); setAddErr(""); }}
+            className="text-xs font-medium text-gold border border-gold/40 rounded-lg2 px-3 py-1.5 hover:bg-gold/10">
+            {showAddForm ? "Cancel" : "+ Add Staff"}
+          </button>
+        </div>
       </div>
+
+      {showAddForm && (
+        <div className="bg-white rounded-xl border border-line shadow-soft px-4 py-3 space-y-3">
+          <p className="text-sm font-semibold text-ink">Register New Staff</p>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Bio Device ID *</label>
+              <input value={addForm.bio_user_id} onChange={e => setAddForm(f => ({ ...f, bio_user_id: e.target.value }))}
+                placeholder="e.g. 13" className={inp + " w-28"} />
+            </div>
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Name *</label>
+              <input value={addForm.name} onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="Full name" className={inp + " w-44"} />
+            </div>
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Designation</label>
+              <input value={addForm.designation} onChange={e => setAddForm(f => ({ ...f, designation: e.target.value }))}
+                placeholder="e.g. Sales Staff" className={inp + " w-36"} />
+            </div>
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Department</label>
+              <input value={addForm.department} onChange={e => setAddForm(f => ({ ...f, department: e.target.value }))}
+                placeholder="e.g. Jewellery" className={inp + " w-32"} />
+            </div>
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Phone</label>
+              <input value={addForm.phone} onChange={e => setAddForm(f => ({ ...f, phone: e.target.value }))}
+                placeholder="9XXXXXXXXX" className={inp + " w-32"} />
+            </div>
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Shift</label>
+              <select value={addForm.shift} onChange={e => setAddForm(f => ({ ...f, shift: e.target.value }))}
+                className={inp + " w-40"}>
+                <option value="boys">Boys (till 9:30 PM)</option>
+                <option value="girls">Girls (till 8:30 PM)</option>
+                <option value="helper">Helper (till 6:00 PM)</option>
+                <option value="half_day">Half Day (4:00–9:30 PM)</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-ink-dim block mb-1">Joined</label>
+              <input type="date" value={addForm.join_date} onChange={e => setAddForm(f => ({ ...f, join_date: e.target.value }))}
+                className={inp + " w-40"} />
+            </div>
+            <div className="flex gap-2 items-center">
+              <button onClick={saveAdd} disabled={add.isPending}
+                className="bg-gold text-white text-xs px-3 py-1.5 rounded-lg2 disabled:opacity-40">
+                {add.isPending ? "Saving…" : "Add & Activate"}
+              </button>
+              {addErr && <span className="text-xs text-err">{addErr}</span>}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
         <table className="w-full text-sm">
@@ -2087,6 +2167,13 @@ function StaffTab() {
                           <label className="text-xs text-ink-dim block mb-1">Joined</label>
                           <input type="date" value={form.join_date ?? ""} onChange={e => setForm(f => ({ ...f, join_date: e.target.value || null }))}
                             className={inp + " w-40"} />
+                        </div>
+                        <div>
+                          <label className="text-xs text-ink-dim block mb-1">Status</label>
+                          <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
+                            <input type="checkbox" checked={form.active ?? s.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} className="accent-gold" />
+                            Active
+                          </label>
                         </div>
                         <div className="flex gap-2">
                           <button onClick={() => saveEdit(s.bio_user_id)} disabled={update.isPending}
