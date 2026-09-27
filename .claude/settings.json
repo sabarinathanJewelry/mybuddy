@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Select-String \"error TS\")",
+      "PowerShell(cd \"c:\\\\Users\\\\SABARI STAFF\\\\OneDrive\\\\Documents\\\\GitHub\\\\mybuddy\"; git add src/modules/attendance/api.ts app/\\(app\\)/attendance/page.tsx FEATURES.md; git status)"
+    ]
+  }
+}
