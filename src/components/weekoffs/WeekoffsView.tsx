@@ -212,6 +212,23 @@ export default function WeekoffsView() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["weekoffs", monthKey] }),
   });
 
+  const revokeSingleDate = useMutation({
+    mutationFn: async ({ weekoff, dateToRemove }: { weekoff: Weekoff; dateToRemove: string }) => {
+      const newDates = weekoff.dates.filter((d) => d !== dateToRemove);
+      if (newDates.length === 0) {
+        const { error } = await supabase().from("monthly_weekoffs").delete().eq("id", weekoff.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase().from("monthly_weekoffs").update({
+          dates: newDates,
+          updated_at: new Date().toISOString(),
+        }).eq("id", weekoff.id);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["weekoffs", monthKey] }),
+  });
+
   const canEdit = !myWeekoff
     || myWeekoff.status === "draft"
     || myWeekoff.status === "rejected"
@@ -419,17 +436,29 @@ export default function WeekoffsView() {
                     <span className="font-medium text-ink min-w-[100px]">{profileNames[w.user_id] ?? "Staff"}</span>
                     <div className="flex flex-wrap gap-1 flex-1">
                       {w.dates.sort().map((d) => (
-                        <span key={d} className="bg-gold/10 text-gold px-1.5 py-0.5 rounded-full font-mono">
+                        <span key={d} className="group inline-flex items-center gap-0.5 bg-gold/10 text-gold px-1.5 py-0.5 rounded-full font-mono">
                           {new Date(d + "T00:00:00").getDate()}
+                          {isAdmin && (
+                            <button
+                              onClick={() => {
+                                const label = new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+                                if (confirm(`Revoke ${label} for ${profileNames[w.user_id] ?? "Staff"}? They can re-apply for a new day.`))
+                                  revokeSingleDate.mutate({ weekoff: w, dateToRemove: d });
+                              }}
+                              disabled={revokeSingleDate.isPending}
+                              title="Revoke this day"
+                              className="text-err/60 hover:text-err leading-none opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-30"
+                            >×</button>
+                          )}
                         </span>
                       ))}
                     </div>
                     {isAdmin && (
                       <button
-                        onClick={() => { if (confirm(`Revoke week-off for ${profileNames[w.user_id] ?? "Staff"}?`)) deleteWeekoff.mutate(w.id); }}
+                        onClick={() => { if (confirm(`Revoke ALL week-offs for ${profileNames[w.user_id] ?? "Staff"}?`)) deleteWeekoff.mutate(w.id); }}
                         disabled={deleteWeekoff.isPending}
-                        className="text-[11px] text-err hover:underline disabled:opacity-40 shrink-0">
-                        Revoke
+                        className="text-[11px] text-err/50 hover:text-err hover:underline disabled:opacity-40 shrink-0">
+                        Revoke All
                       </button>
                     )}
                   </div>
