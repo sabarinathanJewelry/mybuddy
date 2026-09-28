@@ -455,6 +455,35 @@ function GroupedExpenseTable({
   );
 }
 
+// ── CSV export ───────────────────────────────────────────────────────────────
+function exportCSV(expenses: any[], categories: any[]) {
+  const catMap = new Map((categories as any[]).map((c: any) => [c.id, c.name]));
+  const rows = [
+    ["Date", "Month", "Category", "Description", "Amount", "Mode", "Notes"],
+    ...(expenses as any[]).map((e: any) => {
+      const [y, m] = (e.exp_date as string).split("-");
+      const month = new Date(Number(y), Number(m) - 1, 1).toLocaleString("en-IN", { month: "short", year: "numeric" });
+      return [
+        e.exp_date,
+        month,
+        catMap.get(e.category_id) ?? e.expense_categories?.name ?? "",
+        `"${(e.description ?? "").replace(/"/g, '""')}"`,
+        e.amount,
+        e.mode,
+        `"${(e.notes ?? "").replace(/"/g, '""')}"`,
+      ];
+    }),
+  ];
+  const csv = rows.map(r => r.join(",")).join("\n");
+  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `expenses-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 export default function ExpensesPage() {
   const t = useT();
@@ -782,6 +811,13 @@ export default function ExpensesPage() {
                   onClick={() => { setFilterFrom(monthStart); setFilterTo(globalDate); setFilterCat(""); setFilterMode(""); }}
                   className="text-xs text-err hover:underline pb-1">
                   Clear filters
+                </button>
+              )}
+              {!allLoading && (allExpenses as any[]).length > 0 && (
+                <button
+                  onClick={() => exportCSV(allExpenses as any[], categories)}
+                  className="text-xs font-medium text-ok border border-ok/40 rounded-lg2 px-3 py-1.5 hover:bg-ok/10 ml-auto">
+                  Export CSV
                 </button>
               )}
             </div>
