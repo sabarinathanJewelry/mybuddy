@@ -455,11 +455,11 @@ function GroupedExpenseTable({
   );
 }
 
-// ── CSV export ───────────────────────────────────────────────────────────────
+// ── Excel export ─────────────────────────────────────────────────────────────
 function exportCSV(expenses: any[], categories: any[]) {
   const catMap = new Map((categories as any[]).map((c: any) => [c.id, c.name]));
   const rows = [
-    ["Date", "Month", "Category", "Description", "Amount", "Mode", "Notes"],
+    ["Date", "Month", "Category", "Description", "Amount (Rs)", "Mode", "Notes"],
     ...(expenses as any[]).map((e: any) => {
       const [y, m] = (e.exp_date as string).split("-");
       const month = new Date(Number(y), Number(m) - 1, 1).toLocaleString("en-IN", { month: "short", year: "numeric" });
@@ -467,19 +467,20 @@ function exportCSV(expenses: any[], categories: any[]) {
         e.exp_date,
         month,
         catMap.get(e.category_id) ?? e.expense_categories?.name ?? "",
-        `"${(e.description ?? "").replace(/"/g, '""')}"`,
+        e.description ?? "",
         e.amount,
         e.mode,
-        `"${(e.notes ?? "").replace(/"/g, '""')}"`,
+        e.notes ?? "",
       ];
     }),
   ];
-  const csv = rows.map(r => r.join(",")).join("\n");
-  const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+  const tbl = `<table><thead><tr>${rows[0].map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.slice(1).map(r => `<tr>${r.map(c => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  const xls = `<html><head><meta charset="UTF-8"></head><body>${tbl}</body></html>`;
+  const blob = new Blob(["﻿" + xls], { type: "application/vnd.ms-excel;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `expenses-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `expenses-${new Date().toISOString().slice(0, 10)}.xls`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -819,7 +820,7 @@ export default function ExpensesPage() {
                 <button
                   onClick={() => exportCSV(allExpenses as any[], categories)}
                   className="text-xs font-medium text-ok border border-ok/40 rounded-lg2 px-3 py-1.5 hover:bg-ok/10">
-                  Export CSV ({(allExpenses as any[]).length} rows)
+                  Export Excel ({(allExpenses as any[]).length} rows)
                 </button>
               </div>
             )}
