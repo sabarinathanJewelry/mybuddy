@@ -813,14 +813,16 @@ export default function ExpensesPage() {
                   Clear filters
                 </button>
               )}
-              {!allLoading && (allExpenses as any[]).length > 0 && (
+            </div>
+            {!allLoading && (allExpenses as any[]).length > 0 && (
+              <div className="flex justify-end mt-3 pt-3 border-t border-line">
                 <button
                   onClick={() => exportCSV(allExpenses as any[], categories)}
-                  className="text-xs font-medium text-ok border border-ok/40 rounded-lg2 px-3 py-1.5 hover:bg-ok/10 ml-auto">
-                  Export CSV
+                  className="text-xs font-medium text-ok border border-ok/40 rounded-lg2 px-3 py-1.5 hover:bg-ok/10">
+                  Export CSV ({(allExpenses as any[]).length} rows)
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Category chart for filtered period */}
