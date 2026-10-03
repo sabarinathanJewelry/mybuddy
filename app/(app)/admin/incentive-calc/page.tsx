@@ -907,9 +907,9 @@ export default function IncentiveCalcPage() {
           e.silverCount += 1;
         }
         if (isSP1) e.sp1Bills.add(row.billNo); else e.sp2Bills.add(row.billNo);
-        if (row.balance > 0 && !e.balanceBills.has(row.billNo)) {
+        if (eff.balance > 0 && !e.balanceBills.has(row.billNo)) {
           e.balanceBills.add(row.billNo);
-          e.totalBalance += row.balance;
+          e.totalBalance += eff.balance;
         }
         if (wasOverridden) e.wastageModified++;
       };
