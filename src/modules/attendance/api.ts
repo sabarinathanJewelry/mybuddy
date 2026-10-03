@@ -39,7 +39,7 @@ export type AttendanceEntry = {
   phone: string;
   card_no: number;
   active: boolean;
-  shift: "boys" | "girls" | "helper" | "half_day";
+  shift: "boys" | "girls" | "helper" | "half_day" | "boys_10" | "girls_945";
   present: boolean;
   punches: string[];
   punchRows: { id: string; punch_time: string }[];
@@ -66,7 +66,7 @@ export type StaffMember = {
   card_no: number;
   active: boolean;
   join_date: string | null;
-  shift: "boys" | "girls" | "helper" | "half_day";
+  shift: "boys" | "girls" | "helper" | "half_day" | "boys_10" | "girls_945";
   monthly_salary: number;
   allowed_leaves: number;
   equalize_ot: boolean;
@@ -93,7 +93,7 @@ export type MonthlyEmployeeSummary = {
   name: string;
   designation: string;
   phone: string;
-  shift: "boys" | "girls" | "helper" | "half_day";
+  shift: "boys" | "girls" | "helper" | "half_day" | "boys_10" | "girls_945";
   monthly_salary: number;
   allowed_leaves: number;
   equalize_ot: boolean;
@@ -183,8 +183,10 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
             : null;
 
         // Late = first punch after threshold IST; approved permission overrides
-        // half_day shift starts at 4:00 PM (grace to 4:10 PM); all others use shop threshold
-        const effectiveThreshold = s.shift === "half_day" ? 16 * 60 + 10 : lateThresholdMins;
+        // half_day: late after 4:10 PM; boys_10/girls_945: fixed 10:15 AM border; others: shop threshold
+        const effectiveThreshold = s.shift === "half_day" ? 16 * 60 + 10
+          : (s.shift === "boys_10" || s.shift === "girls_945") ? 10 * 60 + 15
+          : lateThresholdMins;
         const is_late = firstIn && !approvedPerms.has(s.bio_user_id) ? istMinutes(firstIn) > effectiveThreshold : false;
 
         // Lunch = time between second punch and second-to-last punch (middle window)
@@ -226,7 +228,7 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
           phone: s.phone ?? "",
           card_no: s.card_no ?? 0,
           active: s.active,
-          shift: ((s.shift as string) ?? "boys") as "boys" | "girls" | "helper" | "half_day",
+          shift: ((s.shift as string) ?? "boys") as "boys" | "girls" | "helper" | "half_day" | "boys_10" | "girls_945",
           present,
           punches,
           punchRows,
@@ -308,7 +310,7 @@ export function useDeleteStaff() {
 export function useMarkPresentDay() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ bio_user_id, date, shift, override }: { bio_user_id: string; date: string; shift: "boys" | "girls" | "helper" | "half_day"; override?: boolean }) => {
+    mutationFn: async ({ bio_user_id, date, shift, override }: { bio_user_id: string; date: string; shift: "boys" | "girls" | "helper" | "half_day" | "boys_10" | "girls_945"; override?: boolean }) => {
       const client = supabase();
       const { data: existing, error: checkErr } = await client
         .from("attendance_logs")
@@ -330,7 +332,8 @@ export function useMarkPresentDay() {
         if (delErr) throw delErr;
       }
 
-      const checkOutTime = shift === "girls" ? "20:30:00" : shift === "helper" ? "18:00:00" : "21:30:00";
+      const checkOutTime = shift === "girls" ? "20:30:00" : shift === "helper" ? "18:00:00"
+        : shift === "boys_10" ? "22:00:00" : shift === "girls_945" ? "21:45:00" : "21:30:00";
       const { error } = await client.from("attendance_logs").insert([
         { bio_user_id, punch_time: `${date}T09:30:00+05:30`, punch_status: 0 },
         { bio_user_id, punch_time: `${date}T${checkOutTime}+05:30`, punch_status: 1 },
@@ -456,7 +459,8 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
 
       return staff.map((s) => {
         const sh = (s.shift as string) ?? "boys";
-        const shiftEndMin = sh === "girls" ? 20 * 60 + 30 : sh === "helper" ? 18 * 60 : 21 * 60 + 30; // half_day ends same as boys: 9:30 PM
+        const shiftEndMin = sh === "girls" ? 20 * 60 + 30 : sh === "helper" ? 18 * 60
+          : sh === "boys_10" ? 22 * 60 : sh === "girls_945" ? 21 * 60 + 45 : 21 * 60 + 30;
         const byDate = byUserByDate.get(s.bio_user_id) ?? new Map<string, { id: string; punch_time: string }[]>();
 
         // New joiners: only build/count days from their join date onward — days before
@@ -479,11 +483,11 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
           const firstInMins = firstIn ? istMinutes(firstIn) : 0;
           const hasPermission = approvedPermSet.has(`${s.bio_user_id}:${date}`);
           const shopOpenMins = exceptionMap.get(date) ?? (9 * 60 + 30);
-          // half_day shift: late after 4:10 PM, minutes from 4:00 PM
-          // all others: late after shop threshold, minutes from 9:30 AM
+          // half_day: late after 4:10 PM from 4:00 PM; boys_10/girls_945: fixed 10:15 border; others: shop threshold
           const isHalfDay = sh === "half_day";
-          const shiftStartMins = isHalfDay ? 16 * 60 : shopOpenMins;
-          const threshold = isHalfDay ? 16 * 60 + 10 : exceptionMap.has(date) ? shopOpenMins : shopOpenMins + 20;
+          const isFixed10 = sh === "boys_10" || sh === "girls_945";
+          const shiftStartMins = isHalfDay ? 16 * 60 : isFixed10 ? (sh === "boys_10" ? 10 * 60 : 9 * 60 + 45) : shopOpenMins;
+          const threshold = isHalfDay ? 16 * 60 + 10 : isFixed10 ? 10 * 60 + 15 : exceptionMap.has(date) ? shopOpenMins : shopOpenMins + 20;
           const is_late     = firstIn && !hasPermission ? firstInMins > threshold : false;
           const late_minutes = is_late ? firstInMins - shiftStartMins : 0;
 
@@ -540,7 +544,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
           name:              s.name as string,
           designation:       (s.designation as string) ?? "",
           phone:             (s.phone as string) ?? "",
-          shift:             ((s.shift as string) ?? "boys") as "boys" | "girls",
+          shift:             ((s.shift as string) ?? "boys") as "boys" | "girls" | "helper" | "half_day" | "boys_10" | "girls_945",
           monthly_salary:    (s.monthly_salary as number) ?? 0,
           equalize_ot:       (s.equalize_ot as boolean) ?? false,
           join_date:         joinDate,
