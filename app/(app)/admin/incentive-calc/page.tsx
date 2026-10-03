@@ -625,6 +625,8 @@ type SortKey = "score" | "avgPct" | "goldWt" | "silverWt";
 interface LeaderboardEntry {
   name: string; avgPct: number; goldWt: number; silverWt: number;
   score: number; goldCount: number; silverCount: number;
+  sp1Count: number; sp2Count: number;
+  totalBalance: number; wastageModified: number;
 }
 function SalesLeaderboard({ data }: { data: LeaderboardEntry[] }) {
   const [sort, setSort] = useState<SortKey>("score");
@@ -662,6 +664,10 @@ function SalesLeaderboard({ data }: { data: LeaderboardEntry[] }) {
               <th className="pb-1.5 text-right">Gold (g)</th>
               <th className="pb-1.5 text-right">Silver (g)</th>
               <th className="pb-1.5 text-right">Bills</th>
+              <th className="pb-1.5 text-right">SP1</th>
+              <th className="pb-1.5 text-right">SP2</th>
+              <th className="pb-1.5 text-right">Balance Due</th>
+              <th className="pb-1.5 text-right" title="Bills where VA% was manually overridden">VA Mod</th>
             </tr>
           </thead>
           <tbody>
@@ -674,12 +680,24 @@ function SalesLeaderboard({ data }: { data: LeaderboardEntry[] }) {
                 <td className={clsx("py-1.5 text-right font-mono", sort === "goldWt" && "text-gold font-semibold")}>{r.goldWt.toFixed(3)}</td>
                 <td className={clsx("py-1.5 text-right font-mono", sort === "silverWt" && "text-gold font-semibold")}>{r.silverWt.toFixed(3)}</td>
                 <td className="py-1.5 text-right text-ink-dim">{r.goldCount + r.silverCount}</td>
+                <td className="py-1.5 text-right text-ink-dim">{r.sp1Count}</td>
+                <td className="py-1.5 text-right text-ink-dim">{r.sp2Count}</td>
+                <td className="py-1.5 text-right font-mono">
+                  {r.totalBalance > 0
+                    ? <span className="text-err">{inr(r.totalBalance)}</span>
+                    : <span className="text-ok text-[10px]">—</span>}
+                </td>
+                <td className="py-1.5 text-right font-mono">
+                  {r.wastageModified > 0
+                    ? <span className="text-warn font-semibold">{r.wastageModified}</span>
+                    : <span className="text-ink-dim">—</span>}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <p className="text-[10px] text-ink-dim">Score = avg making% × gold grams. Higher = better quality on higher volume.</p>
+      <p className="text-[10px] text-ink-dim">Score = avg making% × gold grams. Higher = better quality on higher volume. SP1/SP2 = unique bills as primary/secondary salesperson. VA Mod = bills where wastage% was manually overridden.</p>
     </div>
   );
 }
@@ -858,38 +876,60 @@ export default function IncentiveCalcPage() {
 
   // Sales leaderboard — gold weight, silver weight, avg wastage%, composite score per staff
   const salesLeaderboard = useMemo(() => {
-    const map = new Map<string, { wtdSum: number; goldWt: number; silverWt: number; goldCount: number; silverCount: number }>();
-    const addStaff = (name: string, wastage: number, wt: number, isGold: boolean) => {
-      if (!name) return;
-      const e = map.get(name) ?? { wtdSum: 0, goldWt: 0, silverWt: 0, goldCount: 0, silverCount: 0 };
-      if (isGold) {
-        if (wastage > 0) e.wtdSum += wastage * wt;
-        e.goldWt    += wt;
-        e.goldCount += 1;
-      } else {
-        e.silverWt    += wt;
-        e.silverCount += 1;
-      }
-      map.set(name, e);
+    type Entry = {
+      wtdSum: number; goldWt: number; silverWt: number; goldCount: number; silverCount: number;
+      sp1Bills: Set<string>; sp2Bills: Set<string>;
+      balanceBills: Set<string>; totalBalance: number; wastageModified: number;
+    };
+    const map = new Map<string, Entry>();
+    const getEntry = (name: string): Entry => {
+      if (!map.has(name)) map.set(name, {
+        wtdSum: 0, goldWt: 0, silverWt: 0, goldCount: 0, silverCount: 0,
+        sp1Bills: new Set(), sp2Bills: new Set(),
+        balanceBills: new Set(), totalBalance: 0, wastageModified: 0,
+      });
+      return map.get(name)!;
     };
     for (const { row, eff } of computed) {
       const pfx = row.billNo.split("/").pop()?.[0]?.toUpperCase();
       const isGold   = pfx === "G";
       const isSilver = pfx === "S";
       if (!isGold && !isSilver) continue;
-      if (row.sp1) addStaff(row.sp1, eff.wastage, row.netWt, isGold);
-      if (row.sp2) addStaff(row.sp2, eff.wastage, row.netWt, isGold);
+      const wasOverridden = overrides[row.idx]?.wastage !== undefined;
+      const processStaff = (name: string, isSP1: boolean) => {
+        const e = getEntry(name);
+        if (isGold) {
+          if (eff.wastage > 0) e.wtdSum += eff.wastage * row.netWt;
+          e.goldWt    += row.netWt;
+          e.goldCount += 1;
+        } else {
+          e.silverWt    += row.netWt;
+          e.silverCount += 1;
+        }
+        if (isSP1) e.sp1Bills.add(row.billNo); else e.sp2Bills.add(row.billNo);
+        if (row.balance > 0 && !e.balanceBills.has(row.billNo)) {
+          e.balanceBills.add(row.billNo);
+          e.totalBalance += row.balance;
+        }
+        if (wasOverridden) e.wastageModified++;
+      };
+      if (row.sp1) processStaff(row.sp1, true);
+      if (row.sp2) processStaff(row.sp2, false);
     }
     return [...map.entries()].map(([name, d]) => ({
       name,
       avgPct:    d.goldWt > 0 ? parseFloat((d.wtdSum / d.goldWt).toFixed(2)) : 0,
       goldWt:    parseFloat(d.goldWt.toFixed(3)),
       silverWt:  parseFloat(d.silverWt.toFixed(3)),
-      score:     parseFloat(((d.wtdSum / (d.goldWt || 1)) * d.goldWt).toFixed(1)), // avg% × goldWt
+      score:     parseFloat(((d.wtdSum / (d.goldWt || 1)) * d.goldWt).toFixed(1)),
       goldCount: d.goldCount,
       silverCount: d.silverCount,
+      sp1Count:  d.sp1Bills.size,
+      sp2Count:  d.sp2Bills.size,
+      totalBalance:    parseFloat(d.totalBalance.toFixed(2)),
+      wastageModified: d.wastageModified,
     }));
-  }, [computed]);
+  }, [computed, overrides]);
 
   const unmappedProducts = useMemo(() =>
     [...new Set((rows ?? []).filter(r => {
