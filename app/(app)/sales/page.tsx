@@ -28,34 +28,23 @@ export default function SalesPage() {
   let totalGoldGross = 0, totalGoldNet = 0;
   let totalSilverGross = 0, totalSilverNet = 0;
   let goldWtdVa = 0, goldWtdVaWt = 0;
+  let silverWtdVa = 0, silverWtdVaWt = 0;
   for (const item of summaryItems) {
-    const gross = Number(item.gross_wt || 0);
-    const net   = Number(item.net_wt   || 0);
+    const gross  = Number(item.gross_wt || 0);
+    const net    = Number(item.net_wt   || 0);
+    const vaPct  = Number(item.va_pct   || 0);
     if (GOLD_METALS.has(item.metal)) {
       totalGoldGross += gross;
       totalGoldNet   += net;
-      const rate     = Number(item.rate       || 0);
-      const lineTotal = Number(item.line_total || 0);
-      const gstPct   = Number(item.gst_pct    || 0);
-      const making   = Number(item.making_amt || 0);
-      const stone    = Number(item.stone_amt  || 0) + Number(item.diamond_amt || 0);
-      const purity   = Number(item.purity_pct || 0);
-      if (gross > 0 && rate > 0 && lineTotal > 0) {
-        const excGst   = gstPct > 0 ? lineTotal * 100 / (100 + gstPct) : lineTotal;
-        const metalRev = excGst - making - stone;
-        if (metalRev > 0) {
-          const va = (metalRev / (gross * rate) - 1) * 100;
-          goldWtdVa   += (purity + va) * gross;
-          goldWtdVaWt += gross;
-        }
-      }
+      if (gross > 0 && vaPct > 0) { goldWtdVa += vaPct * gross; goldWtdVaWt += gross; }
     } else if (SILVER_METALS.has(item.metal)) {
       totalSilverGross += gross;
       totalSilverNet   += net;
+      if (gross > 0 && vaPct > 0) { silverWtdVa += vaPct * gross; silverWtdVaWt += gross; }
     }
   }
-  const goldAvgTouch = goldWtdVaWt > 0 ? goldWtdVa / goldWtdVaWt : 0;
-  const goldAvgVa    = goldAvgTouch > 0 ? goldAvgTouch - 91.67 : 0;
+  const goldAvgVa   = goldWtdVaWt   > 0 ? goldWtdVa   / goldWtdVaWt   : 0;
+  const silverAvgVa = silverWtdVaWt > 0 ? silverWtdVa / silverWtdVaWt : 0;
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">
@@ -131,12 +120,12 @@ export default function SalesPage() {
           {totalGoldGross > 0 && (
             <span className="bg-gold/10 text-gold text-xs font-medium px-2 py-0.5 rounded-full">
               Gold {grams(totalGoldGross)}
-              {goldAvgTouch > 0 && ` · ${goldAvgTouch.toFixed(2)}% touch (VA ${goldAvgVa >= 0 ? "+" : ""}${goldAvgVa.toFixed(2)}%)`}
+              {goldAvgVa > 0 && " · Avg VA " + goldAvgVa.toFixed(2) + "%"}
             </span>
           )}
           {totalSilverGross > 0 && (
             <span className="bg-info/10 text-info text-xs font-medium px-2 py-0.5 rounded-full">
-              Silver {grams(totalSilverGross)}
+              Silver {grams(totalSilverGross)}{silverAvgVa > 0 && " · Avg VA " + silverAvgVa.toFixed(2) + "%"}
             </span>
           )}
         </div>
