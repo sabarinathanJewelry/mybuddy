@@ -184,7 +184,7 @@ export function useAttendanceByDate(date: string, activeOnly = true) {
 
         // Late = first punch after threshold IST; approved permission overrides
         // half_day: late after 4:10 PM; boys_10/girls_945: fixed 10:15 AM border; others: shop threshold
-        const effectiveThreshold = s.shift === "half_day" ? 16 * 60 + 10
+        const effectiveThreshold = s.shift === "half_day" ? 16 * 60 + 20
           : (s.shift === "boys_10" || s.shift === "girls_945") ? 10 * 60 + 15
           : lateThresholdMins;
         const is_late = firstIn && !approvedPerms.has(s.bio_user_id) ? istMinutes(firstIn) > effectiveThreshold : false;
@@ -487,7 +487,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
           const isHalfDay = sh === "half_day";
           const isFixed10 = sh === "boys_10" || sh === "girls_945";
           const shiftStartMins = isHalfDay ? 16 * 60 : isFixed10 ? (sh === "boys_10" ? 10 * 60 : 9 * 60 + 45) : shopOpenMins;
-          const threshold = isHalfDay ? 16 * 60 + 10 : isFixed10 ? 10 * 60 + 15 : exceptionMap.has(date) ? shopOpenMins : shopOpenMins + 20;
+          const threshold = isHalfDay ? 16 * 60 + 20 : isFixed10 ? 10 * 60 + 15 : exceptionMap.has(date) ? shopOpenMins : shopOpenMins + 20;
           const is_late     = firstIn && !hasPermission ? firstInMins > threshold : false;
           const late_minutes = is_late ? firstInMins - shiftStartMins : 0;
 
