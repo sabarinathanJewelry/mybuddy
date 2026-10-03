@@ -486,7 +486,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
           // half_day: late after 4:10 PM from 4:00 PM; boys_10/girls_945: fixed 10:15 border; others: shop threshold
           const isHalfDay = sh === "half_day";
           const isFixed10 = sh === "boys_10" || sh === "girls_945";
-          const shiftStartMins = isHalfDay ? 16 * 60 : isFixed10 ? (sh === "boys_10" ? 10 * 60 : 9 * 60 + 45) : shopOpenMins;
+          const shiftStartMins = isHalfDay ? 16 * 60 : isFixed10 ? (sh === "boys_10" ? 10 * 60 + 15 : 9 * 60 + 45) : shopOpenMins;
           const threshold = isHalfDay ? 16 * 60 + 20 : isFixed10 ? 10 * 60 + 15 : exceptionMap.has(date) ? shopOpenMins : shopOpenMins + 20;
           const is_late     = firstIn && !hasPermission ? firstInMins > threshold : false;
           const late_minutes = is_late ? firstInMins - shiftStartMins : 0;
