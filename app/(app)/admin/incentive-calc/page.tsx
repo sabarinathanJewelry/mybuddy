@@ -895,7 +895,7 @@ export default function IncentiveCalcPage() {
       const isGold   = pfx === "G";
       const isSilver = pfx === "S";
       if (!isGold && !isSilver) continue;
-      const wasOverridden = overrides[row.idx]?.wastage !== undefined;
+      const wasOverridden = overrides[row.idx]?.wastage !== undefined || overrides[row.idx]?.minWastage !== undefined;
       const processStaff = (name: string, isSP1: boolean) => {
         const e = getEntry(name);
         if (isGold) {
