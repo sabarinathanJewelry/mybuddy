@@ -776,6 +776,99 @@ export default function PayrollPage() {
     if (win) setTimeout(() => URL.revokeObjectURL(url), 10000);
   }
 
+  function printAllSalaries() {
+    const rows = entries.map(e => {
+      const d = derive(e);
+      const paidLabel = e.paid ? (e.payMode === "bank" ? "Bank" : "Cash") : "";
+      return `
+        <tr>
+          <td class="name">${e.name}</td>
+          <td class="num">${inrFmt(e.basicSalary)}<br><span class="ta">அடிப்படை சம்பளம்</span></td>
+          <td class="num ${e.deduction > 0 ? "ded" : ""}">${e.deduction > 0 ? "−" + inrFmt(e.deduction) : "—"}<br><span class="ta">விடுப்பு கழிவு</span></td>
+          <td class="num ${(e.fine ?? 0) > 0 ? "ded" : ""}">${(e.fine ?? 0) > 0 ? "−" + inrFmt(e.fine ?? 0) : "—"}<br><span class="ta">அபராதம்</span></td>
+          <td class="num ${e.advance > 0 ? "ded" : ""}">${e.advance > 0 ? "−" + inrFmt(e.advance) : "—"}<br><span class="ta">முன்பணம்</span></td>
+          <td class="num ${e.incentive > 0 ? "add" : ""}">${e.incentive > 0 ? "+" + inrFmt(e.incentive) : "—"}<br><span class="ta">ஊக்கத்தொகை</span></td>
+          <td class="num ${e.arrear > 0 ? "add" : ""}">${e.arrear > 0 ? "+" + inrFmt(e.arrear) : "—"}<br><span class="ta">நிலுவை</span></td>
+          <td class="num net ${d.salary < 0 ? "ded" : ""}">${inrFmt(d.salary)}<br><span class="ta">நிகர சம்பளம்</span></td>
+          <td class="status">${paidLabel ? `<span class="paid">${paidLabel}</span>` : "<span class=\"unpaid\">—</span>"}</td>
+          <td class="sign"></td>
+        </tr>`;
+    }).join("");
+
+    const tot = totals;
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>சம்பள அறிக்கை — ${period}</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,'Noto Sans Tamil',sans-serif;font-size:11px;color:#1a1a1a;padding:16px}
+h1{text-align:center;font-size:16px;font-weight:bold;color:#b8860b;margin-bottom:2px}
+h2{text-align:center;font-size:11px;color:#555;margin-bottom:14px}
+table{width:100%;border-collapse:collapse;margin-top:8px}
+th{background:#b8860b;color:#fff;padding:6px 8px;font-size:10px;text-align:right;white-space:nowrap}
+th:first-child,th:last-child,th.sign{text-align:left}
+td{padding:5px 8px;border-bottom:1px solid #ddd;vertical-align:top;line-height:1.4}
+td.name{font-weight:600;font-size:11px}
+td.num{text-align:right;font-size:11px;white-space:nowrap}
+td.net{font-weight:700;font-size:12px}
+td.sign{width:90px;border-left:1px dashed #ccc}
+td.status{text-align:center}
+.ta{font-size:9px;color:#888;font-family:'Noto Sans Tamil',sans-serif}
+.ded{color:#c0392b}
+.add{color:#27ae60}
+.paid{background:#e8f5e9;color:#27ae60;border-radius:3px;padding:1px 5px;font-size:9px;font-weight:600}
+.unpaid{color:#ccc;font-size:9px}
+tr:nth-child(even){background:#fafafa}
+.tot td{background:#fffbe6;font-weight:700;border-top:2px solid #b8860b;font-size:11px}
+.footer{margin-top:20px;font-size:9px;color:#aaa;text-align:center}
+@media print{body{padding:8px}button{display:none}@page{margin:12mm;size:A4 landscape}}
+</style></head><body>
+<h1>சபரிநாதன் நகைகள் — Sabarinathan Jewellery</h1>
+<h2>சம்பள அறிக்கை / Salary Statement — ${period}</h2>
+<table>
+<thead>
+<tr>
+  <th style="text-align:left">பெயர் / Name</th>
+  <th>அடிப்படை சம்பளம்<br>Basic Salary</th>
+  <th>விடுப்பு கழிவு<br>Leave Ded.</th>
+  <th>அபராதம்<br>Fine</th>
+  <th>முன்பணம்<br>Advance</th>
+  <th>ஊக்கத்தொகை<br>Incentive</th>
+  <th>நிலுவை<br>Arrear</th>
+  <th>நிகர சம்பளம்<br>Net Salary</th>
+  <th>நிலை / Status</th>
+  <th class="sign">கையொப்பம் / Sign</th>
+</tr>
+</thead>
+<tbody>
+${rows}
+<tr class="tot">
+  <td>மொத்தம் / Total</td>
+  <td class="num">${inrFmt(tot.basic)}</td>
+  <td class="num ded">${tot.deduction > 0 ? "−" + inrFmt(tot.deduction) : "—"}</td>
+  <td class="num ded">${tot.fine > 0 ? "−" + inrFmt(tot.fine) : "—"}</td>
+  <td class="num ded">${tot.advance > 0 ? "−" + inrFmt(tot.advance) : "—"}</td>
+  <td class="num add">${tot.incentive > 0 ? "+" + inrFmt(tot.incentive) : "—"}</td>
+  <td class="num add">${tot.arrear > 0 ? "+" + inrFmt(tot.arrear) : "—"}</td>
+  <td class="num net">${inrFmt(tot.salary)}</td>
+  <td colspan="2">${tot.paidCount} பணம் செலுத்தப்பட்டது / paid</td>
+</tr>
+</tbody>
+</table>
+<p class="footer">
+  அச்சிடப்பட்ட நாள் / Printed: ${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"})} &nbsp;|&nbsp;
+  ${entries.length} ஊழியர்கள் / staff &nbsp;|&nbsp;
+  மொத்த சம்பளம் / Total payable: ${inrFmt(tot.salary)}
+</p>
+<script>window.onload=()=>window.print();</script>
+</body></html>`;
+
+    const blob = new Blob([html], { type: "text/html" });
+    const url  = URL.createObjectURL(blob);
+    const win  = window.open(url, "_blank");
+    if (win) setTimeout(() => URL.revokeObjectURL(url), 15000);
+  }
+
   const nameToBioId = useMemo(() => {
     const m = new Map<string, string>();
     for (const r of attSummary) m.set(r.name.toUpperCase(), r.bio_user_id);
@@ -829,6 +922,12 @@ export default function PayrollPage() {
             </span>
           )}
           <input value={period} onChange={e => setPeriod(e.target.value)} placeholder="Period (e.g. May 2026)" className={`${inp} w-36`} />
+          {entries.length > 0 && (
+            <button onClick={printAllSalaries}
+              className="text-sm px-4 py-1.5 rounded-lg2 font-medium border border-line text-ink-dim hover:border-gold hover:text-gold">
+              Print All
+            </button>
+          )}
           <button disabled={entries.length === 0 || saveStatus === "saving" || !period.trim()}
             onClick={() => saveSheet.mutate()}
             className={clsx("text-sm px-4 py-1.5 rounded-lg2 font-medium disabled:opacity-40", {
