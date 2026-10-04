@@ -776,6 +776,67 @@ export default function PayrollPage() {
     if (win) setTimeout(() => URL.revokeObjectURL(url), 10000);
   }
 
+  function printSalarySummary() {
+    const rows = entries.map((e, i) => {
+      const d = derive(e);
+      return `<tr>
+        <td class="sno">${i + 1}</td>
+        <td class="name">${e.name}</td>
+        <td class="amt">${inrFmt(d.salary)}</td>
+      </tr>`;
+    }).join("");
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Salary Summary — ${period}</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,'Noto Sans Tamil',sans-serif;max-width:400px;margin:32px auto;color:#1a1a1a;padding:16px}
+h1{text-align:center;font-size:17px;font-weight:bold;color:#b8860b;margin-bottom:2px}
+h2{text-align:center;font-size:12px;color:#555;margin-bottom:4px}
+.period{text-align:center;font-size:13px;font-weight:600;color:#1a1a1a;margin-bottom:18px}
+table{width:100%;border-collapse:collapse}
+th{background:#b8860b;color:#fff;padding:7px 12px;font-size:11px;text-align:left;font-family:Arial,'Noto Sans Tamil',sans-serif}
+th.amt{text-align:right}
+td{padding:7px 12px;border-bottom:1px solid #eee;font-size:13px}
+td.sno{color:#aaa;font-size:11px;width:28px}
+td.name{font-weight:600}
+td.amt{text-align:right;font-family:monospace;font-size:13px;font-weight:600}
+tr:nth-child(even){background:#fafafa}
+.tot td{border-top:2px solid #b8860b;font-weight:700;font-size:14px;background:#fffbe6}
+.tot .amt{color:#b8860b}
+.footer{margin-top:16px;font-size:10px;color:#aaa;text-align:center;font-family:'Noto Sans Tamil',sans-serif}
+@media print{body{margin:16px}@page{margin:12mm;size:A5}}
+</style></head><body>
+<h1>சபரிநாதன் நகைகள்</h1>
+<h2>Sabarinathan Jewellery</h2>
+<p class="period">சம்பள சுருக்கம் / Salary Summary<br>${period}</p>
+<table>
+<thead>
+<tr>
+  <th>#</th>
+  <th>பெயர் / Name</th>
+  <th class="amt">சம்பளம் / Salary</th>
+</tr>
+</thead>
+<tbody>
+${rows}
+<tr class="tot">
+  <td colspan="2">மொத்தம் / Total (${entries.length} staff)</td>
+  <td class="amt">${inrFmt(totals.salary)}</td>
+</tr>
+</tbody>
+</table>
+<p class="footer">${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"long",year:"numeric"})}</p>
+<script>window.onload=()=>window.print();</script>
+</body></html>`;
+
+    const blob = new Blob([html], { type: "text/html" });
+    const url  = URL.createObjectURL(blob);
+    const win  = window.open(url, "_blank");
+    if (win) setTimeout(() => URL.revokeObjectURL(url), 15000);
+  }
+
   function printAllSalaries() {
     const rows = entries.map(e => {
       const d = derive(e);
@@ -923,10 +984,16 @@ ${rows}
           )}
           <input value={period} onChange={e => setPeriod(e.target.value)} placeholder="Period (e.g. May 2026)" className={`${inp} w-36`} />
           {entries.length > 0 && (
-            <button onClick={printAllSalaries}
-              className="text-sm px-4 py-1.5 rounded-lg2 font-medium border border-line text-ink-dim hover:border-gold hover:text-gold">
-              Print All
-            </button>
+            <>
+              <button onClick={printSalarySummary}
+                className="text-sm px-4 py-1.5 rounded-lg2 font-medium border border-line text-ink-dim hover:border-gold hover:text-gold">
+                Summary
+              </button>
+              <button onClick={printAllSalaries}
+                className="text-sm px-4 py-1.5 rounded-lg2 font-medium border border-line text-ink-dim hover:border-gold hover:text-gold">
+                Print All
+              </button>
+            </>
           )}
           <button disabled={entries.length === 0 || saveStatus === "saving" || !period.trim()}
             onClick={() => saveSheet.mutate()}
