@@ -414,6 +414,7 @@ export default function PayrollPage() {
     return d.toLocaleString("en-IN", { month: "long", year: "numeric" });
   });
   const [entries, setEntries]           = useState<PayEntry[]>([]);
+  const [tamilNames, setTamilNames]     = useState<Record<string, string>>({});
   const [savedSheetId, setSavedSheetId] = useState<string | null>(null);
   const [saveStatus, setSaveStatus]     = useState<"idle"|"saving"|"saved">("idle");
 
@@ -698,7 +699,7 @@ export default function PayrollPage() {
   const saveSheet = useMutation({
     mutationFn: async () => {
       setSaveStatus("saving");
-      const payload = { period, entries, applied_inc_sheet_ids: appliedIncSheetIds, updated_at: new Date().toISOString() };
+      const payload = { period, entries, tamil_names: tamilNames, applied_inc_sheet_ids: appliedIncSheetIds, updated_at: new Date().toISOString() };
       const client = supabase();
       if (savedSheetId) {
         const { error } = await client.from("payroll_sheets").update(payload).eq("id", savedSheetId);
@@ -729,7 +730,7 @@ export default function PayrollPage() {
     const { data } = await supabase().from("payroll_sheets").select("*").eq("id", id).single();
     if (!data) return;
     const d = data as any;
-    setPeriod(d.period); setEntries(d.entries ?? []); setSavedSheetId(id); setSaveStatus("idle");
+    setPeriod(d.period); setEntries(d.entries ?? []); setTamilNames(d.tamil_names ?? {}); setSavedSheetId(id); setSaveStatus("idle");
     setAppliedIncSheetIds(d.applied_inc_sheet_ids ?? []);
   }
 
@@ -779,9 +780,10 @@ export default function PayrollPage() {
   function printSalarySummary() {
     const rows = entries.map((e, i) => {
       const d = derive(e);
+      const ta = tamilNames[e.name];
       return `<tr>
         <td class="sno">${i + 1}</td>
-        <td class="name">${e.name}</td>
+        <td class="name">${e.name}${ta ? `<br><span class="ta">${ta}</span>` : ""}</td>
         <td class="amt">${inrFmt(d.salary)}</td>
       </tr>`;
     }).join("");
@@ -801,6 +803,7 @@ th.amt{text-align:right}
 td{padding:7px 12px;border-bottom:1px solid #eee;font-size:13px}
 td.sno{color:#aaa;font-size:11px;width:28px}
 td.name{font-weight:600}
+td.name .ta{display:block;font-size:12px;font-weight:400;color:#555;font-family:'Noto Sans Tamil',sans-serif;margin-top:1px}
 td.amt{text-align:right;font-family:monospace;font-size:13px;font-weight:600}
 tr:nth-child(even){background:#fafafa}
 .tot td{border-top:2px solid #b8860b;font-weight:700;font-size:14px;background:#fffbe6}
@@ -1372,6 +1375,13 @@ ${rows}
                       <input value={e.name} onChange={ev => updateField(e.id, { name: ev.target.value.toUpperCase() })}
                         readOnly={e.paid}
                         className={clsx("border border-line rounded px-2 py-1 text-xs uppercase w-full focus:outline-none focus:ring-1 focus:ring-gold font-medium", e.paid && "bg-transparent cursor-default pointer-events-none")} />
+                      <input
+                        value={tamilNames[e.name] ?? ""}
+                        onChange={ev => setTamilNames(prev => ({ ...prev, [e.name]: ev.target.value }))}
+                        placeholder="தமிழ் பெயர்"
+                        className="mt-0.5 border border-line/60 rounded px-2 py-0.5 text-[11px] w-full focus:outline-none focus:ring-1 focus:ring-gold text-ink-dim"
+                        style={{ fontFamily: "'Noto Sans Tamil', sans-serif" }}
+                      />
                       {(() => {
                         const { bigPerms, weekendLeaves } = staffAlerts(e);
                         if (!bigPerms.length && !weekendLeaves.length) return null;
