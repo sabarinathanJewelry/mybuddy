@@ -18,6 +18,20 @@ function monthRange(year: number, month: number) {
   return { from, to };
 }
 
+// FY quarters: Q1=Apr–Jun, Q2=Jul–Sep, Q3=Oct–Dec, Q4=Jan–Mar (next calendar year)
+function quarterRange(fyYear: number, q: 1 | 2 | 3 | 4) {
+  if (q === 1) return { from: `${fyYear}-04-01`,     to: `${fyYear}-06-30` };
+  if (q === 2) return { from: `${fyYear}-07-01`,     to: `${fyYear}-09-30` };
+  if (q === 3) return { from: `${fyYear}-10-01`,     to: `${fyYear}-12-31` };
+  return       { from: `${fyYear + 1}-01-01`, to: `${fyYear + 1}-03-31` };
+}
+
+// FY halves: H1=Apr–Sep, H2=Oct–Mar (spans two calendar years)
+function halfRange(fyYear: number, h: 1 | 2) {
+  if (h === 1) return { from: `${fyYear}-04-01`,     to: `${fyYear}-09-30` };
+  return       { from: `${fyYear}-10-01`, to: `${fyYear + 1}-03-31` };
+}
+
 const GOLD_METALS = ["gold_22k","gold_18k","gold_24k"];
 const SILVER_METALS = ["silver","silver_pure"];
 
@@ -28,14 +42,23 @@ function usePnlItems(from: string, to: string) {
     queryKey: ["pnl-items", from, to],
     enabled: !!from && !!to,
     queryFn: async () => {
-      const { data, error } = await supabase()
-        .from("sale_items")
-        .select("metal, gross_wt, net_wt, pure_wt, purity_pct, rate, va_pct, making_amt, stone_amt, diamond_amt, gst_pct, line_total, is_suspense, supplier_va_pct, supplier_confirmed, sales!inner(id, order_id, bill_date, status, bill_no)")
-        .gte("sales.bill_date", from)
-        .lte("sales.bill_date", to)
-        .eq("sales.status", "confirmed");
-      if (error) throw error;
-      return (data ?? []) as any[];
+      const all: any[] = [];
+      let start = 0;
+      const PAGE = 1000;
+      while (true) {
+        const { data, error } = await supabase()
+          .from("sale_items")
+          .select("metal, gross_wt, net_wt, pure_wt, purity_pct, rate, va_pct, making_amt, stone_amt, diamond_amt, gst_pct, line_total, is_suspense, supplier_va_pct, supplier_confirmed, sales!inner(id, order_id, bill_date, status, bill_no)")
+          .gte("sales.bill_date", from)
+          .lte("sales.bill_date", to)
+          .eq("sales.status", "confirmed")
+          .range(start, start + PAGE - 1);
+        if (error) throw error;
+        all.push(...(data ?? []));
+        if (!data || data.length < PAGE) break;
+        start += PAGE;
+      }
+      return all;
     },
   });
 }
@@ -46,15 +69,24 @@ function usePnlPurchases(from: string, to: string) {
     queryKey: ["pnl-purchases", from, to],
     enabled: !!from && !!to,
     queryFn: async () => {
-      const { data, error } = await supabase()
-        .from("supplier_purchases")
-        .select("metal, gross_wt, pure_wt, rate, amount")
-        .gte("purchase_date", from)
-        .lte("purchase_date", to)
-        .eq("is_return", false)
-        .eq("is_adjustment", false);
-      if (error) throw error;
-      return (data ?? []) as any[];
+      const all: any[] = [];
+      let start = 0;
+      const PAGE = 1000;
+      while (true) {
+        const { data, error } = await supabase()
+          .from("supplier_purchases")
+          .select("metal, gross_wt, pure_wt, rate, amount")
+          .gte("purchase_date", from)
+          .lte("purchase_date", to)
+          .eq("is_return", false)
+          .eq("is_adjustment", false)
+          .range(start, start + PAGE - 1);
+        if (error) throw error;
+        all.push(...(data ?? []));
+        if (!data || data.length < PAGE) break;
+        start += PAGE;
+      }
+      return all;
     },
   });
 }
@@ -1346,6 +1378,27 @@ export default function ReportsPage() {
                 {m}
               </button>
             ))}
+          </div>
+          {/* Quarter / Half-year pills */}
+          <div className="flex gap-1 flex-wrap">
+            {([
+              { label: "Q1", title: "Q1 Apr–Jun", r: quarterRange(year, 1) },
+              { label: "Q2", title: "Q2 Jul–Sep", r: quarterRange(year, 2) },
+              { label: "Q3", title: "Q3 Oct–Dec", r: quarterRange(year, 3) },
+              { label: "Q4", title: "Q4 Jan–Mar", r: quarterRange(year, 4) },
+              { label: "H1", title: "H1 Apr–Sep", r: halfRange(year, 1) },
+              { label: "H2", title: "H2 Oct–Mar", r: halfRange(year, 2) },
+            ] as { label: string; title: string; r: { from: string; to: string } }[]).map(({ label, title, r }) => {
+              const active = useCustom && customFrom === r.from && customTo === r.to;
+              return (
+                <button key={label} title={title}
+                  onClick={() => { setCustomFrom(r.from); setCustomTo(r.to); setUseCustom(true); }}
+                  className={clsx("px-2.5 py-1 text-xs rounded-lg2 border transition-colors",
+                    active ? "bg-gold text-white border-gold" : "border-line text-ink-dim hover:border-gold")}>
+                  {label}
+                </button>
+              );
+            })}
           </div>
           <span className="text-ink-dim text-xs">or</span>
           <div className="flex items-center gap-2">
