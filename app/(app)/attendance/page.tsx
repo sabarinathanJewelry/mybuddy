@@ -2348,6 +2348,7 @@ function DutiesTab() {
 
 // ── Leaves tab ───────────────────────────────────────────────────────────────
 const LEAVE_TYPE_LABELS: Record<string, string> = { casual: "Casual", sick: "Sick", half_day: "Half Day" };
+function isRedLeaveDay(d: string) { return [0, 3, 6].includes(new Date(d + "T00:00:00").getDay()); }
 const LEAVE_STATUS_STYLE: Record<string, string> = {
   pending:  "bg-warn/10 text-warn",
   approved: "bg-ok/10 text-ok",
@@ -2475,14 +2476,14 @@ function LeavesTab({ isAdmin, myBioUserId, myName }: {
             </thead>
             <tbody>
               {displayed.map((r: LeaveRequest) => (
-                <tr key={r.id} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                <tr key={r.id} className={`border-b border-line last:border-0 ${isRedLeaveDay(r.leave_date) ? "bg-red-50" : "hover:bg-canvas/50"}`}>
                   <td className="px-4 py-2.5 font-medium">
                     {(r as any).staff?.name ?? r.bio_user_id}
                     {r.bio_user_id === myBioUserId && (
                       <span className="ml-1.5 text-[10px] text-gold font-semibold">(you)</span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 text-ink-dim">{shortDate(r.leave_date)}</td>
+                  <td className={`px-3 py-2.5 ${isRedLeaveDay(r.leave_date) ? "text-err font-semibold" : "text-ink-dim"}`}>{shortDate(r.leave_date)} · {new Date(r.leave_date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short" })}</td>
                   <td className="px-3 py-2.5">{LEAVE_TYPE_LABELS[r.leave_type] ?? r.leave_type}</td>
                   <td className="px-3 py-2.5 text-ink-dim max-w-[180px] truncate">{r.reason || "—"}</td>
                   <td className="px-3 py-2.5 text-center">

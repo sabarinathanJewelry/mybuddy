@@ -79,6 +79,7 @@ function shiftMonthStr(m: string, dir: -1 | 1) {
 // ── chat types ────────────────────────────────────────────────────────────────
 interface ChatMsg { id: string; sender_id: string; sender_name: string; message: string; is_deleted: boolean; edited_at: string | null; created_at: string }
 
+function isRedLeaveDay(d: string) { return [0, 3, 6].includes(new Date(d + "T00:00:00").getDay()); }
 function fmtTime(ts: string) {
   return new Date(ts).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: true });
 }
@@ -554,9 +555,9 @@ export default function StaffManagementPage() {
                   </tr></thead>
                   <tbody>
                     {filteredLeaves.map((l) => (
-                      <tr key={l.id} className="border-b border-line last:border-0">
+                      <tr key={l.id} className={`border-b border-line last:border-0 ${isRedLeaveDay(l.leave_date) ? "bg-red-50" : ""}`}>
                         <td className="px-4 py-2.5 font-medium">{(l as any).staff?.name ?? "—"}</td>
-                        <td className="px-3 py-2.5 text-ink-dim text-xs">{l.leave_date}</td>
+                        <td className={`px-3 py-2.5 text-xs ${isRedLeaveDay(l.leave_date) ? "text-err font-semibold" : "text-ink-dim"}`}>{l.leave_date} · {new Date(l.leave_date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short" })}</td>
                         <td className="px-3 py-2.5 text-xs capitalize">{l.leave_type.replace("_", " ")}</td>
                         <td className="px-3 py-2.5 text-xs text-ink-dim max-w-[140px] truncate">{l.reason || "—"}</td>
                         <td className="px-3 py-2.5">
