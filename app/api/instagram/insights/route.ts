@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { supabaseServer, supabaseAdmin } from "@/lib/supabase/server";
 
 const ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN ?? "";
 const IG_API_BASE = "https://graph.instagram.com/v21.0";
@@ -15,6 +16,11 @@ async function ig(path: string) {
 }
 
 export async function GET(req: Request) {
+  const { data: { user } } = await (await supabaseServer()).auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { data: profile } = await supabaseAdmin().from("profiles").select("role").eq("id", user.id).single();
+  if (profile?.role !== "admin") return NextResponse.json({ error: "Admin only" }, { status: 403 });
+
   if (!ACCESS_TOKEN) {
     return NextResponse.json({ error: "INSTAGRAM_ACCESS_TOKEN not set" }, { status: 503 });
   }

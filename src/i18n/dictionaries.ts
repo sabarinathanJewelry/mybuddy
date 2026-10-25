@@ -54,6 +54,7 @@ const en = {
   nav_security_code: "Security Code",
   nav_whatsapp_setup: "WhatsApp Setup",
   nav_signage: "Signage",
+  nav_instagram_insights: "Instagram Insights",
   nav_conduct_notes: "Staff Conduct",
   nav_photo_shoot: "Photo Shoot",
   nav_logout: "Logout",
@@ -308,6 +309,7 @@ const ta: Partial<typeof en> = {
   nav_security: "பாதுகாப்பு",
   nav_security_code: "பாதுகாப்பு குறியீடு",
   nav_whatsapp_setup: "வாட்ஸ்அப் அமைவு",
+  nav_instagram_insights: "இன்ஸ்டா அனலிட்டிக்ஸ்",
   nav_logout: "வெளியேறு",
   nav_info: "தகவல்",
 

@@ -404,7 +404,7 @@
 - Staff read-only access
 
 ### Social
-- Instagram Insights (`/social`, default tab): per-post views, reach, likes, comments, saves, shares, engagement rate, reel avg watch time; performance vs account average; avg views by post type, weekday and time slot (IST). Data from `/api/instagram/insights` using `INSTAGRAM_ACCESS_TOKEN`
+- Instagram Insights (`/admin/instagram`, admin only): per-post views, reach, likes, comments, saves, shares, engagement rate, reel avg watch time; performance vs account average; avg views by post type, weekday and time slot (IST). Data from `/api/instagram/insights` using `INSTAGRAM_ACCESS_TOKEN`
 - Instagram Auto-DM: keyword-triggered DM replies to Instagram comments (`/social`)
 - Rules: keyword, match type (contains/exact), reply text, trigger count tracking
 
