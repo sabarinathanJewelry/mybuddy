@@ -7,8 +7,8 @@ const ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN ?? "";
 const APP_SECRET   = process.env.INSTAGRAM_APP_SECRET ?? "";
 const IG_API_BASE  = "https://graph.instagram.com/v21.0";
 
-const DEFAULT_GATE   = "Hi {name}! 👋 Thanks for your comment. Tap \"Send details\" below and we'll share them right here.";
-const DEFAULT_FOLLOW = "Hi {name}! To unlock the details, please follow @{shop} 🙏 Then tap \"I followed ✅\".";
+const DEFAULT_GATE   = "Hi {name}! 👋 Thanks for your comment. Tap \"Send details\" below (or reply DETAILS) and we'll share them right here.";
+const DEFAULT_FOLLOW = "Hi {name}! To unlock the details, please follow @{shop} 🙏 Then tap \"I followed ✅\" (or reply FOLLOWED).";
 const BTN_DETAILS  = "Send details";
 const BTN_FOLLOWED = "I followed ✅";
 
