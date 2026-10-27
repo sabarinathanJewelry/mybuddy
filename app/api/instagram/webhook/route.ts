@@ -26,10 +26,10 @@ export async function GET(req: NextRequest) {
   const token     = searchParams.get("hub.verify_token");
   const challenge = searchParams.get("hub.challenge");
 
-  if (mode === "subscribe" && VERIFY_TOKEN && token === VERIFY_TOKEN) {
+  if (mode === "subscribe" && VERIFY_TOKEN && token === VERIFY_TOKEN.trim()) {
     return new NextResponse(challenge, { status: 200 });
   }
-  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  return NextResponse.json({ error: "Forbidden", verify_token_set: !!VERIFY_TOKEN, verify_token_length: VERIFY_TOKEN.length }, { status: 403 });
 }
 
 function validSignature(raw: string, header: string | null) {
