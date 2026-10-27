@@ -141,6 +141,9 @@ async function handleComment(accountId: string, c: CommentEvent) {
   }).select("id").single();
   if (dupErr || !logRow) return;
 
+  const yearAgo = new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString();
+  await db.from("ig_dm_log").delete().lt("created_at", yearAgo);
+
   const { data: rules } = await db.from("ig_keyword_rules").select("*").eq("active", true);
   const lower = c.text.toLowerCase().trim();
   const rule = (rules ?? [])
@@ -190,6 +193,15 @@ async function handleMessage(accountId: string, m: MessageEvent) {
   if (!ACCESS_TOKEN) return;
   const db = adminSupabase();
   const userId = m.sender!.id;
+
+  if (m.message?.text?.trim().toUpperCase() === "DELETE") {
+    await db.from("ig_dm_log").delete().eq("from_id", userId);
+    try {
+      await sendDirect(accountId, userId, { text: "Done ✅ We have deleted your comment and message records from our system." });
+    } catch {}
+    return;
+  }
+
   const payload = m.message?.quick_reply?.payload ?? m.postback?.payload ?? "";
   const logId = payload.includes(":") ? payload.split(":")[1] : null;
 

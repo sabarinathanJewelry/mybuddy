@@ -38,6 +38,7 @@ export async function middleware(request: NextRequest) {
   // Public routes — no auth required
   if (pathname.startsWith("/apply")) return supabaseResponse;
   if (pathname === "/links") return supabaseResponse;
+  if (pathname === "/privacy" || pathname === "/data-deletion") return supabaseResponse;
   if (pathname.startsWith("/api/whatsapp/")) return supabaseResponse;
   // Meta calls this without a session; it verifies X-Hub-Signature-256 itself
   if (pathname === "/api/instagram/webhook") return supabaseResponse;
