@@ -348,6 +348,8 @@
   - Monthly weight target (admin sets inline, stored in `kpi_targets`)
   - Achievement % (net wt sold / weight target) with colour badge
 - Expandable row: bill-by-bill breakdown with role, share, amount, incentive
+- **Source = saved incentive sheet** — when the Incentive Calculator has a sheet whose period ("October 2026") matches the month, SP1/SP2 bills, weighted net wt, incentive and the bill breakdown come from that sheet (same mapper, overrides, split, deleted rows and write-offs as the calculator). ERP salesperson names match staff by full name, else a unique first word; unmatched names are listed above the table. Sales ₹ still comes from MyBuddy sales (the ERP paste has no amount). No sheet → falls back to MyBuddy sales
+- Calculator helpers (`parseErp`, `calcRow`, master/mapper, `loadSavedSheet`) live in `src/modules/kpi/incentive-sheet.ts`
 - Summary bar: total bills, total weight, total incentive, targets set count
 
 ### Staff KPI (`/my-kpi`)

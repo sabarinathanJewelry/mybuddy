@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase/client";
 import { inr } from "@/lib/format";
 import { useMonthlyAttendanceSummary } from "@/modules/attendance/api";
 import { calcItemIncentive } from "@/modules/kpi/incentive-master";
+import { loadSavedSheet, calcRow, periodToMonth, type SavedSheet } from "@/modules/kpi/incentive-sheet";
 import { useConductNoteCounts, CONDUCT_NOTE_KPI_PENALTY_PCT } from "@/modules/staff-conduct/api";
 import { clsx } from "clsx";
 
@@ -37,8 +38,24 @@ interface Sale {
 interface KpiTarget { staff_id: string; weight_target: number }
 interface StaffRow { id: string; bio_user_id: string; name: string; designation: string }
 
+interface BillLine {
+  id: string; billNo: string; date: string; role: "SP1" | "SP2"; share: number;
+  products: string; netWt: number; amount: number | null; incentive: number;
+}
+interface SheetStaff { sp1Bills: Set<string>; sp2Bills: Set<string>; netWt: number; incentive: number; bills: Map<string, BillLine> }
+
+// ERP names are usually upper-case first names; fall back to a unique first-word match
+function matchSheetName(staffName: string, sheetNames: string[]): string | null {
+  const full = staffName.trim().toUpperCase();
+  if (sheetNames.includes(full)) return full;
+  const first = full.split(/\s+/)[0];
+  const hits = sheetNames.filter(n => n.split(/\s+/)[0] === first);
+  return hits.length === 1 ? hits[0] : null;
+}
+
 interface StaffKpi {
   staff: StaffRow;
+  sheetName: string | null;
   billsSp1: number;
   billsSp2: number;
   salesAmt: number;
@@ -83,6 +100,59 @@ export default function AdminKpiPage() {
     },
   });
 
+  const { data: sheetList = [] } = useQuery({
+    queryKey: ["incentive_sheets"],
+    queryFn: async () => {
+      const { data } = await supabase().from("incentive_sheets").select("id, period, updated_at").order("updated_at", { ascending: false });
+      return (data ?? []) as { id: string; period: string; updated_at: string }[];
+    },
+  });
+  const sheetMeta = sheetList.find(s => periodToMonth(s.period) === month) ?? null;
+
+  const { data: sheet } = useQuery<SavedSheet | null>({
+    queryKey: ["kpi-incentive-sheet", sheetMeta?.id],
+    enabled: !!sheetMeta,
+    queryFn: async () => {
+      const { data, error } = await supabase()
+        .from("incentive_sheets")
+        .select("raw_data, overrides, deleted_idxs, default_split, mapper_entries, master_entries")
+        .eq("id", sheetMeta!.id)
+        .single();
+      if (error) throw error;
+      return data as SavedSheet;
+    },
+  });
+
+  const sheetStaff = useMemo(() => {
+    if (!sheetMeta || !sheet) return null;
+    const { rows, overrides, defaultSplit, mapper, master } = loadSavedSheet(sheet);
+    const map = new Map<string, SheetStaff>();
+    const entry = (name: string) => {
+      const key = name.trim().toUpperCase();
+      if (!map.has(key)) map.set(key, { sp1Bills: new Set(), sp2Bills: new Set(), netWt: 0, incentive: 0, bills: new Map() });
+      return map.get(key)!;
+    };
+    rows.forEach((row, i) => {
+      const eff = calcRow(row, overrides[row.idx], defaultSplit, mapper, master);
+      const add = (name: string, role: "SP1" | "SP2", share: number, inc: number) => {
+        const e = entry(name);
+        (role === "SP1" ? e.sp1Bills : e.sp2Bills).add(row.billNo);
+        e.netWt += row.netWt * share;
+        e.incentive += inc;
+        const key = `${role}:${row.billNo || i}`;
+        const b = e.bills.get(key) ?? { id: key, billNo: row.billNo, date: row.date, role, share, products: "", netWt: 0, amount: null, incentive: 0 };
+        if (!b.products.split(", ").includes(row.product)) b.products = b.products ? `${b.products}, ${row.product}` : row.product;
+        b.netWt += row.netWt * share;
+        b.incentive += inc;
+        e.bills.set(key, b);
+      };
+      const sp1Share = row.sp2 ? eff.sp1Share / 100 : 1;
+      if (row.sp1) add(row.sp1, "SP1", sp1Share, eff.sp1Inc);
+      if (row.sp2) add(row.sp2, "SP2", 1 - eff.sp1Share / 100, eff.sp2Inc);
+    });
+    return map;
+  }, [sheetMeta, sheet]);
+
   const { data: targets = [] } = useQuery<KpiTarget[]>({
     queryKey: ["kpi-targets", month],
     queryFn: async () => {
@@ -111,7 +181,10 @@ export default function AdminKpiPage() {
   });
 
   const kpiRows = useMemo<StaffKpi[]>(() => {
+    const sheetNames = sheetStaff ? [...sheetStaff.keys()] : [];
     return staffList.map((staff) => {
+      const sheetName = sheetStaff ? matchSheetName(staff.name, sheetNames) : null;
+      const fromSheet = sheetName ? sheetStaff!.get(sheetName)! : null;
       const sp1Sales = sales.filter(s => s.salesperson1_id === staff.id);
       const sp2Sales = sales.filter(s => s.salesperson2_id === staff.id);
 
@@ -133,6 +206,11 @@ export default function AdminKpiPage() {
         }
       }
 
+      if (sheetStaff) {
+        netWt     = fromSheet?.netWt ?? 0;
+        incentive = fromSheet?.incentive ?? 0;
+      }
+
       const att = attSummary.find(a => a.bio_user_id === staff.bio_user_id);
       const weightTarget = targets.find(t => t.staff_id === staff.id)?.weight_target ?? 0;
       const conductNoteCount = conductCounts[staff.id] ?? 0;
@@ -145,8 +223,9 @@ export default function AdminKpiPage() {
 
       return {
         staff,
-        billsSp1: sp1Sales.length,
-        billsSp2: sp2Sales.length,
+        sheetName,
+        billsSp1: sheetStaff ? (fromSheet?.sp1Bills.size ?? 0) : sp1Sales.length,
+        billsSp2: sheetStaff ? (fromSheet?.sp2Bills.size ?? 0) : sp2Sales.length,
         salesAmt,
         netWt,
         incentive,
@@ -158,7 +237,7 @@ export default function AdminKpiPage() {
         conductNoteCount,
       };
     });
-  }, [staffList, sales, attSummary, targets, conductCounts]);
+  }, [staffList, sales, sheetStaff, attSummary, targets, conductCounts]);
 
   const totals = useMemo(() => ({
     bills:           kpiRows.reduce((s, r) => s + r.billsSp1 + r.billsSp2, 0),
@@ -167,15 +246,32 @@ export default function AdminKpiPage() {
     staffWithTarget: kpiRows.filter(r => r.weightTarget > 0).length,
   }), [kpiRows]);
 
-  const expandedSales = useMemo(() => {
+  const unmatchedSheetNames = useMemo(() => {
+    if (!sheetStaff) return [];
+    const used = new Set(kpiRows.map(r => r.sheetName).filter(Boolean));
+    return [...sheetStaff.keys()].filter(n => !used.has(n)).sort();
+  }, [sheetStaff, kpiRows]);
+
+  const expandedSales = useMemo<BillLine[]>(() => {
     if (!expandedId) return [];
     const staff = staffList.find(s => s.id === expandedId);
     if (!staff) return [];
+    if (sheetStaff) {
+      const name = kpiRows.find(r => r.staff.id === staff.id)?.sheetName;
+      return name ? [...sheetStaff.get(name)!.bills.values()] : [];
+    }
+    const toLine = (s: Sale, role: "SP1" | "SP2", share: number): BillLine => ({
+      id: `${role}:${s.id}`, billNo: s.bill_no, date: s.bill_date, role, share,
+      products: [...new Set(s.sale_items.map(i => i.description))].join(", "),
+      netWt: s.sale_items.reduce((t, i) => t + i.net_wt * share, 0),
+      amount: s.sale_items.reduce((t, i) => t + i.line_total * share, 0),
+      incentive: s.sale_items.reduce((t, i) => t + calcItemIncentive(i.description, i.va_pct, i.net_wt, share), 0),
+    });
     return [
-      ...sales.filter(s => s.salesperson1_id === staff.id).map(s => ({ ...s, role: "SP1" as const, share: s.salesperson2_id ? 0.7 : 1.0 })),
-      ...sales.filter(s => s.salesperson2_id === staff.id).map(s => ({ ...s, role: "SP2" as const, share: 0.3 })),
-    ].sort((a, b) => a.bill_date.localeCompare(b.bill_date));
-  }, [expandedId, staffList, sales]);
+      ...sales.filter(s => s.salesperson1_id === staff.id).map(s => toLine(s, "SP1", s.salesperson2_id ? 0.7 : 1.0)),
+      ...sales.filter(s => s.salesperson2_id === staff.id).map(s => toLine(s, "SP2", 0.3)),
+    ].sort((a, b) => a.date.localeCompare(b.date));
+  }, [expandedId, staffList, sales, sheetStaff, kpiRows]);
 
   return (
     <div className="max-w-6xl mx-auto space-y-5 pb-8">
@@ -191,6 +287,23 @@ export default function AdminKpiPage() {
           <button onClick={() => setMonth(m => shiftMonth(m, 1))} className="px-2.5 py-1.5 border border-line rounded-lg2 text-sm hover:bg-canvas">►</button>
           <button onClick={() => setMonth(currentMonth())} className="text-xs px-3 py-1.5 border border-line rounded-lg2 hover:bg-canvas">Today</button>
         </div>
+      </div>
+
+      <div className="text-xs text-ink-dim">
+        {sheetMeta ? (
+          <span>
+            Bills, net weight and incentive from incentive sheet <span className="font-semibold text-ink">{sheetMeta.period}</span>{" "}
+            (<Link href="/admin/incentive-calc" className="text-gold hover:underline">Incentive Calculator</Link>)
+            {unmatchedSheetNames.length > 0 && (
+              <span className="text-warn"> · Not matched to staff: {unmatchedSheetNames.join(", ")}</span>
+            )}
+          </span>
+        ) : (
+          <span>
+            No incentive sheet saved for {monthLabel(month)} — save one in the{" "}
+            <Link href="/admin/incentive-calc" className="text-gold hover:underline">Incentive Calculator</Link> with this month as the period.
+          </span>
+        )}
       </div>
 
       {/* Summary bar */}
@@ -341,14 +454,11 @@ export default function AdminKpiPage() {
                               </thead>
                               <tbody>
                                 {expandedSales.map(sale => {
-                                  const saleNetWt = sale.sale_items.reduce((s, i) => s + i.net_wt * sale.share, 0);
-                                  const saleAmt   = sale.sale_items.reduce((s, i) => s + i.line_total * sale.share, 0);
-                                  const saleInc   = sale.sale_items.reduce((s, i) => s + calcItemIncentive(i.description, i.va_pct, i.net_wt, sale.share), 0);
-                                  const products  = [...new Set(sale.sale_items.map(i => i.description))].join(", ");
+                                  const { netWt: saleNetWt, amount: saleAmt, incentive: saleInc, products } = sale;
                                   return (
                                     <tr key={sale.id} className="border-b border-line/50 last:border-0">
-                                      <td className="py-1.5 pr-3 font-mono">{sale.bill_no}</td>
-                                      <td className="py-1.5 pr-3 text-ink-dim">{sale.bill_date}</td>
+                                      <td className="py-1.5 pr-3 font-mono">{sale.billNo}</td>
+                                      <td className="py-1.5 pr-3 text-ink-dim">{sale.date}</td>
                                       <td className="py-1.5 pr-3 text-center">
                                         <span className={clsx("px-1.5 py-0.5 rounded text-[10px] font-semibold",
                                           sale.role === "SP1" ? "bg-gold/10 text-gold" : "bg-info/10 text-info"
@@ -358,7 +468,7 @@ export default function AdminKpiPage() {
                                       </td>
                                       <td className="py-1.5 pr-3 text-ink-dim truncate max-w-[200px]">{products}</td>
                                       <td className="py-1.5 pr-3 text-right font-mono font-semibold">{saleNetWt.toFixed(3)}g</td>
-                                      <td className="py-1.5 pr-3 text-right font-mono">{inr(saleAmt)}</td>
+                                      <td className="py-1.5 pr-3 text-right font-mono">{saleAmt !== null ? inr(saleAmt) : "—"}</td>
                                       <td className={clsx("py-1.5 text-right font-mono font-semibold", saleInc > 0 ? "text-ok" : "text-ink-dim")}>
                                         {saleInc > 0 ? inr(saleInc) : "—"}
                                       </td>
@@ -383,7 +493,7 @@ export default function AdminKpiPage() {
       </div>
 
       <p className="text-xs text-ink-dim text-center">
-        Weight and sales are weighted: SP1 = 70%, SP2 = 30%. Achievement = net weight sold vs weight target.
+        Weight and incentive are weighted by the SP1/SP2 split ({sheetMeta ? "as set in the incentive sheet" : "SP1 = 70%, SP2 = 30%"}). Achievement = net weight sold vs weight target.
       </p>
     </div>
   );
