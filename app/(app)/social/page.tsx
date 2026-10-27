@@ -9,6 +9,9 @@ type Rule = {
   keyword: string;
   reply_text: string;
   public_reply: string | null;
+  require_follow: boolean;
+  gate_text: string | null;
+  follow_text: string | null;
   media_id: string | null;
   media_label: string | null;
   active: boolean;
@@ -24,7 +27,7 @@ type DmLog = {
   comment_id: string;
   username: string | null;
   comment_text: string | null;
-  dm_status: "pending" | "sent" | "failed" | "no_match";
+  dm_status: "pending" | "gate_sent" | "awaiting_follow" | "sent" | "failed" | "no_match";
   reply_status: "sent" | "failed" | null;
   error: string | null;
   created_at: string;
@@ -79,8 +82,22 @@ const STATUS_STYLE: Record<DmLog["dm_status"], string> = {
   sent: "bg-ok/10 text-ok",
   failed: "bg-err/10 text-err",
   pending: "bg-warn/10 text-warn",
+  gate_sent: "bg-info/10 text-info",
+  awaiting_follow: "bg-warn/10 text-warn",
   no_match: "bg-canvas text-ink-dim",
 };
+
+const STATUS_LABEL: Record<DmLog["dm_status"], string> = {
+  sent: "DM sent",
+  failed: "DM failed",
+  pending: "pending",
+  gate_sent: "button sent",
+  awaiting_follow: "waiting for follow",
+  no_match: "no keyword",
+};
+
+const GATE_HINT = "Hi {name}! 👋 Thanks for your comment. Tap \"Send details\" below and we'll share them right here.";
+const FOLLOW_HINT = "Hi {name}! To unlock the details, please follow @{shop} 🙏 Then tap \"I followed ✅\".";
 
 function ReelSelect({ value, onChange, reels }: { value: string; onChange: (id: string, label: string | null) => void; reels: Reel[] }) {
   return (
@@ -91,6 +108,36 @@ function ReelSelect({ value, onChange, reels }: { value: string; onChange: (id: 
       <option value="">All reels and posts</option>
       {reels.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
     </select>
+  );
+}
+
+function FollowGate({ on, gate, follow, setOn, setGate, setFollow }: {
+  on: boolean; gate: string; follow: string;
+  setOn: (v: boolean) => void; setGate: (v: string) => void; setFollow: (v: string) => void;
+}) {
+  return (
+    <div className="sm:col-span-2 space-y-2 border border-line rounded-lg2 p-3 bg-canvas/40">
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={on} onChange={e => setOn(e.target.checked)} className="accent-gold" />
+        Followers only — ask non-followers to follow first
+      </label>
+      {on && (
+        <>
+          <p className="text-[11px] text-ink-dim">
+            Instagram only shares follow status after the person messages you, so the first DM has a "Send details" button. When they tap it, followers get your message; others are asked to follow and tap "I followed ✅".
+          </p>
+          <div>
+            <label className="block text-xs text-ink-dim mb-1">First DM (with "Send details" button)</label>
+            <textarea value={gate} onChange={e => setGate(e.target.value)} rows={2} placeholder={GATE_HINT} className={inp + " resize-none"} />
+          </div>
+          <div>
+            <label className="block text-xs text-ink-dim mb-1">Message to non-followers (with "I followed ✅" button)</label>
+            <textarea value={follow} onChange={e => setFollow(e.target.value)} rows={2} placeholder={FOLLOW_HINT} className={inp + " resize-none"} />
+            <p className="text-[11px] text-ink-dim mt-1">Leave empty to use the example text. <code>{"{shop}"}</code> = your Instagram handle.</p>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -106,6 +153,9 @@ export default function SocialPage() {
   const [mediaId, setMediaId]         = useState("");
   const [mediaLabel, setMediaLabel]   = useState<string | null>(null);
   const [matchType, setMatchType]     = useState<"contains" | "exact">("contains");
+  const [requireFollow, setRequireFollow] = useState(true);
+  const [gateText, setGateText]       = useState("");
+  const [followText, setFollowText]   = useState("");
   const [editId, setEditId]           = useState<string | null>(null);
   const [editForm, setEditForm]       = useState<Partial<Rule>>({});
 
@@ -118,12 +168,15 @@ export default function SocialPage() {
         media_id: mediaId || null,
         media_label: mediaId ? mediaLabel : null,
         match_type: matchType,
+        require_follow: requireFollow,
+        gate_text: gateText.trim() || null,
+        follow_text: followText.trim() || null,
       });
       if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ig_keyword_rules"] });
-      setKeyword(""); setReplyText(""); setPublicReply(""); setMediaId(""); setMediaLabel(null); setMatchType("contains");
+      setKeyword(""); setReplyText(""); setPublicReply(""); setMediaId(""); setMediaLabel(null); setMatchType("contains"); setRequireFollow(true); setGateText(""); setFollowText("");
     },
   });
 
@@ -136,6 +189,9 @@ export default function SocialPage() {
         media_id:     editForm.media_id || null,
         media_label:  editForm.media_id ? editForm.media_label : null,
         match_type:   editForm.match_type,
+        require_follow: editForm.require_follow,
+        gate_text:    editForm.gate_text?.trim() || null,
+        follow_text:  editForm.follow_text?.trim() || null,
         active:       editForm.active,
       }).eq("id", id);
       if (error) throw error;
@@ -199,7 +255,7 @@ export default function SocialPage() {
           {typeof window !== "undefined" ? window.location.origin : "https://your-domain.com"}/api/instagram/webhook
         </code>
         <p className="text-xs text-ink-dim mt-1">
-          Verify token = <code className="bg-white border border-line rounded px-1">INSTAGRAM_VERIFY_TOKEN</code>. Set <code className="bg-white border border-line rounded px-1">INSTAGRAM_APP_SECRET</code> (Instagram app secret) so only Meta can call the webhook. Subscribe to the <b>comments</b> field and turn on Webhook Subscription for your account.
+          Verify token = <code className="bg-white border border-line rounded px-1">INSTAGRAM_VERIFY_TOKEN</code>. Set <code className="bg-white border border-line rounded px-1">INSTAGRAM_APP_SECRET</code> (Instagram app secret) so only Meta can call the webhook. Subscribe to the <b>comments</b> and <b>messages</b> fields and turn on Webhook Subscription for your account.
           The app must be <b>Live</b> with Advanced Access to <code className="bg-white border border-line rounded px-1">instagram_business_manage_comments</code> and <code className="bg-white border border-line rounded px-1">instagram_business_manage_messages</code> to DM real customers.
         </p>
       </div>
@@ -236,6 +292,9 @@ export default function SocialPage() {
             <label className="block text-xs text-ink-dim mb-1">Public reply under the comment (optional)</label>
             <input value={publicReply} onChange={e => setPublicReply(e.target.value)} placeholder="Sent you a DM {name} ✅" className={inp} />
           </div>
+          <FollowGate
+            on={requireFollow} gate={gateText} follow={followText}
+            setOn={setRequireFollow} setGate={setGateText} setFollow={setFollowText} />
         </div>
         <button
           disabled={!keyword.trim() || !replyText.trim() || create.isPending}
@@ -244,7 +303,7 @@ export default function SocialPage() {
           {create.isPending ? "Adding…" : "Add Rule"}
         </button>
         {create.isError && (
-          <p className="text-xs text-err">Failed — run migrations 082 and 170 in Supabase first.</p>
+          <p className="text-xs text-err">Failed — run migrations 082, 170 and 171 in Supabase first.</p>
         )}
       </div>
 
@@ -288,6 +347,11 @@ export default function SocialPage() {
                       <label className="block text-xs text-ink-dim mb-1">Public reply (optional)</label>
                       <input value={editForm.public_reply ?? ""} onChange={e => setEditForm(f => ({ ...f, public_reply: e.target.value }))} className={inp} />
                     </div>
+                    <FollowGate
+                      on={editForm.require_follow ?? true} gate={editForm.gate_text ?? ""} follow={editForm.follow_text ?? ""}
+                      setOn={v => setEditForm(f => ({ ...f, require_follow: v }))}
+                      setGate={v => setEditForm(f => ({ ...f, gate_text: v }))}
+                      setFollow={v => setEditForm(f => ({ ...f, follow_text: v }))} />
                   </div>
                   <div className="flex gap-2">
                     <button disabled={update.isPending} onClick={() => update.mutate(r.id)}
@@ -307,6 +371,9 @@ export default function SocialPage() {
                       <span className="text-[10px] bg-info/10 text-info px-1.5 py-0.5 rounded font-medium truncate max-w-[260px]">
                         {r.media_id ? r.media_label ?? "Specific reel" : "All reels"}
                       </span>
+                      {r.require_follow && (
+                        <span className="text-[10px] bg-gold/10 text-gold px-1.5 py-0.5 rounded font-medium">followers only</span>
+                      )}
                       {r.trigger_count > 0 && (
                         <span className="text-[10px] bg-ok/10 text-ok px-1.5 py-0.5 rounded font-medium">{r.trigger_count}× sent</span>
                       )}
@@ -324,7 +391,7 @@ export default function SocialPage() {
                       {r.active ? "Pause" : "Resume"}
                     </button>
                     <button
-                      onClick={() => { setEditId(r.id); setEditForm({ keyword: r.keyword, reply_text: r.reply_text, public_reply: r.public_reply, media_id: r.media_id, media_label: r.media_label, match_type: r.match_type, active: r.active }); }}
+                      onClick={() => { setEditId(r.id); setEditForm({ keyword: r.keyword, reply_text: r.reply_text, public_reply: r.public_reply, require_follow: r.require_follow, gate_text: r.gate_text, follow_text: r.follow_text, media_id: r.media_id, media_label: r.media_label, match_type: r.match_type, active: r.active }); }}
                       className="text-xs text-gold hover:underline">Edit</button>
                     <button
                       onClick={() => { if (window.confirm(`Delete rule "${r.keyword}"?`)) remove.mutate(r.id); }}
@@ -353,7 +420,7 @@ export default function SocialPage() {
                   {l.error && <p className="text-err text-[11px] mt-0.5 truncate">{l.error}</p>}
                 </div>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${STATUS_STYLE[l.dm_status]}`}>
-                  {l.dm_status === "no_match" ? "no keyword" : `DM ${l.dm_status}`}
+                  {STATUS_LABEL[l.dm_status]}
                 </span>
                 {l.reply_status && (
                   <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${l.reply_status === "sent" ? "bg-ok/10 text-ok" : "bg-err/10 text-err"}`}>
