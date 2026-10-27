@@ -79,6 +79,7 @@ export async function POST(req: NextRequest) {
     }
     for (const m of (entry?.messaging ?? []) as MessageEvent[]) {
       if (!m.sender?.id || m.sender.id === accountId || m.message?.is_echo) continue;
+      if (!m.message?.text && !m.message?.quick_reply && !m.postback) continue;
       await handleMessage(accountId, m);
     }
   }
