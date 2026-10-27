@@ -72,7 +72,7 @@ function useDmLog() {
       if (error) throw error;
       return (data ?? []) as DmLog[];
     },
-    refetchInterval: 60 * 1000,
+    refetchInterval: 10 * 1000,
   });
 }
 
@@ -145,7 +145,7 @@ export default function SocialPage() {
   const qc = useQueryClient();
   const { data: rules = [], isLoading } = useRules();
   const { data: reels = [], error: reelsError } = useReels();
-  const { data: log = [] } = useDmLog();
+  const { data: log = [], refetch: refetchLog, isFetching: logFetching } = useDmLog();
 
   const [keyword, setKeyword]         = useState("");
   const [replyText, setReplyText]     = useState("");
@@ -406,8 +406,15 @@ export default function SocialPage() {
 
       {/* DM log */}
       <div className="bg-white rounded-xl border border-line shadow-soft overflow-hidden">
-        <div className="px-4 py-3 border-b border-line">
+        <div className="px-4 py-3 border-b border-line flex items-center justify-between">
           <h2 className="text-sm font-semibold">Recent comments</h2>
+          <button
+            onClick={() => refetchLog()}
+            disabled={logFetching}
+            className="text-xs px-3 py-1 rounded-lg2 border border-line text-ink-dim hover:text-gold disabled:opacity-50"
+          >
+            {logFetching ? "Refreshing…" : "Refresh"}
+          </button>
         </div>
         {log.length === 0 ? (
           <p className="px-4 py-6 text-center text-xs text-ink-dim">No comments received yet.</p>
