@@ -405,7 +405,7 @@
 
 ### Social
 - Instagram Insights (`/admin/instagram`, admin only): per-post views, reach, likes, comments, saves, shares, engagement rate, reel avg watch time; performance vs account average; avg views by post type, weekday and time slot (IST). Data from `/api/instagram/insights` using `INSTAGRAM_ACCESS_TOKEN`
-- Instagram Auto-DM: keyword-triggered DM replies to Instagram comments (`/social`)
+- Instagram Auto-DM (`/social`): keyword on a comment → personal private-reply DM (`{name}` = username) + optional public reply; rules for all reels or one specific reel (reel-specific wins); comment log with DM/reply status; webhook `/api/instagram/webhook` verifies `X-Hub-Signature-256` with `INSTAGRAM_APP_SECRET`, skips own comments and duplicates (migration 170)
 - Rules: keyword, match type (contains/exact), reply text, trigger count tracking
 
 ### Lead Inbox (`/leads`) *(New — 2026-07-09)*
