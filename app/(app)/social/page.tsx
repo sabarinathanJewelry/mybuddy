@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
-import { YoutubeReplies } from "./youtube";
 
 type Rule = {
   id: string;
@@ -442,10 +441,6 @@ export default function SocialPage() {
             ))}
           </div>
         )}
-      </div>
-
-      <div className="border-t border-line pt-6">
-        <YoutubeReplies />
       </div>
     </div>
   );

@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 import { requireAdmin, exchangeCode, ytFetch } from "@/lib/youtube";
 
 export async function GET(req: NextRequest) {
-  const back = (msg: string) => NextResponse.redirect(new URL(`/social?yt=${encodeURIComponent(msg)}`, req.url));
+  const back = (msg: string) => NextResponse.redirect(new URL(`/social/youtube?yt=${encodeURIComponent(msg)}`, req.url));
   if (!(await requireAdmin())) return back("forbidden");
 
   const p = req.nextUrl.searchParams;

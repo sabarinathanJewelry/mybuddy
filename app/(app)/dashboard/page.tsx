@@ -63,6 +63,7 @@ const SECTIONS: Section[] = [
     cards: [
       { icon: "⭐", label: "Review",     href: "/google-review" },
       { icon: "📲", label: "Social",     href: "/social" },
+      { icon: "▶️", label: "YouTube",    href: "/social/youtube" },
     ],
   },
   {
