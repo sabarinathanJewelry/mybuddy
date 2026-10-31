@@ -42,6 +42,8 @@ export async function middleware(request: NextRequest) {
   if (pathname.startsWith("/api/whatsapp/")) return supabaseResponse;
   // Meta calls this without a session; it verifies X-Hub-Signature-256 itself
   if (pathname === "/api/instagram/webhook") return supabaseResponse;
+  // pg_cron calls this without a session; it checks YOUTUBE_POLL_SECRET (or an admin session) itself
+  if (pathname === "/api/youtube/poll") return supabaseResponse;
   // Signage: TV devices have no Supabase session — these routes do their own
   // auth (device_secret)
   if (pathname.startsWith("/tv-player")) return supabaseResponse;
