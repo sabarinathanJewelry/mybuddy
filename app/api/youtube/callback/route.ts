@@ -3,7 +3,15 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 import { requireAdmin, exchangeCode, ytFetch } from "@/lib/youtube";
 
 export async function GET(req: NextRequest) {
-  const back = (msg: string) => NextResponse.redirect(new URL(`/social/youtube?yt=${encodeURIComponent(msg)}`, req.url));
+  // Returning from Google is a cross-site navigation, so the SameSite=Strict mfa_verified
+  // cookie is not sent on a redirect; a same-origin page navigation includes it.
+  const back = (msg: string) => {
+    const to = `/social/youtube?yt=${encodeURIComponent(msg)}`;
+    return new NextResponse(
+      `<!doctype html><meta http-equiv="refresh" content="0;url=${to}"><script>location.replace(${JSON.stringify(to)})</script>`,
+      { headers: { "Content-Type": "text/html; charset=utf-8" } },
+    );
+  };
   if (!(await requireAdmin())) return back("forbidden");
 
   const p = req.nextUrl.searchParams;
