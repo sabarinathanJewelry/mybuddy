@@ -1,10 +1,27 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
-import { useMonthlyAttendanceSummary, useApprovedPermsByMonth, useApprovedLeavesByMonth } from "@/modules/attendance/api";
+import {
+  useMonthlyAttendanceSummary, useApprovedPermsByMonth, useApprovedLeavesByMonth,
+  useOutsideDutiesByMonth, useLateFineWaiversByMonth,
+  type MonthlyEmployeeSummary, type LateFineWaiver,
+} from "@/modules/attendance/api";
+
+type AttSettings = {
+  late_fine_amt?: number; fine_mode?: "day" | "minute";
+  apply_fine?: boolean; equalize_ot?: boolean; fine_from_date?: string;
+  ot_rate_amt?: number; ot_rate_mode?: "hour" | "minute";
+  staff_fine_ranges?: Record<string, { from?: string; to?: string; fine_mode?: "day" | "minute"; fine_amt?: number; ot_rate_amt?: number; ot_rate_mode?: "hour" | "minute" }>;
+};
+type AttFineCtx = {
+  settings: AttSettings | null;
+  perms: { bio_user_id: string; permission_date: string }[];
+  duties: { bio_user_id: string; duty_date: string }[];
+  waivers: LateFineWaiver[];
+};
 import { inr } from "@/lib/format";
 import { clsx } from "clsx";
 
@@ -462,23 +479,22 @@ export default function PayrollPage() {
       .map(e => nameToInactive.get(e.name.toUpperCase()))
       .filter((id): id is string => !!id);
   }, [entries, inactiveStaff]);
-  const { data: attSummary = [], isFetching: attLoading } = useMonthlyAttendanceSummary(attMonth, extraBioIds);
-  const { data: monthPerms  = [] } = useApprovedPermsByMonth(attMonth);
+  const { data: attSummary = [], refetch: refetchAtt } = useMonthlyAttendanceSummary(attMonth, extraBioIds);
+  const { data: monthPerms  = [], refetch: refetchPerms } = useApprovedPermsByMonth(attMonth);
   const { data: monthLeaves = [] } = useApprovedLeavesByMonth(attMonth);
-  const { data: attSettings = null, isLoading: attSettingsLoading } = useQuery({
+  const { refetch: refetchDuties } = useOutsideDutiesByMonth(attMonth);
+  const { refetch: refetchWaivers } = useLateFineWaiversByMonth(attMonth);
+  const { refetch: refetchAttSettings } = useQuery({
     queryKey: ["attendance_settings", attMonth],
     enabled: !!attMonth,
     queryFn: async () => {
       const key = `attendance_settings_${attMonth}`;
       const { data } = await supabase().from("app_settings").select("value").eq("key", key).maybeSingle();
-      return (data?.value ?? null) as {
-        late_fine_amt?: number; fine_mode?: "day" | "minute";
-        apply_fine?: boolean; equalize_ot?: boolean; fine_from_date?: string;
-      } | null;
+      return (data?.value ?? null) as AttSettings | null;
     },
   });
   const [attApplied, setAttApplied] = useState(false);
-  const prevAttRef = useRef<string>("");  // tracks last-applied month
+  const [attLoading, setAttLoading] = useState(false);
 
   // ── Queries
   const { data: staffList = [] } = useQuery({
@@ -516,25 +532,34 @@ export default function PayrollPage() {
     return [...new Set([...fromStaff, ...fromEntries])].sort();
   }, [staffList, entries]);
 
-  // ── Calculate fine from attendance settings (mirrors MonthlyTab logic)
-  function calcAttFine(att: typeof attSummary[0]): number {
-    if (!attSettings?.apply_fine) return 0;
-    const fineAmt  = attSettings.late_fine_amt ?? 100;
-    const fineMode = attSettings.fine_mode ?? "day";
-    const fromDate = attSettings.fine_from_date ?? "";
-    const eqOt     = att.equalize_ot ?? (attSettings.equalize_ot ?? false);
-    const pd = new Set(monthPerms.filter(p => p.bio_user_id === att.bio_user_id).map(p => p.permission_date));
-    const lateDays = att.daily.filter(d => d.is_late && !pd.has(d.date) && (!fromDate || d.date >= fromDate));
+  // ── Calculate fine from attendance settings (mirrors MonthlyTab calcFine)
+  function calcAttFine(att: MonthlyEmployeeSummary, ctx: AttFineCtx): number {
+    const st = ctx.settings ?? {};
+    if (!(st.apply_fine ?? true)) return 0;
+    const sr = st.staff_fine_ranges?.[att.bio_user_id];
+    const range = sr ?? { from: st.fine_from_date ?? "", to: "" };
+    const inRange = (d: string) => (!range.from || d >= range.from) && (!range.to || d <= range.to);
+    const mode   = sr?.fine_mode ?? st.fine_mode ?? "day";
+    const amt    = sr?.fine_amt ?? st.late_fine_amt ?? 100;
+    const otAmt  = sr?.ot_rate_amt ?? st.ot_rate_amt ?? 50;
+    const otMode = sr?.ot_rate_mode ?? st.ot_rate_mode ?? "hour";
+    const skip = new Set([
+      ...ctx.perms.filter(p => p.bio_user_id === att.bio_user_id).map(p => p.permission_date),
+      ...ctx.duties.filter(d => d.bio_user_id === att.bio_user_id).map(d => d.duty_date),
+      ...ctx.waivers.filter(w => w.bio_user_id === att.bio_user_id).map(w => w.fine_date),
+    ]);
+    const lateDays = att.daily.filter(d => d.is_late && !skip.has(d.date) && inRange(d.date));
     const eld = lateDays.length;
     const elm = lateDays.reduce((s, d) => s + d.late_minutes, 0);
-    if (eld <= 0 && elm <= 0) return 0;
-    if (fineMode === "day") return parseFloat((fineAmt * eld).toFixed(2));
-    const netMins = eqOt ? Math.max(0, elm - att.total_ot_minutes) : elm;
-    return parseFloat((fineAmt * netMins).toFixed(2));
+    const rawFine = eld <= 0 && elm <= 0 ? 0 : mode === "day" ? amt * eld : amt * elm;
+    if (!att.equalize_ot) return parseFloat(rawFine.toFixed(2));
+    const otMins = att.daily.filter(d => inRange(d.date)).reduce((s, d) => s + d.ot_minutes, 0);
+    const otPay  = otMins <= 0 ? 0 : otMode === "hour" ? otAmt * (otMins / 60) : otAmt * otMins;
+    return parseFloat(Math.max(0, rawFine - otPay).toFixed(2));
   }
 
   // ── Apply attendance data to entries
-  function applyAttendance(summary: typeof attSummary) {
+  function applyAttendance(summary: MonthlyEmployeeSummary[], ctx: AttFineCtx) {
     const byName = new Map(summary.map(s => [s.name.toUpperCase(), s]));
     setEntries(prev => prev.map(e => {
       const att = byName.get(e.name.toUpperCase());
@@ -542,33 +567,33 @@ export default function PayrollPage() {
       const noOfLeave  = att.absent_days;
       const extraLeave = att.excess_leave_days;
       const deduction  = parseFloat((att.leave_deduction ?? 0).toFixed(2));
-      const fine       = calcAttFine(att);
+      const fine       = calcAttFine(att, ctx);
       return { ...e, noOfLeave, extraLeave, deduction, fine };
     }));
   }
 
-  // ── Attendance load button
-  function loadAttendanceNow() {
-    if (!attMonth) { return; }
-    if (attLoading || attSettingsLoading) return;
-    prevAttRef.current = attMonth;
+  // ── Attendance load button: always refetch so edits made on the Attendance page are picked up
+  async function loadAttendanceNow() {
+    if (!attMonth || attLoading) return;
+    setAttLoading(true);
     setAttApplied(false);
-    // Data is already fetched by the hook; apply immediately
-    if (attSummary.length > 0) {
-      applyAttendance(attSummary);
+    try {
+      const [sum, perms, duties, waivers, settings] = await Promise.all([
+        refetchAtt(), refetchPerms(), refetchDuties(), refetchWaivers(), refetchAttSettings(),
+      ]);
+      const summary = sum.data ?? [];
+      if (summary.length === 0) return;
+      applyAttendance(summary, {
+        settings: settings.data ?? null,
+        perms: perms.data ?? [],
+        duties: duties.data ?? [],
+        waivers: waivers.data ?? [],
+      });
       setAttApplied(true);
+    } finally {
+      setAttLoading(false);
     }
   }
-
-  // Watch for fresh attendance data to auto-apply after button click.
-  // Wait for both attSummary AND attSettings to finish loading so fine is calculated correctly.
-  useEffect(() => {
-    if (attLoading || attSettingsLoading || attApplied || !prevAttRef.current) return;
-    if (prevAttRef.current !== attMonth || attSummary.length === 0) return;
-    applyAttendance(attSummary);
-    setAttApplied(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attSummary, attLoading, attSettings, attSettingsLoading]);
 
   // Recalculate pending amounts when arrear toggle or cutoff date changes
   useEffect(() => {
