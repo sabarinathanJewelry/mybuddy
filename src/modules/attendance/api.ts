@@ -81,7 +81,7 @@ export type DailyAttendance = {
   late_minutes: number;     // minutes from 9:30 AM (if late)
   ot_minutes: number;       // minutes beyond shift end
   effective_hours: number | null;
-  is_half_day: boolean;     // present but effective_hours < 4
+  is_half_day: boolean;     // present but effective_hours < 4, or first punch after 2 PM
   punch_count: number;
   lunch_minutes: number | null;   // null = only 2 punches (no lunch tracked)
   double_punch_detected: boolean;
@@ -107,7 +107,7 @@ export type MonthlyEmployeeSummary = {
   excess_leave_days: number;
   per_day_salary: number;
   leave_deduction: number;
-  half_days: number;         // days present but effective_hours < 4
+  half_days: number;         // days present but effective_hours < 4, or first punch after 2 PM
   days_no_lunch: number;     // present but no lunch tracked (2 punches only)
   days_lunch_spare: number;  // lunch 60–70 min
   days_lunch_over: number;   // lunch > 70 min
@@ -488,7 +488,9 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
           const isFixed10 = sh === "boys_10" || sh === "girls_945";
           const shiftStartMins = isHalfDay ? 16 * 60 : isFixed10 ? (sh === "boys_10" ? 10 * 60 + 15 : 9 * 60 + 45) : shopOpenMins;
           const threshold = isHalfDay ? 16 * 60 + 20 : isFixed10 ? 10 * 60 + 15 : exceptionMap.has(date) ? shopOpenMins : shopOpenMins + 20;
-          const is_late     = firstIn && !hasPermission ? firstInMins > threshold : false;
+          // Arriving after 2 PM on a full-day shift counts as a half day, not a late arrival
+          const lateHalfDay = !isHalfDay && firstIn !== null && firstInMins >= 14 * 60;
+          const is_late     = firstIn && !hasPermission && !lateHalfDay ? firstInMins > threshold : false;
           const late_minutes = is_late ? firstInMins - shiftStartMins : 0;
 
           const lastOutMins = lastOut ? istMinutes(lastOut) : 0;
@@ -508,7 +510,7 @@ export function useMonthlyAttendanceSummary(month: string, extraBioIds: string[]
               : Math.max(0, hw - 1);
           }
 
-          const is_half_day = firstIn !== null && effective_hours !== null && effective_hours < 4;
+          const is_half_day = lateHalfDay || (firstIn !== null && effective_hours !== null && effective_hours < 4);
           return { date, first_in: firstIn, last_out: lastOut, is_late, late_minutes, ot_minutes, effective_hours, is_half_day, punch_count: dayPunches.length, lunch_minutes, double_punch_detected, punchRows: rawDayPunchRows };
         });
 

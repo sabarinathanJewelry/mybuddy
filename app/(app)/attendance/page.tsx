@@ -960,7 +960,7 @@ function MonthlyTab() {
                                 </div>
                                 {r.half_days > 0 && (
                                   <div className="flex justify-between text-warn">
-                                    <span>Half days (&lt;4 hrs)</span>
+                                    <span>Half days (&lt;4 hrs or in after 2 PM)</span>
                                     <span className="font-medium">{r.half_days} days</span>
                                   </div>
                                 )}
