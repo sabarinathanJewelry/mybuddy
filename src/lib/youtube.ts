@@ -58,6 +58,12 @@ async function tokenRequest(params: Record<string, string>) {
   return data as { access_token: string; refresh_token?: string };
 }
 
+export async function channelAccessToken() {
+  const { data } = await supabaseAdmin().from("yt_settings").select("refresh_token").eq("id", 1).maybeSingle();
+  if (!data?.refresh_token) throw new Error("YouTube not connected");
+  return (await tokenRequest({ grant_type: "refresh_token", refresh_token: data.refresh_token })).access_token;
+}
+
 export function exchangeCode(code: string, origin: string) {
   return tokenRequest({ grant_type: "authorization_code", code, redirect_uri: redirectUri(origin) });
 }
