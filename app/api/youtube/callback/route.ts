@@ -3,14 +3,19 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 import { verifyState, exchangeCode, ytFetch } from "@/lib/youtube";
 
 export async function GET(req: NextRequest) {
-  // Returning from Google is a cross-site navigation, so cookies may be missing here; the signed
-  // state proves who started the connect, and a same-origin page navigation carries cookies onward.
+  // Runs in the popup opened by the YouTube page. Cookies may be missing after Google, so the
+  // signed state proves who started the connect; the result goes back to the opener tab.
   const back = (msg: string) => {
-    const to = `/social/youtube?yt=${encodeURIComponent(msg)}`;
-    return new NextResponse(
-      `<!doctype html><meta http-equiv="refresh" content="0;url=${to}"><script>location.replace(${JSON.stringify(to)})</script>`,
-      { headers: { "Content-Type": "text/html; charset=utf-8" } },
-    );
+    const ok = msg === "connected";
+    const text = ok ? "YouTube connected. You can close this window." : `YouTube connect failed: ${msg}`;
+    const html = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<body style="font-family:system-ui,sans-serif;padding:32px;text-align:center;color:${ok ? "#15803d" : "#b91c1c"}">
+<p id="m"></p><script>
+document.getElementById("m").textContent = ${JSON.stringify(text)};
+if (window.opener) { window.opener.postMessage({ type: "yt_connect", result: ${JSON.stringify(msg)} }, location.origin); }
+setTimeout(function () { window.close(); }, ${ok ? 1500 : 6000});
+</script></body>`;
+    return new NextResponse(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
   };
   const p = req.nextUrl.searchParams;
   if (p.get("error")) return back(p.get("error")!);

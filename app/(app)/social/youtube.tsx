@@ -28,6 +28,30 @@ export function YoutubeReplies() {
   const qc = useQueryClient();
   const [notice, setNotice] = useState<string | null>(null);
   useEffect(() => { setNotice(new URLSearchParams(window.location.search).get("yt")); }, []);
+  const [connecting, setConnecting] = useState(false);
+  useEffect(() => {
+    function onMsg(e: MessageEvent) {
+      if (e.origin !== window.location.origin || e.data?.type !== "yt_connect") return;
+      setNotice(e.data.result);
+      setConnecting(false);
+      qc.invalidateQueries({ queryKey: ["yt_status"] });
+    }
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [qc]);
+  useEffect(() => {
+    if (!connecting) return;
+    const t = setTimeout(() => setConnecting(false), 5 * 60 * 1000);
+    return () => clearTimeout(t);
+  }, [connecting]);
+
+  // Google sign-in runs in a popup so this tab never leaves MyBuddy
+  function connect() {
+    const w = window.open("/api/youtube/connect", "yt_connect", "width=520,height=720");
+    if (!w) { window.location.href = "/api/youtube/connect"; return; }
+    setNotice(null);
+    setConnecting(true);
+  }
   const [keywords, setKeywords] = useState("");
   const [replyText, setReplyText] = useState("");
   const [editId, setEditId] = useState<string | null>(null);
@@ -41,7 +65,7 @@ export function YoutubeReplies() {
       if (!res.ok) throw new Error(json.error ?? "Failed");
       return json;
     },
-    refetchInterval: 60 * 1000,
+    refetchInterval: connecting ? 3000 : 60 * 1000,
   });
 
   const { data: rules = [], isError: rulesError } = useQuery<YtRule[]>({
@@ -157,10 +181,10 @@ export function YoutubeReplies() {
           </button>
         )}
         {status?.configured && (
-          <a href="/api/youtube/connect"
+          <button onClick={connect}
             className="text-xs px-3 py-1.5 rounded-lg2 bg-gold text-white hover:bg-gold-dark">
-            {status.connected ? "Reconnect" : "Connect YouTube"}
-          </a>
+            {connecting ? "Waiting for Google…" : status.connected ? "Reconnect" : "Connect YouTube"}
+          </button>
         )}
         {checkNow.data && (
           <p className="w-full text-[11px] text-ink-dim">
