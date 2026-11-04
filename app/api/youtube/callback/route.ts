@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { requireAdmin, exchangeCode, ytFetch } from "@/lib/youtube";
+import { verifyState, exchangeCode, ytFetch } from "@/lib/youtube";
 
 export async function GET(req: NextRequest) {
-  // Returning from Google is a cross-site navigation, so the SameSite=Strict mfa_verified
-  // cookie is not sent on a redirect; a same-origin page navigation includes it.
+  // Returning from Google is a cross-site navigation, so cookies may be missing here; the signed
+  // state proves who started the connect, and a same-origin page navigation carries cookies onward.
   const back = (msg: string) => {
     const to = `/social/youtube?yt=${encodeURIComponent(msg)}`;
     return new NextResponse(
@@ -12,12 +12,9 @@ export async function GET(req: NextRequest) {
       { headers: { "Content-Type": "text/html; charset=utf-8" } },
     );
   };
-  if (!(await requireAdmin())) return back("forbidden");
-
   const p = req.nextUrl.searchParams;
   if (p.get("error")) return back(p.get("error")!);
-  const state = req.cookies.get("yt_oauth_state")?.value;
-  if (!state || state !== p.get("state")) return back("state_mismatch");
+  if (!(await verifyState(p.get("state")))) return back("state_mismatch");
 
   try {
     const tokens = await exchangeCode(p.get("code") ?? "", req.nextUrl.origin);
@@ -37,7 +34,5 @@ export async function GET(req: NextRequest) {
   } catch (e: any) {
     return back(e.message ?? "failed");
   }
-  const res = back("connected");
-  res.cookies.delete("yt_oauth_state");
-  return res;
+  return back("connected");
 }

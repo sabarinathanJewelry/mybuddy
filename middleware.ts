@@ -44,6 +44,8 @@ export async function middleware(request: NextRequest) {
   if (pathname === "/api/instagram/webhook") return supabaseResponse;
   // pg_cron calls this without a session; it checks YOUTUBE_POLL_SECRET (or an admin session) itself
   if (pathname === "/api/youtube/poll") return supabaseResponse;
+  // Google redirects here; the route checks its signed OAuth state itself
+  if (pathname === "/api/youtube/callback") return supabaseResponse;
   // Signage: TV devices have no Supabase session — these routes do their own
   // auth (device_secret)
   if (pathname.startsWith("/tv-player")) return supabaseResponse;

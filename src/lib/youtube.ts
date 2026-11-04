@@ -1,13 +1,42 @@
+import { createHmac, timingSafeEqual } from "crypto";
 import { supabaseServer, supabaseAdmin } from "@/lib/supabase/server";
 
 const YT_API = "https://www.googleapis.com/youtube/v3";
 export const YT_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl";
 
-export async function requireAdmin() {
+export async function currentAdminId(): Promise<string | null> {
   const { data: { user } } = await (await supabaseServer()).auth.getUser();
-  if (!user) return false;
-  const { data: profile } = await supabaseAdmin().from("profiles").select("role").eq("id", user.id).single();
+  if (!user) return null;
+  return (await isAdminId(user.id)) ? user.id : null;
+}
+
+export async function requireAdmin() {
+  return (await currentAdminId()) !== null;
+}
+
+async function isAdminId(id: string) {
+  const { data: profile } = await supabaseAdmin().from("profiles").select("role").eq("id", id).single();
   return ["admin", "subadmin"].includes(profile?.role ?? "");
+}
+
+// OAuth state carries the admin's id, signed, so the callback needs no session or cookie
+const STATE_TTL_MS = 15 * 60 * 1000;
+const sign = (payload: string) => createHmac("sha256", process.env.GOOGLE_CLIENT_SECRET!).update(payload).digest("hex");
+
+export function makeState(userId: string) {
+  const payload = `${userId}.${Date.now()}`;
+  return `${payload}.${sign(payload)}`;
+}
+
+export async function verifyState(state: string | null): Promise<boolean> {
+  const parts = (state ?? "").split(".");
+  if (parts.length !== 3) return false;
+  const [userId, ts, sig] = parts;
+  const expected = Buffer.from(sign(`${userId}.${ts}`));
+  const given = Buffer.from(sig);
+  if (given.length !== expected.length || !timingSafeEqual(given, expected)) return false;
+  if (Date.now() - Number(ts) > STATE_TTL_MS) return false;
+  return isAdminId(userId);
 }
 
 export function redirectUri(origin: string) {
