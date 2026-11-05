@@ -135,7 +135,8 @@ export default function AdminChatPage() {
 
       const [{ data: chatData }, { data: processed }, { data: sData }, { data: cData }] = await Promise.all([
         client.from("chat_messages").select("*").order("created_at", { ascending: true }).limit(200),
-        client.from("kolusu_pending_sales").select("chat_message_id").not("chat_message_id", "is", null),
+        client.from("kolusu_pending_sales").select("chat_message_id").not("chat_message_id", "is", null)
+          .order("created_at", { ascending: false }).limit(1000),
         client.from("staff").select("id, name").eq("active", true).order("name"),
         client.from("conduct_chat_codes").select("*").eq("active", true).order("display_order"),
       ]);

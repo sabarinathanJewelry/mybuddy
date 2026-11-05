@@ -305,17 +305,25 @@ export default function KolusuPage() {
     const client = supabase();
     const { data: { user } } = await client.auth.getUser();
 
-    const [{ data: chatMsgs }, { data: already }] = await Promise.all([
-      client.from("chat_messages").select("*").order("created_at", { ascending: true }),
-      client.from("kolusu_pending_sales").select("chat_message_id").not("chat_message_id", "is", null),
-    ]);
+    const { data: chatMsgs } = await client.from("chat_messages")
+      .select("id, created_at, message, sender_name, sender_id")
+      .order("created_at", { ascending: false }).limit(1000);
+    const candidates = ((chatMsgs ?? []) as any[])
+      .filter((m) => m.sender_name !== "MyBuddy" && parseKolusuChat(m.message ?? ""))
+      .reverse();
 
-    const processedIds = new Set((already ?? []).map((r: any) => r.chat_message_id as string));
+    // Look up only these ids: a bare select of all pending rows is capped at 1000 and missed old imports
+    const processedIds = new Set<string>();
+    for (let i = 0; i < candidates.length; i += 100) {
+      const { data } = await client.from("kolusu_pending_sales").select("chat_message_id")
+        .in("chat_message_id", candidates.slice(i, i + 100).map((m) => m.id));
+      for (const r of data ?? []) processedIds.add(r.chat_message_id as string);
+    }
+
     let imported = 0;
-    for (const msg of (chatMsgs ?? []) as any[]) {
-      if (processedIds.has(msg.id) || msg.sender_name === "MyBuddy") continue;
-      const parsed = parseKolusuChat(msg.message ?? "");
-      if (!parsed) continue;
+    for (const msg of candidates) {
+      if (processedIds.has(msg.id)) continue;
+      const parsed = parseKolusuChat(msg.message ?? "")!;
       const { error } = await client.from("kolusu_pending_sales").insert({
         tx_date:         msg.created_at?.slice(0, 10) ?? globalDate,
         raw_wt_g:        parsed.raw_wt_g,

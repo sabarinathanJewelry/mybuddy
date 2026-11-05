@@ -635,6 +635,7 @@ export default function MyAttendancePage() {
           staff_name:  senderName,
           staff_id:    senderId,
           source:      "chat",
+          chat_message_id: sentMsg?.id ?? null,
         });
         await client.from("chat_messages").insert({
           sender_id:   senderId,

@@ -2666,6 +2666,7 @@ function ChatTab({ isAdmin, adminName }: { isAdmin: boolean; adminName: string }
             tx_date: today, raw_wt_g: parsed.raw_wt_g, cover_wt_g: parsed.cover_wt_g,
             qty: parsed.qty, description: parsed.description || null, bill_no: parsed.bill_no || null,
             staff_name: profile.display_name, staff_id: user.id, source: "chat",
+            chat_message_id: sentMsg?.id ?? null,
           });
           await client.from("chat_messages").insert({
             sender_id: user.id, sender_name: "MyBuddy",
