@@ -40,6 +40,7 @@ export default function WalkinsPage() {
   const [form, setForm] = useState<Summary>(blank(globalDate));
   const [showForm, setShowForm] = useState(false);
   const [formDate, setFormDate] = useState(globalDate);
+  const [view, setView] = useState<"entry" | "report">("entry");
 
   // Fetch all summaries ordered by date
   const { data: summaries, isLoading } = useQuery({
@@ -114,7 +115,7 @@ export default function WalkinsPage() {
           <h1 className="text-xl font-bold">Walk-in Counter</h1>
           <p className="text-sm text-ink-dim mt-0.5">{globalDate}</p>
         </div>
-        <div className="flex gap-2">
+        {view === "entry" && <div className="flex gap-2">
           <button
             onClick={() => { setFormDate(globalDate); setShowForm(true); }}
             className="bg-gold text-white text-sm px-4 py-2 rounded-lg2"
@@ -132,8 +133,19 @@ export default function WalkinsPage() {
           >
             + Past Date
           </button>
-        </div>
+        </div>}
       </div>
+
+      <div className="flex gap-1 border-b border-line">
+        {(["entry", "report"] as const).map((v) => (
+          <button key={v} onClick={() => setView(v)}
+            className={`px-4 py-2 text-sm -mb-px border-b-2 ${view === v ? "border-gold text-gold font-medium" : "border-transparent text-ink-dim hover:text-ink"}`}>
+            {v === "entry" ? "Daily Entry" : "Report"}
+          </button>
+        ))}
+      </div>
+
+      {view === "report" ? <WalkinReport today={globalDate} /> : <>
 
       {/* Today quick stats */}
       {today && (
@@ -304,6 +316,241 @@ export default function WalkinsPage() {
           </table>
         </div>
       )}
+      </>}
+    </div>
+  );
+}
+
+type Row = Summary & { id: string };
+const METALS = [
+  { key: "gold",   label: "Gold",   color: "text-gold" },
+  { key: "silver", label: "Silver", color: "text-ink-mid" },
+  { key: "other",  label: "Other",  color: "text-ink-dim" },
+] as const;
+const EXTRAS = [
+  { key: "order_gold",       label: "Order Gold" },
+  { key: "service_customer", label: "Service" },
+  { key: "scheme_entry",     label: "Scheme Entry" },
+  { key: "new_scheme",       label: "New Scheme" },
+] as const;
+const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+const n = (v: unknown) => Number(v) || 0;
+const totIn  = (r: Row) => n(r.gold_walkin) + n(r.silver_walkin) + n(r.other_walkin);
+const totOut = (r: Row) => n(r.gold_walkout) + n(r.silver_walkout) + n(r.other_walkout);
+// Walk-out = left without buying, so conversion is the share of walk-ins who did not walk out
+const conv = (inn: number, out: number) => (inn > 0 ? Math.max(0, ((inn - out) / inn) * 100) : null);
+const pct = (v: number | null) => (v === null ? "—" : `${v.toFixed(0)}%`);
+const metalIn  = (m: string) => `${m}_walkin` as keyof Summary;
+const metalOut = (m: string) => `${m}_walkout` as keyof Summary;
+
+function addDays(iso: string, d: number) {
+  const x = new Date(iso + "T00:00:00Z");
+  x.setUTCDate(x.getUTCDate() + d);
+  return x.toISOString().slice(0, 10);
+}
+function weekStart(iso: string) {
+  const dow = new Date(iso + "T00:00:00Z").getUTCDay();
+  return addDays(iso, -((dow + 6) % 7));
+}
+function monthLabel(ym: string) {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-IN", { month: "short", year: "numeric", timeZone: "UTC" });
+}
+
+function presetRange(p: string, today: string): [string, string] {
+  const [y, m] = today.split("-").map(Number);
+  const ym = (yy: number, mm: number) => `${yy}-${String(mm).padStart(2, "0")}`;
+  const lastDay = (yy: number, mm: number) => new Date(Date.UTC(yy, mm, 0)).toISOString().slice(0, 10);
+  const fyStart = m >= 4 ? y : y - 1;
+  if (p === "last_month") { const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1; return [`${ym(py, pm)}-01`, lastDay(py, pm)]; }
+  if (p === "last_30") return [addDays(today, -29), today];
+  if (p === "last_90") return [addDays(today, -89), today];
+  if (p === "this_fy") return [`${fyStart}-04-01`, today];
+  if (p === "last_fy") return [`${fyStart - 1}-04-01`, `${fyStart}-03-31`];
+  return [`${ym(y, m)}-01`, today];
+}
+
+function WalkinReport({ today }: { today: string }) {
+  const [preset, setPreset] = useState("this_month");
+  const [range, setRange] = useState<[string, string]>(() => presetRange("this_month", today));
+  const [group, setGroup] = useState<"day" | "week" | "month">("day");
+  const [from, to] = range;
+
+  const { data: rows = [], isLoading } = useQuery({
+    queryKey: ["walk_in_report", from, to],
+    queryFn: async () => {
+      const { data, error } = await supabase().from("walk_in_summaries").select("*")
+        .gte("summary_date", from).lte("summary_date", to).order("summary_date");
+      if (error) throw error;
+      return (data ?? []) as Row[];
+    },
+  });
+
+  function pickPreset(p: string) {
+    setPreset(p);
+    if (p === "custom") return;
+    const r = presetRange(p, today);
+    setRange(r);
+    const span = (new Date(r[1]).getTime() - new Date(r[0]).getTime()) / 86400000;
+    setGroup(span > 120 ? "month" : span > 45 ? "week" : "day");
+  }
+
+  const sum = (k: keyof Summary) => rows.reduce((s, r) => s + n(r[k]), 0);
+  const allIn = rows.reduce((s, r) => s + totIn(r), 0);
+  const allOut = rows.reduce((s, r) => s + totOut(r), 0);
+  const days = rows.length;
+
+  const groups = new Map<string, Row[]>();
+  for (const r of rows) {
+    const k = group === "day" ? r.summary_date : group === "week" ? weekStart(r.summary_date) : r.summary_date.slice(0, 7);
+    groups.set(k, [...(groups.get(k) ?? []), r]);
+  }
+  const groupLabel = (k: string) =>
+    group === "day" ? `${shortDate(k)} ${DOW[new Date(k + "T00:00:00Z").getUTCDay()]}`
+    : group === "week" ? `${shortDate(k)} – ${shortDate(addDays(k, 6))}`
+    : monthLabel(k);
+
+  const byDow = DOW.map((d, i) => {
+    const rs = rows.filter((r) => new Date(r.summary_date + "T00:00:00Z").getUTCDay() === i);
+    const inn = rs.reduce((s, r) => s + totIn(r), 0), out = rs.reduce((s, r) => s + totOut(r), 0);
+    return { d, days: rs.length, avgIn: rs.length ? inn / rs.length : 0, avgOut: rs.length ? out / rs.length : 0, conv: conv(inn, out) };
+  });
+  const maxAvgIn = Math.max(1, ...byDow.map((x) => x.avgIn));
+
+  const sel = "border border-line rounded-lg2 px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
+  const card = "bg-white rounded-xl border border-line p-3 shadow-soft";
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <select value={preset} onChange={(e) => pickPreset(e.target.value)} className={sel}>
+          <option value="this_month">This month</option>
+          <option value="last_month">Last month</option>
+          <option value="last_30">Last 30 days</option>
+          <option value="last_90">Last 90 days</option>
+          <option value="this_fy">This FY</option>
+          <option value="last_fy">Last FY</option>
+          <option value="custom">Custom</option>
+        </select>
+        <input type="date" value={from} onChange={(e) => { setPreset("custom"); setRange([e.target.value, to]); }} className={sel} />
+        <span className="text-ink-dim text-sm">to</span>
+        <input type="date" value={to} onChange={(e) => { setPreset("custom"); setRange([from, e.target.value]); }} className={sel} />
+        <div className="flex border border-line rounded-lg2 overflow-hidden ml-auto">
+          {(["day", "week", "month"] as const).map((g) => (
+            <button key={g} onClick={() => setGroup(g)}
+              className={`px-3 py-1.5 text-xs ${group === g ? "bg-gold text-white" : "text-ink-dim hover:bg-canvas"}`}>
+              {g === "day" ? "Daily" : g === "week" ? "Weekly" : "Monthly"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading ? <p className="text-ink-dim text-sm">Loading…</p> : !days ? (
+        <p className="text-ink-dim text-sm py-8 text-center">No walk-in entries in this period.</p>
+      ) : <>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className={card}><p className="text-xs text-ink-dim">Total walk-ins</p><p className="text-2xl font-bold text-ok">{allIn}</p><p className="text-[11px] text-ink-dim">{(allIn / days).toFixed(1)} / day · {days} days entered</p></div>
+          <div className={card}><p className="text-xs text-ink-dim">Total walk-outs</p><p className="text-2xl font-bold text-err">{allOut}</p><p className="text-[11px] text-ink-dim">{(allOut / days).toFixed(1)} / day</p></div>
+          <div className={card}><p className="text-xs text-ink-dim">Converted</p><p className="text-2xl font-bold text-ink">{Math.max(0, allIn - allOut)}</p><p className="text-[11px] text-ink-dim">walk-ins minus walk-outs</p></div>
+          <div className={card}><p className="text-xs text-ink-dim">Conversion</p><p className="text-2xl font-bold text-gold">{pct(conv(allIn, allOut))}</p><p className="text-[11px] text-ink-dim">walk-out rate {allIn ? ((allOut / allIn) * 100).toFixed(0) : 0}%</p></div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+              <th className="text-left px-4 py-2">By metal</th><th className="text-right px-3 py-2">Walk-in</th><th className="text-right px-3 py-2">Walk-out</th><th className="text-right px-3 py-2">Converted</th><th className="text-right px-4 py-2">Conversion</th>
+            </tr></thead>
+            <tbody>
+              {METALS.map((m) => {
+                const inn = sum(metalIn(m.key)), out = sum(metalOut(m.key));
+                return (
+                  <tr key={m.key} className="border-b border-line last:border-0">
+                    <td className={`px-4 py-2 font-medium ${m.color}`}>{m.label}</td>
+                    <td className="px-3 py-2 text-right">{inn}</td>
+                    <td className="px-3 py-2 text-right text-err">{out}</td>
+                    <td className="px-3 py-2 text-right">{Math.max(0, inn - out)}</td>
+                    <td className="px-4 py-2 text-right font-semibold">{pct(conv(inn, out))}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {EXTRAS.map((x) => (
+            <div key={x.key} className={card}>
+              <p className="text-xs text-ink-dim">{x.label}</p>
+              <p className="text-xl font-bold">{sum(x.key)}</p>
+              <p className="text-[11px] text-ink-dim">{(sum(x.key) / days).toFixed(1)} / day</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="bg-white rounded-xl border border-line shadow-soft overflow-x-auto">
+          <table className="w-full text-sm" style={{ minWidth: "720px" }}>
+            <thead><tr className="bg-canvas text-xs text-ink-dim border-b border-line">
+              <th className="text-left px-4 py-2">{group === "day" ? "Date" : group === "week" ? "Week" : "Month"}</th>
+              {METALS.map((m) => <th key={m.key} className="text-center px-2 py-2">{m.label} in / out</th>)}
+              <th className="text-right px-2 py-2">Total in</th><th className="text-right px-2 py-2">Total out</th><th className="text-right px-2 py-2">Conv.</th>
+              {EXTRAS.map((x) => <th key={x.key} className="text-right px-2 py-2">{x.label}</th>)}
+            </tr></thead>
+            <tbody>
+              {[...groups.entries()].map(([k, rs]) => {
+                const g = (key: keyof Summary) => rs.reduce((s, r) => s + n(r[key]), 0);
+                const inn = rs.reduce((s, r) => s + totIn(r), 0), out = rs.reduce((s, r) => s + totOut(r), 0);
+                return (
+                  <tr key={k} className="border-b border-line last:border-0 hover:bg-canvas/50">
+                    <td className="px-4 py-2 text-ink-dim whitespace-nowrap">{groupLabel(k)}{group !== "day" && <span className="text-[10px] ml-1">({rs.length}d)</span>}</td>
+                    {METALS.map((m) => <td key={m.key} className="px-2 py-2 text-center">{g(metalIn(m.key))} / <span className="text-err">{g(metalOut(m.key))}</span></td>)}
+                    <td className="px-2 py-2 text-right font-semibold text-ok">{inn}</td>
+                    <td className="px-2 py-2 text-right font-semibold text-err">{out}</td>
+                    <td className="px-2 py-2 text-right">{pct(conv(inn, out))}</td>
+                    {EXTRAS.map((x) => <td key={x.key} className="px-2 py-2 text-right">{g(x.key)}</td>)}
+                  </tr>
+                );
+              })}
+              <tr className="bg-canvas font-semibold">
+                <td className="px-4 py-2">Total</td>
+                {METALS.map((m) => <td key={m.key} className="px-2 py-2 text-center">{sum(metalIn(m.key))} / <span className="text-err">{sum(metalOut(m.key))}</span></td>)}
+                <td className="px-2 py-2 text-right text-ok">{allIn}</td>
+                <td className="px-2 py-2 text-right text-err">{allOut}</td>
+                <td className="px-2 py-2 text-right">{pct(conv(allIn, allOut))}</td>
+                {EXTRAS.map((x) => <td key={x.key} className="px-2 py-2 text-right">{sum(x.key)}</td>)}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div className="bg-white rounded-xl border border-line shadow-soft p-4">
+          <p className="text-sm font-semibold mb-3">Average by day of week</p>
+          <div className="space-y-1.5">
+            {byDow.map((x) => (
+              <div key={x.d} className="flex items-center gap-3 text-xs">
+                <span className="w-8 text-ink-dim">{x.d}</span>
+                <div className="flex-1 bg-canvas rounded h-4 overflow-hidden">
+                  <div className="h-full bg-ok/60" style={{ width: `${(x.avgIn / maxAvgIn) * 100}%` }} />
+                </div>
+                <span className="w-44 text-right text-ink-dim">
+                  {x.days ? <>in {x.avgIn.toFixed(1)} · out {x.avgOut.toFixed(1)} · {pct(x.conv)}</> : "no entries"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {rows.some((r) => r.notes) && (
+          <div className="bg-white rounded-xl border border-line shadow-soft p-4">
+            <p className="text-sm font-semibold mb-2">Notes</p>
+            <ul className="space-y-1 text-xs">
+              {rows.filter((r) => r.notes).map((r) => (
+                <li key={r.id}><span className="text-ink-dim">{shortDate(r.summary_date)}:</span> {r.notes}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </>}
     </div>
   );
 }

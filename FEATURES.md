@@ -537,7 +537,8 @@ Multi-channel WhatsApp + Instagram + Messenger lead management CRM.
 - Market Rate Comparison: "Fetch Rates" button pulls live Madurai gold rates (22K/24K) and silver ₹/g from goodreturns.in via a server-side API route (`/api/market-rates`); compares last 10 days against your stored rates; highlights Match / diff / Missing; "Use" / "Update" loads market rate into edit form (18K auto-set to 75% of 24K) — review and save to apply
 
 ### Walk-ins
-- Walk-in customer log
+- Walk-in customer log (Daily Entry tab)
+- **Report tab**: any date range (this/last month, last 30/90 days, this/last FY, custom), grouped daily / weekly / monthly; totals, walk-outs, converted (in − out) and conversion % overall and per metal (gold / silver / other); Order Gold, Service, Scheme Entry, New Scheme totals and per-day averages; average by day of week; notes for the period
 
 ---
 
