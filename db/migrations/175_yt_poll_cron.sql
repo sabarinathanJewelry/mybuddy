@@ -7,10 +7,10 @@
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
 
-select cron.unschedule('yt-comment-poll') where exists (select 1 from cron.job where jobname = 'yt-comment-poll');
+select cron.unschedule('youtube-poll') where exists (select 1 from cron.job where jobname = 'youtube-poll');
 
 select cron.schedule(
-  'yt-comment-poll',
+  'youtube-poll',
   '*/5 * * * *',
   $$
   select net.http_get(
