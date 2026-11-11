@@ -29,6 +29,55 @@ function catLabel(c: string) {
   return CATEGORIES.find((x) => x.value === c)?.label ?? c;
 }
 
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+const blank = (label: string) => `<tr><td>${label}</td><td></td></tr>`;
+
+const ACCEPTANCE_FORM = `
+<div class="form">
+<h2>Employee details &amp; acceptance</h2>
+<p>I have read and understood the Staff Policy of Sabarinathan Jewellers, and I agree to follow it.</p>
+<table>${["Employee name", "Designation", "Date of joining", "Residential address", "Phone number", "Aadhaar number",
+  "Monthly salary (₹)", "Per-day salary (₹) (Monthly salary ÷ 30)", "Bank account holder name", "Bank name &amp; branch",
+  "Account number", "IFSC code", "Employee signature", "Date"].map(blank).join("")}</table>
+<h3>Family / guardian details (all fields must be filled)</h3>
+<table><tr><th>Relation</th><th>Name</th><th>Address</th><th>Phone number</th></tr>
+${["Father", "Mother", "Guardian"].map((r) => `<tr><td>${r}</td><td></td><td></td><td></td></tr>`).join("")}</table>
+<h3>Original documents submitted at joining</h3>
+<table><tr><th>Document</th><th>Received (✓)</th><th>Remarks</th></tr>
+${["Aadhaar card", "Address proof", "Educational certificates", "Passport-size photos", "Other:", "Other:"].map((d) => `<tr><td>${d}</td><td>☐</td><td></td></tr>`).join("")}</table>
+<h3>For Sabarinathan Jewellers (Management / HR)</h3>
+<p>I confirm that the employee's personal and family details above are recorded, and that the original documents ticked above have been received and are kept with the shop.</p>
+<table>${["Authorised signatory", "Name", "Date"].map(blank).join("")}</table>
+</div>`;
+
+function printDoc(doc: { title: string; content: string }) {
+  const body = esc(doc.content).split("\n").map((l) =>
+    /^\d+\.\s+[A-Z]/.test(l) ? `<h2>${l}</h2>` :
+    /^\s*-\s/.test(l) ? `<li>${l.replace(/^\s*-\s/, "")}</li>` :
+    l.trim() === "" ? "" :
+    /^[A-Z][^.:]{0,60}$/.test(l) ? `<h3>${l}</h3>` : `<p>${l}</p>`
+  ).join("\n");
+  const isPolicy = /staff policy/i.test(doc.title);
+  const w = window.open("", "_blank");
+  if (!w) return;
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(doc.title)}</title><style>
+    body{font-family:Arial,sans-serif;font-size:11pt;line-height:1.45;color:#111;margin:0 auto;max-width:780px;padding:24px}
+    h1{font-size:18pt;margin:0 0 8px;text-align:center}
+    h2{font-size:12.5pt;margin:18px 0 6px;border-bottom:1px solid #999;padding-bottom:2px;break-after:avoid}
+    h3{font-size:11pt;margin:10px 0 4px;break-after:avoid}
+    p{margin:4px 0} li{margin:2px 0 2px 18px}
+    table{width:100%;border-collapse:collapse;margin:6px 0 12px}
+    td,th{border:1px solid #555;padding:8px 6px;text-align:left;vertical-align:top;height:18px}
+    td:first-child{width:38%}
+    .form{break-before:page}
+    @page{size:A4;margin:14mm}
+  </style></head><body><h1>${esc(doc.title)}</h1>${body}${isPolicy ? ACCEPTANCE_FORM : ""}</body></html>`);
+  w.document.close();
+  w.focus();
+  w.print();
+}
+
 const inp = "w-full border border-line rounded-lg2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gold";
 const BLANK: Omit<SopDoc, "id" | "created_at" | "updated_at"> = {
   title: "", category: "general", content: "", sort_order: 0, is_active: true,
@@ -234,6 +283,8 @@ export default function SopAdminPage() {
                           className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${doc.is_active ? "bg-ok/10 border-ok/30 text-ok" : "border-line text-ink-dim hover:border-gold hover:text-gold"}`}>
                           {doc.is_active ? "Active" : "Inactive"}
                         </button>
+                        <button onClick={() => printDoc(doc)}
+                          className="text-xs text-info hover:underline">Print</button>
                         <button onClick={() => startEdit(doc)}
                           className="text-xs text-gold hover:underline">Edit</button>
                         <button onClick={() => { if (confirm(`Delete "${doc.title}"?`)) del.mutate(doc.id); }}

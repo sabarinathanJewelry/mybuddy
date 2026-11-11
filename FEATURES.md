@@ -404,6 +404,7 @@
 
 ### SOP / Policies
 - Admin uploads SOPs and policy documents
+- Print button per document (A4 print / Save as PDF); Staff Policy prints with the blank employee acceptance form for new staff to sign
 - Staff read-only access
 
 ### Social
