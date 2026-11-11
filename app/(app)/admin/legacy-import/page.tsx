@@ -68,7 +68,7 @@ function useMyBuddyFy(fy: string) {
 }
 
 const fromTotals = (t: Record<string, number>): Metrics => ({
-  gold: (t.gold_rsj_g ?? 0) + (t.gold_non_rsj_g ?? 0) + (t.gold_order_g ?? 0),
+  gold: (t.gold_rsj_g ?? 0) + (t.gold_non_rsj_g ?? 0),
   silver: t.silver_g ?? 0,
   silverMrp: t.silver_mrp ?? 0,
   oldGold: t.old_gold_g ?? 0,
@@ -280,7 +280,7 @@ export default function LegacyImportPage() {
           </table>
         </div>
         <p className="px-4 py-2 text-[11px] text-ink-dim border-t border-line">
-          Total change compares only months that have data on both sides. Sheet gold = RSJ + Non-RSJ + Order weight. MyBuddy gold/silver = net weight on confirmed bills; old metal = gross weight in Old Metal intake.
+          Total change compares only months that have data on both sides. Sheet gold = RSJ + Non-RSJ (order weight excluded). MyBuddy gold/silver = net weight on confirmed bills; old metal = gross weight in Old Metal intake.
         </p>
       </div>
 
