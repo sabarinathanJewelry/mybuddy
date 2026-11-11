@@ -11,8 +11,8 @@ import { parseLegacyFile, isMismatch, type ParsedFile } from "@/modules/legacy/p
 type Pending = ParsedFile & { fileName: string };
 type ImportRow = { id: string; month: string; file_name: string; sheet_totals: Record<string, number>; issues: { tab: string; message: string }[]; imported_at: string };
 
-type Metrics = { gold: number; silver: number; silverMrp: number; oldGold: number; oldSilver: number; expenses: number; orders: number };
-const ZERO: Metrics = { gold: 0, silver: 0, silverMrp: 0, oldGold: 0, oldSilver: 0, expenses: 0, orders: 0 };
+type Metrics = { gold: number; goldAll: number; silver: number; silverMrp: number; oldGold: number; oldSilver: number; expenses: number; orders: number };
+const ZERO: Metrics = { gold: 0, goldAll: 0, silver: 0, silverMrp: 0, oldGold: 0, oldSilver: 0, expenses: 0, orders: 0 };
 
 const FY_MONTHS = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
 
@@ -52,7 +52,7 @@ function useMyBuddyFy(fy: string) {
         const k = m[fyIndex(i.sales.bill_date)];
         const metal = String(i.metal ?? "");
         if (metal === "silver_mpr") k.silverMrp += Number(i.line_total || 0);
-        else if (metal.startsWith("gold")) { if (!i.sales.order_id) k.gold += Number(i.net_wt || 0); }
+        else if (metal.startsWith("gold")) { k.goldAll += Number(i.net_wt || 0); if (!i.sales.order_id) k.gold += Number(i.net_wt || 0); }
         else if (metal.startsWith("silver")) k.silver += Number(i.net_wt || 0);
       }
       for (const i of intake) {
@@ -69,6 +69,7 @@ function useMyBuddyFy(fy: string) {
 
 const fromTotals = (t: Record<string, number>): Metrics => ({
   gold: (t.gold_rsj_g ?? 0) + (t.gold_non_rsj_g ?? 0),
+  goldAll: (t.gold_rsj_g ?? 0) + (t.gold_non_rsj_g ?? 0) + (t.gold_order_g ?? 0),
   silver: t.silver_g ?? 0,
   silverMrp: t.silver_mrp ?? 0,
   oldGold: t.old_gold_g ?? 0,
@@ -78,7 +79,8 @@ const fromTotals = (t: Record<string, number>): Metrics => ({
 });
 
 const METRICS: { key: keyof Metrics; label: string; fmt: (n: number) => string }[] = [
-  { key: "gold", label: "Gold sold (g)", fmt: (n) => grams(n) },
+  { key: "gold", label: "Gold sold, counter (g)", fmt: (n) => grams(n) },
+  { key: "goldAll", label: "Gold sold incl. orders (g)", fmt: (n) => grams(n) },
   { key: "silver", label: "Silver sold (g)", fmt: (n) => grams(n, 1) },
   { key: "silverMrp", label: "Silver MRP (₹)", fmt: inr },
   { key: "oldGold", label: "Old gold in (g)", fmt: (n) => grams(n) },
@@ -278,6 +280,65 @@ export default function LegacyImportPage() {
         );
       })}
       {save.error && <p className="text-sm text-err">Save failed: {(save.error as Error).message}</p>}
+
+      {(() => {
+        const cols = [
+          ...legacyFys.filter((f) => f !== myFy).map((fy) => {
+            const v: (number | null)[] = FY_MONTHS.map(() => null);
+            (imports.data ?? []).filter((i) => fyForDate(i.month) === fy).forEach((i) => { v[fyIndex(i.month)] = fromTotals(i.sheet_totals)[metric]; });
+            return { label: `${fy} (sheet)`, v };
+          }),
+          { label: `${myFy} (MyBuddy)`, v: FY_MONTHS.map((_, i) => (mine.data && mine.data[i][metric] ? mine.data[i][metric] : null)) },
+        ];
+        const latest = cols[cols.length - 1].v;
+        const sameIdx = FY_MONTHS.map((_, i) => i).filter((i) => latest[i] != null);
+        const tot = (v: (number | null)[], idx: number[]) => idx.reduce((s, i) => s + (v[i] ?? 0), 0);
+        const pct = (a: number | null, b: number | null) => (a && b ? ((b - a) / a) * 100 : null);
+        const Pct = ({ p }: { p: number | null }) => (p == null ? <span /> : <span className={p >= 0 ? "text-ok" : "text-err"}>{p >= 0 ? "+" : ""}{p.toFixed(0)}%</span>);
+        return (
+          <div className="bg-white border border-line rounded-lg2 shadow-soft">
+            <div className="px-4 py-3 border-b border-line flex items-center gap-3 flex-wrap">
+              <p className="font-semibold text-ink mr-auto">Year-on-year growth</p>
+              <select value={metric} onChange={(e) => setMetric(e.target.value as keyof Metrics)} className="border border-line rounded-lg2 px-2 py-1 text-xs">
+                {METRICS.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
+              </select>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-ink-dim text-left bg-canvas">
+                    <th className="px-4 py-2">Month</th>
+                    {cols.map((c, k) => (
+                      <th key={c.label} className="px-4 py-2 text-right" colSpan={k ? 2 : 1}>{c.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {FY_MONTHS.map((mName, i) => (
+                    <tr key={mName} className="border-t border-line">
+                      <td className="px-4 py-2">{mName}</td>
+                      {cols.map((c, k) => [
+                        <td key={c.label} className="px-4 py-2 text-right font-mono">{c.v[i] == null ? <span className="text-ink-dim">—</span> : meta.fmt(c.v[i]!)}</td>,
+                        k ? <td key={c.label + "p"} className="pr-4 py-2 text-right font-mono text-xs"><Pct p={pct(cols[k - 1].v[i], c.v[i])} /></td> : null,
+                      ])}
+                    </tr>
+                  ))}
+                  {[{ name: "Full year", idx: FY_MONTHS.map((_, i) => i) }, { name: `Same months (${sameIdx.length})`, idx: sameIdx }].map((r) => (
+                    <tr key={r.name} className="border-t-2 border-line font-semibold">
+                      <td className="px-4 py-2">{r.name}</td>
+                      {cols.map((c, k) => [
+                        <td key={c.label} className="px-4 py-2 text-right font-mono">{meta.fmt(tot(c.v, r.idx))}</td>,
+                        k ? <td key={c.label + "p"} className="pr-4 py-2 text-right font-mono text-xs"><Pct p={pct(tot(cols[k - 1].v, r.idx), tot(c.v, r.idx))} /></td> : null,
+                      ])}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="px-4 py-2 text-[11px] text-ink-dim border-t border-line">% = change from the year on its left. "Same months" uses only the months the latest year has so far, so it is a fair comparison mid-year.</p>
+          </div>
+        );
+      })()}
 
       <div className="bg-white border border-line rounded-lg2 shadow-soft">
         <div className="px-4 py-3 border-b border-line flex items-center gap-3 flex-wrap">
