@@ -649,3 +649,8 @@ Tracks showcase items taken out for product photography and returned, with pipel
 - Per-file checks: each tab's header total vs sum of rows, GOLD TOTAL and Last-12-months row vs computed, #N/A cells, rows missing weight/name, rows dated outside the month
 - Saves to `legacy_imports` + `legacy_entries` (migration 177) plus a full cell-by-cell copy of every tab in `legacy_sheet_tabs` (migration 178), viewable per month; re-uploading a month replaces it
 - Month-by-month comparison of a sheet FY vs a MyBuddy FY: gold, silver, silver MRP, old gold/silver in, expenses, orders
+
+### Old Credit Ledger (Admin → Sheet History Import, bottom)
+- Upload "Balance Sheet 24-25 / 25-26" xlsx: every Loan (LN) / Order balance (OR) entry with amount, paid, write-off, balance, plus interest expense tabs
+- Saved to `legacy_credit_entries` (migration 179) for reference only; does not touch customer balances
+- Summary by FY and type, search by name, filter year/type/unpaid
