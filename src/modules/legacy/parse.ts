@@ -48,7 +48,9 @@ const isDate = (v: unknown): v is Date => v instanceof Date && !isNaN(v.getTime(
 const sum = (xs: (number | null)[]) => Math.round(xs.reduce<number>((s, x) => s + (x ?? 0), 0) * 1000) / 1000;
 
 function rows(wb: XLSX.WorkBook, name: string): Row[] | null {
-  const key = wb.SheetNames.find((n) => n.trim().toLowerCase() === name.toLowerCase());
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const want = norm(name);
+  const key = wb.SheetNames.find((n) => norm(n) === want) ?? (want === "nonrsj" ? wb.SheetNames.find((n) => norm(n) === "gnonrsj") : undefined);
   if (!key) return null;
   return XLSX.utils.sheet_to_json<Row>(wb.Sheets[key], { header: 1, raw: true, defval: null });
 }
@@ -58,8 +60,16 @@ function countNA(r: Row[]) {
 }
 
 function monthFrom(fileName: string, dates: Date[]): string {
-  const m = fileName.toLowerCase().match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s_-]*(\d{4})/);
-  if (m) return `${m[2]}-${String(MONTHS.indexOf(m[1]) + 1).padStart(2, "0")}-01`;
+  const m = fileName.toLowerCase().match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*[\s_-]*(\d{4})?/);
+  if (m) {
+    let year = m[2];
+    if (!year) {
+      const yc = new Map<string, number>();
+      dates.forEach((d) => { const y = ymd(d).slice(0, 4); yc.set(y, (yc.get(y) ?? 0) + 1); });
+      year = [...yc.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+    }
+    if (year) return `${year}-${String(MONTHS.indexOf(m[1]) + 1).padStart(2, "0")}-01`;
+  }
   const counts = new Map<string, number>();
   dates.forEach((d) => { const k = ymd(d).slice(0, 7); counts.set(k, (counts.get(k) ?? 0) + 1); });
   const top = [...counts.entries()].sort((a, b) => b[1] - a[1])[0];
@@ -76,13 +86,27 @@ export function parseLegacyFile(buf: ArrayBuffer, fileName: string): ParsedFile 
   const entries: LegacyEntry[] = [];
   const checks: Check[] = [];
   const issues: Issue[] = [];
-  const allDates: Date[] = [];
   const e = (p: Partial<LegacyEntry> & { kind: LegacyKind }): LegacyEntry =>
     ({ entry_date: null, shop: null, item: null, type: null, qty: null, weight: null, weight2: null, amount: null, ...p });
   const at = (x: Row, c: number) => (c < 0 ? null : x[c]);
   const sumCol = (data: Row[], c: number) => sum(data.map((x) => num(at(x, c))));
 
   // Columns are found by header name, because the sheet layout changed over time (Shop column in RSJ, ₹ columns in Old IN, etc.)
+  const realDates: Date[] = [];
+  for (const n of wb.SheetNames) {
+    for (const x of XLSX.utils.sheet_to_json<Row>(wb.Sheets[n], { header: 1, raw: true, defval: null })) if (isDate(x[0])) realDates.push(x[0]);
+  }
+  const month = monthFrom(fileName, realDates);
+  const fileYear = Number(month.slice(0, 4));
+  // Text dates like "13/4" or "13/4/2024" are day/month
+  const toDate = (v: unknown): Date | null => {
+    if (isDate(v)) return v;
+    const m = typeof v === "string" ? v.trim().match(/^(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2,4}))?$/) : null;
+    if (!m) return null;
+    const d = Number(m[1]), mo = Number(m[2]), y = m[3] ? (m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3])) : fileYear;
+    return d >= 1 && d <= 31 && mo >= 1 && mo <= 12 ? new Date(y, mo - 1, d) : null;
+  };
+
   const tab = (name: string, fn: (data: Row[], c: Cols) => void, optional = false) => {
     const r = rows(wb, name);
     if (!r) { if (!optional) issues.push({ tab: name, message: "Tab not found in file" }); return; }
@@ -92,8 +116,7 @@ export function parseLegacyFile(buf: ArrayBuffer, fileName: string): ParsedFile 
     const totalRow = r[hi === 1 ? 0 : 1] ?? [];
     const nth = (n: number, ...names: string[]) => head.map((x, i) => (names.includes(x) ? i : -1)).filter((i) => i >= 0)[n] ?? -1;
     const cols: Cols = { col: (...names) => nth(0, ...names), nth, total: (c) => (c < 0 ? null : num(totalRow[c])) };
-    const data = r.slice(hi + 1).filter((x) => isDate(x[0]));
-    data.forEach((x) => allDates.push(x[0] as Date));
+    const data = r.slice(hi + 1).map((x) => { const d = toDate(x[0]); return d ? [d, ...x.slice(1)] : null; }).filter((x): x is Row => x != null);
     const na = countNA(r);
     if (na) issues.push({ tab: name, message: `${na} cell(s) show #N/A (broken formula)` });
     fn(data, cols);
@@ -163,7 +186,6 @@ export function parseLegacyFile(buf: ArrayBuffer, fileName: string): ParsedFile 
     checks.push({ tab: "Selavu", label: "Expenses", sheet: c.total(amt), computed: sumCol(data, amt), unit: "₹" });
   });
 
-  const month = monthFrom(fileName, allDates);
   const mKey = month.slice(0, 7);
   const [fy, fm] = mKey.split("-");
   const fixed = new Map<string, number>(), outside = new Map<string, number>();
