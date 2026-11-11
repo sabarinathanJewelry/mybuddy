@@ -8,6 +8,7 @@ import { inr, grams } from "@/lib/format";
 import { fyForDate } from "@/lib/fy";
 import { parseLegacyFile, isMismatch, type ParsedFile } from "@/modules/legacy/parse";
 import { CreditLedger } from "./credit-ledger";
+import { BusinessPlan } from "./business-plan";
 
 type Pending = ParsedFile & { fileName: string };
 type ImportRow = { id: string; month: string; file_name: string; sheet_totals: Record<string, number>; issues: { tab: string; message: string }[]; imported_at: string };
@@ -422,6 +423,8 @@ export default function LegacyImportPage() {
           </details>
         ))}
       </div>
+
+      <BusinessPlan />
 
       <CreditLedger />
     </div>

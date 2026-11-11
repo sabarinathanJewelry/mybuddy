@@ -654,3 +654,6 @@ Tracks showcase items taken out for product photography and returned, with pipel
 - Upload "Balance Sheet 24-25 / 25-26" xlsx: every Loan (LN) / Order balance (OR) entry with amount, paid, write-off, balance, plus interest expense tabs
 - Saved to `legacy_credit_entries` (migration 179) for reference only; does not touch customer balances
 - Summary by FY and type, search by name, filter year/type/unpaid
+
+### Goals & Action Plan (Admin → Sheet History Import)
+- Per-FY goals (with target value) and action items; tick done, add, delete. Table `business_plans` (migration 180), seeded with FY 2025-26 plan
