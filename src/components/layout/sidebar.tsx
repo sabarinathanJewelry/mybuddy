@@ -50,6 +50,7 @@ const ADMIN_NAV = [
   { href: "/admin/weekoffs",       icon: "📅", key: "nav_weekoff_approvals" as const },
   { href: "/admin/chat",           icon: "💬", key: "nav_chat_mod" as const },
   { href: "/admin/sop",            icon: "📋", key: "nav_sop" as const },
+  { href: "/admin/legacy-import",  icon: "📥", key: "nav_legacy_import" as const },
   { href: "/admin/careers",        icon: "💼", key: "nav_careers" as const },
   { href: "/admin/kpi",            icon: "📊", key: "nav_kpi" as const },
   { href: "/admin/security",        icon: "🔐", key: "nav_security" as const },
