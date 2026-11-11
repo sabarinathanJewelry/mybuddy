@@ -39,7 +39,11 @@ const str = (v: unknown): string | null => {
   const s = String(v).trim();
   return s === "" ? null : s;
 };
-const ymd = (raw: Date) => { const d = new Date(raw.getTime() + 12 * 3600 * 1000); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+// SheetJS dates can land a few seconds before local midnight; shift to midday before taking the day
+const ymd = (raw: Date) => {
+  const d = new Date(raw.getTime() + 12 * 3600 * 1000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 const isDate = (v: unknown): v is Date => v instanceof Date && !isNaN(v.getTime());
 const sum = (xs: (number | null)[]) => Math.round(xs.reduce<number>((s, x) => s + (x ?? 0), 0) * 1000) / 1000;
 
@@ -47,10 +51,6 @@ function rows(wb: XLSX.WorkBook, name: string): Row[] | null {
   const key = wb.SheetNames.find((n) => n.trim().toLowerCase() === name.toLowerCase());
   if (!key) return null;
   return XLSX.utils.sheet_to_json<Row>(wb.Sheets[key], { header: 1, raw: true, defval: null });
-}
-
-function dataRows(r: Row[]) {
-  return r.slice(1).filter((x) => isDate(x[0]));
 }
 
 function countNA(r: Row[]) {
@@ -67,6 +67,10 @@ function monthFrom(fileName: string, dates: Date[]): string {
   return `${top[0]}-01`;
 }
 
+const HEADER_WORDS = new Set(["date", "item", "shop", "type", "weight", "quantity", "quanity", "old gold", "old silver", "customer", "name", "amount"]);
+
+type Cols = { col: (...names: string[]) => number; nth: (n: number, ...names: string[]) => number; total: (c: number) => number | null };
+
 export function parseLegacyFile(buf: ArrayBuffer, fileName: string): ParsedFile {
   const wb = XLSX.read(buf, { type: "array", cellDates: true });
   const entries: LegacyEntry[] = [];
@@ -75,67 +79,105 @@ export function parseLegacyFile(buf: ArrayBuffer, fileName: string): ParsedFile 
   const allDates: Date[] = [];
   const e = (p: Partial<LegacyEntry> & { kind: LegacyKind }): LegacyEntry =>
     ({ entry_date: null, shop: null, item: null, type: null, qty: null, weight: null, weight2: null, amount: null, ...p });
+  const at = (x: Row, c: number) => (c < 0 ? null : x[c]);
+  const sumCol = (data: Row[], c: number) => sum(data.map((x) => num(at(x, c))));
 
-  const tab = (name: string, fn: (r: Row[], data: Row[]) => void) => {
+  // Columns are found by header name, because the sheet layout changed over time (Shop column in RSJ, ₹ columns in Old IN, etc.)
+  const tab = (name: string, fn: (data: Row[], c: Cols) => void, optional = false) => {
     const r = rows(wb, name);
-    if (!r) { issues.push({ tab: name, message: "Tab not found in file" }); return; }
-    const data = dataRows(r);
+    if (!r) { if (!optional) issues.push({ tab: name, message: "Tab not found in file" }); return; }
+    const h = r.slice(0, 3).findIndex((x) => x.filter((c) => HEADER_WORDS.has(str(c)?.toLowerCase() ?? "")).length >= 2);
+    const hi = h < 0 ? 1 : h;
+    const head = (r[hi] ?? []).map((x) => str(x)?.toLowerCase() ?? "");
+    const totalRow = r[hi === 1 ? 0 : 1] ?? [];
+    const nth = (n: number, ...names: string[]) => head.map((x, i) => (names.includes(x) ? i : -1)).filter((i) => i >= 0)[n] ?? -1;
+    const cols: Cols = { col: (...names) => nth(0, ...names), nth, total: (c) => (c < 0 ? null : num(totalRow[c])) };
+    const data = r.slice(hi + 1).filter((x) => isDate(x[0]));
     data.forEach((x) => allDates.push(x[0] as Date));
     const na = countNA(r);
     if (na) issues.push({ tab: name, message: `${na} cell(s) show #N/A (broken formula)` });
-    fn(r, data);
+    fn(data, cols);
   };
 
-  tab("RSJ", (r, data) => {
-    data.forEach((x) => entries.push(e({ kind: "gold_sale", entry_date: ymd(x[0] as Date), item: str(x[1]), type: str(x[2]), qty: num(x[3]), weight: num(x[4]) })));
-    const miss = data.filter((x) => num(x[4]) == null).length;
+  let rsjHasShop = false;
+  tab("RSJ", (data, c) => {
+    const shop = c.col("shop"), item = c.col("item"), type = c.col("type"), qty = c.col("quantity"), wt = c.col("weight");
+    rsjHasShop = shop >= 0;
+    data.forEach((x) => {
+      const s = str(at(x, shop));
+      entries.push(e({
+        kind: s && s.toUpperCase() !== "RSJ" ? "non_rsj" : "gold_sale",
+        entry_date: ymd(x[0] as Date), shop: s, item: str(at(x, item)), type: str(at(x, type)), qty: num(at(x, qty)), weight: num(at(x, wt)),
+      }));
+    });
+    const miss = data.filter((x) => num(at(x, wt)) == null).length;
     if (miss) issues.push({ tab: "RSJ", message: `${miss} gold sale row(s) have no weight` });
-    checks.push({ tab: "RSJ", label: "Gold pieces", sheet: num(r[0]?.[3]), computed: sum(data.map((x) => num(x[3]))), unit: "pcs" });
-    checks.push({ tab: "RSJ", label: "Gold weight", sheet: num(r[0]?.[4]), computed: sum(data.map((x) => num(x[4]))), unit: "g" });
+    checks.push({ tab: "RSJ", label: "Gold pieces", sheet: c.total(qty), computed: sumCol(data, qty), unit: "pcs" });
+    checks.push({ tab: "RSJ", label: rsjHasShop ? "Gold weight (all shops)" : "Gold weight", sheet: c.total(wt), computed: sumCol(data, wt), unit: "g" });
   });
 
-  tab("Silver", (r, data) => {
-    data.forEach((x) => entries.push(e({ kind: "silver_sale", entry_date: ymd(x[0] as Date), shop: str(x[1]), item: str(x[2]), qty: num(x[3]), weight: num(x[4]), amount: num(x[5]) })));
-    const miss = data.filter((x) => num(x[4]) == null && num(x[5]) == null).length;
+  tab("Silver", (data, c) => {
+    const shop = c.col("shop"), item = c.col("item"), qty = c.col("quantity", "quanity"), wt = c.col("weight"), rs = c.col("rs");
+    data.forEach((x) => entries.push(e({
+      kind: "silver_sale", entry_date: ymd(x[0] as Date), shop: str(at(x, shop)), item: str(at(x, item)), qty: num(at(x, qty)), weight: num(at(x, wt)), amount: num(at(x, rs)),
+    })));
+    const miss = data.filter((x) => num(at(x, wt)) == null && num(at(x, rs)) == null).length;
     if (miss) issues.push({ tab: "Silver", message: `${miss} silver row(s) have neither weight nor ₹ amount` });
-    checks.push({ tab: "Silver", label: "Silver pieces", sheet: num(r[1]?.[3]), computed: sum(data.map((x) => num(x[3]))), unit: "pcs" });
-    checks.push({ tab: "Silver", label: "Silver weight", sheet: num(r[1]?.[4]), computed: sum(data.map((x) => num(x[4]))), unit: "g" });
-    checks.push({ tab: "Silver", label: "Silver MRP value", sheet: num(r[1]?.[5]), computed: sum(data.map((x) => num(x[5]))), unit: "₹" });
+    checks.push({ tab: "Silver", label: "Silver pieces", sheet: c.total(qty), computed: sumCol(data, qty), unit: "pcs" });
+    checks.push({ tab: "Silver", label: "Silver weight", sheet: c.total(wt), computed: sumCol(data, wt), unit: "g" });
+    checks.push({ tab: "Silver", label: "Silver MRP value", sheet: c.total(rs), computed: sumCol(data, rs), unit: "₹" });
   });
 
-  tab("Non-RSJ", (r, data) => {
-    data.forEach((x) => entries.push(e({ kind: "non_rsj", entry_date: ymd(x[0] as Date), shop: str(x[1]), item: str(x[2]), type: str(x[3]), weight: num(x[4]) })));
-    checks.push({ tab: "Non-RSJ", label: "Other-shop gold weight", sheet: num(r[0]?.[4]), computed: sum(data.map((x) => num(x[4]))), unit: "g" });
+  tab("Non-RSJ", (data, c) => {
+    const shop = c.col("shop"), item = c.col("item"), type = c.col("type"), wt = c.col("weight");
+    data.forEach((x) => entries.push(e({
+      kind: "non_rsj", entry_date: ymd(x[0] as Date), shop: str(at(x, shop)), item: str(at(x, item)), type: str(at(x, type)), weight: num(at(x, wt)),
+    })));
+    if (data.length || !rsjHasShop) checks.push({ tab: "Non-RSJ", label: "Other-shop gold weight", sheet: c.total(wt), computed: sumCol(data, wt), unit: "g" });
+  }, rsjHasShop);
+
+  tab("Old IN", (data, c) => {
+    const g = c.col("old gold"), s = c.col("old silver"), gRs = c.nth(0, "rs");
+    data.forEach((x) => entries.push(e({ kind: "old_in", entry_date: ymd(x[0] as Date), weight: num(at(x, g)), weight2: num(at(x, s)), amount: num(at(x, gRs)) })));
+    checks.push({ tab: "Old IN", label: "Old gold in", sheet: c.total(g), computed: sumCol(data, g), unit: "g" });
+    checks.push({ tab: "Old IN", label: "Old silver in", sheet: c.total(s), computed: sumCol(data, s), unit: "g" });
+    if (gRs >= 0) checks.push({ tab: "Old IN", label: "Old gold paid", sheet: c.total(gRs), computed: sumCol(data, gRs), unit: "₹" });
   });
 
-  tab("Old IN", (r, data) => {
-    data.forEach((x) => entries.push(e({ kind: "old_in", entry_date: ymd(x[0] as Date), weight: num(x[1]), weight2: num(x[2]) })));
-    checks.push({ tab: "Old IN", label: "Old gold in", sheet: num(r[0]?.[1]), computed: sum(data.map((x) => num(x[1]))), unit: "g" });
-    checks.push({ tab: "Old IN", label: "Old silver in", sheet: num(r[0]?.[2]), computed: sum(data.map((x) => num(x[2]))), unit: "g" });
-  });
-
-  tab("Order", (r, data) => {
-    data.forEach((x) => entries.push(e({ kind: "order", entry_date: ymd(x[0] as Date), shop: str(x[1]), item: str(x[2]), type: str(x[3]), weight: num(x[4]), weight2: num(x[5]), amount: num(x[7]) })));
-    const noName = data.filter((x) => !str(x[1])).length;
+  tab("Order", (data, c) => {
+    const cust = c.col("customer"), item = c.col("item"), metal = c.col("metal"), ow = c.col("order weight"), dw = c.col("delivery weight"), amt = c.col("amount");
+    data.forEach((x) => entries.push(e({
+      kind: "order", entry_date: ymd(x[0] as Date), shop: str(at(x, cust)), item: str(at(x, item)), type: str(at(x, metal)),
+      weight: num(at(x, ow)), weight2: num(at(x, dw)), amount: num(at(x, amt)),
+    })));
+    const noName = data.filter((x) => !str(at(x, cust))).length;
     if (noName) issues.push({ tab: "Order", message: `${noName} order(s) have no customer name` });
-    checks.push({ tab: "Order", label: "Order weight", sheet: num(r[0]?.[4]), computed: sum(data.map((x) => num(x[4]))), unit: "g" });
+    checks.push({ tab: "Order", label: "Order weight", sheet: c.total(ow), computed: sumCol(data, ow), unit: "g" });
   });
 
-  tab("Selavu", (r, data) => {
-    data.forEach((x) => entries.push(e({ kind: "expense", entry_date: ymd(x[0] as Date), item: str(x[1]), type: str(x[2]), amount: num(x[3]) })));
-    const noName = data.filter((x) => !str(x[1])).length;
+  tab("Selavu", (data, c) => {
+    const name = c.col("name"), type = c.col("type"), amt = c.col("amount");
+    data.forEach((x) => entries.push(e({ kind: "expense", entry_date: ymd(x[0] as Date), item: str(at(x, name)), type: str(at(x, type)), amount: num(at(x, amt)) })));
+    const noName = data.filter((x) => !str(at(x, name))).length;
     if (noName) issues.push({ tab: "Selavu", message: `${noName} expense row(s) have no name` });
-    checks.push({ tab: "Selavu", label: "Expenses", sheet: num(r[0]?.[3]), computed: sum(data.map((x) => num(x[3]))), unit: "₹" });
+    checks.push({ tab: "Selavu", label: "Expenses", sheet: c.total(amt), computed: sumCol(data, amt), unit: "₹" });
   });
 
   const month = monthFrom(fileName, allDates);
   const mKey = month.slice(0, 7);
-  const outside = entries.filter((x) => x.entry_date && x.entry_date.slice(0, 7) !== mKey);
-  if (outside.length) {
-    const byTab = new Map<string, number>();
-    outside.forEach((x) => byTab.set(x.kind, (byTab.get(x.kind) ?? 0) + 1));
-    byTab.forEach((n, k) => issues.push({ tab: KIND_TAB[k as LegacyKind], message: `${n} row(s) dated outside ${mKey}` }));
+  const [fy, fm] = mKey.split("-");
+  const fixed = new Map<string, number>(), outside = new Map<string, number>();
+  const bump = (m: Map<string, number>, k: string) => m.set(k, (m.get(k) ?? 0) + 1);
+  for (const x of entries) {
+    if (!x.entry_date || x.entry_date.slice(0, 7) === mKey) continue;
+    const [y, m, d] = x.entry_date.split("-");
+    const t = KIND_TAB[x.kind];
+    if (d === fm && Number(m) <= 28 && y === fy) { x.entry_date = `${fy}-${fm}-${m}`; bump(fixed, `${t}: day/month swapped`); }
+    else if (m === fm && y !== fy) { x.entry_date = `${fy}-${fm}-${d}`; bump(fixed, `${t}: wrong year`); }
+    else bump(outside, t);
   }
+  fixed.forEach((n, k) => { const [t, why] = k.split(": "); issues.push({ tab: t, message: `${n} date(s) auto-corrected (${why})` }); });
+  outside.forEach((n, t) => issues.push({ tab: t, message: `${n} row(s) dated outside ${mKey}` }));
 
   const of = (k: LegacyKind, f: keyof LegacyEntry) => sum(entries.filter((x) => x.kind === k).map((x) => x[f] as number | null));
   const totals = {
@@ -152,20 +194,31 @@ export function parseLegacyFile(buf: ArrayBuffer, fileName: string): ParsedFile 
   const goldAll = sum([totals.gold_rsj_g, totals.gold_non_rsj_g, totals.gold_order_g]);
 
   const rsj = rows(wb, "RSJ");
-  if (rsj) {
-    for (const x of rsj) {
-      const i = x.findIndex((c) => typeof c === "string" && c.trim().toUpperCase() === "GOLD TOTAL");
-      if (i >= 0) checks.push({ tab: "RSJ", label: "GOLD TOTAL (RSJ + Non-RSJ + Order)", sheet: num(x[i + 1]), computed: goldAll, unit: "g" });
-    }
+  for (const x of rsj ?? []) {
+    const i = x.findIndex((c) => typeof c === "string" && c.trim().toUpperCase() === "GOLD TOTAL");
+    if (i >= 0) checks.push({ tab: "RSJ", label: "GOLD TOTAL (RSJ + Non-RSJ + Order)", sheet: num(x[i + 1]), computed: goldAll, unit: "g" });
   }
 
-  const last = rows(wb, "Last 12 months");
-  const mName = MONTHS[Number(month.slice(5, 7)) - 1];
-  const lr = last?.find((x) => typeof x[0] === "string" && x[0].trim().toLowerCase().startsWith(mName));
-  if (lr) {
-    checks.push({ tab: "Last 12 months", label: "Gold for this month", sheet: num(lr[1]), computed: goldAll, unit: "g" });
-    checks.push({ tab: "Last 12 months", label: "Silver for this month", sheet: num(lr[2]), computed: totals.silver_g, unit: "g" });
-    if (num(lr[3]) != null) checks.push({ tab: "Last 12 months", label: "Silver MRP for this month", sheet: num(lr[3]), computed: totals.silver_mrp, unit: "₹" });
+  const fyStart = Number(month.slice(5, 7)) >= 4 ? Number(month.slice(0, 4)) : Number(month.slice(0, 4)) - 1;
+  const lastName = wb.SheetNames.find((n) => /last 12 months|^\s*\d{4}\s*-\s*\d{4}\s*$/i.test(n));
+  const last = lastName ? rows(wb, lastName) : null;
+  const hi = last ? last.findIndex((x) => str(x[0])?.toLowerCase() === "month") : -1;
+  const head = last && hi >= 0 ? last[hi].map((x) => str(x)?.toLowerCase() ?? "") : [];
+  const tabYear = lastName?.match(/(\d{4})\s*-\s*\d{4}/)?.[1];
+  const sameFy = head.some((x) => x.includes(String(fyStart))) || !tabYear || Number(tabYear) === fyStart;
+  if (last && lastName && hi >= 0 && sameFy) {
+    const pick = (re: RegExp, not: RegExp) => {
+      const idx = head.map((h, i) => (re.test(h) && !not.test(h) ? i : -1)).filter((i) => i >= 0);
+      return idx.find((i) => head[i].includes(String(fyStart))) ?? (idx.length === 1 ? idx[0] : -1);
+    };
+    const gc = pick(/gold/, /old gold|amount/), sc = pick(/silver/, /old silver|mrp|amount/), mc = pick(/mrp/, /amount/);
+    const mName = MONTHS[Number(month.slice(5, 7)) - 1];
+    const lr = last.slice(hi + 1).find((x) => typeof x[0] === "string" && x[0].trim().toLowerCase().startsWith(mName));
+    if (lr) {
+      if (gc >= 0 && num(lr[gc]) != null) checks.push({ tab: lastName, label: "Gold for this month", sheet: num(lr[gc]), computed: goldAll, unit: "g" });
+      if (sc >= 0 && num(lr[sc]) != null) checks.push({ tab: lastName, label: "Silver for this month", sheet: num(lr[sc]), computed: totals.silver_g, unit: "g" });
+      if (mc >= 0 && num(lr[mc]) != null) checks.push({ tab: lastName, label: "Silver MRP for this month", sheet: num(lr[mc]), computed: totals.silver_mrp, unit: "₹" });
+    }
   }
 
   return { month, entries, checks, issues, totals };
