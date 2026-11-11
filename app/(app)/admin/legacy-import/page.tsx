@@ -87,6 +87,60 @@ const METRICS: { key: keyof Metrics; label: string; fmt: (n: number) => string }
   { key: "orders", label: "Orders (count)", fmt: (n) => String(Math.round(n)) },
 ];
 
+type Cell = string | number | boolean | null;
+
+function SheetTabs({ importId }: { importId: string }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const tabs = useQuery({
+    queryKey: ["legacy-tabs", importId],
+    queryFn: async () => {
+      const { data, error } = await supabase().from("legacy_sheet_tabs").select("id, tab_name, row_count").eq("import_id", importId).order("sort_order");
+      if (error) throw error;
+      return (data ?? []) as { id: string; tab_name: string; row_count: number }[];
+    },
+  });
+  const rows = useQuery({
+    queryKey: ["legacy-tab-rows", open],
+    enabled: !!open,
+    queryFn: async () => {
+      const { data, error } = await supabase().from("legacy_sheet_tabs").select("rows").eq("id", open!).single();
+      if (error) throw error;
+      return (data?.rows ?? []) as Cell[][];
+    },
+  });
+  if (!tabs.data?.length) return <p className="px-6 pb-3 text-xs text-ink-dim">No full sheet copy saved for this month. Re-upload the file to keep every tab.</p>;
+  const width = Math.max(0, ...(rows.data ?? []).map((r) => r.length));
+  return (
+    <div className="px-6 pb-4">
+      <p className="text-xs text-ink-dim mb-1">Full sheet copy:</p>
+      <div className="flex flex-wrap gap-1.5 mb-2">
+        {tabs.data.map((t) => (
+          <button key={t.id} onClick={() => setOpen(open === t.id ? null : t.id)}
+            className={`text-xs px-2 py-1 rounded-lg2 border ${open === t.id ? "border-gold text-gold" : "border-line text-ink-dim"}`}>
+            {t.tab_name} <span className="opacity-60">({t.row_count})</span>
+          </button>
+        ))}
+      </div>
+      {open && (rows.isLoading ? <p className="text-xs text-ink-dim">Loading…</p> : (
+        <div className="overflow-auto max-h-[60vh] border border-line rounded-lg2">
+          <table className="text-[11px] border-collapse">
+            <tbody>
+              {(rows.data ?? []).map((r, ri) => (
+                <tr key={ri}>
+                  <td className="px-1.5 py-0.5 border border-line bg-canvas text-ink-dim text-right sticky left-0">{ri + 1}</td>
+                  {Array.from({ length: width }, (_, ci) => (
+                    <td key={ci} className="px-1.5 py-0.5 border border-line whitespace-nowrap">{r[ci] == null ? "" : String(r[ci])}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function LegacyImportPage() {
   const profile = useAuth((s) => s.profile);
   const qc = useQueryClient();
@@ -120,6 +174,10 @@ export default function LegacyImportPage() {
       if (error) throw error;
       for (let i = 0; i < p.entries.length; i += 500) {
         const { error: e } = await db.from("legacy_entries").insert(p.entries.slice(i, i + 500).map((x) => ({ ...x, import_id: data.id })));
+        if (e) throw e;
+      }
+      for (const [k, t] of p.tabs.entries()) {
+        const { error: e } = await db.from("legacy_sheet_tabs").insert({ import_id: data.id, tab_name: t.name, sort_order: k, row_count: t.rows.length, rows: t.rows });
         if (e) throw e;
       }
       return p.month;
@@ -298,6 +356,7 @@ export default function LegacyImportPage() {
             <div className="px-6 pb-3 text-xs space-y-0.5">
               {i.issues.length === 0 ? <p className="text-ok">No issues</p> : i.issues.map((x, k) => <p key={k}><span className="text-ink-dim">{x.tab}:</span> {x.message}</p>)}
             </div>
+            <SheetTabs importId={i.id} />
           </details>
         ))}
       </div>

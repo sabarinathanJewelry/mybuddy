@@ -25,6 +25,7 @@ export type ParsedFile = {
   checks: Check[];
   issues: Issue[];
   totals: Record<string, number>;
+  tabs: { name: string; rows: (string | number | boolean | null)[][] }[];
 };
 
 type Row = unknown[];
@@ -245,7 +246,18 @@ export function parseLegacyFile(buf: ArrayBuffer, fileName: string): ParsedFile 
     }
   }
 
-  return { month, entries, checks, issues, totals };
+  const tabs = wb.SheetNames.map((name) => {
+    const all = XLSX.utils.sheet_to_json<Row>(wb.Sheets[name], { header: 1, raw: true, defval: null })
+      .map((x) => {
+        const cells = x.map((c) => (isDate(c) ? ymd(c) : typeof c === "number" || typeof c === "string" || typeof c === "boolean" ? c : null));
+        while (cells.length && (cells[cells.length - 1] == null || cells[cells.length - 1] === "")) cells.pop();
+        return cells;
+      });
+    while (all.length && all[all.length - 1].length === 0) all.pop();
+    return { name, rows: all };
+  });
+
+  return { month, entries, checks, issues, totals, tabs };
 }
 
 const KIND_TAB: Record<LegacyKind, string> = {
