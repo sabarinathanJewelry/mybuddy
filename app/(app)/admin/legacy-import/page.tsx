@@ -41,7 +41,7 @@ function useMyBuddyFy(fy: string) {
       const { from, to } = fyRange(fy);
       const db = supabase();
       const [items, intake, expenses, orders] = await Promise.all([
-        fetchAll<any>((s, e) => db.from("sale_items").select("metal, net_wt, line_total, sales!inner(bill_date, status)")
+        fetchAll<any>((s, e) => db.from("sale_items").select("metal, net_wt, line_total, sales!inner(bill_date, status, order_id)")
           .gte("sales.bill_date", from).lte("sales.bill_date", to).eq("sales.status", "confirmed").range(s, e)),
         fetchAll<any>((s, e) => db.from("old_metal_intake").select("metal, gross_wt, intake_date").gte("intake_date", from).lte("intake_date", to).range(s, e)),
         fetchAll<any>((s, e) => db.from("expenses").select("amount, exp_date").gte("exp_date", from).lte("exp_date", to).range(s, e)),
@@ -52,7 +52,7 @@ function useMyBuddyFy(fy: string) {
         const k = m[fyIndex(i.sales.bill_date)];
         const metal = String(i.metal ?? "");
         if (metal === "silver_mpr") k.silverMrp += Number(i.line_total || 0);
-        else if (metal.startsWith("gold")) k.gold += Number(i.net_wt || 0);
+        else if (metal.startsWith("gold")) { if (!i.sales.order_id) k.gold += Number(i.net_wt || 0); }
         else if (metal.startsWith("silver")) k.silver += Number(i.net_wt || 0);
       }
       for (const i of intake) {
@@ -280,7 +280,7 @@ export default function LegacyImportPage() {
           </table>
         </div>
         <p className="px-4 py-2 text-[11px] text-ink-dim border-t border-line">
-          Total change compares only months that have data on both sides. Sheet gold = RSJ + Non-RSJ (order weight excluded). MyBuddy gold/silver = net weight on confirmed bills; old metal = gross weight in Old Metal intake.
+          Total change compares only months that have data on both sides. Sheet gold = RSJ + Non-RSJ (order weight excluded). MyBuddy gold = net weight on confirmed counter bills (order bills excluded); silver = net weight on confirmed bills; old metal = gross weight in Old Metal intake.
         </p>
       </div>
 
