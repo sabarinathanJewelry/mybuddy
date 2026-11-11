@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS legacy_entries (
   entry_date  date,
   shop        text,
   item        text,
+  item_raw    text,
   type        text,
   qty         numeric(10,2),
   weight      numeric(12,3),

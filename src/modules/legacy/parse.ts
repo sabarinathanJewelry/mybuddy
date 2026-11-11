@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { cleanItem } from "./items";
 
 export type LegacyKind = "gold_sale" | "silver_sale" | "non_rsj" | "old_in" | "order" | "expense";
 
@@ -7,6 +8,7 @@ export type LegacyEntry = {
   entry_date: string | null;
   shop: string | null;
   item: string | null;
+  item_raw: string | null;
   type: string | null;
   qty: number | null;
   weight: number | null;
@@ -87,7 +89,7 @@ export function parseLegacyFile(buf: ArrayBuffer, fileName: string): ParsedFile 
   const checks: Check[] = [];
   const issues: Issue[] = [];
   const e = (p: Partial<LegacyEntry> & { kind: LegacyKind }): LegacyEntry =>
-    ({ entry_date: null, shop: null, item: null, type: null, qty: null, weight: null, weight2: null, amount: null, ...p });
+    ({ entry_date: null, shop: null, item: null, item_raw: null, type: null, qty: null, weight: null, weight2: null, amount: null, ...p });
   const at = (x: Row, c: number) => (c < 0 ? null : x[c]);
   const sumCol = (data: Row[], c: number) => sum(data.map((x) => num(at(x, c))));
 
@@ -130,7 +132,7 @@ export function parseLegacyFile(buf: ArrayBuffer, fileName: string): ParsedFile 
       const s = str(at(x, shop));
       entries.push(e({
         kind: s && s.toUpperCase() !== "RSJ" ? "non_rsj" : "gold_sale",
-        entry_date: ymd(x[0] as Date), shop: s, item: str(at(x, item)), type: str(at(x, type)), qty: num(at(x, qty)), weight: num(at(x, wt)),
+        entry_date: ymd(x[0] as Date), shop: s, item: cleanItem(str(at(x, item))), item_raw: str(at(x, item)), type: str(at(x, type)), qty: num(at(x, qty)), weight: num(at(x, wt)),
       }));
     });
     const miss = data.filter((x) => num(at(x, wt)) == null).length;
@@ -142,7 +144,7 @@ export function parseLegacyFile(buf: ArrayBuffer, fileName: string): ParsedFile 
   tab("Silver", (data, c) => {
     const shop = c.col("shop"), item = c.col("item"), qty = c.col("quantity", "quanity"), wt = c.col("weight"), rs = c.col("rs");
     data.forEach((x) => entries.push(e({
-      kind: "silver_sale", entry_date: ymd(x[0] as Date), shop: str(at(x, shop)), item: str(at(x, item)), qty: num(at(x, qty)), weight: num(at(x, wt)), amount: num(at(x, rs)),
+      kind: "silver_sale", entry_date: ymd(x[0] as Date), shop: str(at(x, shop)), item: cleanItem(str(at(x, item))), item_raw: str(at(x, item)), qty: num(at(x, qty)), weight: num(at(x, wt)), amount: num(at(x, rs)),
     })));
     const miss = data.filter((x) => num(at(x, wt)) == null && num(at(x, rs)) == null).length;
     if (miss) issues.push({ tab: "Silver", message: `${miss} silver row(s) have neither weight nor ₹ amount` });
@@ -154,7 +156,7 @@ export function parseLegacyFile(buf: ArrayBuffer, fileName: string): ParsedFile 
   tab("Non-RSJ", (data, c) => {
     const shop = c.col("shop"), item = c.col("item"), type = c.col("type"), wt = c.col("weight");
     data.forEach((x) => entries.push(e({
-      kind: "non_rsj", entry_date: ymd(x[0] as Date), shop: str(at(x, shop)), item: str(at(x, item)), type: str(at(x, type)), weight: num(at(x, wt)),
+      kind: "non_rsj", entry_date: ymd(x[0] as Date), shop: str(at(x, shop)), item: cleanItem(str(at(x, item))), item_raw: str(at(x, item)), type: str(at(x, type)), weight: num(at(x, wt)),
     })));
     if (data.length || !rsjHasShop) checks.push({ tab: "Non-RSJ", label: "Other-shop gold weight", sheet: c.total(wt), computed: sumCol(data, wt), unit: "g" });
   }, rsjHasShop);
