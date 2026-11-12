@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
+import { payslipDate, payslipLogo } from "@/lib/payslip";
 import { useAuth } from "@/stores/auth";
 import { inr } from "@/lib/format";
 
@@ -38,7 +39,7 @@ td:last-child{text-align:right}
 .tot td{border-top:2px solid #b8860b;font-weight:bold;font-size:15px;color:#b8860b}
 @media print{body{margin:20px}}
 </style></head><body>
-<h1>SABARINATHAN JEWELLERY</h1>
+${payslipLogo()}
 <h2>Salary Slip — ${period}</h2>
 <p class="nm">${e.name}</p>
 <table>
@@ -52,7 +53,7 @@ ${e.arrear > 0 ? `<tr class="add"><td>Arrear</td><td>+ ${fmt(e.arrear)}</td></tr
 <tr class="tot"><td>Net Salary</td><td>${fmt(d.salary)}</td></tr>
 </table>
 <p style="font-size:11px;color:#aaa;text-align:center;margin-top:24px">
-Generated ${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}
+Generated ${payslipDate(period)}
 </p>
 <script>window.onload=()=>{window.print();window.addEventListener('afterprint',()=>window.close());};</script>
 </body></html>`;

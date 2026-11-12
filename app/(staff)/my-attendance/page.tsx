@@ -5,6 +5,7 @@ import Link from "next/link";
 import WeekoffsView from "@/components/weekoffs/WeekoffsView";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase/client";
+import { payslipDate, payslipLogo } from "@/lib/payslip";
 import {
   useMyPermissions, useCreatePermission,
   useMyLeaveRequests, useSubmitLeaveRequest,
@@ -2057,7 +2058,7 @@ export default function MyAttendancePage() {
                         const fmt = (n: number) => "₹" + Math.abs(n).toLocaleString("en-IN");
                         const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Payslip — ${e.name} — ${activePayslip.period}</title>
 <style>body{font-family:Arial,sans-serif;max-width:480px;margin:40px auto;color:#1a1a1a}h1{text-align:center;font-size:18px;margin:0;color:#b8860b}h2{text-align:center;font-size:13px;color:#666;margin:4px 0 20px}.nm{font-size:16px;font-weight:bold;text-align:center;margin-bottom:16px}table{width:100%;border-collapse:collapse}td{padding:7px 10px;border-bottom:1px solid #eee;font-size:13px}td:last-child{text-align:right}.ded td{color:#c0392b}.add td{color:#27ae60}.tot td{border-top:2px solid #b8860b;font-weight:bold;font-size:15px;color:#b8860b}@media print{body{margin:20px}}</style></head><body>
-<h1>SABARINATHAN JEWELLERY</h1><h2>Salary Slip — ${activePayslip.period}</h2><p class="nm">${e.name}</p>
+${payslipLogo()}<h2>Salary Slip — ${activePayslip.period}</h2><p class="nm">${e.name}</p>
 <table><tr><td>Basic Salary</td><td>${fmt(e.basicSalary)}</td></tr>
 ${e.noOfLeave > 0 ? `<tr><td style="color:#888;font-size:12px">Leaves taken</td><td style="color:#888;font-size:12px">${e.noOfLeave} day${e.noOfLeave !== 1 ? "s" : ""} (${e.extraLeave} excess)</td></tr>` : ""}
 ${e.deduction > 0 ? `<tr class="ded"><td>Leave Deduction</td><td>− ${fmt(e.deduction)}</td></tr>` : ""}
@@ -2066,7 +2067,7 @@ ${e.advance > 0 ? `<tr class="ded"><td>Advance Recovered</td><td>− ${fmt(e.adv
 ${e.incentive > 0 ? `<tr class="add"><td>Incentive</td><td>+ ${fmt(e.incentive)}</td></tr>` : ""}
 ${e.arrear > 0 ? `<tr class="add"><td>Arrear</td><td>+ ${fmt(e.arrear)}</td></tr>` : ""}
 <tr class="tot"><td>Net Salary</td><td>${fmt(net)}</td></tr></table>
-<p style="font-size:11px;color:#aaa;text-align:center;margin-top:24px">Generated ${new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</p>
+<p style="font-size:11px;color:#aaa;text-align:center;margin-top:24px">Generated ${payslipDate(activePayslip.period)}</p>
 <script>window.onload=()=>{window.print();window.addEventListener('afterprint',()=>window.close());};</script></body></html>`;
                         const blob = new Blob([html], { type: "text/html" });
                         const url = URL.createObjectURL(blob);
