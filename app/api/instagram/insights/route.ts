@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServer, supabaseAdmin } from "@/lib/supabase/server";
 
-const ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN ?? "";
+import { igToken } from "@/lib/ig-token";
 const IG_API_BASE = "https://graph.instagram.com/v21.0";
 const MEDIA_FIELDS = "id,caption,media_type,media_product_type,permalink,thumbnail_url,media_url,timestamp,like_count,comments_count";
 const REEL_METRICS = "views,reach,saved,shares,total_interactions,ig_reels_avg_watch_time";
@@ -9,7 +9,7 @@ const FEED_METRICS = "views,reach,saved,shares,total_interactions";
 
 async function ig(path: string) {
   const sep = path.includes("?") ? "&" : "?";
-  const res = await fetch(`${IG_API_BASE}${path}${sep}access_token=${ACCESS_TOKEN}`, { cache: "no-store" });
+  const res = await fetch(`${IG_API_BASE}${path}${sep}access_token=${await igToken()}`, { cache: "no-store" });
   const json = await res.json();
   if (!res.ok) throw new Error(json?.error?.message ?? `Instagram API ${res.status}`);
   return json;
@@ -21,7 +21,7 @@ export async function GET(req: Request) {
   const { data: profile } = await supabaseAdmin().from("profiles").select("role").eq("id", user.id).single();
   if (profile?.role !== "admin") return NextResponse.json({ error: "Admin only" }, { status: 403 });
 
-  if (!ACCESS_TOKEN) {
+  if (!(await igToken())) {
     return NextResponse.json({ error: "INSTAGRAM_ACCESS_TOKEN not set" }, { status: 503 });
   }
   const limit = Math.min(Number(new URL(req.url).searchParams.get("limit") ?? 60), 150);

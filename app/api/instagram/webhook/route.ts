@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
 const VERIFY_TOKEN = process.env.INSTAGRAM_VERIFY_TOKEN ?? "";
-const ACCESS_TOKEN = process.env.INSTAGRAM_ACCESS_TOKEN ?? "";
+import { igToken } from "@/lib/ig-token";
 const APP_SECRET   = process.env.INSTAGRAM_APP_SECRET ?? "";
 const IG_API_BASE  = "https://graph.instagram.com/v21.0";
 
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
 }
 
 async function igGet(path: string) {
-  const res = await fetch(`${IG_API_BASE}${path}`, { headers: { Authorization: `Bearer ${ACCESS_TOKEN}` }, cache: "no-store" });
+  const res = await fetch(`${IG_API_BASE}${path}`, { headers: { Authorization: `Bearer ${await igToken()}` }, cache: "no-store" });
   const data = await res.json();
   if (!res.ok) throw new Error(data?.error?.message ?? `Instagram API ${res.status}`);
   return data;
@@ -97,7 +97,7 @@ async function igGet(path: string) {
 async function igPost(path: string, payload: object) {
   const res = await fetch(`${IG_API_BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${ACCESS_TOKEN}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${await igToken()}` },
     body: JSON.stringify(payload),
   });
   const data = await res.json();
@@ -130,7 +130,7 @@ async function sendDirect(accountId: string, userId: string, message: object) {
 }
 
 async function handleComment(accountId: string, c: CommentEvent) {
-  if (!ACCESS_TOKEN) return;
+  if (!(await igToken())) return;
   const db = adminSupabase();
 
   const { data: logRow, error: dupErr } = await db.from("ig_dm_log").insert({
@@ -191,7 +191,7 @@ async function handleComment(accountId: string, c: CommentEvent) {
 }
 
 async function handleMessage(accountId: string, m: MessageEvent) {
-  if (!ACCESS_TOKEN) return;
+  if (!(await igToken())) return;
   const db = adminSupabase();
   const userId = m.sender!.id;
 
