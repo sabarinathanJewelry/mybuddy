@@ -220,6 +220,7 @@
 ## Attendance & HR
 
 ### Attendance (Admin)
+- **Direct device push (ADMS)**: `/api/iclock/[...path]` receives eSSL punches relayed by a Cloudflare Worker at `punch.sabarinathan.com` (device can only do HTTP); checks `x-relay-key` = `ESSL_RELAY_KEY`, upserts `attendance_logs` (device time treated as IST), updates `app_settings.last_sync_at`; replaces the need for a PC running the sync script
 - Smart home card grid (12 cards) for admin on `/attendance`; second section "Finance & Inventory" with 8 ERP quick-link cards (Sales, Daily Sheet, Board Rate, Gold Stock, Kolusu, Analytics, Orders, All ERP)
 - Daily attendance view: all staff with punch times, late flag, hours worked; **expand a row → Edit Punches panel lets admin edit the time of any individual punch, delete it, or add a new punch** (e.g. remove an accidental double-out punch or restore a missing OUT punch); changes refresh the row immediately
 - Monthly attendance summary: present days, late days, OT, leaves, deductions; **click any date in the per-staff day rows to expand a Punch Log panel** showing all raw punches with Edit/Delete per punch and an Add Punch button — same controls as the daily view, changes invalidate both the daily and monthly caches

@@ -46,6 +46,8 @@ export async function middleware(request: NextRequest) {
   if (pathname === "/api/youtube/poll") return supabaseResponse;
   // Google redirects here; the route checks its signed OAuth state itself
   if (pathname === "/api/youtube/callback") return supabaseResponse;
+  // eSSL device push via Cloudflare relay; the route checks ESSL_RELAY_KEY itself
+  if (pathname.startsWith("/api/iclock/")) return supabaseResponse;
   // Signage: TV devices have no Supabase session — these routes do their own
   // auth (device_secret)
   if (pathname.startsWith("/tv-player")) return supabaseResponse;
